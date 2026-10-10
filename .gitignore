@@ -1,0 +1,10 @@
+# Laid by Claude Code on every load; regenerate, don't commit.
+plugins/*/.claude-plugin/types/
+.DS_Store
+
+# Per-session cache written by the impeccable hook.
+.impeccable/
+
+# Private working notes and an outdated internal deck, kept out of the public repo.
+docs/*.pptx
+docs/handoff.md

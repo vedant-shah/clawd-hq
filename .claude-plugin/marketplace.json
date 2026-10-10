@@ -1,0 +1,19 @@
+{
+  "name": "clawd-hq",
+  "owner": {
+    "name": "Vedant Shah"
+  },
+  "metadata": {
+    "description": "Clawd HQ: a pixel-art office side panel for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "clawd-hq",
+      "source": "./plugins/clawd-hq",
+      "description": "A side panel pixel-art office: Clawd runs the floor, every subagent is an employee at a desk.",
+      "author": {
+        "name": "Vedant Shah"
+      }
+    }
+  ]
+}

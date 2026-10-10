@@ -1,0 +1,8 @@
+{
+  "name": "clawd-hq",
+  "description": "A virtual office side panel: Clawd runs the floor, every subagent is an employee at a desk",
+  "author": {
+    "name": "Vedant Shah"
+  },
+  "types": "./types/index.d.ts"
+}

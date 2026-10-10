@@ -1,0 +1,727 @@
+{
+  "meta": {
+    "grid": [
+      24,
+      24
+    ],
+    "compact_grid": [
+      16,
+      12
+    ],
+    "transparent": ".",
+    "max_colors_per_sprite": 8,
+    "layer_order": [
+      "body",
+      "outfit",
+      "emblem",
+      "expression",
+      "headwear",
+      "prop"
+    ],
+    "compact_layer_order": [
+      "body",
+      "headwear",
+      "accent"
+    ],
+    "notes": "Every part is rows of characters, one character per pixel, placed with its top-left corner at (x, y). Later layers paint over earlier ones."
+  },
+  "palette": {"o": "#D97757", "d": "#B85C3E", "k": "#1F1B18", "w": "#FFFFFF", "g": "#A9A294", "s": "#8A93A6", "m": "#5A5A66", "n": "#2F4A7A", "b": "#4A8FE0", "c": "#2FA8A0", "e": "#4CAF6A", "y": "#F2C230", "r": "#D64545", "p": "#8A5CD6", "t": "#8B5A2B"},
+  "palette_names": {"o": "clawd orange", "d": "clawd shadow", "k": "ink", "w": "white", "g": "stone", "s": "steel", "m": "charcoal", "n": "navy", "b": "blue", "c": "teal", "e": "green", "y": "gold", "r": "red", "p": "purple", "t": "brown"},
+  "body": {"x": 0, "y": 9, "rows": [
+    "...oooooooooooooo.......",
+    "...oooooooooooooo.......",
+    "...oooooooooooooo.......",
+    "...oooooooooooooo.......",
+    ".oooooooooooooooooo.....",
+    ".oooooooooooooooooo.....",
+    ".ddoooooooooooooodd.....",
+    "...oooooooooooooo.......",
+    "...oooooooooooooo.......",
+    "...oooooooooooooo.......",
+    "...dddddddddddddd.......",
+    "....oo.dd..dd.oo........",
+    "....oo.dd..dd.oo........",
+    "....oo.dd..dd.oo........"
+  ]},
+  "parts": {
+    "expression": {
+      "neutral": {"x": 4, "y": 10, "rows": [
+        "............",
+        "..kk....kk..",
+        "..kk....kk..",
+        "..kk....kk.."
+      ]},
+      "focused": {"x": 4, "y": 10, "rows": [
+        ".kkkk..kkkk.",
+        "............",
+        "..kk....kk..",
+        "..kk....kk.."
+      ]},
+      "stern": {"x": 4, "y": 10, "rows": [
+        ".kk......kk.",
+        "...kk..kk...",
+        "..kk....kk..",
+        "..kk....kk.."
+      ]},
+      "happy": {"x": 4, "y": 10, "rows": [
+        "............",
+        "..kk....kk..",
+        ".k..k..k..k.",
+        "............"
+      ]},
+      "sparkle": {"x": 4, "y": 10, "rows": [
+        "............",
+        "..wk....wk..",
+        "..kk....kk..",
+        "..kk....kk.."
+      ]},
+      "wink": {"x": 4, "y": 10, "rows": [
+        "............",
+        "..kk........",
+        "..kk...kkkk.",
+        "..kk........"
+      ]},
+      "glasses": {"x": 3, "y": 10, "rows": [
+        ".kkkkk..kkkkk.",
+        "kkwkwkkkkwkwkk",
+        ".kwkwk..kwkwk.",
+        ".kkkkk..kkkkk."
+      ]},
+      "sweat": {"x": 4, "y": 10, "rows": [
+        "...........b",
+        "..kk....kk.b",
+        "..kk....kk..",
+        "..kk....kk.."
+      ]}
+    },
+    "outfit": {
+      "blazer_navy": {"x": 1, "y": 13, "rows": [
+        ".n..............n.",
+        ".nnnnnnwwwwnnnnnn.",
+        ".nnnnnnwyywnnnnnn.",
+        "..nnnnnnnnnnnnnn..",
+        "..nnnnnnnnnnnnnn..",
+        "..nnnnnnnnnnnnnn..",
+        "..nnnnnnnnnnnnnn.."
+      ]},
+      "vest_blue": {"x": 3, "y": 14, "rows": [
+        "bbbbbb..bbbbbb",
+        "bbbbbbbbbbbbbb",
+        "bbbbbbbbbbbbbb",
+        "bbbbbbbbbbbbbb",
+        "bbbbbbbbbbbbbb",
+        "bbbbbbbbbbbbbb"
+      ]},
+      "cardigan_teal": {"x": 3, "y": 15, "rows": [
+        "cccccwwwwccccc",
+        "cccccccccccccc",
+        "cccccccccccccc",
+        "cccccccccccccc",
+        "cccccccccccccc"
+      ]},
+      "lab_coat": {"x": 1, "y": 13, "rows": [
+        ".w..............w.",
+        ".wwwwwwgoogwwwwww.",
+        ".gwwwwwwggwwwwwwg.",
+        "..gwwwwwgwwwwwwg..",
+        "..gwwwwwgwwwwwwg..",
+        "..gwwwwwgwwwwwwg..",
+        "..gggggggggggggg.."
+      ]},
+      "uniform_charcoal": {"x": 1, "y": 13, "rows": [
+        ".m..............m.",
+        ".mmmmmmmoommmmmmm.",
+        ".mmmmmmmmmmmmmmmm.",
+        "..mmmmmmmmmmmmmm..",
+        "..mmmmmmmmmmmmmm..",
+        "..mmmmmmyymmmmmm..",
+        "..mmmmmmmmmmmmmm.."
+      ]},
+      "hoodie_steel": {"x": 1, "y": 13, "rows": [
+        ".s..............s.",
+        ".ssssssssssssssss.",
+        ".ssssssssssssssss.",
+        "..ssssssssssssss..",
+        "..ssssssssssssss..",
+        "..ssssssssssssss..",
+        "..ssssssssssssss.."
+      ]},
+      "sailor_stripes": {"x": 3, "y": 14, "rows": [
+        "wwwwwwwwwwwwww",
+        "nnnnnnnnnnnnnn",
+        "wwwwwwwwwwwwww",
+        "nnnnnnnnnnnnnn",
+        "wwwwwwwwwwwwww",
+        "nnnnnnnnnnnnnn"
+      ]},
+      "singlet_yellow": {"x": 3, "y": 14, "rows": [
+        "..yy......yy..",
+        "yyyyyyyyyyyyyy",
+        "yyyyyyyyyyyyyy",
+        "yyyyyyyyyyyyyy",
+        "yyyyyyyyyyyyyy",
+        "yyyyyyyyyyyyyy"
+      ]},
+      "vest_brown": {"x": 3, "y": 15, "rows": [
+        "tttttt..tttttt",
+        "tttttttttttttt",
+        "tttttttttttttt",
+        "tttttttttttttt",
+        "tttttttttttttt"
+      ]},
+      "overalls_blue": {"x": 3, "y": 14, "rows": [
+        "..bb......bb..",
+        "..bb......bb..",
+        "..ybbbbbbbby..",
+        "bbbbbbbbbbbbbb",
+        "bbbbbbbbbbbbbb",
+        "bbbbbbbbbbbbbb"
+      ]},
+      "hoodie_purple": {"x": 1, "y": 13, "rows": [
+        ".p..............p.",
+        ".ppppppp..ppppppp.",
+        ".pppppppppppppppp.",
+        "..pppppppppppppp..",
+        "..pppppppppppppp..",
+        "..pppppppppppppp..",
+        "..pppppppppppppp.."
+      ]},
+      "tunic_green": {"x": 3, "y": 14, "rows": [
+        "eeeeee..eeeeee",
+        "eeeeeeeeeeeeee",
+        "eeeeeeeeeeeeee",
+        "eeeeeeeeeeeeee",
+        "eeeeeeeeeeeeee",
+        "eeeeeeeeeeeeee"
+      ]},
+      "trench_brown": {"x": 1, "y": 13, "rows": [
+        ".t..............t.",
+        ".ttttttt..ttttttt.",
+        ".tttttttttttttttt.",
+        "..tttttttttttttt..",
+        "..tttttttttttttt..",
+        "..tttttttttttttt..",
+        "..tttttttttttttt.."
+      ]},
+      "turtleneck_charcoal": {"x": 1, "y": 13, "rows": [
+        ".m..............m.",
+        ".mmmmmmmmmmmmmmmm.",
+        ".mmmmmmmmmmmmmmmm.",
+        "..mmmmmmmmmmmmmm..",
+        "..mmmmmmmmmmmmmm..",
+        "..mmmmmmmmmmmmmm..",
+        "..mmmmmmmmmmmmmm.."
+      ]},
+      "robe_navy": {"x": 1, "y": 13, "rows": [
+        ".n..............n.",
+        ".nnnnnnnnnnnnnnnn.",
+        ".nnnnnnnnnnnnnnnn.",
+        "..nnnnnnnnnnnnnn..",
+        "..nnnnnnnnnnnnnn..",
+        "..nnnnnnnnnnnnnn..",
+        "..nnnnnnnnnnnnnn.."
+      ]},
+      "shirt_vest_steel": {"x": 1, "y": 13, "rows": [
+        ".w..............w.",
+        ".wssssswwwwsssssw.",
+        ".wssssssssssssssw.",
+        "..ssssssssssssss..",
+        "..ssssssssssssss..",
+        "..ssssssssssssss..",
+        "..ssssssssssssss.."
+      ]},
+      "tee_teal": {"x": 3, "y": 14, "rows": [
+        "cccccc..cccccc",
+        "cccccccccccccc",
+        "cccccccccccccc",
+        "cccccccccccccc",
+        "cccccccccccccc",
+        "cccccccccccccc"
+      ]}
+    },
+    "emblem": {
+      "star_gold": {"x": 4, "y": 16, "rows": ["..y..", "yyyyy", ".yyy.", ".y.y."]},
+      "code_brackets": {"x": 6, "y": 16, "rows": [".w....w.", "w......w", ".w....w."]},
+      "red_green": {"x": 10, "y": 16, "rows": ["rr.ee", "rr.ee"]},
+      "padlock": {"x": 4, "y": 14, "rows": [".yy.", "y..y", "yyyy", "yyyy"]},
+      "table_grid": {"x": 7, "y": 14, "rows": ["bbbbb", "w.w.w", "wwwww", "w.w.w", "wwwww"]},
+      "neckerchief": {"x": 8, "y": 14, "rows": ["rrrr", ".rr."]},
+      "bib_play": {"x": 7, "y": 15, "rows": ["wwwwww", "wwewww", "wweeww", "wwewww", "wwwwww"]},
+      "page_icon": {"x": 10, "y": 15, "rows": ["wwww", "wkkw", "wwww", "wkkw", "wwww"]},
+      "speech_bubble": {"x": 6, "y": 15, "rows": ["wwwwwww", "wkwkwkw", "wwwwwww", ".ww...."]},
+      "bullseye": {"x": 7, "y": 14, "rows": [".rrr.", "rwwwr", "rwrwr", "rwwwr", ".rrr."]},
+      "question_mark": {"x": 7, "y": 14, "rows": [".www.", "ww.ww", "...ww", "..ww.", ".....", "..ww."]},
+      "quote_marks": {"x": 6, "y": 15, "rows": [".ww..ww", "ww..ww.", "www.www", "www.www"]},
+      "jabot": {"x": 8, "y": 14, "rows": ["wwww", "wwww", "w..w", "w..w"]},
+      "equals": {"x": 7, "y": 16, "rows": ["yyyyy", ".....", "yyyyy"]},
+      "bars_up": {"x": 6, "y": 15, "rows": ["......ww", "...ww.ww", "ww.ww.ww", "ww.ww.ww"]},
+      "steps": {"x": 7, "y": 16, "rows": ["....ww", "..wwww", "wwwwww"]},
+      "error_label": {"x": 7, "y": 16, "rows": ["wwwww", "wrwrw", "wwrww", "wrwrw"]}
+    },
+    "headwear": {
+      "crown_gold": {"x": 5, "y": 5, "rows": [
+        "y...yy...y",
+        "yy.yyyy.yy",
+        "yyyyyyyyyy",
+        "ynyynnyyny"
+      ]},
+      "pencil_ear": {"x": 2, "y": 6, "rows": [
+        "..dyyyyyyyyywrr",
+        "kddyyyyyyyyywrr",
+        "..dyyyyyyyyywrr"
+      ]},
+      "deerstalker": {"x": 2, "y": 4, "rows": [
+        "......dddd......",
+        "....tdtdtdtd....",
+        "...tdtdtdtdtd...",
+        "..tdtdtdtdtdtd..",
+        "..dtdtdtdtdtdt..",
+        "dddddddddddddddd"
+      ]},
+      "goggles_up": {"x": 3, "y": 6, "rows": [
+        "..ggg....ggg..",
+        ".gweeggggweeg.",
+        ".geeeggggeeeg.",
+        "gggggggggggggg"
+      ]},
+      "guard_cap": {"x": 2, "y": 3, "rows": [
+        "..mmmmmmmmmmmm..",
+        ".mmmmmmmmmmmmmm.",
+        ".mmmmmmyymmmmmm.",
+        "..mmmmmyymmmmm..",
+        "..mmmmmmmmmmmm..",
+        ".kkkkkkkkkkkkkk."
+      ]},
+      "elephant_hood": {"x": 0, "y": 5, "rows": [
+        "......ssssssss......",
+        ".sss.ssssssssss.sss.",
+        "ssssssssssssssssssss",
+        "ssssssskssssksssssss",
+        "ssssssssssssssssssss",
+        "sss.....wssw.....sss",
+        "sss......ss......sss",
+        ".ss......ss......ss."
+      ]},
+      "captain_cap": {"x": 2, "y": 4, "rows": [
+        "..gggggggggggg..",
+        ".gwwwwwwwwwwwwg.",
+        ".gwwwwwyywwwwwg.",
+        "..gwwwwyywwwwg..",
+        "..nnnnnnnnnnnn..",
+        ".nnnnnnnnnnnnnn."
+      ]},
+      "sweatband": {"x": 0, "y": 9, "rows": [
+        ".rrrrrrrrrrrrrrrr",
+        "rr.rrrrrrrrrrrrrr",
+        "r................"
+      ]},
+      "book_stack": {"x": 4, "y": 2, "rows": [
+        "..eeeeeeeee.",
+        "..ewwwwwwww.",
+        "..eeeeeeeee.",
+        "rrrrrrrrrrr.",
+        "rwwwwwwwwww.",
+        "rwwwwwwwwww.",
+        "rrrrrrrrrrr."
+      ]},
+      "hardhat_lamp": {"x": 2, "y": 4, "rows": [
+        "......yyyy......",
+        "....yyyyyyyy....",
+        "...yyyywwyyyy...",
+        "...yyyywwyyyy...",
+        "..yyyyyyyyyyyy..",
+        "yyyyyyyyyyyyyyyy"
+      ]},
+      "headphones": {"x": 1, "y": 7, "rows": [
+        "...ssssssssssss...",
+        ".ssssssssssssssss.",
+        "sss............sss",
+        "sks............sks",
+        "sks............sks",
+        "sss............sss"
+      ]},
+      "feather_cap": {"x": 1, "y": 3, "rows": [
+        "............r....",
+        ".......eee.rr....",
+        ".....eeeeeerr....",
+        "....eeeeeeerre...",
+        "...eeeeeeeeeeee..",
+        "eeeeeeeeeeeeeeee."
+      ]},
+      "flame": {"x": 5, "y": 1, "rows": [
+        "....r.....",
+        "...rr..r..",
+        "..rrr.rr..",
+        "..rryrrr..",
+        ".rryyyrrr.",
+        ".ryyyyyrr.",
+        "rryyyyyyrr",
+        "rryyyyyyrr"
+      ]},
+      "beret": {"x": 1, "y": 5, "rows": [
+        "...........p....",
+        ".....ppppppppp..",
+        "..ppppppppppppp.",
+        ".pppppppppppppp.",
+        "..pppppppppppppp"
+      ]},
+      "barrister_wig": {"x": 2, "y": 5, "rows": [
+        "....gggggggg....",
+        "..ggwwwwwwwwgg..",
+        ".gwwgwwgwwgwwwg.",
+        ".gwwwwwwwwwwwwg.",
+        ".gwgwwgwwgwwgwg.",
+        "gwg..........gwg",
+        "gww..........wwg",
+        "gwg..........gwg",
+        ".gg..........gg."
+      ]},
+      "arrow_up": {"x": 6, "y": 1, "rows": [
+        "...ee...",
+        "..eeee..",
+        ".eeeeee.",
+        "eeeeeeee",
+        "..eeee..",
+        "..eeee..",
+        "..eeee..",
+        "..eeee.."
+      ]},
+      "coin_stack": {"x": 5, "y": 2, "rows": [
+        ".yyyyyy..",
+        "yyywyyyy.",
+        "dddddddd.",
+        ".yyyyyyyy",
+        ".dddddddd",
+        "yyyyyyyy.",
+        "dddddddd."
+      ]}
+    },
+    "prop": {
+      "blueprint": {"x": 17, "y": 8, "rows": [
+        "wwwwwww",
+        "bbbbbbb",
+        "bwwwbbb",
+        "bbbbbbb",
+        "bbwwwbb",
+        "bbbbbbb",
+        "bbbbwwb",
+        "bbbbbbb",
+        "wwwwwww"
+      ]},
+      "diff_card": {"x": 18, "y": 9, "rows": [
+        "kkkkkk",
+        "wwwwww",
+        "weeeew",
+        "wwwwww",
+        "wrrrrw",
+        "wwwwww",
+        "weeeww",
+        "wwwwww",
+        "wrrwww",
+        "wwwwww"
+      ]},
+      "test_tube": {"x": 17, "y": 4, "rows": [
+        "....e..",
+        "..e....",
+        ".......",
+        "ggggggg",
+        ".g...g.",
+        ".g...g.",
+        ".geeeg.",
+        ".geeeg.",
+        ".geeeg.",
+        ".geeeg.",
+        ".geeeg.",
+        "..ggg.."
+      ]},
+      "shield": {"x": 17, "y": 9, "rows": [
+        "bbbbbbb",
+        "bbbbbwb",
+        "bbbbwbb",
+        "bwbwbbb",
+        "bbwbbbb",
+        ".bbbbb.",
+        "..bbb..",
+        "...b..."
+      ]},
+      "db_cylinder": {"x": 18, "y": 11, "rows": [
+        ".bbbb.",
+        "bwwwwb",
+        "bbbbbb",
+        "bbbbbb",
+        "nbbbbn",
+        "bnnnnb",
+        "bbbbbb",
+        "nbbbbn",
+        "bnnnnb",
+        "bbbbbb",
+        ".bbbb."
+      ]},
+      "containers": {"x": 18, "y": 9, "rows": [
+        "rrrrrr",
+        "rwrwrw",
+        "rwrwrw",
+        "rrrrrr",
+        "nnnnnn",
+        "nwnwnw",
+        "nwnwnw",
+        "nnnnnn"
+      ]},
+      "browser_window": {"x": 17, "y": 8, "rows": [
+        "sssssss",
+        "sryesss",
+        "sssssss",
+        "swwwwws",
+        "swkwwws",
+        "swkkwws",
+        "swkkkws",
+        "swkwwws",
+        "swwwwws",
+        "sssssss"
+      ]},
+      "pencil_big": {"x": 19, "y": 7, "rows": [
+        "rrr",
+        "www",
+        "yyy",
+        "yyy",
+        "yyy",
+        "yyy",
+        "yyy",
+        "yyy",
+        "yyy",
+        "ttt",
+        ".k."
+      ]},
+      "wrench": {"x": 18, "y": 5, "rows": [
+        "ss..ss",
+        "ss..ss",
+        "ssssss",
+        ".ssss.",
+        "..ss..",
+        "..ss..",
+        "..ss..",
+        "..ss..",
+        "..ss..",
+        ".ssss.",
+        ".s..s.",
+        ".ssss."
+      ]},
+      "calendar": {"x": 15, "y": 12, "rows": [
+        "rrrrrrrrr",
+        "rrrrrrrrr",
+        "wkkkwkkkw",
+        "wwwkwkwkw",
+        "wwkkwkwkw",
+        "wwwkwkwkw",
+        "wkkkwkkkw",
+        "wwwwwwwww"
+      ]},
+      "arrow": {"x": 18, "y": 3, "rows": [
+        "..s..",
+        ".sss.",
+        ".sss.",
+        "sssss",
+        "..t..",
+        "..t..",
+        "..t..",
+        "..t..",
+        "..t..",
+        "..t..",
+        "..t..",
+        "..t..",
+        "r.t.r",
+        "rrtrr",
+        "r.t.r"
+      ]},
+      "microphone": {"x": 18, "y": 6, "rows": [
+        ".sss.",
+        "swsss",
+        "sssss",
+        "sssss",
+        ".sss.",
+        "..s..",
+        ".sss.",
+        ".sss.",
+        ".sss.",
+        ".sss."
+      ]},
+      "megaphone": {"x": 17, "y": 7, "rows": [
+        ".....rr",
+        "...rrrr",
+        ".wrrrrr",
+        "rwrrrrr",
+        "rwrrrrr",
+        ".wrrrrr",
+        "...rrrr",
+        "..mm.rr",
+        "..mm..."
+      ]},
+      "contract_scroll": {"x": 18, "y": 8, "rows": [
+        "gggggg",
+        "gwwwwg",
+        "gkkkkg",
+        "gwwwwg",
+        "gkkkkg",
+        "gwwwwg",
+        "gkkwwg",
+        "gwwrrg",
+        "gwwrrg",
+        "gggggg"
+      ]},
+      "calculator": {"x": 17, "y": 9, "rows": [
+        "mmmmmmm",
+        "meeeeem",
+        "meeeeem",
+        "mmmmmmm",
+        "mwmwmwm",
+        "mmmmmmm",
+        "mwmwmwm",
+        "mmmmmmm",
+        "mwmwmym",
+        "mmmmmmm"
+      ]},
+      "magnifier": {"x": 17, "y": 5, "rows": [
+        "..ssss.",
+        ".sw...s",
+        ".s....s",
+        ".s....s",
+        ".s....s",
+        "..ssss.",
+        "..tt...",
+        ".tt....",
+        ".t....."
+      ]},
+      "logbook": {"x": 17, "y": 9, "rows": [
+        "..yyy..",
+        "ttttttt",
+        "twwwwwt",
+        "tewkkwt",
+        "twwwwwt",
+        "tewkkwt",
+        "twwwwwt",
+        "tewkkwt",
+        "twwwwwt",
+        "ttttttt"
+      ]}
+    }
+  },
+  "compact": {
+    "body": {"x": 0, "y": 4, "rows": [
+      "...oooooooooo...",
+      "...ookooookoo...",
+      "..oookooookooo..",
+      "..oooooooooooo..",
+      "...dddddddddd...",
+      "....o.d..d.o....",
+      "....o.d..d.o...."
+    ]},
+    "headwear": {
+      "crown_gold": {"x": 4, "y": 1, "rows": ["y..yy..y", "yyyyyyyy", "ynyyyyny"]},
+      "pencil_ear": {"x": 3, "y": 2, "rows": [".dyyyyywrr", "kdyyyyywrr"]},
+      "deerstalker": {"x": 2, "y": 1, "rows": [".....dd.....", "...tdtdtd...", "..tdtdtdtd..", "dddddddddddd"]},
+      "goggles_up": {"x": 3, "y": 2, "rows": [".ggg..ggg.", "geeeggeeeg", "gggggggggg"]},
+      "guard_cap": {"x": 3, "y": 1, "rows": [".mmmmmmmm.", "mmmmyymmmm", ".mmmmmmmm.", "kkkkkkkkkk"]},
+      "elephant_hood": {"x": 0, "y": 2, "rows": ["....ssssssss....", ".ssssssssssssss.", "ssssssssssssssss", "sss....ss....sss", ".s.....ss.....s."]},
+      "captain_cap": {"x": 3, "y": 1, "rows": [".wwwwwwww.", "wwwwyywwww", "nnnnnnnnnn", "nnnnnnnnnn"]},
+      "sweatband": {"x": 1, "y": 4, "rows": [".rrrrrrrrrrr", "r..........."]},
+      "book_stack": {"x": 4, "y": 0, "rows": [".eeeeee.", ".eewwww.", "rrrrrrrr", "rrwwwwww"]},
+      "hardhat_lamp": {"x": 2, "y": 1, "rows": ["....yyyy....", "..yyywwyyy..", "..yyyyyyyy..", "yyyyyyyyyyyy"]},
+      "headphones": {"x": 1, "y": 2, "rows": ["...ssssssss...", ".ssssssssssss.", "ss..........ss", "ss..........ss", "ss..........ss"]},
+      "feather_cap": {"x": 1, "y": 0, "rows": [".........r...", "....eeeerr...", "...eeeeeer...", "eeeeeeeeeeee."]},
+      "flame": {"x": 5, "y": 0, "rows": ["..r...", ".rr.r.", ".ryrr.", "rryyrr"]},
+      "beret": {"x": 2, "y": 1, "rows": ["........p...", "...pppppppp.", ".ppppppppppp", ".pppppppppp."]},
+      "barrister_wig": {"x": 2, "y": 1, "rows": ["..gwwwwwwg..", ".gwwgwwgwwg.", "gwwwwwwwwwwg", "gw........wg", "gw........wg", ".g........g."]},
+      "arrow_up": {"x": 5, "y": 0, "rows": ["..ee..", ".eeee.", "eeeeee", "..ee.."]},
+      "coin_stack": {"x": 5, "y": 0, "rows": [".yyyy.", "yyyyyy", "dddddd", "yyyyyy"]}
+    },
+    "accent": {
+      "blueprint": {"x": 13, "y": 5, "rows": ["bbb", "bww", "bbb", "wwb", "bbb"]},
+      "diff_card": {"x": 13, "y": 5, "rows": ["www", "wee", "www", "wrr", "www"]},
+      "test_tube": {"x": 13, "y": 4, "rows": ["ggg", "g.g", "geg", "geg", "ggg"]},
+      "shield": {"x": 13, "y": 5, "rows": ["bbb", "bwb", "bbb", ".b."]},
+      "db_cylinder": {"x": 13, "y": 6, "rows": ["bbb", "www", "bbb", "nnn", "bbb"]},
+      "containers": {"x": 13, "y": 5, "rows": ["rrr", "rrr", "nnn", "nnn"]},
+      "bib_band": {"x": 3, "y": 7, "rows": ["yyywwwwyyy", "yyywwwwyyy"]},
+      "pencil_big": {"x": 14, "y": 3, "rows": ["rr", "yy", "yy", "yy", "yy", "tt"]},
+      "wrench": {"x": 13, "y": 3, "rows": ["s.s", "sss", ".s.", ".s.", ".s."]},
+      "calendar": {"x": 13, "y": 7, "rows": ["rrr", "www", "wkw", "www"]},
+      "arrow": {"x": 13, "y": 2, "rows": [".s.", "sss", ".t.", ".t.", ".t.", "rtr"]},
+      "microphone": {"x": 13, "y": 3, "rows": ["sss", "sss", ".s.", ".s."]},
+      "megaphone": {"x": 13, "y": 4, "rows": ["..r", "wrr", "wrr", "..r"]},
+      "contract_scroll": {"x": 13, "y": 7, "rows": ["ggg", "gkg", "ggr"]},
+      "calculator": {"x": 13, "y": 5, "rows": ["mmm", "mem", "mmm", "mwm", "mmm"]},
+      "magnifier": {"x": 13, "y": 4, "rows": ["sss", "s.s", "sss", "t.."]},
+      "logbook": {"x": 13, "y": 5, "rows": ["tyt", "twt", "tet", "twt", "ttt"]}
+    }
+  },
+  "characters": [
+    {"id": "clawd", "label": "Clawd (chief of staff)", "short": "Clawd",
+     "outfit": "blazer_navy", "headwear": "crown_gold", "prop": "logbook", "emblem": "star_gold", "expression": "neutral",
+     "compact_accent": "logbook",
+     "why": "The orchestrator who hands work out: he carries the project logbook with ticked tasks, and the small crown, gold tie and star mark him as the boss while he stays the classic crab."},
+    {"id": "ecc:planner", "label": "ecc:planner", "short": "planner",
+     "outfit": "vest_blue", "headwear": "pencil_ear", "prop": "blueprint", "emblem": "steps", "expression": "focused",
+     "compact_accent": "blueprint",
+     "why": "Plans before anyone builds: a blueprint with the work laid out as staggered bars, a pencil resting on the head and a staircase on the chest for step-by-step."},
+    {"id": "ecc:code-reviewer", "label": "ecc:code-reviewer", "short": "code-review",
+     "outfit": "cardigan_teal", "headwear": "deerstalker", "prop": "diff_card", "emblem": "code_brackets", "expression": "glasses",
+     "compact_accent": "diff_card",
+     "why": "Inspects changes line by line: detective hat and glasses, holding a diff with green added and red removed lines, code brackets on the chest."},
+    {"id": "ecc:tdd-guide", "label": "ecc:tdd-guide", "short": "tdd-guide",
+     "outfit": "lab_coat", "headwear": "goggles_up", "prop": "test_tube", "emblem": "red_green", "expression": "neutral",
+     "compact_accent": "test_tube",
+     "why": "Tests first: a lab scientist with a test tube, and a red light next to a green light for the fail-then-pass cycle."},
+    {"id": "ecc:security-reviewer", "label": "ecc:security-reviewer", "short": "security",
+     "outfit": "uniform_charcoal", "headwear": "guard_cap", "prop": "shield", "emblem": "padlock", "expression": "stern",
+     "compact_accent": "shield",
+     "why": "Guards the code: a security guard with a stern look, a shield with a tick and a padlock badge."},
+    {"id": "ecc:database-reviewer", "label": "ecc:database-reviewer", "short": "database",
+     "outfit": "hoodie_steel", "headwear": "elephant_hood", "prop": "db_cylinder", "emblem": "table_grid", "expression": "sparkle",
+     "compact_accent": "db_cylinder",
+     "why": "PostgreSQL specialist: an elephant hood (the Postgres animal), the classic database cylinder and a table grid on the chest."},
+    {"id": "ecc:docker-patterns", "label": "ecc:docker-patterns", "short": "docker",
+     "outfit": "sailor_stripes", "headwear": "captain_cap", "prop": "containers", "emblem": "neckerchief", "expression": "happy",
+     "compact_accent": "containers",
+     "why": "Ships containers: a ship's captain in sailor stripes carrying two stacked shipping containers."},
+    {"id": "ecc:e2e-runner", "label": "ecc:e2e-runner", "short": "e2e-runner",
+     "outfit": "singlet_yellow", "headwear": "sweatband", "prop": "browser_window", "emblem": "bib_play", "expression": "neutral",
+     "compact_accent": "bib_band",
+     "why": "Runs the whole flow in a real browser: a runner with a sweatband, a race bib with a play button, and a browser window with a mouse pointer."},
+    {"id": "ecc:doc-updater", "label": "ecc:doc-updater", "short": "doc-updater",
+     "outfit": "vest_brown", "headwear": "book_stack", "prop": "pencil_big", "emblem": "page_icon", "expression": "glasses",
+     "compact_accent": "pencil_big",
+     "why": "Keeps the documentation current: a librarian balancing books on the head, a big pencil for edits and a page on the chest."},
+    {"id": "ecc:build-error-resolver", "label": "ecc:build-error-resolver", "short": "build-fix",
+     "outfit": "overalls_blue", "headwear": "hardhat_lamp", "prop": "wrench", "emblem": "error_label", "expression": "sweat",
+     "compact_accent": "wrench",
+     "why": "Fixes a broken build: a mechanic in overalls with a headlamp hard hat, a wrench and a red error cross on the bib, with a bead of sweat."},
+    {"id": "last30days", "label": "last30days", "short": "last30days",
+     "outfit": "hoodie_purple", "headwear": "headphones", "prop": "calendar", "emblem": "speech_bubble", "expression": "sparkle",
+     "compact_accent": "calendar",
+     "why": "Listens to what people said online this month: headphones for listening in, a calendar page showing 30 and a speech bubble."},
+    {"id": "get-to-the-point", "label": "get-to-the-point", "short": "to-the-point",
+     "outfit": "tunic_green", "headwear": "feather_cap", "prop": "arrow", "emblem": "bullseye", "expression": "wink",
+     "compact_accent": "arrow",
+     "why": "Hits the point with no detours: an archer taking aim with one eye closed, an arrow in hand and a bullseye on the chest."},
+    {"id": "grill-me", "label": "grill-me", "short": "grill-me",
+     "outfit": "trench_brown", "headwear": "flame", "prop": "microphone", "emblem": "question_mark", "expression": "stern",
+     "compact_accent": "microphone",
+     "why": "Interviews you relentlessly: a reporter's microphone pushed forward, a question mark, fierce brows and a flame on the head for the grilling."},
+    {"id": "copywriting", "label": "copywriting", "short": "copywriting",
+     "outfit": "turtleneck_charcoal", "headwear": "beret", "prop": "megaphone", "emblem": "quote_marks", "expression": "happy",
+     "compact_accent": "megaphone",
+     "why": "Writes words that sell: a creative in beret and turtleneck with a megaphone to get the message out and quote marks on the chest."},
+    {"id": "legal:review-contract", "label": "legal:review-contract", "short": "contract",
+     "outfit": "robe_navy", "headwear": "barrister_wig", "prop": "contract_scroll", "emblem": "jabot", "expression": "focused",
+     "compact_accent": "contract_scroll",
+     "why": "Reads the contract closely: a barrister in wig, robe and white collar bands holding a contract with a signature line and a red seal."},
+    {"id": "finance:reconciliation", "label": "finance:reconciliation", "short": "reconcile",
+     "outfit": "shirt_vest_steel", "headwear": "coin_stack", "prop": "calculator", "emblem": "equals", "expression": "focused",
+     "compact_accent": "calculator",
+     "why": "Makes both sides of the books match: a stack of coins on the head, a calculator in hand and an equals sign on the chest."},
+    {"id": "marketing:seo-audit", "label": "marketing:seo-audit", "short": "seo-audit",
+     "outfit": "tee_teal", "headwear": "arrow_up", "prop": "magnifier", "emblem": "bars_up", "expression": "happy",
+     "compact_accent": "magnifier",
+     "why": "Gets pages found and ranking higher: a search magnifying glass, a rising bar chart and an up arrow on the head."}
+  ]
+}

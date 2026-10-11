@@ -12,7 +12,7 @@ export type Employee = {
   mood: Mood
   /** What it is doing now, as one plain sentence (see hooks/activity.ts); none before its first step. */
   activity?: string
-  /** What it said in its last step, as one to three plain sentences (see narrationOf); gone when its next step starts or its run ends. */
+  /** What it said in its last step, as one to three plain sentences (see narrationOf); kept until newer words replace it, and gone when its run ends. */
   said?: string
   tools: number
   startedAt: number

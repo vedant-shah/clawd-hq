@@ -260,7 +260,7 @@ const linesOf = async ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') 
   return texts
 }
 
-test('the row shows what the specialist says, wrapped, above the tool line, and it follows the specialist as it goes on', async ($, on) => {
+test('the row shows what the specialist says, wrapped, above the tool line, and they stay until newer words replace them', async ($, on) => {
   hostWithSpecialist(on)
   let answer = 'Now I will read the scoring rules. They decide the ranking. I will compare them with the tests. Then I will report.'
   on('turn.step', async function* (_$, e) {
@@ -280,16 +280,24 @@ test('the row shows what the specialist says, wrapped, above the tool line, and 
     expect(texts.map(t => t.text)).toContain('Reading scoring.ts')
   }
 
-  // The next request starts: the old words are gone while it thinks, and the new ones replace them.
+  // The next request starts, and a step that only calls a tool says nothing: the last words stay, with the new tool line under them.
+  answer = ''
+  await step($, 1)
+  await call($, 'Bash', { command: 'sleep 15', description: 'Pausing a moment' })
+  const kept = (await linesOf($)).map(t => t.text)
+  expect(kept.some(t => t.startsWith('Now I will read the scoring rules.'))).toBe(true)
+  expect(kept).toContain('Pausing a moment')
+
+  // New words replace them.
   answer = 'The ranking looks right. Checking the footer next.'
-  const run = $.turn.step({ turnId: 'r1', index: 1, model: 'm', messageCount: 5, agentId: 't1' } as never)
+  const run = $.turn.step({ turnId: 'r1', index: 2, model: 'm', messageCount: 7, agentId: 't1' } as never)
   await run.next()
-  expect((await linesOf($)).some(t => t.text.startsWith('Now I will read'))).toBe(false)
   let part = await run.next()
   while (!part.done) part = await run.next()
   await call($, 'Edit', { file_path: '/repo/footer.tsx', old_string: 'a', new_string: 'b' })
   const after = await linesOf($)
   expect(after.some(t => t.text === 'The ranking looks right. Checking the footer next.')).toBe(true)
+  expect(after.some(t => t.text.startsWith('Now I will read'))).toBe(false)
   expect(after.map(t => t.text)).toContain('Editing footer.tsx')
 })
 

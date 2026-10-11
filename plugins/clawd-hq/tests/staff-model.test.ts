@@ -184,7 +184,7 @@ test('over the cap the longest-gone finishers leave first, and a running special
 
 // ---- The specialist's own words ----
 
-test('what a specialist says is kept on its record, and a new request, the end of a run or a new run clears it', () => {
+test('what a specialist says is kept on its record, and the end of a run or a new run clears it', () => {
   const talking = withSaid(emp({ activity: 'Reading a.ts' }), 'Checking the rules.')
   expect(talking.said).toBe('Checking the rules.')
   expect(withTool(talking, 'Editing b.ts').said).toBe('Checking the rules.')

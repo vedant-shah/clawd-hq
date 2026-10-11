@@ -125,8 +125,7 @@ async function signOfLife($: EngineInterface, id: string, activity?: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
   await update($, staff, l => edit(l, id, one => {
     const back = touch(restart(one, now, t), now)
-    // A new request starts: what was said in the last one is behind it now.
-    return activity === undefined ? back : { ...back, activity, said: undefined }
+    return activity === undefined ? back : { ...back, activity }
   }))
 }
 

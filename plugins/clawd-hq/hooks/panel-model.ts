@@ -1,7 +1,8 @@
 // What the side panel shows, as pure functions: who is at work, who finished, what is waiting, how decisions group.
 import type { Ask, Badge, Employee, Memory } from '../types'
 import { READING_BRIEF } from './activity'
-import { ago, displayName, looksOf, roleOf } from './office'
+import { whoOf } from './desk'
+import { ago, bareType, roleOf } from './office'
 import type { PanelData } from './panel-types'
 
 /** Stand-in employees of the tour have ids that start with this. */
@@ -16,9 +17,9 @@ export function tokensLabel(n = 0): string {
   return n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n)
 }
 
-/** "Taro the Tester": the name this type goes by and the role its description and brief suggest. */
-export const titled = (one: Employee, data: Pick<PanelData, 'staff' | 'roster' | 'blurbs'>) =>
-  `${displayName(one, data.staff, data.roster)} the ${roleOf(one.type, `${data.blurbs[one.type] ?? ''} ${one.prompt}`).title}`
+/** "Tester": what this specialist is, in one or two plain words: the role its type, description and brief suggest. */
+export const titled = (one: Employee, data: Pick<PanelData, 'blurbs'>) =>
+  roleOf(one.type, `${data.blurbs[one.type] ?? ''} ${one.prompt}`).title
 
 export const atWork = (staff: Employee[]): Employee[] => staff.filter(isActive)
 
@@ -75,12 +76,9 @@ export function waitingSummary(waiting: Ask[]): string {
   return [count(decisions, 'decision'), count(questions, 'question')].filter(Boolean).join(' · ')
 }
 
-/** "Sage" from "Sage the Guard". */
-export const firstName = (from: string) => from.split(' the ')[0] ?? from
-
 /** The label of the button that opens the CEO desk. */
 export function seeNeedsLabel(waiting: Ask[]): string {
-  const names = [...new Set(waiting.map(a => firstName(a.from)))]
+  const names = [...new Set(waiting.map(a => whoOf(a.from)))]
   if (names.length === 1) return `See what ${names[0]} needs`
   return names.length === 2 ? `See what ${names[0]} and ${names[1]} need` : `See what ${names.length} people need`
 }
@@ -119,7 +117,7 @@ const match = (haystack: string[], query: string) => {
   return q === '' || haystack.some(h => h.toLowerCase().includes(q))
 }
 
-export const filterMemory = (entries: Memory[], query: string): Memory[] => entries.filter(m => match([m.text, m.by], query))
+export const filterMemory = (entries: Memory[], query: string): Memory[] => entries.filter(m => match([m.text, whoOf(m.by)], query))
 
 // ---- People ----
 
@@ -135,14 +133,18 @@ export function splitPeople(people: Person[], query: string): { team: Person[]; 
   return { team: found.filter(p => !p.isOff), pool: found.filter(p => p.isOff) }
 }
 
-/** Every agent type on the books, as a person: "Pip the Planner", where it comes from, how often it was hired. */
+/** Every agent type on the books, as a person: "Planner", where it comes from, how often it was hired. */
 export function buildPeople(types: string[], blurbs: Record<string, string>, roster: Record<string, Badge>, laidOff: string[]): Person[] {
   const off = new Set(laidOff)
-  return [...new Set(types)].sort().map(type => {
-    const blurb = blurbs[type] ?? ''
+  const roles = [...new Set(types)].sort().map(type => ({ type, title: roleOf(type, blurbs[type] ?? '').title }))
+  return roles.map(({ type, title }) => {
+    // A role two types share is told apart by the type (or, if that only repeats the role, by its plugin).
+    const shared = roles.filter(r => r.title === title).length > 1
+    const bare = bareType(type)
+    const tag = bare.toLowerCase() === title.toLowerCase() ? pluginOf(type) : bare
     return {
-      type, blurb, plugin: pluginOf(type), jobs: roster[type]?.jobs ?? 0, isOff: off.has(type),
-      name: `${looksOf(type, roster).name} the ${roleOf(type, blurb).title}`,
+      type, blurb: blurbs[type] ?? '', plugin: pluginOf(type), jobs: roster[type]?.jobs ?? 0, isOff: off.has(type),
+      name: shared ? `${title} (${tag})` : title,
     }
   })
 }

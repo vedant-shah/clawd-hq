@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  atWork, buildPeople, newestFirst, recentFailures, canLayOff, dayLabel, doneLine, doneThisSession, filterMemory, firstName, groupByDay, pluginOf,
+  atWork, buildPeople, newestFirst, recentFailures, canLayOff, dayLabel, doneLine, doneThisSession, filterMemory, groupByDay, pluginOf,
   seeNeedsLabel, splitPeople, statusOf, tokensLabel, waitingSummary, workLine,
 } from '../hooks/panel-model'
 import type { Person } from '../hooks/panel-model'
@@ -11,7 +11,7 @@ const emp = (over: Partial<Employee>): Employee => ({
   id: 'a1', type: 'ecc:planner', description: 'Plan it', prompt: '', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, ...over,
 })
 const ask = (over: Partial<Ask>): Ask => ({
-  id: 'D1', kind: 'decision', title: 'OK?', options: [], from: 'Sage the Guard', source: 'tool', status: 'open', askedAt: 0, isDelivered: false, ...over,
+  id: 'D1', kind: 'decision', title: 'OK?', options: [], from: 'Guard', source: 'tool', status: 'open', askedAt: 0, isDelivered: false, ...over,
 })
 const mem = (over: Partial<Memory>): Memory => ({ id: 'M1', kind: 'decision', text: 'Use Postgres', by: 'CEO', at: 0, source: 'desk', ...over })
 
@@ -92,13 +92,11 @@ test('Clawd says "All clear", or how many need the CEO, or who failed', () => {
   expect(statusOf(1, ['Rex'])).toEqual({ isClear: false, text: '1 needs you · Rex failed' })
 })
 
-test('the button names who is waiting', () => {
-  expect(firstName('Sage the Guard')).toBe('Sage')
-  expect(firstName('Clawd')).toBe('Clawd')
-  expect(firstName('Bean 71 the Writer')).toBe('Bean 71')
-  expect(seeNeedsLabel([ask({}), ask({ id: 'D2' })])).toBe('See what Sage needs')
-  expect(seeNeedsLabel([ask({}), ask({ id: 'D2', from: 'Rex the Reviewer' })])).toBe('See what Sage and Rex need')
-  expect(seeNeedsLabel([ask({}), ask({ from: 'Rex the Reviewer' }), ask({ from: 'Pip the Planner' })])).toBe('See what 3 people need')
+test('the button names who is waiting, by role; an older "Name the Role" reads as its role', () => {
+  expect(seeNeedsLabel([ask({}), ask({ id: 'D2' })])).toBe('See what Guard needs')
+  expect(seeNeedsLabel([ask({}), ask({ id: 'D2', from: 'Reviewer' })])).toBe('See what Guard and Reviewer need')
+  expect(seeNeedsLabel([ask({}), ask({ from: 'Reviewer' }), ask({ from: 'Planner' })])).toBe('See what 3 people need')
+  expect(seeNeedsLabel([ask({}), ask({ from: 'Sage the Guard' })])).toBe('See what Guard needs')
 })
 
 test('a day reads as OCTOBER 10, with the year only when it is not this one', () => {
@@ -119,7 +117,7 @@ test('decisions group by day, newest first, and keep both kinds', () => {
 test('the filter matches the text or who said it, ignoring case and blanks', () => {
   const list = [mem({ id: 'M1', text: 'Use Postgres' }), mem({ id: 'M2', text: 'Quiet mode', kind: 'choice', by: 'Rex the Reviewer' })]
   expect(filterMemory(list, 'postgres').map(e => e.id)).toEqual(['M1'])
-  expect(filterMemory(list, '  REX ').map(e => e.id)).toEqual(['M2'])
+  expect(filterMemory(list, '  REVIEWER ').map(e => e.id)).toEqual(['M2'])
   expect(filterMemory(list, '   ')).toHaveLength(2)
   expect(filterMemory(list, 'zzz')).toHaveLength(0)
 })
@@ -133,15 +131,15 @@ test('a type shows its plugin, and only plugin types can be laid off', () => {
 
 test('people split into team and talent pool, and the search covers name, plugin and blurb', () => {
   const people: Person[] = [
-    { type: 'ecc:planner', name: 'Pip the Planner', plugin: 'ecc', jobs: 3, blurb: 'Plans work', isOff: false },
-    { type: 'legal:review-contract', name: 'Lex the Lawyer', plugin: 'legal', jobs: 0, blurb: 'Reads contracts', isOff: true },
+    { type: 'ecc:planner', name: 'Planner', plugin: 'ecc', jobs: 3, blurb: 'Plans work', isOff: false },
+    { type: 'legal:review-contract', name: 'Lawyer', plugin: 'legal', jobs: 0, blurb: 'Reads contracts', isOff: true },
   ]
   expect(splitPeople(people, '').team.map(p => p.type)).toEqual(['ecc:planner'])
   expect(splitPeople(people, '').pool.map(p => p.type)).toEqual(['legal:review-contract'])
   expect(splitPeople(people, 'legal').pool).toHaveLength(1)
   expect(splitPeople(people, 'legal').team).toHaveLength(0)
   expect(splitPeople(people, 'contracts').pool).toHaveLength(1)
-  expect(splitPeople(people, 'pip').team).toHaveLength(1)
+  expect(splitPeople(people, 'planner').team).toHaveLength(1)
 })
 
 test('recent failures are real specialists that failed lately, newest first', () => {
@@ -165,11 +163,11 @@ test('the newest decisions come first and are cut to the limit', () => {
   expect(newestFirst(list, 10)).toHaveLength(3)
 })
 
-test('people are built from the books: a name, the plugin, the hire count and whether they are laid off', () => {
-  const people = buildPeople(['ecc:planner', 'Explore', 'ecc:planner'], { 'ecc:planner': 'Plans work' }, { 'ecc:planner': { name: 'Pip', jobs: 4 } }, ['Explore'])
+test('people are built from the books: a plain role name, the plugin, the hire count and whether they are laid off', () => {
+  const people = buildPeople(['ecc:planner', 'Explore', 'ecc:planner'], { 'ecc:planner': 'Plans work' }, { 'ecc:planner': { jobs: 4 } }, ['Explore'])
   expect(people).toHaveLength(2)
   const pip = people.find(p => p.type === 'ecc:planner')!
-  expect(pip).toMatchObject({ name: 'Pip the Planner', plugin: 'ecc', jobs: 4, blurb: 'Plans work', isOff: false })
+  expect(pip).toMatchObject({ name: 'Planner', plugin: 'ecc', jobs: 4, blurb: 'Plans work', isOff: false })
   expect(people.find(p => p.type === 'Explore')).toMatchObject({ plugin: 'built in', jobs: 0, isOff: true })
 })
 
@@ -179,4 +177,19 @@ test('the band above the prompt counts decisions and questions, each only when t
   expect(waitingSummary([d1!, d2!, q1!])).toBe('2 decisions · 1 question')
   expect(waitingSummary([q1!])).toBe('1 question')
   expect(waitingSummary([])).toBe('')
+})
+
+test('the memory search matches a note\'s role, not an old made-up name', () => {
+  const list = [mem({ id: 'M1', text: 'Use Postgres', kind: 'choice', by: 'Taro the Tester' }), mem({ id: 'M2', text: 'Quiet mode', kind: 'choice', by: 'Reviewer' })]
+  expect(filterMemory(list, 'tester').map(m => m.id)).toEqual(['M1'])
+  expect(filterMemory(list, 'taro')).toEqual([])
+  expect(filterMemory(list, 'reviewer').map(m => m.id)).toEqual(['M2'])
+})
+
+test('two types with the same role are told apart on the People tab by their type; a role held by one stands alone', () => {
+  const people = buildPeople(['acme:foo', 'acme:bar', 'ecc:planner'], {}, {}, [])
+  const names = people.map(p => p.name)
+  expect(names).toContain('Planner')
+  expect(names).toContain('Generalist (foo)')
+  expect(names).toContain('Generalist (bar)')
 })

@@ -1,4 +1,5 @@
 // The Decisions tab: what the project has settled, newest first, grouped by day.
+import { whoOf } from './desk'
 import { CLAWD_COLOR } from './office'
 import { filterMemory, groupByDay, newestFirst } from './panel-model'
 import type { Kit } from './panel-kit'
@@ -19,7 +20,7 @@ function entry(m: Memory, { Box, Text, Button }: Kit, actions: PanelActions) {
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         {isYou
           ? <Text wrap="wrap">{m.text}</Text>
-          : <Text wrap="wrap"><Text>{m.by}</Text><Text dimColor>{` · ${m.text}`}</Text></Text>}
+          : <Text wrap="wrap"><Text>{whoOf(m.by)}</Text><Text dimColor>{` · ${m.text}`}</Text></Text>}
       </Box>
       <Button key={`forget-${m.id}`} plain dimColor label="forget" onPress={() => actions.forget(m.id)} />
     </Box>

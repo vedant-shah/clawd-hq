@@ -39,12 +39,6 @@ export const GENERALIST: Role = {
   key: 'generalist', title: 'Generalist', prop: '💼', words: /.^/, hello: 'A Generalist. Jack of all trades!',
 }
 
-export const NAMES = [
-  'Pip', 'Nova', 'Bolt', 'Mochi', 'Ziggy', 'Juno', 'Taro', 'Bea', 'Kiwi', 'Remy', 'Lumi', 'Otto', 'Fig', 'Dot', 'Rook', 'Suki',
-  'Milo', 'Ivy', 'Gus', 'Wren', 'Biscuit', 'Nori', 'Pixel', 'Clover', 'Echo', 'Sage', 'Waffles', 'Indie', 'Basil', 'Peaches', 'Tofu', 'Rex',
-  'Opal', 'Chip', 'Luna', 'Momo', 'Pickle', 'Hazel', 'Yuki', 'Ollie', 'Dune', 'Maple', 'Bean', 'Zara', 'Cosmo', 'Tilly', 'Bao', 'Atlas',
-  'Poppy', 'Ash', 'Noodle', 'Quinn', 'Sprout', 'Jinx', 'Moss', 'Kit', 'Olive', 'Toast', 'Rumi', 'Echo II', 'Pebble', 'Sunny', 'Mango', 'Vale',
-]
 export function hash(text: string): number {
   let h = 2166136261
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
@@ -53,27 +47,12 @@ export function hash(text: string): number {
 
 const pick = <T>(list: T[], seed: number): T => list[seed % list.length] as T
 
-const bareType = (type: string) => type.replace(/^[^:]+:/, '').replace(/^\([^()]*\)\s*/, '')
+export const bareType = (type: string) => type.replace(/^[^:]+:/, '').replace(/^\([^()]*\)\s*/, '')
 
 /** The role is read from the agent's type first, then its instructions. */
 export function roleOf(type: string, blurb = ''): Role {
   const bare = bareType(type)
   return ROLES.find(r => r.words.test(bare)) ?? ROLES.find(r => r.words.test(blurb)) ?? GENERALIST
-}
-
-/** A name for a type new to the roster: its hash's pick, walked on past names taken. */
-export function nameFor(type: string, taken: Set<string>): string {
-  const seed = hash(type)
-  for (let i = 0; i < NAMES.length; i++) {
-    const name = NAMES[(seed + i) % NAMES.length] as string
-    if (!taken.has(name)) return name
-  }
-  return `${pick(NAMES, seed)} ${taken.size}`
-}
-
-/** A type's name on the books, so a type always comes back as the same person. */
-export function looksOf(type: string, roster: Record<string, Badge> = {}) {
-  return { name: roster[type]?.name ?? pick(NAMES, hash(type)) }
 }
 
 export function clip(text: string, width: number): string {
@@ -86,13 +65,6 @@ export function ago(ms: number): string {
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`
-}
-
-export function displayName(e: Employee, staff: Employee[], roster: Record<string, Badge> = {}): string {
-  const same = staff.filter(o => o.type === e.type)
-  const n = same.findIndex(o => o.id === e.id)
-  const name = looksOf(e.type, roster).name
-  return same.length > 1 && n > 0 ? `${name} #${n + 1}` : name
 }
 
 // ---- Clawd, the chief of staff ----
@@ -113,9 +85,9 @@ export const CLAWD_LINES: Record<ClawdMood, string[]> = {
   chill: ['Shell yeah, quiet day.', 'Sipping coffee, admiring the roadmap.', 'Anyone need anything? No? Great.', 'I alphabetised the agents. Again.', 'Inbox zero. I am unstoppable.'],
   focused: ['Claws on keyboard.', 'Let’s get cracking.', 'Reading. Thinking. Pinching.', 'In the zone. Do not disturb.'],
   delegating: ['Delegation is a love language.', 'Teamwork makes the dream work.'],
-  proud: ['Claw-some work, {name}!', '{name} nailed it. Raise incoming.', 'That’s my {title}!'],
+  proud: ['Claw-some work, {title}!', 'The {title} nailed it. Raise incoming.', 'That’s my {title}!'],
   stressed: ['{n} agents at once? I’m a crab, not an octopus.', 'Everything is fine. Totally fine. 💦', 'Who approved all this headcount? Oh. Me.'],
-  oops: ['Nobody panic. I’m panicking.', '{name}, take the rest of the day.', 'We’ll call that a learning opportunity.'],
+  oops: ['Nobody panic. I’m panicking.', 'Take the rest of the day, {title}.', 'We’ll call that a learning opportunity.'],
   sleepy: ['zZz…', '…five more minutes…', '…mmh… delegate… the… zZz'],
   waiting: ['The CEO has {q} thing(s) to decide. No pressure.', 'Your desk, boss: {q} waiting. I’ve kept everyone busy meanwhile.', 'Holding the fort until the CEO decides.'],
 }

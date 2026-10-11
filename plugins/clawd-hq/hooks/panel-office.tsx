@@ -1,7 +1,7 @@
 // The Office tab: Clawd's card and who is at work. Finished work lives in the Log tab.
 import { clawdAvatar, assemble, avatarFor } from './avatars'
 import { clawdMood, isBlinking, quipOf } from './clawd-says'
-import { AMBER, GREEN, displayName } from './office'
+import { AMBER, GREEN } from './office'
 import { atWork, isWaiting, recentFailures, seeNeedsLabel, statusOf, titled, workLine } from './panel-model'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -18,10 +18,10 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   const { staff, boss, tick, now, asks } = data
   const waiting = asks.filter(isWaiting)
   const working = atWork(staff)
-  const failed = recentFailures(staff, now, SICK_MS).map(one => displayName(one, staff, data.roster))
+  const failed = recentFailures(staff, now, SICK_MS).map(one => titled(one, data))
   const status = statusOf(waiting.length, failed)
   const mood = clawdMood(boss, working.length, waiting.length, tick, now)
-  const said = quipOf(boss, mood, tick, { name: boss.lastName, title: boss.lastTitle, n: working.length, q: waiting.length })
+  const said = quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length, q: waiting.length })
   const canResume = !boss.isBusy && working.length === 0 && boss.task !== undefined
   const isStacked = cw < 50
   const { full } = clawdAvatar(isBlinking(tick))

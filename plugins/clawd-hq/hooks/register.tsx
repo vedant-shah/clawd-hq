@@ -7,7 +7,7 @@ import type { Effort } from './desk'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
 import { renderDesk } from './desk-pane'
-import { ACCENT, BRAND, ago, clip, hash, looksOf, nameFor, roleOf } from './office'
+import { ACCENT, BRAND, ago, clip, hash, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { DEMO, isActive, isWaiting, waitingSummary } from './panel-model'
@@ -63,7 +63,7 @@ const efforts = new Map<string, Effort>()
 
 const isAtDesk = (e: Employee, t: number) => isActive(e) || (e.doneTick !== undefined && t - e.doneTick < CHEER_TICKS)
 
-/** Puts a type on the books with a name of its own, kept across sessions in the store. */
+/** Puts a type on the books, with how often it was hired, kept across sessions in the store. */
 async function enroll($: EngineInterface, type: string, jobs: number) {
   const mine = await read($, roster)
   const saved = Object.keys(mine).length === 0 ? ((await $.store.get('roster')) as Record<string, Badge> | undefined) : undefined
@@ -72,8 +72,7 @@ async function enroll($: EngineInterface, type: string, jobs: number) {
     if (saved) await update($, roster, () => cur)
     return
   }
-  const taken = new Set(Object.values(cur).map(b => b.name))
-  const badge = cur[type] ?? { name: nameFor(type, taken), jobs: 0 }
+  const badge = cur[type] ?? { jobs: 0 }
   const next = { ...cur, [type]: { ...badge, jobs: badge.jobs + jobs } }
   await update($, roster, () => next)
   await $.store.set('roster', next)
@@ -111,13 +110,12 @@ async function clockOut($: EngineInterface, id: string, mood: Mood, how: EndedBy
   // Lost contact is neither a win nor a failure: no toast, no cheer.
   if (!e || mood === 'lost') return
   const role = roleOf(e.type, e.description)
-  const name = looksOf(e.type, await read($, roster)).name
   await setBoss($, b => (mood === 'done'
-    ? { ...b, proudUntil: t + 10, oopsUntil: 0, lastName: name, lastTitle: role.title, wins: b.wins + 1 }
-    : { ...b, oopsUntil: t + 10, proudUntil: 0, lastName: name, lastTitle: role.title, fails: b.fails + 1 }))
+    ? { ...b, proudUntil: t + 10, oopsUntil: 0, lastTitle: role.title, wins: b.wins + 1 }
+    : { ...b, oopsUntil: t + 10, proudUntil: 0, lastTitle: role.title, fails: b.fails + 1 }))
   $.ui.toast(mood === 'done'
-    ? `${role.prop} ${name} the ${role.title} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
-    : `🤕 ${name} the ${role.title} could not finish: ${e.description || e.type}`)
+    ? `${role.prop} ${role.title} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
+    : `🤕 ${role.title} could not finish: ${e.description || e.type}`)
 }
 
 /** Any sign of life from a specialist (a tool call, a model step): it is heard from now, and a finished one is back at work. */
@@ -420,11 +418,11 @@ async function startDemo($: EngineInterface) {
       decision = await fileAsk($, {
         kind: 'decision', title: 'Store scores in DynamoDB or Postgres?', detail: 'Scores are read per survey, written once a day.',
         options: ['DynamoDB', 'Postgres'], recommend: 'DynamoDB', fallback: 'carrying on with DynamoDB',
-        from: looksOf('ecc:architect', await read($, roster)).name + ' the Architect', fromType: 'ecc:architect', fromId: id('arch'), source: 'tool',
+        from: 'Architect', fromType: 'ecc:architect', fromId: id('arch'), source: 'tool',
       }, true)
       await fileAsk($, {
         kind: 'question', title: 'Which quarter should the deal report cover?', options: [],
-        from: looksOf('acme-ops:(o_o) data-analyst', await read($, roster)).name + ' the Analyst', fromId: id('data'), source: 'report',
+        from: 'Analyst', fromId: id('data'), source: 'report',
       }, true)
       await demoWork($, id('tdd'), 'Bash', { command: 'npm test', description: 'Run the review panel tests' })
     }],
@@ -619,8 +617,7 @@ export const register: Register = on => {
 
     if (tool === ASK_TOOL) {
       const asker = id ? (await read($, staff)).find(one => one.id === id) : undefined
-      const books = await read($, roster)
-      const from = asker ? `${looksOf(asker.type, books).name} the ${roleOf(asker.type).title}` : 'Clawd'
+      const from = asker ? roleOf(asker.type).title : 'Clawd'
       const options = Array.isArray(input.options) ? (input.options as unknown[]).map(String).slice(0, 6) : []
       const kind = input.kind === 'decision' && options.length > 1 ? 'decision' : 'question'
       const filed = await fileAsk($, {
@@ -638,7 +635,7 @@ export const register: Register = on => {
       const decision = oneLine(String(input.decision ?? ''), DECISION_CHARS)
       // A subagent's call is its own note, never the user's decision.
       const caller = id ? (await read($, staff)).find(one => one.id === id) : undefined
-      const by = caller ? `${looksOf(caller.type, await read($, roster)).name} the ${roleOf(caller.type).title}` : 'agent'
+      const by = caller ? roleOf(caller.type).title : 'agent'
       const mine = id === undefined ? { kind: 'decision' as const, by: 'CEO' } : { kind: 'choice' as const, by }
       await remember($, { ...mine, text: decision, source: 'clawd' }, typeof input.supersedes === 'string' ? input.supersedes : undefined)
       const t = await read($, tick)
@@ -708,12 +705,12 @@ export const register: Register = on => {
       // A report's CEO-DECISION and CEO-QUESTION lines land on the desk.
       const raised = parseReport(e.answer ?? '')
       if (asker && raised.length > 0) {
-        const from = `${looksOf(asker.type, await read($, roster)).name} the ${roleOf(asker.type).title}`
+        const from = roleOf(asker.type).title
         for (const r of raised) await fileAsk($, { ...r, from, fromType: asker.type, fromId: asker.id, source: 'report' })
       }
       // Key choices the agent made itself go into the project's memory.
       if (asker && !asker.id.startsWith(DEMO)) {
-        const by = `${looksOf(asker.type, await read($, roster)).name} the ${roleOf(asker.type).title}`
+        const by = roleOf(asker.type).title
         for (const text of parseChoices(e.answer ?? '')) await remember($, { kind: 'choice', text, by, source: 'report' })
       }
       await clockOut($, e.agentId, e.reason === 'answer' ? 'done' : 'failed')

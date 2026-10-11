@@ -59,7 +59,7 @@ test('a specialist at work is one full-width row: avatar, name and task, then wh
     expect((await ui.find({ key: 'floor-rows' }))?.props.flexWrap).toBeUndefined()
 
     // Line 1: the name in bold, then the task, dim.
-    expect((await ui.find({ type: 'Text', text: /^\w+ the Tester$/ }))?.props.bold).toBe(true)
+    expect((await ui.find({ type: 'Text', text: /^Tester$/ }))?.props.bold).toBe(true)
     const task = await ui.find({ type: 'Text', text: /^ Build redesigned panel$/ })
     expect(task?.props.dimColor).toBe(true)
     // Line 2: one plain sentence, then the time and tokens, dim.
@@ -105,7 +105,7 @@ test('a long task wraps in the row: it is never cut with a mark', async ($, on) 
   await $.agent.spawn({ prompt: 'p', description: 'Write a very long description '.repeat(10), subagentType: 'ecc:tdd-guide' } as never)
   await call($, 'Read', { file_path: '/repo/a.ts' })
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  const line = (await ui.findAll({ type: 'Text' })).find(t => /^\w+ the Tester Write a very long/.test(t.text))
+  const line = (await ui.findAll({ type: 'Text' })).find(t => /^Tester Write a very long/.test(t.text))
   expect(line).toBeDefined()
   expect(line?.props.wrap).toBe('wrap')
   expect(line?.text).not.toContain('\n')
@@ -373,4 +373,29 @@ test('words that arrive after a run was sent home are not kept: if the run goes 
   const texts = (await linesOf($)).map(t => t.text)
   expect(texts).toContain('Editing b.ts')
   expect(texts.join('\n')).not.toContain('with the key')
+})
+
+
+// ---- A specialist is known by its role: one or two plain words, no made-up name ----
+
+test('a specialist reads as its role alone, and two of one role read the same, each told apart by its task', async ($, on) => {
+  const agents = [
+    { id: 't1', type: 'ecc:tdd-guide', description: 'First job', status: 'running' },
+    { id: 't2', type: 'ecc:tdd-guide', description: 'Second job', status: 'running' },
+  ]
+  host(on, agents)
+  let n = 0
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `t${(n += 1)}` }))
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  await $.agent.spawn({ prompt: 'p', description: 'First job', subagentType: 'ecc:tdd-guide' } as never)
+  await $.agent.spawn({ prompt: 'p', description: 'Second job', subagentType: 'ecc:tdd-guide' } as never)
+  await call($, 'Read', { file_path: '/repo/a.ts' }, 't1')
+  await call($, 'Read', { file_path: '/repo/a.ts' }, 't2')
+  for (const surface of SURFACES) {
+    const texts = (await linesOf($, surface)).map(t => t.text)
+    expect(texts.filter(t => t === 'Tester')).toHaveLength(2)
+    expect(texts).toContain(' First job')
+    expect(texts).toContain(' Second job')
+    expect(texts.some(t => /#\d|\bthe Tester\b/.test(t))).toBe(false)
+  }
 })

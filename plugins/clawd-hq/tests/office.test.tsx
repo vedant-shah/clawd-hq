@@ -254,7 +254,7 @@ test('a finished specialist moves to the Log tab, not the Office; there is no br
     await ui.unmount()
 
     const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
-    expect(await log.find({ type: 'Text', text: /the Writer$/ })).toBeDefined()
+    expect(await log.find({ type: 'Text', text: /^Writer$/ })).toBeDefined()
     expect(await log.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
     expect(await log.find({ type: 'Text', text: /1h 0m ago/ })).toBeDefined()
     expect(await log.find({ type: 'Text', text: /took \d+[sm]/ })).toBeDefined()
@@ -563,3 +563,21 @@ test('a subagent calling remember leaves a reference note, not a user decision',
   expect(text).toContain('Choice (')
 })
 
+
+
+test('the toasts and Clawd say the role, never a made-up name', async ($, on) => {
+  const { toasts } = host(on, [])
+  let n = 0
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `n${(n += 1)}` }))
+  await $.agent.spawn({ prompt: 'p', description: 'Check the build', subagentType: 'ecc:tdd-guide' } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'n1', isAborted: false } as never)
+  await $.agent.spawn({ prompt: 'p', description: 'Fix the build', subagentType: 'ecc:build-error-resolver' } as never)
+  await $.turn.complete({ reason: 'error', answer: '', turnId: 't2', agentId: 'n2', isAborted: false } as never)
+  expect(toasts.find(t => t.includes('finished'))).toMatch(/^\S+ Tester finished: Check the build \(/)
+  expect(toasts.find(t => t.includes('could not finish'))).toBe('🤕 Fixer could not finish: Fix the build')
+    for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect(await ui.find({ type: 'Text', text: /^! Fixer failed$/ })).toBeDefined()
+    await ui.unmount()
+  }
+})

@@ -1,4 +1,5 @@
 // The CEO Desk pane: what is waiting for the CEO, the answers not yet sent, and the decision log.
+import { whoOf } from './desk'
 import { ACCENT, ago, clip } from './office'
 import type { PanelTools } from './panel-kit'
 import { isWaiting } from './panel-model'
@@ -18,7 +19,7 @@ function item(a: Ask, i: number, { Box, Text, Button, Input }: DeskTools, now: n
   const isTop = i === 0
   return (
     <Box key={`ask-${a.id}`} borderStyle={isTop ? 'double' : 'round'} borderColor={a.kind === 'decision' ? ACCENT : YELLOW} paddingX={1} flexDirection="column" marginBottom={1}>
-      <Text dimColor wrap="truncate">{a.id} · {a.kind === 'decision' ? 'DECISION' : 'QUESTION'} · from {a.from} · {ago(now - a.askedAt)} ago</Text>
+      <Text dimColor wrap="truncate">{a.id} · {a.kind === 'decision' ? 'DECISION' : 'QUESTION'} · from {whoOf(a.from)} · {ago(now - a.askedAt)} ago</Text>
       <Text bold wrap="wrap">{a.title}</Text>
       {a.detail !== undefined && <Text dimColor wrap="wrap">{a.detail}</Text>}
       {a.recommend !== undefined && <Text color="green" wrap="wrap">★ Recommends: {a.recommend}</Text>}
@@ -70,7 +71,7 @@ export function renderDesk(tools: DeskTools, { list, boss, now }: DeskData, acts
             <Text wrap="truncate">
               <Text color={a.status === 'dismissed' ? undefined : 'green'} dimColor={a.status === 'dismissed'}>{a.status === 'dismissed' ? '–' : '✓'} {a.id}</Text>
               <Text> {clip(a.title, 40)}</Text>
-              <Text dimColor> → {a.answer} · {a.from}</Text>
+              <Text dimColor> → {a.answer} · {whoOf(a.from)}</Text>
             </Text>
           ))}
         </Box>

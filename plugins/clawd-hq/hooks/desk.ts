@@ -24,6 +24,9 @@ export function fit(text: string, max: number): string {
   return (space > max / 2 ? cut.slice(0, space) : cut).trimEnd()
 }
 
+/** Who something is from: "Guard", or "Guard" from an older "Sage the Guard"; "CEO" and "Clawd" stay as they are. */
+export const whoOf = (from: string) => from.split(' the ').pop() ?? from
+
 const LINE = /^[ \t]*[-*]?[ \t]*CEO-(DECISION|QUESTION):[ \t]*(.+?)[ \t]*$/gim
 
 /** The CEO-DECISION and CEO-QUESTION lines of a subagent's final report. */
@@ -115,7 +118,7 @@ export function parseChoices(text: string): string[] {
 
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
 
-const memoryLine = (m: Memory) => `- ${day(m.at)} · ${m.kind === 'decision' ? 'Decision' : 'Choice'} (${m.by}): ${m.text}`
+const memoryLine = (m: Memory) => `- ${day(m.at)} · ${m.kind === 'decision' ? 'Decision' : 'Choice'} (${whoOf(m.by)}): ${m.text}`
 
 /**
  * The memory as lines a model reads, newest last: the user's decisions first, then agents' choices

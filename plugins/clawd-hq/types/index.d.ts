@@ -70,7 +70,7 @@ export type Memory = {
 export type Payroll = { laidOff: string[]; isReviewed: boolean; stacks: string[] }
 
 /** An agent type's place on the books, kept across sessions. */
-export type Badge = { name: string; jobs: number }
+export type Badge = { jobs: number }
 
 export type Boss = {
   activity: string
@@ -79,7 +79,6 @@ export type Boss = {
   turns: number
   proudUntil: number
   oopsUntil: number
-  lastName: string
   lastTitle: string
   quip?: { text: string; until: number }
   /** The last thing the user asked for, and how that turn ended. */

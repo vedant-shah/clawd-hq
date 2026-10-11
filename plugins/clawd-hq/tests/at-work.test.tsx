@@ -206,6 +206,7 @@ test('a specialist waiting on you shows "Waiting on you: <the question>" in ambe
     expect(waiting?.props.color).toBe(AMBER)
     // A question waiting on you is not muted: it needs you.
     expect(waiting?.props.dimColor).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^Now: $/ })).toBeUndefined()
     expect((await ui.find({ type: 'Text', text: /^ · 4m$/ }))?.props.dimColor).toBe(true)
     expect((await ui.find({ key: 'desk-t1' }))?.props.borderColor).toBe(AMBER)
     expect(await ui.find({ type: 'Text', text: /^Reading a\.ts$/ })).toBeUndefined()
@@ -281,6 +282,9 @@ test('the row shows what the specialist says, wrapped, above the tool line, and 
     expect(line?.text).toBe('Now I will read the scoring rules. They decide the ranking. I will compare them with the tests.')
     expect(line?.props.wrap).toBe('wrap')
     expect(line?.props.dimColor).toBeUndefined()
+    // Its words are in italics, as someone speaking; the tool line under it is labelled and muted.
+    expect(line?.props.italic).toBe(true)
+    expect(texts.find(t => t.text === 'Now: ')?.props.dimColor).toBe(true)
     // The tool line is still there, under it.
     expect(texts.map(t => t.text)).toContain('Reading scoring.ts')
   }
@@ -316,7 +320,7 @@ test('a step that only calls tools says nothing, so the row shows just the tool 
   await call($, 'Read', { file_path: '/repo/a.ts' })
   const texts = (await linesOf($)).map(t => t.text)
   expect(texts).toContain('Reading a.ts')
-  expect(texts.some(t => /^(Now|I will)/.test(t))).toBe(false)
+  expect(texts.some(t => /^(Now I|I will)/.test(t))).toBe(false)
 })
 
 test('the words are the specialist\'s own and are kept short: only the first sentences, with nothing of its code', async ($, on) => {

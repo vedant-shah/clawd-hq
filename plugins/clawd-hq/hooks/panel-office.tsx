@@ -50,7 +50,7 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   )
 }
 
-/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said, and, muted under it, what it is doing now. Every line wraps. */
+/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics), and, muted and labelled "Now:" under it, what it is doing. Every line wraps. */
 function deskRow(one: Employee, { kit, data }: Ctx) {
   const { Box, Text, sprite } = kit
   const line = workLine(one, data.asks, data.now)
@@ -61,8 +61,8 @@ function deskRow(one: Employee, { kit, data }: Ctx) {
       <Box flexShrink={0}>{picture}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text wrap="wrap"><Text bold>{titled(one, data)}</Text><Text dimColor>{` ${one.description || one.type}`}</Text></Text>
-        {line.said !== undefined && <Text key={`said-${one.id}`} wrap="wrap">{line.said}</Text>}
-        <Text wrap="wrap"><Text color={line.isWaiting ? AMBER : undefined} dimColor={line.isWaiting ? undefined : true}>{line.sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
+        {line.said !== undefined && <Text key={`said-${one.id}`} italic wrap="wrap">{line.said}</Text>}
+        <Text wrap="wrap">{!line.isWaiting && <Text dimColor>Now: </Text>}<Text color={line.isWaiting ? AMBER : undefined} dimColor={line.isWaiting ? undefined : true}>{line.sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
       </Box>
     </Box>
   )

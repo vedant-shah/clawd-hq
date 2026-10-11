@@ -50,7 +50,7 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   )
 }
 
-/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics), and, muted and labelled "Now:" under it, what it is doing. Every line wraps. */
+/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics) with only its time and tokens under it, or, until it has said anything, the tool it is running. Every line wraps. */
 function deskRow(one: Employee, { kit, data }: Ctx) {
   const { Box, Text, sprite } = kit
   const line = workLine(one, data.asks, data.now)
@@ -61,8 +61,16 @@ function deskRow(one: Employee, { kit, data }: Ctx) {
       <Box flexShrink={0}>{picture}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text wrap="wrap"><Text bold>{titled(one, data)}</Text><Text dimColor>{` ${one.description || one.type}`}</Text></Text>
-        {line.said !== undefined && <Text key={`said-${one.id}`} italic wrap="wrap">{line.said}</Text>}
-        <Text wrap="wrap">{!line.isWaiting && <Text dimColor>Now: </Text>}<Text color={line.isWaiting ? AMBER : undefined} dimColor={line.isWaiting ? undefined : true}>{line.sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
+        {line.said !== undefined
+          ? [
+            <Text key={`said-${one.id}`} italic wrap="wrap">{line.said}</Text>,
+            // The specialist has said what it does, so the tool is not repeated: only the time and tokens, muted.
+            <Text key={`stats-${one.id}`} dimColor wrap="wrap">{line.stats.replace(/^· /, '')}</Text>,
+          ]
+          : (
+            // Nothing said yet: the tool it is running stands in, labelled and muted (a question waiting on you stays amber and bright).
+            <Text wrap="wrap">{!line.isWaiting && <Text dimColor>Now: </Text>}<Text color={line.isWaiting ? AMBER : undefined} dimColor={line.isWaiting ? undefined : true}>{line.sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
+          )}
       </Box>
     </Box>
   )

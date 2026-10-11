@@ -265,7 +265,7 @@ const linesOf = async ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') 
   return texts
 }
 
-test('the row shows what the specialist says, wrapped, above the tool line, and they stay until newer words replace them', async ($, on) => {
+test('the row shows what the specialist says, wrapped, with only its time and tokens under it, and the words stay until newer words replace them', async ($, on) => {
   hostWithSpecialist(on)
   let answer = 'Now I will read the scoring rules. They decide the ranking. I will compare them with the tests. Then I will report.'
   on('turn.step', async function* (_$, e) {
@@ -282,20 +282,23 @@ test('the row shows what the specialist says, wrapped, above the tool line, and 
     expect(line?.text).toBe('Now I will read the scoring rules. They decide the ranking. I will compare them with the tests.')
     expect(line?.props.wrap).toBe('wrap')
     expect(line?.props.dimColor).toBeUndefined()
-    // Its words are in italics, as someone speaking; the tool line under it is labelled and muted.
+    // Its words are in italics, as someone speaking.
     expect(line?.props.italic).toBe(true)
-    expect(texts.find(t => t.text === 'Now: ')?.props.dimColor).toBe(true)
-    // The tool line is still there, under it.
-    expect(texts.map(t => t.text)).toContain('Reading scoring.ts')
+    // Under them only the time and tokens, muted: the tool is not repeated when the specialist has said what it does.
+    const all = texts.map(t => t.text)
+    expect(all).not.toContain('Reading scoring.ts')
+    expect(all).not.toContain('Now: ')
+    const stats = texts.find(t => /^\d+[sm]( · [\d.]+K tokens)?$/.test(t.text))
+    expect(stats?.props.dimColor).toBe(true)
   }
 
-  // The next request starts, and a step that only calls a tool says nothing: the last words stay, with the new tool line under them.
+  // The next request starts, and a step that only calls a tool says nothing: the last words stay, and the tool is not shown.
   answer = ''
   await step($, 1)
   await call($, 'Bash', { command: 'sleep 15', description: 'Pausing a moment' })
   const kept = (await linesOf($)).map(t => t.text)
   expect(kept.some(t => t.startsWith('Now I will read the scoring rules.'))).toBe(true)
-  expect(kept).toContain('Pausing a moment')
+  expect(kept).not.toContain('Pausing a moment')
 
   // New words replace them.
   answer = 'The ranking looks right. Checking the footer next.'
@@ -307,7 +310,7 @@ test('the row shows what the specialist says, wrapped, above the tool line, and 
   const after = await linesOf($)
   expect(after.some(t => t.text === 'The ranking looks right. Checking the footer next.')).toBe(true)
   expect(after.some(t => t.text.startsWith('Now I will read'))).toBe(false)
-  expect(after.map(t => t.text)).toContain('Editing footer.tsx')
+  expect(after.map(t => t.text)).not.toContain('Editing footer.tsx')
 })
 
 test('a step that only calls tools says nothing, so the row shows just the tool line', async ($, on) => {
@@ -320,6 +323,8 @@ test('a step that only calls tools says nothing, so the row shows just the tool 
   await call($, 'Read', { file_path: '/repo/a.ts' })
   const texts = (await linesOf($)).map(t => t.text)
   expect(texts).toContain('Reading a.ts')
+  // With nothing said, the tool line stands in, labelled.
+  expect(texts).toContain('Now: ')
   expect(texts.some(t => /^(Now I|I will)/.test(t))).toBe(false)
 })
 

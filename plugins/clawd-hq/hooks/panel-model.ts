@@ -43,13 +43,14 @@ export function workState(one: Employee, asks: Ask[], now: number): { isWaiting:
   return { isWaiting: true, label: `Waiting on you · ${ago(now - since)}` }
 }
 
-/** The right-hand lines of a finished row. */
-export function doneLine(one: Employee, now: number): { when: string; took: string; isFailed: boolean } {
+/** The right-hand lines of a finished row. Lost contact reads how long it was silent, not how long the run lasted. */
+export function doneLine(one: Employee, now: number): { when: string; took: string; isFailed: boolean; isLost: boolean } {
   const ended = one.endedAt ?? now
-  const span = ago(ended - one.startedAt)
   const when = `${ago(now - ended)} ago`
-  if (one.mood === 'failed') return { when, took: `Failed after ${span}`, isFailed: true }
-  return { when, took: `took ${span}${one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''}`, isFailed: false }
+  if (one.mood === 'lost') return { when, took: `Lost contact after ${ago(ended - (one.lastSeen ?? one.startedAt))}`, isFailed: false, isLost: true }
+  const span = ago(ended - one.startedAt)
+  if (one.mood === 'failed') return { when, took: `Failed after ${span}`, isFailed: true, isLost: false }
+  return { when, took: `took ${span}${one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''}`, isFailed: false, isLost: false }
 }
 
 /** Clawd's one status line: all clear, how many need the CEO, and who failed. */

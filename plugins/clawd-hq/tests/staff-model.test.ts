@@ -1,57 +1,154 @@
 import { expect, test } from 'claude-code/testing'
-import { endOfStatus, restart, withStep } from '../hooks/staff-model'
+import type { AgentStatus } from 'claude-code'
+import { QUIET_MS, STALE_MS, endOfStatus, endRun, markEngine, restart, touch, verdict, withStep } from '../hooks/staff-model'
 import type { Employee } from '../types'
 
+const MIN = 60_000
 const emp = (over: Partial<Employee>): Employee => ({
   id: 'a1', type: 'ecc:tdd-guide', description: 'Build', prompt: '', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, log: [], ...over,
 })
 const usage = (over: Partial<Record<'input_tokens' | 'output_tokens' | 'cache_read_input_tokens' | 'cache_creation_input_tokens', number>>) => ({
   input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, ...over,
 })
+const STATUSES: AgentStatus[] = ['pending', 'running', 'waiting', 'idle', 'completed', 'failed', 'killed']
 
-test('a finished specialist that is resumed starts a new run: fresh clock, no end, no old tool count or tokens', () => {
-  const ended = emp({ mood: 'done', startedAt: 10, endedAt: 500, doneTick: 3, tools: 12, tokens: 80_000, outTokens: 900, context: 70_000, tool: 'Read', target: 'a.ts' })
+// ---- A new run, or the same run going on ----
+
+test('a specialist resumed after a real stop starts a new run: fresh clock, no end, no old tool count, tokens or peak', () => {
+  const ended = emp({
+    mood: 'done', startedAt: 10, endedAt: 500, doneTick: 3, tools: 12, tokens: 80_000, outTokens: 900, peakInput: 79_000, context: 70_000,
+    tool: 'Read', target: 'a.ts', endedBy: 'signal', lastSeen: 480, log: ['walked in'],
+  })
   const again = restart(ended, 9_000, 40)
-  expect(again).toMatchObject({ mood: 'working', startedAt: 9_000, endedAt: undefined, doneTick: undefined, tools: 0, tokens: 0, outTokens: 0 })
-  expect(again.log[again.log.length - 1]).toBe('back at it')
+  expect(again).toEqual({
+    id: 'a1', type: 'ecc:tdd-guide', description: 'Build', prompt: '', mood: 'working', tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    startedAt: 9_000, endedAt: undefined, doneTick: undefined, joinedTick: 40, lastSeen: 9_000, endedBy: undefined, tool: undefined, target: undefined,
+    log: ['walked in', 'back at it'],
+  })
   // The old value was not touched.
-  expect(ended).toMatchObject({ mood: 'done', startedAt: 10, endedAt: 500, tools: 12 })
+  expect(ended).toMatchObject({ mood: 'done', startedAt: 10, endedAt: 500, tools: 12, tokens: 80_000 })
 })
 
-test('a failed specialist is restarted the same way', () => {
-  expect(restart(emp({ mood: 'failed', endedAt: 5 }), 100, 1)).toMatchObject({ mood: 'working', startedAt: 100, endedAt: undefined })
+test('a failed specialist is restarted the same way, whole', () => {
+  const failed = emp({ mood: 'failed', startedAt: 5, endedAt: 50, doneTick: 2, tools: 4, tokens: 900, endedBy: 'signal', log: ['x'] })
+  expect(restart(failed, 100, 7)).toEqual({
+    id: 'a1', type: 'ecc:tdd-guide', description: 'Build', prompt: '', mood: 'working', tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    startedAt: 100, endedAt: undefined, doneTick: undefined, joinedTick: 7, lastSeen: 100, endedBy: undefined, tool: undefined, target: undefined,
+    log: ['x', 'back at it'],
+  })
 })
 
-test('a specialist that is already at a desk is left exactly as it is', () => {
-  for (const mood of ['arriving', 'working', 'thinking'] as const) {
-    const one = emp({ mood, startedAt: 10 })
-    expect(restart(one, 9_000, 40)).toBe(one)
+test('a run ended by a guess (the engine list, or too long quiet) goes on as the same run: clock, tools and tokens kept', () => {
+  for (const endedBy of ['engine', 'stale'] as const) {
+    const guessed = emp({
+      mood: endedBy === 'stale' ? 'lost' : 'done', startedAt: 10, endedAt: 500, doneTick: 3, tools: 12, tokens: 80_000, outTokens: 900, peakInput: 79_000,
+      context: 70_000, endedBy, lastSeen: 480, joinedTick: 2, log: ['walked in'],
+    })
+    expect(restart(guessed, 9_000, 40)).toEqual({
+      ...guessed, mood: 'working', endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: 9_000, log: ['walked in', 'back at it'],
+    })
   }
 })
 
-test('the token figure is the latest request\'s whole input plus the output of every request, not each request\'s context added up', () => {
-  const first = withStep(emp({}), usage({ input_tokens: 10, cache_read_input_tokens: 80_000, output_tokens: 500 }), 'm')
-  const second = withStep(first, usage({ input_tokens: 20, cache_read_input_tokens: 81_000, cache_creation_input_tokens: 400, output_tokens: 600 }), 'm')
-  // 81 420 of input at the latest request, plus 500 + 600 generated.
+test('a specialist that is already at a desk is returned untouched, tools and tokens included', () => {
+  for (const mood of ['arriving', 'working', 'thinking'] as const) {
+    const one = emp({ mood, startedAt: 10, tools: 5, tokens: 1_234, outTokens: 34, peakInput: 1_200, lastSeen: 20, log: ['walked in'] })
+    const snapshot = structuredClone(one)
+    const out = restart(one, 9_000, 40)
+    expect(out).toBe(one)
+    expect(out).toEqual(snapshot)
+  }
+})
+
+test('a sign of life stamps the time and changes nothing else', () => {
+  const one = emp({ tools: 3, lastSeen: 10 })
+  expect(touch(one, 99)).toEqual({ ...one, lastSeen: 99 })
+  expect(one.lastSeen).toBe(10)
+})
+
+// ---- Ending a run ----
+
+test('ending a run records how it ended; done and failed get a cheer tick, lost contact does not', () => {
+  const one = emp({ tool: 'Read', lastSeen: 70, log: ['walked in'] })
+  expect(endRun(one, 'done', 'signal', 100, 6)).toEqual({ ...one, mood: 'done', tool: undefined, endedAt: 100, doneTick: 6, endedBy: 'signal', log: ['walked in', 'clocked out ✓'] })
+  expect(endRun(one, 'failed', 'engine', 100, 6)).toMatchObject({ mood: 'failed', endedBy: 'engine', doneTick: 6, log: ['walked in', 'went home sick ✗'] })
+  const lost = endRun(one, 'lost', 'stale', 100, 6)
+  expect(lost).toMatchObject({ mood: 'lost', endedBy: 'stale', endedAt: 100, lastSeen: 70, log: ['walked in', 'lost contact'] })
+  expect(lost.doneTick).toBeUndefined()
+})
+
+test('an engine status change to a running one is a sign of life; a change to an ended one is not', () => {
+  const one = emp({ lastSeen: 10 })
+  expect(markEngine(one, 'running', 500)).toEqual({ ...one, engine: 'running', lastSeen: 500 })
+  expect(markEngine(one, 'completed', 500)).toEqual({ ...one, engine: 'completed', lastSeen: 10 })
+  expect(markEngine(one, 'waiting', 500)).toMatchObject({ engine: 'waiting', lastSeen: 500 })
+})
+
+test('the engine status maps every status to how it ends a run', () => {
+  expect(Object.fromEntries(STATUSES.map(s => [s, endOfStatus(s)]))).toEqual({
+    pending: undefined, running: undefined, waiting: undefined, idle: 'done', completed: 'done', failed: 'failed', killed: 'failed',
+  })
+})
+
+test('an engine status ends a run only after the specialist has been quiet for 15 seconds', () => {
+  const one = emp({ startedAt: 0, lastSeen: 100_000 })
+  for (const [status, mood] of [['completed', 'done'], ['idle', 'done'], ['failed', 'failed'], ['killed', 'failed']] as const) {
+    expect(verdict(one, status, 100_000 + QUIET_MS)).toBeUndefined()
+    expect(verdict(one, status, 100_000 + QUIET_MS + 1)).toEqual({ mood, how: 'engine' })
+  }
+  // A long step is not an end: started long ago, but seen a moment ago.
+  expect(verdict(emp({ startedAt: 0, lastSeen: 600_000 }), 'completed', 600_000 + 5_000)).toBeUndefined()
+})
+
+test('a specialist the engine no longer lists has finished once it has been quiet for 15 seconds', () => {
+  const one = emp({ lastSeen: 1_000 })
+  expect(verdict(one, undefined, 1_000 + QUIET_MS)).toBeUndefined()
+  expect(verdict(one, undefined, 1_000 + QUIET_MS + 1)).toEqual({ mood: 'done', how: 'engine' })
+})
+
+test('a run still going by the engine but silent for 30 minutes is lost, and one the engine says is waiting is never lost', () => {
+  const one = emp({ lastSeen: 0 })
+  for (const status of ['running', 'pending'] as const) {
+    expect(verdict(one, status, STALE_MS)).toBeUndefined()
+    expect(verdict(one, status, STALE_MS + 1)).toEqual({ mood: 'lost', how: 'stale' })
+  }
+  expect(verdict(one, 'waiting', 5 * 60 * MIN)).toBeUndefined()
+  expect(STALE_MS).toBe(30 * MIN)
+})
+
+test('quiet time counts from the start for a specialist never seen since, and demos and ended ones are never judged', () => {
+  expect(verdict(emp({ startedAt: 0 }), 'running', STALE_MS + 1)).toEqual({ mood: 'lost', how: 'stale' })
+  expect(verdict(emp({ id: 'demo-arch', lastSeen: 0 }), 'running', STALE_MS * 2)).toBeUndefined()
+  expect(verdict(emp({ mood: 'done', lastSeen: 0 }), 'completed', STALE_MS * 2)).toBeUndefined()
+  expect(verdict(emp({ mood: 'lost', lastSeen: 0 }), 'running', STALE_MS * 2)).toBeUndefined()
+})
+
+// ---- What a run spends ----
+
+test('the token figure is the largest request input of the run plus the output of every request', () => {
+  const first = withStep(emp({}), usage({ input_tokens: 10, cache_read_input_tokens: 80_000, output_tokens: 500 }), 'm', 50)
+  const second = withStep(first, usage({ input_tokens: 20, cache_read_input_tokens: 81_000, cache_creation_input_tokens: 400, output_tokens: 600 }), 'm', 60)
+  expect(second.peakInput).toBe(81_420)
   expect(second.tokens).toBe(81_420 + 1_100)
   expect(second.outTokens).toBe(1_100)
   // The context is how full the window is now: the latest input and the output.
   expect(second.context).toBe(81_420 + 600)
   expect(second.model).toBe('m')
+  expect(second.lastSeen).toBe(60)
   expect(first.tokens).toBe(80_010 + 500)
 })
 
-test('a request with no usage numbers adds nothing and keeps the model', () => {
-  const one = withStep(emp({ model: 'old' }), usage({}), '')
-  expect(one).toMatchObject({ tokens: 0, outTokens: 0, context: 0, model: 'old' })
+test('tokens never go down: after a compaction the input shrinks but the run keeps its peak', () => {
+  const big = withStep(emp({}), usage({ input_tokens: 10, cache_read_input_tokens: 80_000, output_tokens: 500 }), 'm', 1)
+  const compacted = withStep(big, usage({ input_tokens: 5, cache_read_input_tokens: 20_000, output_tokens: 300 }), 'm', 2)
+  expect(compacted.tokens).toBe(80_010 + 800)
+  expect(compacted.tokens).toBeGreaterThan(big.tokens!)
+  // How full the window is now does follow the compaction.
+  expect(compacted.context).toBe(20_005 + 300)
+  expect(compacted.peakInput).toBe(80_010)
 })
 
-test('what the engine says of an agent decides whether it is still at work', () => {
-  expect(endOfStatus('running')).toBeUndefined()
-  expect(endOfStatus('pending')).toBeUndefined()
-  expect(endOfStatus('waiting')).toBeUndefined()
-  expect(endOfStatus('completed')).toBe('done')
-  expect(endOfStatus('idle')).toBe('done')
-  expect(endOfStatus('failed')).toBe('failed')
-  expect(endOfStatus('killed')).toBe('failed')
+test('a request with no usage numbers adds nothing, keeps the model, and is still a sign of life', () => {
+  const one = withStep(emp({ model: 'old' }), usage({}), '', 5)
+  expect(one).toMatchObject({ tokens: 0, outTokens: 0, context: 0, model: 'old', lastSeen: 5 })
 })

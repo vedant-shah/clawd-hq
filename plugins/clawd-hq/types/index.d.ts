@@ -1,4 +1,8 @@
-export type Mood = 'arriving' | 'working' | 'thinking' | 'done' | 'failed'
+/** `lost`: still running by the engine's word, but silent too long; a third way a run ends, neither a win nor a failure. */
+export type Mood = 'arriving' | 'working' | 'thinking' | 'done' | 'failed' | 'lost'
+
+/** What ended a run: a stop signal from the agent itself, the engine's agent list (a guess), or too long without a sign of life (a guess). */
+export type EndedBy = 'signal' | 'engine' | 'stale'
 
 export type Employee = {
   id: string
@@ -11,16 +15,23 @@ export type Employee = {
   tools: number
   startedAt: number
   endedAt?: number
+  endedBy?: EndedBy
+  /** The last sign of life: spawn, restart, tool call, model step, or the engine's status moving. */
+  lastSeen?: number
+  /** The engine's status for it as of the last look. */
+  engine?: string
   joinedTick: number
   doneTick?: number
   log: string[]
   model?: string
   /** The effort Clawd hired it at, applied to every request it makes. */
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-  /** What this run used: the latest request's whole input plus everything generated. */
+  /** What this run used: its largest request input plus everything generated. */
   tokens?: number
   /** Tokens generated across this run's requests; part of `tokens`. */
   outTokens?: number
+  /** The largest request input of this run; the input half of `tokens`, so a compaction cannot lower it. */
+  peakInput?: number
   context?: number
 }
 

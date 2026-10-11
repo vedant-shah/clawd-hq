@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Ask, Badge, Boss, Employee, Fx, Gauge, Memory, Mood, Payroll } from '../types'
+import type { Ask, Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
 import { BRIEF_NOTE, STAFFING_NOTE, answerText, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
 import { NAP_MS } from './clawd-says'
@@ -11,7 +11,9 @@ import { renderPanel } from './panel'
 import { DEMO, isActive, isWaiting } from './panel-model'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
-import { endOfStatus, note, restart, withStep } from './staff-model'
+import { ASK_SPEC, REMEMBER_SPEC } from './tool-specs'
+import { QUIET_MS, endOfStatus, endRun, markEngine, note, quietFor, restart, touch, verdict, withStep } from './staff-model'
+import { BOSS0, FX0, GAUGE0, PAYROLL0, edit } from './state'
 
 const PANE = 'clawd-hq'
 const TITLE = BRAND
@@ -28,21 +30,12 @@ const BLURB_CHARS = 200
 const DESCRIPTION_CHARS = 160
 const DECISION_CHARS = 300
 const MAX_BLURBS = 120
-const GONE_MS = 15_000
 const DEMO_TOOL = 'mcp__clawd-hq__demo'
 const ASK_TOOL = 'mcp__clawd-hq__ask_ceo'
 const MEM_TOOL = 'mcp__clawd-hq__remember'
 // The memory keeps this many entries per project; Clawd and each brief get the newest RECALL.
 const MAX_MEMORY = 200
 const RECALL = 25
-
-const BOSS0: Boss = {
-  activity: 'Waiting for the boss…', isBusy: false, waveUntil: 0, turns: 0, proudUntil: 0, oopsUntil: 0,
-  lastName: '', lastTitle: '', idleSince: 0, hires: 0, wins: 0, fails: 0,
-}
-const FX0: Fx = { view: 'office' }
-const PAYROLL0: Payroll = { laidOff: [], isReviewed: false, stacks: [] }
-const GAUGE0: Gauge = { startedAt: 0, limits: [] }
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
 const boss = atom({ plugin: 'clawd-hq', key: 'boss' } as const, BOSS0)
@@ -55,18 +48,18 @@ const payroll = atom({ plugin: 'clawd-hq', key: 'payroll' } as const, PAYROLL0)
 const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory[])
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 
-// The project the session runs in: payroll is kept per project.
-let cwd = ''
-let isPayrollFiled = false
-// Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
-const efforts = new Map<string, Effort>()
-
 // Values written by an older version of the mod lack the newer fields: fill them in.
 async function getBoss($: EngineInterface): Promise<Boss> { return { ...BOSS0, ...(await read($, boss)) } }
 async function getFx($: EngineInterface): Promise<Fx> { return { ...FX0, ...(await read($, fx)) } }
 async function getPayroll($: EngineInterface): Promise<Payroll> { return { ...PAYROLL0, ...(await read($, payroll)) } }
 async function setBoss($: EngineInterface, fn: (b: Boss) => Boss) { await update($, boss, b => fn({ ...BOSS0, ...b })) }
 async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx, f => fn({ ...FX0, ...f })) }
+
+// The project the session runs in: payroll is kept per project.
+let cwd = ''
+let isPayrollFiled = false
+// Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
+const efforts = new Map<string, Effort>()
 
 const isAtDesk = (e: Employee, t: number) => isActive(e) || (e.doneTick !== undefined && t - e.doneTick < CHEER_TICKS)
 
@@ -79,10 +72,6 @@ function hire(list: Employee[], fresh: Employee): Employee[] {
   // Over the cap, the longest-gone finishers leave first; a running agent is never dropped.
   let extra = all.length - MAX_STAFF
   return extra <= 0 ? all : all.filter(e => (extra > 0 && !isActive(e) ? (extra--, false) : true))
-}
-
-function edit(list: Employee[], id: string, fn: (e: Employee) => Employee): Employee[] {
-  return list.map(e => (e.id === id ? fn(e) : e))
 }
 
 /** Puts a type on the books with a name of its own, kept across sessions in the store. */
@@ -103,7 +92,7 @@ async function enroll($: EngineInterface, type: string, jobs: number) {
 
 async function newHire($: EngineInterface, id: string, type: string, description: string, prompt: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  const fresh: Employee = { id, type, description: oneLine(description, DESCRIPTION_CHARS), prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, joinedTick: t, log: ['walked in'] }
+  const fresh: Employee = { id, type, description: oneLine(description, DESCRIPTION_CHARS), prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t, log: ['walked in'] }
   if ((await read($, staff)).some(e => e.id === id)) {
     await update($, staff, list => hire(list, fresh))
     return
@@ -114,20 +103,24 @@ async function newHire($: EngineInterface, id: string, type: string, description
   await setBoss($, b => ({ ...b, activity: role.hello, waveUntil: t + 6, hires: b.hires + 1 }))
 }
 
-async function clockOut($: EngineInterface, id: string, mood: Mood) {
+/**
+ * Ends one specialist's run. The check sits inside the write, so two signals for one stop (turn.complete,
+ * SubagentStop, the reconcile) end it once; a guess from the engine or the clock also checks it is still quiet.
+ */
+async function clockOut($: EngineInterface, id: string, mood: Mood, how: EndedBy = 'signal') {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  // The check sits inside the write, so turn.complete and the reconcile can't both clock one agent out.
   let ended: Employee | undefined
   await update($, staff, l => {
     ended = undefined
     return edit(l, id, one => {
-      if (!isActive(one)) return one
+      if (!isActive(one) || (how !== 'signal' && quietFor(one, now) <= QUIET_MS)) return one
       ended = one
-      return { ...one, mood, tool: undefined, endedAt: now, doneTick: t, log: note(one.log, mood === 'done' ? 'clocked out ✓' : 'went home sick ✗') }
+      return endRun(one, mood, how, now, t)
     })
   })
   const e = ended as Employee | undefined
-  if (!e) return
+  // Lost contact is neither a win nor a failure: no toast, no cheer.
+  if (!e || mood === 'lost') return
   const role = roleOf(e.type, e.description)
   const name = looksOf(e.type, await read($, roster)).name
   await setBoss($, b => (mood === 'done'
@@ -138,25 +131,30 @@ async function clockOut($: EngineInterface, id: string, mood: Mood) {
     : `🤕 ${name} the ${role.title} could not finish: ${e.description || e.type}`)
 }
 
-/** A message can resume a finished specialist, and no event says so: its first sign of life starts a new run. */
-async function resumeRun($: EngineInterface, id: string) {
+/** Any sign of life from a specialist (a tool call, a model step): it is heard from now, and a finished one is back at work. */
+async function signOfLife($: EngineInterface, id: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  await update($, staff, l => edit(l, id, one => restart(one, now, t)))
+  await update($, staff, l => edit(l, id, one => touch(restart(one, now, t), now)))
 }
 
-// The engine's own list catches agents spawned before this mod loaded, and stops it missed.
-// A run that just began is given a few seconds: the list can still say "completed" for a specialist that was only now resumed.
+/** An agent the engine lists that no spawn announced (it started before this mod loaded) joins the books. */
+const hireFromList = ($: EngineInterface) => (a: { id: string; type: string; description: string }) => newHire($, a.id, a.type, a.description, '')
+
+/**
+ * The engine's own list catches agents spawned before this mod loaded and stops nobody saw; the clock catches
+ * runs that went silent. Only silence ends a run (see verdict), so a long step is never cut short.
+ */
 async function reconcile($: EngineInterface) {
   const [agents, list, now] = [await $.agent.list(), await read($, staff), await $.clock.now()]
   for (const a of agents) {
-    const known = list.find(e => e.id === a.id)
-    const end = endOfStatus(a.status)
-    if (!known && end === undefined) await newHire($, a.id, a.type, a.description, '')
-    else if (known && end && now - known.startedAt > GONE_MS) await clockOut($, a.id, end)
+    if (!list.some(e => e.id === a.id) && endOfStatus(a.status) === undefined) await hireFromList($)(a)
   }
-  // The engine drops a finished agent's task after a while; one still at a desk then has finished.
   for (const e of list) {
-    if (isActive(e) && !e.id.startsWith(DEMO) && now - e.startedAt > GONE_MS && !agents.some(a => a.id === e.id)) await clockOut($, e.id, 'done')
+    const status = agents.find(a => a.id === e.id)?.status
+    const seen = status !== undefined && status !== e.engine ? markEngine(e, status, now) : e
+    if (seen !== e) await update($, staff, l => edit(l, e.id, one => markEngine(one, status!, now)))
+    const end = verdict(seen, status, now)
+    if (end) await clockOut($, e.id, end.mood, end.how)
   }
 }
 
@@ -500,45 +498,13 @@ export const register: Register = on => {
       description: `Plays the ${BRAND} office tour in the side panel (about a minute, stand-in employees, nothing real is spawned). Call only when the user asks to see the office demo.`,
       inputSchema: { type: 'object', properties: {} },
     })
-    await $.tool.register({
-      name: 'ask_ceo',
-      description:
-        'File a decision or question for the user (the CEO) on the CEO Desk without stopping work. ' +
-        'Use it for choices that are the user’s to make but need not block you: say what you will do meanwhile (`default`), carry on, ' +
-        'and the answer arrives later as a message. For a choice you cannot proceed without, ask directly instead.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          kind: { type: 'string', enum: ['decision', 'question'] },
-          question: { type: 'string', description: 'One line, ending in a question mark.' },
-          context: { type: 'string', description: 'Why it matters, a sentence or two.' },
-          options: { type: 'array', items: { type: 'string' }, description: 'For a decision: 2–6 short options.' },
-          recommended: { type: 'string', description: 'The option you recommend.' },
-          default: { type: 'string', description: 'What you will do until the CEO answers.' },
-        },
-        required: ['kind', 'question'],
-      },
-    })
+    await $.tool.register(ASK_SPEC)
 
     const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined
     if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved }))
     const recalled = await loadMemory($)
     await update($, memory, () => recalled)
-    await $.tool.register({
-      name: 'remember',
-      description:
-        'Record a decision the user made, or a key choice they confirmed, so the office follows it in this and later sessions ' +
-        '(it lands in the project memory every agent brief carries). One decision per call, stated as the outcome. ' +
-        'Not for routine progress, and not for the CEO Desk’s answers, which are recorded already.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          decision: { type: 'string', description: 'The decision as one line, e.g. “Scores live in Postgres, not DynamoDB”.' },
-          supersedes: { type: 'string', description: 'The memory id (M12) this replaces, when the user changed an earlier decision.' },
-        },
-        required: ['decision'],
-      },
-    })
+    await $.tool.register(REMEMBER_SPEC)
     await enroll($, 'general-purpose', 0)
     await startGauge($)
 
@@ -555,6 +521,12 @@ export const register: Register = on => {
     await reconcile($)
     void $.ui.open({ id: PANE, title: TITLE, columns: 60 }).catch(() => undefined)
 
+    return next(e)
+  })
+
+  // The agent's own stop signal, beside turn.complete: whichever comes first ends the run, the second finds it ended.
+  on('classic.SubagentStop', async ($, e, next) => {
+    await clockOut($, e.agent_id, 'done')
     return next(e)
   })
 
@@ -624,13 +596,14 @@ export const register: Register = on => {
   // Each model request of an agent: what it has spent, and how full its context is.
   on('turn.step', async function* ($, e, next) {
     const me = e.agentId ? (await read($, staff)).find(one => one.id === e.agentId) : undefined
-    // A resumed specialist's first request can come before any tool call.
-    if (me && !isActive(me)) await resumeRun($, me.id)
+    // A request is a sign of life, and a resumed specialist's first can come before any tool call.
+    if (me) await signOfLife($, me.id)
     const effort = e.agentId ? efforts.get(e.agentId) ?? me?.effort : undefined
     const result = yield* next(effort ? { ...e, effort } : e)
     const u = result.usage
     if (!e.agentId || !u) return result
-    await update($, staff, l => edit(l, e.agentId!, one => withStep(one, u, u.model || e.model)))
+    const now = await $.clock.now()
+    await update($, staff, l => edit(l, e.agentId!, one => withStep(one, u, u.model || e.model, now)))
     return result
   })
 
@@ -702,11 +675,12 @@ export const register: Register = on => {
       return next(e)
     }
 
+    // An id no spawn announced and the engine does not list is no one of ours: no hire, no revival.
     const known = (await read($, staff)).find(one => one.id === id)
-    if (!known) {
-      const a = (await $.agent.list()).find(one => one.id === id)
-      await newHire($, id, a?.type ?? 'general-purpose', a?.description ?? '', '')
-    } else if (!isActive(known)) await resumeRun($, id)
+    const listed = known ? undefined : (await $.agent.list()).find(one => one.id === id)
+    if (!known && !listed) return next(e)
+    if (listed) await hireFromList($)(listed)
+    else await signOfLife($, id)
     await update($, staff, l => edit(l, id, one => ({
       ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', tool, target, tools: one.tools + 1,
       log: note(one.log, `${verbOf(tool)} ${target}`.trim()),

@@ -91,6 +91,16 @@ test('one window can show while the other is hidden, and a percent past 100 read
   expect(gauges.map(g => g.percent)).toEqual(['100%', '100%'])
 })
 
+test('anything above zero reads at least 1% and shows at least a sliver, so the label and the bar agree', () => {
+  const gauges = headerGauges({ startedAt: 0, contextPercent: 0.3, limits: [{ kind: 'five_hour', percentUsed: 0.4, resetsAt: inMs(HOUR) }, { kind: 'seven_day', percentUsed: 0, resetsAt: inMs(HOUR) }] }, NOW)
+  expect(gauges.map(g => g.percent)).toEqual(['1%', '1%', '0%'])
+  expect(barOf(0.3).filled).toBe(1)
+  expect(barSvg(0.3)).toContain('<rect width="4"')
+  expect(barGlyphs(0.3).on).toBe('━')
+  // Zero stays zero everywhere.
+  expect(barOf(0).filled).toBe(0)
+})
+
 test('before the first reading context shows a dash and an empty bar', () => {
   const [context] = headerGauges({ startedAt: 0, limits: [] }, NOW)
   expect(context!.percent).toBe('–')

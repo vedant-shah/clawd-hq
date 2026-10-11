@@ -52,9 +52,14 @@ test('a specialist is working until it has a question waiting on the desk', () =
 
 test('a finished row says when, how long it took and the tokens; a failure says so', () => {
   const done = emp({ mood: 'done', startedAt: 0, endedAt: 3 * MIN, tokens: 22_000 })
-  expect(doneLine(done, 9 * MIN)).toEqual({ when: '6m ago', took: 'took 3m · 22K tokens', isFailed: false })
+  expect(doneLine(done, 9 * MIN)).toEqual({ when: '6m ago', took: 'took 3m · 22K tokens', isFailed: false, isLost: false })
   const failed = emp({ mood: 'failed', startedAt: 0, endedAt: 3 * MIN })
-  expect(doneLine(failed, 9 * MIN)).toEqual({ when: '6m ago', took: 'Failed after 3m', isFailed: true })
+  expect(doneLine(failed, 9 * MIN)).toEqual({ when: '6m ago', took: 'Failed after 3m', isFailed: true, isLost: false })
+  // Lost contact is a third outcome: how long it was silent, not how long the run lasted.
+  const lost = emp({ mood: 'lost', startedAt: 0, lastSeen: 2 * MIN, endedAt: 33 * MIN })
+  expect(doneLine(lost, 40 * MIN)).toEqual({ when: '7m ago', took: 'Lost contact after 31m', isFailed: false, isLost: true })
+  expect(recentFailures([lost], 40 * MIN, 60 * MIN)).toEqual([])
+  expect(doneThisSession([lost], 0)).toEqual([lost])
 })
 
 test('Clawd says "All clear", or how many need the CEO, or who failed', () => {

@@ -1,0 +1,15 @@
+// Starting values for the office's state, and a pure list helper. (The atoms and helpers that take `$` stay in register.tsx:
+// the engine's scan follows `$` and atoms only within one file.)
+import type { Boss, Employee, Fx, Gauge, Payroll } from '../types'
+
+export const BOSS0: Boss = {
+  activity: 'Waiting for the boss…', isBusy: false, waveUntil: 0, turns: 0, proudUntil: 0, oopsUntil: 0,
+  lastName: '', lastTitle: '', idleSince: 0, hires: 0, wins: 0, fails: 0,
+}
+export const FX0: Fx = { view: 'office' }
+export const PAYROLL0: Payroll = { laidOff: [], isReviewed: false, stacks: [] }
+export const GAUGE0: Gauge = { startedAt: 0, limits: [] }
+
+export function edit(list: Employee[], id: string, fn: (e: Employee) => Employee): Employee[] {
+  return list.map(e => (e.id === id ? fn(e) : e))
+}

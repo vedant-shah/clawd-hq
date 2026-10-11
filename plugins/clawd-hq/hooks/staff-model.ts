@@ -1,7 +1,7 @@
 // How a specialist's run starts, spends and ends, as pure functions over one employee.
 import type { AgentStatus } from 'claude-code'
-import type { Employee, Mood } from '../types'
-import { isActive } from './panel-model'
+import type { EndedBy, Employee, Mood } from '../types'
+import { DEMO, isActive } from './panel-model'
 
 export type StepUsage = {
   input_tokens: number
@@ -10,31 +10,74 @@ export type StepUsage = {
   cache_creation_input_tokens: number
 }
 
+/** An engine status counts as an end only after this long without a sign of life. */
+export const QUIET_MS = 15_000
+/** A specialist the engine calls running, silent this long, has lost contact (unless the engine says it waits). */
+export const STALE_MS = 30 * 60_000
+
 /** The last few lines of what an employee did. */
 export const note = (log: string[], line: string) => [...log, line].slice(-6)
 
-/** A finished specialist that runs again (a message resumed it): a new run with its own clock, tool count and tokens. */
+/** How long it has been since the last sign of life (for one never heard from since, since it started). */
+export const quietFor = (one: Employee, now: number) => now - (one.lastSeen ?? one.startedAt)
+
+/** A sign of life: it was heard from at `now`. */
+export const touch = (one: Employee, now: number): Employee => ({ ...one, lastSeen: now })
+
+/**
+ * A specialist that runs again after an end. If the end was a guess (the engine list, or too long quiet) the same
+ * run goes on, clock and counters kept; after a real stop signal it is a new run with its own clock, tools and tokens.
+ */
 export function restart(one: Employee, now: number, tick: number): Employee {
   if (isActive(one)) return one
+  const back = note(one.log, 'back at it')
+  if (one.endedBy === 'engine' || one.endedBy === 'stale') {
+    return { ...one, mood: 'working', endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: now, log: back }
+  }
   return {
-    ...one, mood: 'working', tool: undefined, target: undefined, tools: 0, tokens: 0, outTokens: 0, context: 0,
-    startedAt: now, endedAt: undefined, doneTick: undefined, joinedTick: tick, log: note(one.log, 'back at it'),
+    ...one, mood: 'working', tool: undefined, target: undefined, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    startedAt: now, endedAt: undefined, doneTick: undefined, endedBy: undefined, joinedTick: tick, lastSeen: now, log: back,
   }
 }
 
+/** Ends the run. Lost contact is no cheer and no win, so it leaves no tick for the cheering. */
+export function endRun(one: Employee, mood: Mood, how: EndedBy, now: number, tick: number): Employee {
+  const line = mood === 'done' ? 'clocked out ✓' : mood === 'lost' ? 'lost contact' : 'went home sick ✗'
+  const cheer = mood === 'lost' ? {} : { doneTick: tick }
+  return { ...one, ...cheer, mood, tool: undefined, endedAt: now, endedBy: how, log: note(one.log, line) }
+}
+
 /**
- * One model request's cost. A request re-reads the whole prompt, so adding every request's context
- * up counts the cached prompt once per step: the figure is the latest request's input plus all output.
+ * One model request's cost. A request re-reads the whole prompt, so adding every request's context up counts
+ * the cached prompt once per step. The figure is the run's largest request input plus all output, which a compaction cannot lower.
  */
-export function withStep(one: Employee, u: StepUsage, model: string): Employee {
+export function withStep(one: Employee, u: StepUsage, model: string, now: number): Employee {
   const input = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0)
   const output = u.output_tokens || 0
-  const outTokens = (one.outTokens ?? 0) + output
-  return { ...one, model: model || one.model, context: input + output, outTokens, tokens: input + outTokens }
+  const [peakInput, outTokens] = [Math.max(one.peakInput ?? 0, input), (one.outTokens ?? 0) + output]
+  return { ...one, model: model || one.model, context: input + output, peakInput, outTokens, tokens: peakInput + outTokens, lastSeen: now }
 }
 
 /** How the engine's status for an agent ends its time at a desk: undefined while it is still going. */
 export function endOfStatus(status: AgentStatus): Mood | undefined {
   if (status === 'completed' || status === 'idle') return 'done'
   return status === 'failed' || status === 'killed' ? 'failed' : undefined
+}
+
+/** The engine's status moved: a move to a running one is a sign of life, a move to an ended one is not. */
+export function markEngine(one: Employee, status: AgentStatus, now: number): Employee {
+  return { ...one, engine: status, lastSeen: endOfStatus(status) ? one.lastSeen : now }
+}
+
+/**
+ * Whether the reconcile should end this run, given the engine's status for it (undefined: not listed) and the time.
+ * Only silence ends a run: the engine's word counts once QUIET_MS has passed without a sign of life, and a run
+ * the engine still calls running is lost after STALE_MS. A waiting one is never lost; demos are never judged.
+ */
+export function verdict(one: Employee, status: AgentStatus | undefined, now: number): { mood: Mood; how: EndedBy } | undefined {
+  if (!isActive(one) || one.id.startsWith(DEMO)) return undefined
+  const quiet = quietFor(one, now)
+  const ended = status === undefined ? 'done' : endOfStatus(status)
+  if (ended) return quiet > QUIET_MS ? { mood: ended, how: 'engine' } : undefined
+  return status !== 'waiting' && quiet > STALE_MS ? { mood: 'lost', how: 'stale' } : undefined
 }

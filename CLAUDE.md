@@ -27,3 +27,4 @@ These are ignored by git on purpose. Do not commit them:
 - `docs/handoff.md` and `docs/research/`: private working notes and research.
 - `docs/*.pptx`: an outdated internal deck.
 - `docs/panel/*.png` and `docs/panel/build_mock.py`: an early mockup, replaced by `docs/panel/design/`.
+- `experiments/` and `docs/experiments.md`: throwaway test mods and their results.

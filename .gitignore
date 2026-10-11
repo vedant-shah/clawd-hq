@@ -13,3 +13,7 @@ docs/research/
 # An early terminal mockup, replaced by the design files in docs/panel/design.
 docs/panel/*.png
 docs/panel/build_mock.py
+
+# Throwaway experiment mods and their results (they hold local paths and usage counts).
+experiments/
+docs/experiments.md

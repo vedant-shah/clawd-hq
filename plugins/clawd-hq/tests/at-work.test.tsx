@@ -66,6 +66,8 @@ test('a specialist at work is one full-width row: avatar, name and task, then wh
     const sentence = await ui.find({ type: 'Text', text: /^Reading panel\.ts$/ })
     expect(sentence).toBeDefined()
     expect(sentence?.props.color).toBeUndefined()
+    // The tool line is muted, so what the specialist says reads as the main line above it.
+    expect(sentence?.props.dimColor).toBe(true)
     const stats = await ui.find({ type: 'Text', text: /^ · 12m · 84K tokens$/ })
     expect(stats?.props.dimColor).toBe(true)
     // The old card's words are gone.
@@ -202,6 +204,8 @@ test('a specialist waiting on you shows "Waiting on you: <the question>" in ambe
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     const waiting = await ui.find({ type: 'Text', text: /^Waiting on you: Store scores in DynamoDB or Postgres\?$/ })
     expect(waiting?.props.color).toBe(AMBER)
+    // A question waiting on you is not muted: it needs you.
+    expect(waiting?.props.dimColor).toBeUndefined()
     expect((await ui.find({ type: 'Text', text: /^ · 4m$/ }))?.props.dimColor).toBe(true)
     expect((await ui.find({ key: 'desk-t1' }))?.props.borderColor).toBe(AMBER)
     expect(await ui.find({ type: 'Text', text: /^Reading a\.ts$/ })).toBeUndefined()
@@ -276,6 +280,7 @@ test('the row shows what the specialist says, wrapped, above the tool line, and 
     // One to three sentences, in full.
     expect(line?.text).toBe('Now I will read the scoring rules. They decide the ranking. I will compare them with the tests.')
     expect(line?.props.wrap).toBe('wrap')
+    expect(line?.props.dimColor).toBeUndefined()
     // The tool line is still there, under it.
     expect(texts.map(t => t.text)).toContain('Reading scoring.ts')
   }

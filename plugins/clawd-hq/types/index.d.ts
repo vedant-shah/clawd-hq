@@ -10,8 +10,6 @@ export type Employee = {
   target?: string
   tools: number
   startedAt: number
-  /** When the agent last did anything (a tool call or a model step), for spotting one that went quiet. */
-  lastAt?: number
   endedAt?: number
   joinedTick: number
   doneTick?: number
@@ -19,7 +17,10 @@ export type Employee = {
   model?: string
   /** The effort Clawd hired it at, applied to every request it makes. */
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  /** What this run used: the latest request's whole input plus everything generated. */
   tokens?: number
+  /** Tokens generated across this run's requests; part of `tokens`. */
+  outTokens?: number
   context?: number
 }
 
@@ -79,9 +80,16 @@ export type Boss = {
   fails: number
 }
 
+/** One rate-limit window as `$.session.usage()` reports it. */
+export type Limit = { kind: string; percentUsed: number; resetsAt?: string }
+
+/** What the header meters read: when this session began, how full the context is, and the rate-limit windows. */
+export type Gauge = { startedAt: number; contextPercent?: number; limits: Limit[] }
+
 export type Fx = {
-  selected?: string
-  view: 'office' | 'directory' | 'memory'
+  view: 'office' | 'decisions' | 'people' | 'log'
+  /** What the person typed into each tab's filter. */
+  finds?: { decisions?: string; people?: string }
   demo?: { step: number; total: number; caption: string }
 }
 
@@ -97,6 +105,7 @@ declare module 'claude-code' {
       desk: Ask[]
       payroll: Payroll
       memory: Memory[]
+      gauge: Gauge
     }
   }
 }

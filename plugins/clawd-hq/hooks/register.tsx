@@ -1,16 +1,17 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Ask, Badge, Boss, Employee, Fx, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, STAFFING_NOTE, answerText, memoryBlock, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
+import type { Ask, Badge, Boss, Employee, Fx, Gauge, Memory, Mood, Payroll } from '../types'
+import { BRIEF_NOTE, STAFFING_NOTE, answerText, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
-import {
-  ACCENT, BRAND, CLAWD_COLOR, CLAWD_LINES, GENERALIST, ROLES, SPIN,
-  ago, clip, displayName, fill, hash, lineOf, looksOf, nameFor, roleOf, targetOf, verbOf,
-} from './office'
-import type { ClawdMood } from './office'
-import { GEAR, NIGHTCAP, SHADES, W, ascii, crab, rasterCells, svgOf, sweat } from './pixels'
-import type { Frame, Px } from './pixels'
+import { NAP_MS } from './clawd-says'
+import { renderDesk } from './desk-pane'
+import { ACCENT, BRAND, ago, clip, hash, looksOf, nameFor, roleOf, targetOf, verbOf } from './office'
+import { renderPanel } from './panel'
+import { DEMO, isActive, isWaiting } from './panel-model'
+import type { PanelTools } from './panel-kit'
+import type { PanelActions, PanelData } from './panel-types'
+import { endOfStatus, note, restart, withStep } from './staff-model'
 
 const PANE = 'clawd-hq'
 const TITLE = BRAND
@@ -18,25 +19,22 @@ const DESK = 'ceo-desk'
 const DESK_TITLE = 'CEO Desk'
 const FRAME_MS = 400
 const CHEER_TICKS = 5
-const MAX_STAFF = 30
+// The Log can list 40 rows, so the books keep more finishers than that.
+const MAX_STAFF = 60
 const MAX_ASKS = 60
 const PROMPT_CHARS = 400
 const BLURB_CHARS = 200
+// Agent-written text is cut to one line where it is stored.
+const DESCRIPTION_CHARS = 160
+const DECISION_CHARS = 300
 const MAX_BLURBS = 120
 const GONE_MS = 15_000
-const NAP_MS = 120_000
-// An agent with no tool call or model step for this long gets flagged on Clawd's card.
-const QUIET_MS = 5 * 60_000
-// A failure stays on Clawd's card this long.
-const SICK_MS = 10 * 60_000
-const DEMO = 'demo-'
 const DEMO_TOOL = 'mcp__clawd-hq__demo'
 const ASK_TOOL = 'mcp__clawd-hq__ask_ceo'
 const MEM_TOOL = 'mcp__clawd-hq__remember'
 // The memory keeps this many entries per project; Clawd and each brief get the newest RECALL.
 const MAX_MEMORY = 200
 const RECALL = 25
-const CLAWD_TIE = { color: '#000000', tie: '#1f3a93' }
 
 const BOSS0: Boss = {
   activity: 'Waiting for the boss…', isBusy: false, waveUntil: 0, turns: 0, proudUntil: 0, oopsUntil: 0,
@@ -44,6 +42,7 @@ const BOSS0: Boss = {
 }
 const FX0: Fx = { view: 'office' }
 const PAYROLL0: Payroll = { laidOff: [], isReviewed: false, stacks: [] }
+const GAUGE0: Gauge = { startedAt: 0, limits: [] }
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
 const boss = atom({ plugin: 'clawd-hq', key: 'boss' } as const, BOSS0)
@@ -54,6 +53,7 @@ const roster = atom({ plugin: 'clawd-hq', key: 'roster' } as const, {} as Record
 const desk = atom({ plugin: 'clawd-hq', key: 'desk' } as const, [] as Ask[])
 const payroll = atom({ plugin: 'clawd-hq', key: 'payroll' } as const, PAYROLL0)
 const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory[])
+const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 
 // The project the session runs in: payroll is kept per project.
 let cwd = ''
@@ -68,10 +68,7 @@ async function getPayroll($: EngineInterface): Promise<Payroll> { return { ...PA
 async function setBoss($: EngineInterface, fn: (b: Boss) => Boss) { await update($, boss, b => fn({ ...BOSS0, ...b })) }
 async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx, f => fn({ ...FX0, ...f })) }
 
-const isActive = (e: Employee) => e.mood === 'arriving' || e.mood === 'working' || e.mood === 'thinking'
 const isAtDesk = (e: Employee, t: number) => isActive(e) || (e.doneTick !== undefined && t - e.doneTick < CHEER_TICKS)
-const isWaiting = (a: Ask) => a.status === 'open' || a.status === 'live'
-const fmtTokens = (n = 0) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
 
 function hire(list: Employee[], fresh: Employee): Employee[] {
   if (list.some(e => e.id === fresh.id)) {
@@ -87,8 +84,6 @@ function hire(list: Employee[], fresh: Employee): Employee[] {
 function edit(list: Employee[], id: string, fn: (e: Employee) => Employee): Employee[] {
   return list.map(e => (e.id === id ? fn(e) : e))
 }
-
-const note = (log: string[], line: string) => [...log, line].slice(-6)
 
 /** Puts a type on the books with a name of its own, kept across sessions in the store. */
 async function enroll($: EngineInterface, type: string, jobs: number) {
@@ -108,7 +103,7 @@ async function enroll($: EngineInterface, type: string, jobs: number) {
 
 async function newHire($: EngineInterface, id: string, type: string, description: string, prompt: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  const fresh: Employee = { id, type, description, prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, joinedTick: t, log: ['walked in'] }
+  const fresh: Employee = { id, type, description: oneLine(description, DESCRIPTION_CHARS), prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, joinedTick: t, log: ['walked in'] }
   if ((await read($, staff)).some(e => e.id === id)) {
     await update($, staff, list => hire(list, fresh))
     return
@@ -143,18 +138,21 @@ async function clockOut($: EngineInterface, id: string, mood: Mood) {
     : `🤕 ${name} the ${role.title} could not finish: ${e.description || e.type}`)
 }
 
-// The engine's own list catches agents spawned before this mod loaded, and ends it missed.
+/** A message can resume a finished specialist, and no event says so: its first sign of life starts a new run. */
+async function resumeRun($: EngineInterface, id: string) {
+  const [now, t] = [await $.clock.now(), await read($, tick)]
+  await update($, staff, l => edit(l, id, one => restart(one, now, t)))
+}
+
+// The engine's own list catches agents spawned before this mod loaded, and stops it missed.
+// A run that just began is given a few seconds: the list can still say "completed" for a specialist that was only now resumed.
 async function reconcile($: EngineInterface) {
   const [agents, list, now] = [await $.agent.list(), await read($, staff), await $.clock.now()]
   for (const a of agents) {
     const known = list.find(e => e.id === a.id)
-    if (!known && (a.status === 'running' || a.status === 'pending' || a.status === 'waiting')) {
-      await newHire($, a.id, a.type, a.description, '')
-    } else if (known && a.status === 'completed') {
-      await clockOut($, a.id, 'done')
-    } else if (known && (a.status === 'failed' || a.status === 'killed')) {
-      await clockOut($, a.id, 'failed')
-    }
+    const end = endOfStatus(a.status)
+    if (!known && end === undefined) await newHire($, a.id, a.type, a.description, '')
+    else if (known && end && now - known.startedAt > GONE_MS) await clockOut($, a.id, end)
   }
   // The engine drops a finished agent's task after a while; one still at a desk then has finished.
   for (const e of list) {
@@ -248,10 +246,6 @@ async function remember($: EngineInterface, m: Omit<Memory, 'id' | 'at'>, supers
   })
 }
 
-async function forget($: EngineInterface, id: string) {
-  await saveMemory($, list => list.filter(x => x.id !== id))
-}
-
 /** Answers that reached nobody yet (Clawd was idle): handed over as one prompt. */
 async function sendPending($: EngineInterface, isNewTurn: boolean) {
   const pending = (await read($, desk)).filter(a => a.status === 'answered' && !a.isDelivered)
@@ -306,7 +300,7 @@ async function reviewPayroll($: EngineInterface) {
     kind: 'decision',
     title: `Payroll review: lay off ${plan.laidOff.length} of ${types.length} agent types this project doesn’t use?`,
     detail: `This project is ${plan.stacks.join(' + ') || 'an unknown stack'}. Not needed here: ${plan.why.join(', ')}. ` +
-      'Laid-off agents stop being listed to Clawd, which saves context on every turn. You can rehire them in the directory (d).',
+      'Laid-off agents stop being listed to Clawd, which saves context on every turn. You can rehire them in People (p).',
     options: [`Lay off ${plan.laidOff.length}`, 'Keep everyone'],
     recommend: `Lay off ${plan.laidOff.length}`,
     from: 'Clawd',
@@ -319,16 +313,7 @@ async function applyPayroll($: EngineInterface, isLayoff: boolean) {
   const types = await knownTypes($)
   const plan = proposeLayoffs(types, await projectFiles($))
   await savePayroll($, { laidOff: isLayoff ? plan.laidOff : [], isReviewed: true, stacks: plan.stacks })
-  $.ui.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from the directory.` : '👥 Everyone stays on the payroll.')
-}
-
-async function toggleDept($: EngineInterface, roleKey: string) {
-  const p = await getPayroll($)
-  const notes = await read($, blurbs)
-  const members = (await knownTypes($)).filter(t => t.includes(':') && roleOf(t, notes[t] ?? '').key === roleKey)
-  const isAllOff = members.every(t => p.laidOff.includes(t))
-  const laidOff = isAllOff ? p.laidOff.filter(t => !members.includes(t)) : [...new Set([...p.laidOff, ...members])]
-  await savePayroll($, { ...p, laidOff, isReviewed: true })
+  $.ui.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from People (p).` : '👥 Everyone stays on the payroll.')
 }
 
 // ---- The frame clock ----
@@ -348,40 +333,48 @@ async function onFrame($: EngineInterface, frames: number) {
   await showStatus($)
 }
 
-function clawdMood(b: Boss, f: Fx, active: number, waiting: number, t: number, now: number): ClawdMood {
-  if (t < b.oopsUntil) return 'oops'
-  if (t < b.proudUntil) return 'proud'
-  if (active >= 4) return 'stressed'
-  if (t < b.waveUntil) return 'delegating'
-  if (b.isBusy) return 'focused'
-  if (waiting > 0) return 'waiting'
-  if (active === 0 && b.idleSince > 0 && now - b.idleSince > NAP_MS) return 'sleepy'
-  return active > 0 ? 'delegating' : 'chill'
-}
+// ---- The side panel: a snapshot to draw, and what it may ask for ----
 
-function clawdPixels(mood: ClawdMood, t: number): Px[][] {
-  const frames: Record<ClawdMood, () => Px[][]> = {
-    proud: () => crab(CLAWD_COLOR, 'cheerA', [SHADES, CLAWD_TIE]),
-    oops: () => crab(CLAWD_COLOR, 'sad', [CLAWD_TIE]),
-    stressed: () => sweat(crab(CLAWD_COLOR, t % 2 ? 'typeA' : 'typeB', [CLAWD_TIE]), t),
-    delegating: () => crab(CLAWD_COLOR, t % 2 ? 'cheerA' : 'idle', [CLAWD_TIE]),
-    focused: () => crab(CLAWD_COLOR, t % 2 ? 'typeA' : 'typeB', [CLAWD_TIE]),
-    waiting: () => crab(CLAWD_COLOR, t % 6 === 0 ? 'blink' : 'idle', [CLAWD_TIE]),
-    sleepy: () => crab(CLAWD_COLOR, 'blink', [NIGHTCAP, CLAWD_TIE]),
-    chill: () => crab(CLAWD_COLOR, t % 11 === 0 ? 'blink' : 'idle', [CLAWD_TIE]),
+async function panelData($: EngineInterface): Promise<PanelData> {
+  return {
+    staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
+    roster: await read($, roster), asks: await read($, desk), payroll: await getPayroll($), memory: await read($, memory),
+    gauge: await read($, gauge), now: await $.clock.now(),
   }
-  return frames[mood]()
 }
 
-function employeePixels(one: Employee, role: string, color: string, t: number): Px[][] {
-  const blink = (t + (hash(one.id) % 9)) % 9 === 0
-  const cheering = one.doneTick !== undefined && one.mood === 'done'
-  const pose: Frame = one.mood === 'failed' ? 'sad'
-    : cheering ? (t % 2 ? 'cheerA' : 'cheerB')
-      : one.mood === 'arriving' ? (t % 2 ? 'walkA' : 'walkB')
-        : one.mood === 'working' ? (t % 2 ? 'typeA' : 'typeB')
-          : blink ? 'blink' : 'idle'
-  return crab(color, pose, [GEAR[role] ?? GEAR.generalist!])
+async function setLaidOff($: EngineInterface, type: string, isOff: boolean) {
+  const p = await getPayroll($)
+  const rest = p.laidOff.filter(t => t !== type)
+  await savePayroll($, { ...p, laidOff: isOff ? [...rest, type] : rest, isReviewed: true })
+}
+
+function panelActions($: EngineInterface): PanelActions {
+  return {
+    setView: view => setFx($, f => ({ ...f, view })),
+    setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
+    openDesk: () => $.ui.open({ id: DESK, title: DESK_TITLE, focus: true, columns: 60 }),
+    resume: task => $.prompt.fill({ text: `Pick up where we left off: ${task}` }),
+    forget: id => saveMemory($, list => list.filter(x => x.id !== id)),
+    layOff: type => setLaidOff($, type, true),
+    hire: type => setLaidOff($, type, false),
+  }
+}
+
+// ---- The header meters: context and rate limits, kept as the engine reports them ----
+
+const limitsOf = (list: Array<{ kind: string; percentUsed: number; resetsAt?: string }>) =>
+  list.map(({ kind, percentUsed, resetsAt }) => ({ kind, percentUsed, resetsAt }))
+
+/** Reads the meters once at session start; where the engine cannot say, the session began now. */
+async function startGauge($: EngineInterface) {
+  const now = await $.clock.now()
+  try {
+    const u = await $.session.usage()
+    await update($, gauge, () => ({ startedAt: u.startedAt, contextPercent: u.context.percent, limits: limitsOf(u.rateLimits) }))
+  } catch {
+    await update($, gauge, g => ({ ...g, startedAt: now }))
+  }
 }
 
 // ---- The demo: a scripted tour with stand-in employees, cleaned up at the end ----
@@ -409,23 +402,22 @@ async function startDemo($: EngineInterface) {
 
   const steps: Array<[string, () => Promise<void>]> = [
     [`Welcome to ${BRAND}. Clawd is your chief of staff; you are the CEO; every subagent is an employee.`, async () => {
-      await setFx($, f => ({ ...f, view: 'office', selected: undefined }))
+      await setFx($, f => ({ ...f, view: 'office' }))
       await setBoss($, b => ({ ...b, isBusy: true }))
       await demoSay($, 'Welcome to the office! Mind the claws.')
     }],
-    ['Hiring: each agent type is a crab of its own, dressed for its role (hard hat, sunglasses, safari hat…).', async () => {
+    ['Hiring: each agent type gets an avatar of its own, with its own outfit, headwear and prop.', async () => {
       await newHire($, id('arch'), 'ecc:architect', 'Design the scoring API', 'Design the scoring service for roadmap rank')
     }],
-    ['Desks show live work: the tool, the file and the tokens each agent has used.', async () => {
+    ['Each specialist at work gets a card: its avatar, its task, and how long it has been at it.', async () => {
       await demoWork($, id('arch'), 'Read', 'scoring.ts')
       await newHire($, id('scout'), 'Explore', 'Map the backend', 'Find every place that computes a score')
     }],
-    ['Each type keeps its name across sessions, and skills show as study time.', async () => {
+    ['Each type keeps its name across sessions.', async () => {
       await demoWork($, id('scout'), 'Grep', 'computeScore')
-      await demoWork($, id('arch'), 'Skill', '📖 api-design')
       await newHire($, id('rev'), 'ecc:code-reviewer', 'Review the survey flow', 'Review the survey lifecycle code')
     }],
-    ['Hire too many at once and Clawd starts to sweat.', async () => {
+    ['Hire too many at once and Clawd starts to grumble.', async () => {
       await newHire($, id('tdd'), 'ecc:tdd-guide', 'Test the review panel', 'Write tests for the review panel')
       await newHire($, id('data'), 'acme-ops:(o_o) data-analyst', 'Crunch the deal data', 'Analyse deal metrics')
       await demoWork($, id('rev'), 'Read', 'surveys.ts')
@@ -444,24 +436,23 @@ async function startDemo($: EngineInterface) {
       await demoWork($, id('tdd'), 'Bash', 'npm test')
     }],
     ['Agents don’t wait on you: they carry on with their recommended option until you answer.', async () => {
-      await setFx($, f => ({ ...f, selected: id('arch') }))
       await demoWork($, id('data'), 'Read', 'deals.csv')
     }],
     ['You decide; the answer goes straight back to the agent who asked.', async () => {
       if (decision) await answer($, decision, 'DynamoDB')
-      await setFx($, f => ({ ...f, selected: undefined }))
     }],
     ['When an agent fails, it goes home sick and Clawd reacts.', async () => {
       await clockOut($, id('tdd'), 'failed')
     }],
-    ['Finishers cheer, then take a coffee in the break room.', async () => {
+    ['Finishers move to the Log tab (l), with how long they took.', async () => {
       await clockOut($, id('arch'), 'done')
       await clockOut($, id('scout'), 'done')
+      await setFx($, f => ({ ...f, view: 'log' }))
     }],
-    ['The directory (d) is the payroll: departments, who’s hired and who’s laid off for this project.', async () => {
-      await setFx($, f => ({ ...f, view: 'directory' }))
+    ['People (p) is the payroll: who’s on the team and who’s in the talent pool for this project.', async () => {
+      await setFx($, f => ({ ...f, view: 'people' }))
     }],
-    ['Leave the office quiet for 2 minutes and Clawd puts on his nightcap.', async () => {
+    ['Leave the office quiet for 2 minutes and Clawd gets drowsy.', async () => {
       await setFx($, f => ({ ...f, view: 'office' }))
       await clockOut($, id('rev'), 'done')
       await clockOut($, id('data'), 'done')
@@ -487,7 +478,7 @@ async function startDemo($: EngineInterface) {
     void (async () => {
       await update($, staff, l => l.filter(e => !e.id.startsWith(DEMO)))
       await update($, desk, l => l.filter(a => !a.fromId?.startsWith(DEMO)))
-      await setFx($, f => ({ ...f, demo: undefined, selected: undefined, view: 'office' }))
+      await setFx($, f => ({ ...f, demo: undefined, view: 'office' }))
       await setBoss($, b => ({ ...saved, turns: b.turns, quip: undefined }))
       await showStatus($)
     })()
@@ -549,6 +540,7 @@ export const register: Register = on => {
       },
     })
     await enroll($, 'general-purpose', 0)
+    await startGauge($)
 
     let frames = 0
     timer?.cancel()
@@ -568,7 +560,22 @@ export const register: Register = on => {
 
   on('command.run', { command: 'office' }, async $ => {
     await $.ui.open({ id: PANE, title: TITLE, focus: true, columns: 60 })
-    return { text: `${BRAND} is open. 1–9 pick · i CEO Desk · d payroll · m memory · c send break room home.` }
+    return { text: `${BRAND} is open. o Office · d Decisions · p People · l Log · i CEO Desk.` }
+  })
+
+  // The header's context bar and limit countdowns follow the engine's own readings.
+  on('session.measure', async ($, e, next) => {
+    await update($, gauge, g => ({ ...g, contextPercent: e.context.percent, limits: limitsOf(e.rateLimits) }))
+    return next(e)
+  })
+
+  // A /clear ends the session without a session.start: from here the Log starts over.
+  on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear') {
+      const now = await $.clock.now()
+      await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined }))
+    }
+    return next(e)
   })
 
   on('command.run', { command: 'ceo' }, async $ => {
@@ -584,7 +591,7 @@ export const register: Register = on => {
 
   // Instruction-aware: remember what each agent type is for, put it on the books, and keep laid-off types off the listing.
   on('agent.offer', async ($, e, next) => {
-    const blurb = clip(e.description, BLURB_CHARS)
+    const blurb = oneLine(e.description, BLURB_CHARS)
     if ((await read($, blurbs))[e.agent] !== blurb) {
       await update($, blurbs, m => Object.fromEntries([...Object.entries(m).filter(([k]) => k !== e.agent), [e.agent, blurb]].slice(-MAX_BLURBS)))
     }
@@ -616,15 +623,14 @@ export const register: Register = on => {
 
   // Each model request of an agent: what it has spent, and how full its context is.
   on('turn.step', async function* ($, e, next) {
-    const effort = e.agentId ? efforts.get(e.agentId) ?? (await read($, staff)).find(one => one.id === e.agentId)?.effort : undefined
+    const me = e.agentId ? (await read($, staff)).find(one => one.id === e.agentId) : undefined
+    // A resumed specialist's first request can come before any tool call.
+    if (me && !isActive(me)) await resumeRun($, me.id)
+    const effort = e.agentId ? efforts.get(e.agentId) ?? me?.effort : undefined
     const result = yield* next(effort ? { ...e, effort } : e)
     const u = result.usage
     if (!e.agentId || !u) return result
-    const context = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.output_tokens || 0)
-    const at = await $.clock.now()
-    await update($, staff, l => edit(l, e.agentId!, one => ({
-      ...one, model: u.model || e.model, context, tokens: (one.tokens ?? 0) + context, lastAt: at,
-    })))
+    await update($, staff, l => edit(l, e.agentId!, one => withStep(one, u, u.model || e.model)))
     return result
   })
 
@@ -657,7 +663,7 @@ export const register: Register = on => {
     }
 
     if (tool === MEM_TOOL) {
-      const decision = String(input.decision ?? '')
+      const decision = oneLine(String(input.decision ?? ''), DECISION_CHARS)
       // A subagent's call is its own note, never the user's decision.
       const caller = id ? (await read($, staff)).find(one => one.id === id) : undefined
       const by = caller ? `${looksOf(caller.type, await read($, roster)).name} the ${roleOf(caller.type).title}` : 'agent'
@@ -696,13 +702,13 @@ export const register: Register = on => {
       return next(e)
     }
 
-    if (!(await read($, staff)).some(one => one.id === id)) {
+    const known = (await read($, staff)).find(one => one.id === id)
+    if (!known) {
       const a = (await $.agent.list()).find(one => one.id === id)
       await newHire($, id, a?.type ?? 'general-purpose', a?.description ?? '', '')
-    }
-    const at = await $.clock.now()
+    } else if (!isActive(known)) await resumeRun($, id)
     await update($, staff, l => edit(l, id, one => ({
-      ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', tool, target, tools: one.tools + 1, lastAt: at,
+      ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', tool, target, tools: one.tools + 1,
       log: note(one.log, `${verbOf(tool)} ${target}`.trim()),
     })))
     try {
@@ -771,369 +777,25 @@ export const register: Register = on => {
     )
   })
 
-  // ---- The CEO Desk pane ----
+  // ---- The CEO Desk pane: drawn by desk-pane.tsx ----
   on('ui.render', { component: 'Pane', requestId: DESK }, async ($, e) => {
-    const ui = $.ui.resolve(e)
-    const { Box, Text, Button } = ui
-    const [list, b, now] = [await read($, desk), await getBoss($), await $.clock.now()]
-    const open = list.filter(isWaiting)
-    const pending = list.filter(a => a.status === 'answered' && !a.isDelivered)
-    const done = list.filter(a => !isWaiting(a)).slice(-8).reverse()
+    const { Box, Text, Button } = $.ui.resolve(e)
     // Every surface but mobile draws Input; an `in` check on the table always says no.
     const Input = e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input
-
-    const item = (a: Ask, i: number) => {
-      const isTop = i === 0
-      return (
-        <Box key={`ask-${a.id}`} borderStyle={isTop ? 'double' : 'round'} borderColor={a.kind === 'decision' ? ACCENT : '#ffdb00'} paddingX={1} flexDirection="column" marginBottom={1}>
-          <Text dimColor wrap="truncate">{a.id} · {a.kind === 'decision' ? 'DECISION' : 'QUESTION'} · from {a.from} · {ago(now - a.askedAt)} ago</Text>
-          <Text bold wrap="wrap">{a.title}</Text>
-          {a.detail !== undefined && <Text dimColor wrap="wrap">{a.detail}</Text>}
-          {a.recommend !== undefined && <Text color="green" wrap="wrap">★ Recommends: {a.recommend}</Text>}
-          {a.fallback !== undefined && <Text dimColor wrap="wrap">Meanwhile: {a.fallback}</Text>}
-          {a.status === 'live'
-            ? <Text color="yellow">↳ Clawd is asking you this now. Answer in the dialog below the transcript.</Text>
-            : (
-              <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
-                {a.kind === 'decision' && a.options.map((o, n) => (
-                  <Button key={`opt-${a.id}-${n}`} hotkey={isTop ? String(n + 1) : undefined} variant={o === a.recommend ? 'primary' : undefined}
-                    label={o === a.recommend ? `${o} ★` : o} onPress={() => answer($, a.id, o)} />
-                ))}
-                {a.kind === 'question' && Input && (
-                  <Input key={`in-${a.id}`} placeholder="Type your answer, Enter to send" submitLabel="answer" onSubmit={value => (value.trim() ? answer($, a.id, value.trim()) : undefined)} />
-                )}
-                <Button key={`dismiss-${a.id}`} hotkey={isTop ? 'x' : undefined} dimColor label="dismiss" onPress={() => answer($, a.id, 'dismissed', 'dismissed')} />
-              </Box>
-            )}
-        </Box>
-      )
-    }
-
-    return (
-      <Box flexDirection="column">
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text bold color={ACCENT}>CEO DESK</Text>
-          <Text dimColor>{open.length} waiting · {list.filter(a => a.status === 'answered').length} decided</Text>
-        </Box>
-        <Text dimColor wrap="wrap">The agents keep working while these wait. Your answer goes back to whoever asked.</Text>
-        <Box marginTop={1} flexDirection="column">
-          {open.length === 0 && <Text dimColor>Nothing waiting for you. Clawd has it handled. ☕</Text>}
-          {open.map(item)}
-        </Box>
-        {pending.length > 0 && (
-          <Box flexDirection="row" gap={1}>
-            <Text color="yellow">{pending.length} answer{pending.length === 1 ? '' : 's'} not yet sent{b.isBusy ? '' : ' (Clawd is idle)'}.</Text>
-            <Button key="send" hotkey="s" variant="primary" label="send to Clawd now" onPress={() => sendPending($, true)} />
-          </Box>
-        )}
-        {done.length > 0 && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text bold dimColor>DECISION LOG</Text>
-            {done.map(a => (
-              <Text wrap="truncate">
-                <Text color={a.status === 'dismissed' ? undefined : 'green'} dimColor={a.status === 'dismissed'}>{a.status === 'dismissed' ? '–' : '✓'} {a.id}</Text>
-                <Text> {clip(a.title, 40)}</Text>
-                <Text dimColor> → {a.answer} · {a.from}</Text>
-              </Text>
-            ))}
-          </Box>
-        )}
-      </Box>
-    )
+    const data = { list: await read($, desk), boss: await getBoss($), now: await $.clock.now() }
+    return renderDesk({ Box, Text, Button, Input }, data, { answer: (id, value, status) => answer($, id, value, status), send: () => sendPending($, true) })
   })
 
-  // ---- The office pane ----
+  // ---- The office pane: drawn by panel.tsx from a snapshot of the state ----
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
-    const { Box, Text, Button } = ui
-    const [list, b, f, t, notes, books, asks, pay, now] = [
-      await read($, staff), await getBoss($), await getFx($), await read($, tick), await read($, blurbs),
-      await read($, roster), await read($, desk), await getPayroll($), await $.clock.now(),
-    ]
-    const remembered = await read($, memory)
-    const cw = Math.max(24, e.props.bodyColumns)
-    const desks = list.filter(one => isAtDesk(one, t))
-    const lounge = list.filter(one => !isAtDesk(one, t))
-    const active = list.filter(isActive).length
-    const waiting = asks.filter(isWaiting)
-    const roster9 = [...desks, ...lounge].slice(0, 9)
-    const selected = list.find(one => one.id === f.selected)
-    const blurbOf = (one: Employee) => (notes[one.type] ?? '') + ' ' + one.prompt
-    const nameOf = (one: Employee) => displayName(one, list, books)
-    const totalTokens = list.reduce((n, one) => n + (one.tokens ?? 0), 0)
-
-    // A crab drawn the best way the surface can: pixels on the terminal, an SVG on the desktop, text elsewhere.
-    // Picked by `e.surface`: the resolved table does not answer an `in` check, so probing it fell through to text.
-    // `scale` is CSS pixels per pixel where the surface draws SVG; the terminal's cells are fixed.
-    const art = (key: string, g: Px[][], color: string, label: string, scale = 4) => {
-      const [gw, gh] = [g[0]?.length ?? 0, g.length]
-      if (e.surface === 'terminal') {
-        const { Raster } = $.ui.resolve(e)
-        return <Raster key={key} columns={gw} rows={Math.ceil(gh / 2)} cells={rasterCells(g)} />
-      }
-      const { Svg } = $.ui.resolve(e)
-      if (Svg) return <Svg source={svgOf(g, scale)} alt={label} width={gw * scale} height={gh * scale} />
-      return <Box flexDirection="column">{ascii(g).map(row => <Text color={color}>{row}</Text>)}</Box>
+    // Picked by `e.surface`: the resolved table does not answer an `in` check. Input is missing on mobile, Raster is the terminal's, Svg the others'.
+    const tools: PanelTools = {
+      Box: ui.Box, Text: ui.Text, Button: ui.Button,
+      Input: e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input,
+      Raster: e.surface === 'terminal' ? $.ui.resolve(e).Raster : undefined,
+      Svg: e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg,
     }
-
-    // ---- Clawd's corner office ----
-    const mood = clawdMood(b, f, active, waiting.length, t, now)
-    const vars = { name: b.lastName, title: b.lastTitle, n: active, q: waiting.length }
-    const said = b.quip && t < b.quip.until
-      ? b.quip.text
-      : fill(lineOf(CLAWD_LINES[mood], Math.floor(t / 20) + (mood === 'proud' || mood === 'oops' ? 0 : hash(mood))), vars)
-    const atDesks = desks.filter(one => !one.doneTick).length
-    const shuffle = mood === 'focused' || mood === 'stressed' ? (t % 4 < 2 ? 0 : 1) : 0
-    // Too narrow for Clawd and his notes side by side: stack them.
-    const isNarrow = cw < 44
-    const bubbleColor = '#5a6b80'
-
-    // The card answers "do I need to do anything?" first; the joke comes last.
-    const real = list.filter(one => !one.id.startsWith(DEMO))
-    const quiet = real.filter(one => isActive(one) && now - (one.lastAt ?? one.startedAt) > QUIET_MS)
-    const sick = real.filter(one => one.mood === 'failed' && now - (one.endedAt ?? 0) < SICK_MS)
-    const decisions = waiting.filter(a => a.kind === 'decision').length
-    const questions = waiting.length - decisions
-    const needs = [
-      decisions ? `📥 ${decisions} decision${decisions === 1 ? '' : 's'}` : '',
-      questions ? `${decisions ? '' : '📥 '}${questions} question${questions === 1 ? '' : 's'}` : '',
-      quiet[0] ? `⚠ ${nameOf(quiet[0])} quiet ${ago(now - (quiet[0].lastAt ?? quiet[0].startedAt))}${quiet.length > 1 ? ` +${quiet.length - 1}` : ''}` : '',
-      sick[0] ? `🤕 ${nameOf(sick[0])} failed${sick.length > 1 ? ` +${sick.length - 1}` : ''}` : '',
-    ].filter(Boolean)
-    const working = real.filter(isActive)
-    const busyLine = `${SPIN[t % SPIN.length]} ${b.activity}`
-    const headline = needs.length ? needs.join(' · ')
-      : b.isBusy ? busyLine
-        : working.length ? `${working.length} agent${working.length === 1 ? '' : 's'} working`
-          : '✓ All clear'
-    const headColor = needs.length ? 'yellow' : b.isBusy || working.length ? undefined : 'green'
-    const lastTask = b.task ? `“${b.task}”${b.outcome === 'stopped' ? ' · stopped early' : ''}` : ''
-    const detail = b.isBusy ? (needs.length ? busyLine : lastTask ? `On ${lastTask}` : '')
-      : working.length ? working.slice(0, 2).map(one => `${nameOf(one)}: ${one.mood === 'working' ? `${verbOf(one.tool ?? '')} ${one.target ?? ''}`.trim() : 'thinking'}`).join(' · ')
-        : b.doneAt ? ''
-          : 'Nothing on the go yet. Hand Clawd a task to get started.'
-    const canResume = !b.isBusy && working.length === 0 && b.task !== undefined
-
-    const stats = `${atDesks} at desks · ${lounge.length} on break · ${fmtTokens(totalTokens)} tokens`
-
-    // The hero card: the brand on top, Clawd and what needs the user below, all in one frame.
-    const hero = (
-      <Box borderStyle="round" borderColor={ACCENT} paddingX={1} flexDirection="column">
-        <Box flexDirection={isNarrow ? 'column' : 'row'} justifyContent="space-between" alignItems={isNarrow ? 'flex-start' : 'center'}>
-          <Box flexDirection="row" gap={1} alignItems="center">
-            <Text bold color={ACCENT}>{BRAND.toUpperCase()}</Text>
-          </Box>
-          <Text dimColor wrap="truncate">{stats}</Text>
-        </Box>
-        <Box flexDirection={isNarrow ? 'column' : 'row'} gap={2} marginTop={1} alignItems={isNarrow ? 'flex-start' : 'center'}>
-          <Box flexShrink={0} paddingLeft={shuffle}>
-            {art('clawd', clawdPixels(mood, t), CLAWD_COLOR, `Clawd, ${mood}`, 7)}
-          </Box>
-          <Box flexDirection="column" flexShrink={1}>
-            <Text bold>Clawd <Text dimColor>· Chief of Staff</Text></Text>
-            <Text bold color={headColor} wrap="truncate">{headline}</Text>
-            {detail !== '' && <Text dimColor wrap="truncate">{detail}</Text>}
-            <Box flexDirection="row" alignItems="center" marginTop={1}>
-              <Text color={bubbleColor}>◀</Text>
-              <Box borderStyle="round" borderColor={bubbleColor} paddingX={1} flexShrink={1}>
-                <Text italic color={mood === 'oops' ? 'red' : mood === 'proud' ? 'green' : undefined} wrap="wrap">{said}</Text>
-              </Box>
-            </Box>
-            {(quiet[0] || canResume) && (
-              <Box flexDirection="row" columnGap={1} marginTop={1}>
-                {quiet[0] && (
-                  <Button key="check-quiet" label={`check on ${nameOf(quiet[0])}`}
-                    onPress={() => setFx($, x => ({ ...x, view: 'office', selected: quiet[0]!.id }))} />
-                )}
-                {canResume && (
-                  <Button key="resume" label={b.outcome === 'stopped' ? 'retry last task' : 'pick up where we left off'}
-                    onPress={() => $.prompt.fill({ text: `Pick up where we left off: ${b.task}` })} />
-                )}
-              </Box>
-            )}
-          </Box>
-        </Box>
-      </Box>
-    )
-
-    // ---- A desk: the crab on top, its work below ----
-    const across = Math.max(1, Math.floor((cw + 1) / 19))
-    const cardW = Math.max(18, Math.floor((cw - (across - 1)) / across))
-    const infoW = cardW - 4
-    const card = (one: Employee) => {
-      const look = looksOf(one.type, books)
-      const role = roleOf(one.type, blurbOf(one))
-      const isCheering = one.doneTick !== undefined
-      const line3 = one.mood === 'arriving'
-        ? 'walking in…'
-        : isCheering ? (one.mood === 'failed' ? 'oh no ✗' : 'DONE! ✓')
-          : one.mood === 'working' ? `${SPIN[t % SPIN.length]} ${verbOf(one.tool ?? '')}`
-            : `💭 thinking${'.'.repeat(t % 4)}`
-      const line4 = one.mood === 'working' ? one.target ?? '' : `${ago((one.endedAt ?? now) - one.startedAt)} · ${one.tools} tools · ${fmtTokens(one.tokens)}`
-      const asks1 = waiting.filter(a => a.fromId === one.id).length
-      const slide = one.mood === 'arriving' ? Math.max(0, 3 - (t - one.joinedTick)) : 0
-
-      return (
-        <Box key={`desk-${one.id}`} width={cardW} borderStyle={one.id === f.selected ? 'double' : 'round'} borderColor={look.color} paddingX={1} flexDirection="column">
-          <Box flexDirection="row" justifyContent="center" paddingLeft={slide}>
-            {art(`crab-${one.id}`, employeePixels(one, role.key, look.color, t), look.color, `${look.name} the ${role.title}`)}
-          </Box>
-          <Text bold color={look.color} wrap="truncate">{nameOf(one)}{asks1 ? ' 📥' : ''}</Text>
-          <Text wrap="truncate">{clip(`${role.prop} ${role.title}`, infoW)}</Text>
-          <Text color={isCheering ? (one.mood === 'failed' ? 'red' : 'green') : undefined} wrap="truncate">{line3}</Text>
-          <Text dimColor wrap="truncate">{clip(line4, infoW)}</Text>
-        </Box>
-      )
-    }
-
-    // ---- The memory: what the project has settled, newest first ----
-    const memoryView = () => (
-      <Box flexDirection="column">
-        <Text bold dimColor>MEMORY · {remembered.length} settled · every brief carries the newest {RECALL}</Text>
-        {remembered.length === 0 && <Text dimColor wrap="wrap">Nothing yet. Decisions you make on the desk, and key choices agents report back, land here.</Text>}
-        {remembered.slice(-15).reverse().map(m => (
-          <Box key={`mem-${m.id}`} flexDirection="row" justifyContent="space-between" marginTop={1}>
-            <Box flexDirection="column" flexShrink={1}>
-              <Text wrap="wrap">{m.kind === 'decision' ? '⚖' : '✎'} {m.text}</Text>
-              <Text dimColor wrap="truncate">{m.id} · {m.by} · {ago(now - m.at)} ago</Text>
-            </Box>
-            <Button key={`forget-${m.id}`} plain dimColor label="forget" onPress={() => forget($, m.id)} />
-          </Box>
-        ))}
-      </Box>
-    )
-
-    // ---- The directory, which is the payroll: departments, who's hired, who's laid off ----
-    const directory = () => {
-      const types = [...new Set([...Object.keys(notes), ...Object.keys(books), ...list.map(one => one.type)])]
-      const off = new Set(pay.laidOff)
-      const groups = [...ROLES, GENERALIST]
-        .map(role => ({ role, members: types.filter(type => roleOf(type, notes[type] ?? '').key === role.key).sort() }))
-        .filter(g => g.members.length > 0)
-      const onPayroll = types.filter(type => !off.has(type)).length
-      return (
-        <Box flexDirection="column">
-          <Text bold dimColor>PAYROLL · {onPayroll} on payroll · {off.size} laid off · {groups.length} departments</Text>
-          {pay.stacks.length > 0 && <Text dimColor>This project: {pay.stacks.join(' + ')}</Text>}
-          {groups.map(({ role, members }) => {
-            const hired = members.filter(m => !off.has(m))
-            const canToggle = members.some(m => m.includes(':'))
-            return (
-              <Box flexDirection="column" marginTop={1}>
-                <Box flexDirection="row" justifyContent="space-between">
-                  <Text bold>{role.prop} {role.title} <Text dimColor>· {hired.length}/{members.length} hired</Text></Text>
-                  {canToggle && (
-                    <Button key={`dept-${role.key}`} plain dimColor label={hired.length === 0 ? 'rehire' : 'lay off'} onPress={() => toggleDept($, role.key)} />
-                  )}
-                </Box>
-                <Text wrap="wrap">
-                  {members.map(type => {
-                    const look = looksOf(type, books)
-                    const jobs = books[type]?.jobs ?? 0
-                    return off.has(type)
-                      ? <Text dimColor strikethrough>{look.name} </Text>
-                      : <Text color={look.color}>{look.name}{jobs > 0 ? `·${jobs}` : ''} </Text>
-                  })}
-                </Text>
-              </Box>
-            )
-          })}
-          <Box marginTop={1}>
-            <Button key="review" plain dimColor label="run a payroll review" onPress={async () => {
-              isPayrollFiled = false
-              await savePayroll($, { ...(await getPayroll($)), isReviewed: false })
-              await reviewPayroll($)
-            }} />
-          </Box>
-        </Box>
-      )
-    }
-
-    const cloudX = t % Math.max(1, cw - 8)
-
-    return (
-      <Box flexDirection="column">
-        {f.demo && (
-          <Box borderStyle="single" borderColor="yellow" paddingX={1}>
-            <Text color="yellow" wrap="wrap">🎬 {f.demo.step}/{f.demo.total} · {f.demo.caption}</Text>
-          </Box>
-        )}
-
-        {hero}
-
-        {waiting.length > 0 && (
-          <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text bold color="yellow">📥 FOR THE CEO · {waiting.length}</Text>
-              <Button key="desk" hotkey="i" plain label="open desk" onPress={() => $.ui.open({ id: DESK, title: DESK_TITLE, focus: true, columns: 60 })} />
-            </Box>
-            {waiting.slice(0, 3).map(a => (
-              <Text wrap="truncate"><Text dimColor>{a.id}</Text> {a.title} <Text dimColor>· {a.from}</Text></Text>
-            ))}
-          </Box>
-        )}
-
-        {f.view === 'directory' ? directory() : f.view === 'memory' ? memoryView() : (
-          <Box flexDirection="column">
-            <Text bold dimColor>THE FLOOR</Text>
-            {desks.length === 0
-              ? (
-                <Box flexDirection="column">
-                  <Text dimColor>{' '.repeat(cloudX)}☁</Text>
-                  <Text dimColor>Quiet in here. Ask Clawd to delegate something!</Text>
-                </Box>
-              )
-              : <Box flexDirection="row" flexWrap="wrap" columnGap={1}>{desks.map(card)}</Box>}
-
-            {lounge.length > 0 && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text bold dimColor>BREAK ROOM</Text>
-                {lounge.slice(-5).map(one => {
-                  const look = looksOf(one.type, books)
-                  const sip = (t + look.blink) % 6 === 0 ? '☕~' : '☕ '
-                  return (
-                    <Text wrap="truncate">
-                      <Text color={look.color}>{one.mood === 'failed' ? '🤕' : sip} {nameOf(one)}</Text>
-                      <Text dimColor> {clip(one.description || one.type, Math.max(4, cw - 36))} · {ago((one.endedAt ?? now) - one.startedAt)} · {fmtTokens(one.tokens)}</Text>
-                    </Text>
-                  )
-                })}
-              </Box>
-            )}
-
-            {selected && (
-              <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor={looksOf(selected.type, books).color} paddingX={1}>
-                <Text bold color={looksOf(selected.type, books).color}>
-                  {nameOf(selected)} the {roleOf(selected.type, blurbOf(selected)).title} <Text dimColor>({selected.type})</Text>
-                </Text>
-                <Text wrap="wrap">Task: {selected.description || '—'}</Text>
-                {(notes[selected.type] ?? '') !== '' && <Text dimColor wrap="truncate">Hired for: {notes[selected.type]}</Text>}
-                {selected.prompt !== '' && <Text dimColor wrap="truncate">Brief: {selected.prompt.replace(/\s+/g, ' ')}</Text>}
-                <Text dimColor wrap="truncate">
-                  {selected.model ? `${selected.model} · ` : ''}{selected.effort ? `${selected.effort} effort · ` : ''}{fmtTokens(selected.tokens)} tokens{selected.context ? ` · context ${fmtTokens(selected.context)}` : ''}
-                  {(books[selected.type]?.jobs ?? 0) > 1 ? ` · veteran of ${books[selected.type]?.jobs} jobs` : ''}
-                </Text>
-                {selected.log.slice(-4).map(line => <Text dimColor wrap="truncate">• {line}</Text>)}
-              </Box>
-            )}
-          </Box>
-        )}
-
-        <Box flexDirection="row" flexWrap="wrap" columnGap={1} marginTop={1}>
-          {f.view === 'office' && roster9.map((one, i) => (
-            <Button key={`pick-${one.id}`} hotkey={String(i + 1)} plain dimColor={one.id !== f.selected} label={nameOf(one)}
-              onPress={() => setFx($, x => ({ ...x, selected: x.selected === one.id ? undefined : one.id }))} />
-          ))}
-          <Button key="directory" hotkey="d" plain label={f.view === 'directory' ? 'office' : 'payroll'} onPress={() =>
-            setFx($, x => ({ ...x, view: x.view === 'directory' ? 'office' : 'directory' }))} />
-          <Button key="memory" hotkey="m" plain label={f.view === 'memory' ? 'office' : `memory${remembered.length ? ` (${remembered.length})` : ''}`} onPress={() =>
-            setFx($, x => ({ ...x, view: x.view === 'memory' ? 'office' : 'memory' }))} />
-          <Button key="home" hotkey="c" plain label="send home" onPress={async () => {
-            const t2 = await read($, tick)
-            await update($, staff, l => l.filter(one => isAtDesk(one, t2)))
-          }} />
-        </Box>
-      </Box>
-    )
+    return renderPanel(tools, e.props.bodyColumns, await panelData($), panelActions($))
   })
 }

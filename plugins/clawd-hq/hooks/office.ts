@@ -1,12 +1,10 @@
 // Pure pieces of the office: who a subagent is, how they look, what they and Clawd say.
-import type { Employee, Mood, Badge } from '../types'
+import type { Employee, Badge } from '../types'
 
 export type Role = {
   key: string
   title: string
   prop: string
-  hat: string
-  eyes?: string
   words: RegExp
   /** What Clawd says when one is hired. */
   hello: string
@@ -14,31 +12,31 @@ export type Role = {
 
 // First match wins, so the narrow roles sit above the broad ones.
 export const ROLES: Role[] = [
-  { key: 'clone', title: 'Clone of Clawd', prop: '🦀', hat: ' ▐▛▜▌', words: /^(claude|fork)$/i, hello: 'Another me? Finally, someone who gets it.' },
-  { key: 'security', title: 'Security Guard', prop: '🛡', hat: ' ▄█▄ ', words: /secur|vuln|owasp|threat|sanitiz/i, hello: 'Security’s here. Hide the .env files.' },
-  { key: 'detective', title: 'Bug Hunter', prop: '🕵', hat: ' ▄▀▄ ', words: /hunter|silent-failure|troubleshoot|debug|introspect/i, hello: 'A detective! The bug’s days are numbered.' },
-  { key: 'reviewer', title: 'Reviewer', prop: '🔍', hat: ' ▁▁▁ ', eyes: '■', words: /review|audit|critic|analy[sz]er|comply/i, hello: 'Reviewer on deck. Brace for nits.' },
-  { key: 'designer', title: 'Designer', prop: '🎨', hat: ' ~◠~ ', words: /\bui\b|ux|frontend|a11y|accessib|impeccable|css|motion|taste/i, hello: 'A designer! Quick, hide the Comic Sans.' },
-  { key: 'architect', title: 'Architect', prop: '📐', hat: '▟▀▀▀▙', words: /architect|blueprint/i, hello: 'An Architect! Someone fetch the blueprints.' },
-  { key: 'marketer', title: 'Marketer', prop: '📣', hat: ' ⋆⋆⋆ ', words: /marketing|seo|campaign|brand|launch/i, hello: 'Marketing’s in. Everything is now “revolutionary”.' },
-  { key: 'planner', title: 'Planner', prop: '📋', hat: ' ┳━┳ ', words: /plan|prd|roadmap|\bspec\b/i, hello: 'A Planner. Finally, a plan for my plans.' },
-  { key: 'tester', title: 'Tester', prop: '🧪', hat: ' ╭╮  ', words: /test|tdd|e2e|\bqa\b|coverage|evaluat/i, hello: 'Tester hired. Things are about to break, on purpose.' },
-  { key: 'speed', title: 'Speed Demon', prop: '⚡', hat: ' ≫≫≫ ', words: /perform|optimi[sz]|benchmark|latency|throughput/i, hello: 'Speed Demon! Everyone talk faster.' },
-  { key: 'ops', title: 'Ops', prop: '🖥', hat: ' ┌┬┐ ', words: /loop|operator|statusline|setup|config|devops|deploy|network/i, hello: 'Ops is here. Don’t touch prod.' },
-  { key: 'fixer', title: 'Fixer', prop: '🔧', hat: ' ▄▄▄ ', words: /build|resolver|fix|error|compile|refactor|cleaner|simplif/i, hello: 'Fixer hired. The build is in good claws now.' },
-  { key: 'engineer', title: 'Engineer', prop: '🏗', hat: ' ╤═╤ ', words: /generat|applier|packag|forker|engineer|implement|executor/i, hello: 'An Engineer! Ship it, ship it.' },
-  { key: 'comms', title: 'Comms Desk', prop: '📬', hat: ' ✉✉  ', words: /chief-of-staff|email|slack|comms|newsletter|\bvoc\b|messag/i, hello: 'Comms Desk! My inbox thanks you.' },
-  { key: 'people', title: 'People Team', prop: '🪪', hat: ' ♡♡♡ ', words: /onyx|onboard|\bhr\b|policy|employee|persona/i, hello: 'People Team’s here. Remember to take your leave!' },
-  { key: 'exec', title: 'Executive', prop: '👔', hat: ' ▀█▀ ', words: /execut|stakeholder|strateg|leadership/i, hello: 'An Executive. Everyone look busy.' },
-  { key: 'customer', title: 'Customer Success', prop: '🤝', hat: ' ◡◡◡ ', words: /customer|renewal|partner|success/i, hello: 'Customer Success! Our customers are in good claws.' },
-  { key: 'librarian', title: 'Librarian', prop: '📖', hat: ' ▔▔▔ ', words: /guide|lookup|reference|knowledge|docs-?lookup/i, hello: 'The Librarian! Shh, everyone.' },
-  { key: 'explorer', title: 'Scout', prop: '🧭', hat: ' ⌒⌒⌒ ', words: /explor|scout|locat|^search|code-explorer/i, hello: 'A Scout! Map me that codebase.' },
-  { key: 'writer', title: 'Writer', prop: '📚', hat: ' ═══ ', words: /doc|writ|article|copy|content|humaniz/i, hello: 'A Writer! Mind the em dashes.' },
-  { key: 'analyst', title: 'Analyst', prop: '📊', hat: ' ┬┬┬ ', words: /data|analyst|metric|sql|database|research|competit|market/i, hello: 'An Analyst. Show me the numbers!' },
+  { key: 'clone', title: 'Clone of Clawd', prop: '🦀', words: /^(claude|fork)$/i, hello: 'Another me? Finally, someone who gets it.' },
+  { key: 'security', title: 'Security Guard', prop: '🛡', words: /secur|vuln|owasp|threat|sanitiz/i, hello: 'Security’s here. Hide the .env files.' },
+  { key: 'detective', title: 'Bug Hunter', prop: '🕵', words: /hunter|silent-failure|troubleshoot|debug|introspect/i, hello: 'A detective! The bug’s days are numbered.' },
+  { key: 'reviewer', title: 'Reviewer', prop: '🔍', words: /review|audit|critic|analy[sz]er|comply/i, hello: 'Reviewer on deck. Brace for nits.' },
+  { key: 'designer', title: 'Designer', prop: '🎨', words: /\bui\b|ux|frontend|a11y|accessib|impeccable|css|motion|taste/i, hello: 'A designer! Quick, hide the Comic Sans.' },
+  { key: 'architect', title: 'Architect', prop: '📐', words: /architect|blueprint/i, hello: 'An Architect! Someone fetch the blueprints.' },
+  { key: 'marketer', title: 'Marketer', prop: '📣', words: /marketing|seo|campaign|brand|launch/i, hello: 'Marketing’s in. Everything is now “revolutionary”.' },
+  { key: 'planner', title: 'Planner', prop: '📋', words: /plan|prd|roadmap|\bspec\b/i, hello: 'A Planner. Finally, a plan for my plans.' },
+  { key: 'tester', title: 'Tester', prop: '🧪', words: /test|tdd|e2e|\bqa\b|coverage|evaluat/i, hello: 'Tester hired. Things are about to break, on purpose.' },
+  { key: 'speed', title: 'Speed Demon', prop: '⚡', words: /perform|optimi[sz]|benchmark|latency|throughput/i, hello: 'Speed Demon! Everyone talk faster.' },
+  { key: 'ops', title: 'Ops', prop: '🖥', words: /loop|operator|statusline|setup|config|devops|deploy|network/i, hello: 'Ops is here. Don’t touch prod.' },
+  { key: 'fixer', title: 'Fixer', prop: '🔧', words: /build|resolver|fix|error|compile|refactor|cleaner|simplif/i, hello: 'Fixer hired. The build is in good claws now.' },
+  { key: 'engineer', title: 'Engineer', prop: '🏗', words: /generat|applier|packag|forker|engineer|implement|executor/i, hello: 'An Engineer! Ship it, ship it.' },
+  { key: 'comms', title: 'Comms Desk', prop: '📬', words: /chief-of-staff|email|slack|comms|newsletter|\bvoc\b|messag/i, hello: 'Comms Desk! My inbox thanks you.' },
+  { key: 'people', title: 'People Team', prop: '🪪', words: /onyx|onboard|\bhr\b|policy|employee|persona/i, hello: 'People Team’s here. Remember to take your leave!' },
+  { key: 'exec', title: 'Executive', prop: '👔', words: /execut|stakeholder|strateg|leadership/i, hello: 'An Executive. Everyone look busy.' },
+  { key: 'customer', title: 'Customer Success', prop: '🤝', words: /customer|renewal|partner|success/i, hello: 'Customer Success! Our customers are in good claws.' },
+  { key: 'librarian', title: 'Librarian', prop: '📖', words: /guide|lookup|reference|knowledge|docs-?lookup/i, hello: 'The Librarian! Shh, everyone.' },
+  { key: 'explorer', title: 'Scout', prop: '🧭', words: /explor|scout|locat|^search|code-explorer/i, hello: 'A Scout! Map me that codebase.' },
+  { key: 'writer', title: 'Writer', prop: '📚', words: /doc|writ|article|copy|content|humaniz/i, hello: 'A Writer! Mind the em dashes.' },
+  { key: 'analyst', title: 'Analyst', prop: '📊', words: /data|analyst|metric|sql|database|research|competit|market/i, hello: 'An Analyst. Show me the numbers!' },
 ]
 
 export const GENERALIST: Role = {
-  key: 'generalist', title: 'Generalist', prop: '💼', hat: ' ___ ', words: /.^/, hello: 'A Generalist. Jack of all trades!',
+  key: 'generalist', title: 'Generalist', prop: '💼', words: /.^/, hello: 'A Generalist. Jack of all trades!',
 }
 
 export const NAMES = [
@@ -47,11 +45,6 @@ export const NAMES = [
   'Opal', 'Chip', 'Luna', 'Momo', 'Pickle', 'Hazel', 'Yuki', 'Ollie', 'Dune', 'Maple', 'Bean', 'Zara', 'Cosmo', 'Tilly', 'Bao', 'Atlas',
   'Poppy', 'Ash', 'Noodle', 'Quinn', 'Sprout', 'Jinx', 'Moss', 'Kit', 'Olive', 'Toast', 'Rumi', 'Echo II', 'Pebble', 'Sunny', 'Mango', 'Vale',
 ]
-const COLORS = ['#6aa9ff', '#6cc570', '#a984ff', '#ff8fc7', '#4fd1c5', '#f2c94c', '#ef6b6b', '#b5e655', '#5fd7ff', '#c3a6ff', '#7ee0b0', '#e57cd8']
-const EYES = ['•', 'o', '◕', '°', '^', '⊙', 'ˇ', '◉']
-
-export const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
 export function hash(text: string): number {
   let h = 2166136261
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
@@ -78,36 +71,9 @@ export function nameFor(type: string, taken: Set<string>): string {
   return `${pick(NAMES, seed)} ${taken.size}`
 }
 
-/** One character per agent type, so a type always comes back as the same person. */
+/** A type's name on the books, so a type always comes back as the same person. */
 export function looksOf(type: string, roster: Record<string, Badge> = {}) {
-  const seed = hash(type)
-  const face = /\(([^()]{3})\)/.exec(type)?.[1]
-  return {
-    name: roster[type]?.name ?? pick(NAMES, seed),
-    color: pick(COLORS, seed >>> 4),
-    eyes: pick(EYES, seed >>> 8),
-    blink: seed % 7,
-    face,
-  }
-}
-
-const MOUTH: Record<Mood, string> = { arriving: 'o', working: '_', thinking: '~', done: '▽', failed: 'n' }
-
-/** Three rows: hat, face, body. `tick` drives blinking, typing and cheering. */
-export function sprite(type: string, blurb: string, mood: Mood, tick: number, isParty: boolean): string[] {
-  const role = roleOf(type, blurb)
-  const look = looksOf(type)
-  const isBlink = (tick + look.blink) % 9 === 0
-  const eye = isBlink ? '-' : (role.eyes ?? look.eyes)
-  // A type whose name carries its own face (acme-ops' "(o_o) data-analyst") keeps it.
-  const face = look.face && !isBlink ? `(${look.face})` : `(${eye}${isParty ? '▽' : MOUTH[mood]}${eye})`
-  const cheer = isParty || mood === 'done'
-  const body = cheer
-    ? (tick % 2 ? '\\(█)/' : ' (█) ')
-    : mood === 'working'
-      ? (tick % 2 ? '/|█|\\' : '\\|█|/')
-      : mood === 'failed' ? '/|█|\\' : ' |█| '
-  return [role.hat, face, body]
+  return { name: roster[type]?.name ?? pick(NAMES, hash(type)) }
 }
 
 const VERBS: Record<string, string> = {
@@ -163,21 +129,11 @@ export const CLAWD_COLOR = '#d97757'
 
 /** The office's brand: a neutral slate blue for the chrome; Clawd keeps his own orange. */
 export const BRAND = 'Clawd HQ'
-export const ACCENT = '#6C8EBF'
-
-const BODY = [' ▝▜█████▛▘ ', '   ▘▘ ▝▝   ']
-export const CLAWD_ART: Record<'normal' | 'blink' | 'shades' | 'sleepy' | 'wave' | 'wave2', string[]> = {
-  normal: ['  ▐▛███▜▌  ', ...BODY],
-  blink: ['  ▐▄███▄▌  ', ...BODY],
-  shades: ['  ▐█▀█▀█▌  ', ...BODY],
-  sleepy: ['  ▐▀███▀▌  ', ...BODY],
-  wave: [' ▗▐▛███▜▌▖ ', '  ▜█████▛  ', '   ▘▘ ▝▝   '],
-  wave2: ['▗ ▐▛███▜▌ ▖', ' ▝▜█████▛▘ ', '   ▘▘ ▝▝   '],
-}
-
-export const CLAWD_PROP: Record<ClawdMood, string> = {
-  chill: '☕', focused: '⌨', delegating: '📋', proud: '🏆', stressed: '💦', oops: '😱', sleepy: '💤', waiting: '📥',
-}
+export const ACCENT = '#7C9FD1'
+/** "Needs you" and "waiting on you". */
+export const AMBER = '#e0a83a'
+/** Done, all clear. */
+export const GREEN = '#6bbf7a'
 
 export const CLAWD_LINES: Record<ClawdMood, string[]> = {
   chill: ['Shell yeah, quiet day.', 'Sipping coffee, admiring the roadmap.', 'Anyone need anything? No? Great.', 'I alphabetised the agents. Again.', 'Inbox zero. I am unstoppable.'],

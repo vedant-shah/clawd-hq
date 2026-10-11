@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clawd HQ people tab</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+body{margin:0}
+img{image-rendering:pixelated}
+button,input{font:inherit}
+button{cursor:pointer}
+input::placeholder{color:#a3a199}
+</style>
+</helmet>
+<div style="width: 600px; min-height: 760px; box-sizing: border-box; padding: 20px; background: #1b1b1a; color: #e8e6df; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.4; display: flex; flex-direction: column; gap: 16px">
+
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 16px">
+<div style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; color: {{accent}}">CLAWD HQ</div>
+<div style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #a3a199">
+<div style="display: flex; align-items: center; gap: 6px"><span>Context</span><div aria-hidden="true" style="width: 48px; height: 4px; border-radius: 2px; background: #353533"><div style="width: 21%; height: 4px; border-radius: 2px; background: {{accent}}"></div></div><span>21%</span></div>
+<span>Session 1h 48m</span>
+<span>Week 3d 4h</span>
+</div>
+</div>
+
+<div style="display: flex; gap: 4px; border-bottom: 1px solid #353533">
+<button style="appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 0 12px; height: 44px; font-size: 14px; color: #a3a199; display: flex; align-items: center; gap: 8px">Office <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #a3a199; border: 1px solid #454542; border-radius: 4px; padding: 1px 5px">O</span></button>
+<button style="appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 0 12px; height: 44px; font-size: 14px; color: #a3a199; display: flex; align-items: center; gap: 8px">Decisions <span style="color: #a3a199">27</span> <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #a3a199; border: 1px solid #454542; border-radius: 4px; padding: 1px 5px">D</span></button>
+<button style="appearance: none; background: none; border: 0; border-bottom: 2px solid {{accent}}; margin-bottom: -1px; padding: 0 12px; height: 44px; font-size: 14px; font-weight: 600; color: #e8e6df; display: flex; align-items: center; gap: 8px">People <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 400; color: #a3a199; border: 1px solid #454542; border-radius: 4px; padding: 1px 5px">P</span></button>
+</div>
+
+<div style="display: flex; align-items: center; gap: 10px; background: #232322; border: 1px solid #353533; border-radius: 8px; padding: 0 12px; height: 44px">
+<svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#a3a199" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
+<label for="search-people" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)">Search people and plugins</label>
+<input id="search-people" type="search" placeholder="Search people and plugins" style="flex: 1; min-width: 0; background: none; border: 0; outline: none; color: #e8e6df; font-size: 14px; height: 42px">
+<span style="font-size: 12px; color: #a3a199; flex: none">15 total</span>
+</div>
+
+<div style="display: flex; flex-direction: column">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.1em; color: #a3a199; padding-bottom: 4px">TEAM · 3 HIRED</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid #2b2b29">
+<div style="width: 48px; height: 36px; flex: none; display: flex; align-items: flex-end; justify-content: center"><img src="/_blob/f50aba5dc13e99df6f5786220e16d2d9" alt="" style="width: 42px; height: 30px"></div>
+<div style="flex: 1; min-width: 0">
+<div style="font-weight: 600">Pip the Planner</div>
+<div style="font-size: 13px; color: #a3a199">Plans work before anyone builds</div>
+<div style="font-size: 12px; color: #a3a199">ecc plugin · used 42 times · last 2h ago</div>
+</div>
+<div style="flex: none; font-size: 12px; color: #6bbf7a; display: flex; align-items: center; gap: 5px"><svg aria-hidden="true" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.6 2.6L10 3.5"></path></svg>Hired</div>
+</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid #2b2b29">
+<div style="width: 48px; height: 36px; flex: none; display: flex; align-items: flex-end; justify-content: center"><img src="/_blob/87b7c0492292d32278ad8dcb09693834" alt="" style="width: 42px; height: 36px"></div>
+<div style="flex: 1; min-width: 0">
+<div style="font-weight: 600">Rex the Reviewer</div>
+<div style="font-size: 13px; color: #a3a199">Reads every change line by line</div>
+<div style="font-size: 12px; color: #a3a199">ecc plugin · used 31 times · last 2h ago</div>
+</div>
+<div style="flex: none; font-size: 12px; color: #6bbf7a; display: flex; align-items: center; gap: 5px"><svg aria-hidden="true" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.6 2.6L10 3.5"></path></svg>Hired</div>
+</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 12px 0">
+<div style="width: 48px; height: 36px; flex: none; display: flex; align-items: flex-end; justify-content: center"><img src="/_blob/1b22e70572a812fde25e487ce4b945ba" alt="" style="width: 42px; height: 36px"></div>
+<div style="flex: 1; min-width: 0">
+<div style="font-weight: 600">Sage the Guard</div>
+<div style="font-size: 13px; color: #a3a199">Checks for leaks and unsafe code</div>
+<div style="font-size: 12px; color: #a3a199">ecc plugin · used 12 times · last 1d ago</div>
+</div>
+<div style="flex: none; font-size: 12px; color: #6bbf7a; display: flex; align-items: center; gap: 5px"><svg aria-hidden="true" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5l2.6 2.6L10 3.5"></path></svg>Hired</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.1em; color: #a3a199; padding-bottom: 4px">TALENT POOL · 12 WAITING</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid #2b2b29">
+<div style="width: 48px; height: 36px; flex: none; display: flex; align-items: flex-end; justify-content: center"><img src="/_blob/e1eaeb405df9fa43ac991b4f1bea4034" alt="" style="width: 42px; height: 36px; opacity: 0.75"></div>
+<div style="flex: 1; min-width: 0">
+<div style="font-weight: 600">Copper the Copywriter</div>
+<div style="font-size: 13px; color: #a3a199">Writes words that sell</div>
+<div style="font-size: 12px; color: #a3a199">marketing plugin · used 6 times · last 9d ago</div>
+</div>
+<button style="flex: none; appearance: none; background: #2c2c2a; border: 1px solid #454542; border-radius: 8px; color: #e8e6df; font-size: 13px; min-height: 44px; padding: 0 16px">Hire</button>
+</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid #2b2b29">
+<div style="width: 48px; height: 36px; flex: none; display: flex; align-items: flex-end; justify-content: center"><img src="/_blob/646f43157d3352dfdbe2190366d67a57" alt="" style="width: 42px; height: 36px; opacity: 0.75"></div>
+<div style="flex: 1; min-width: 0">
+<div style="font-weight: 600">Lex the Lawyer</div>
+<div style="font-size: 13px; color: #a3a199">Reads contracts closely</div>
+<div style="font-size: 12px; color: #a3a199">legal plugin · used 2 times · last 21d ago</div>
+</div>
+<button style="flex: none; appearance: none; background: #2c2c2a; border: 1px solid #454542; border-radius: 8px; color: #e8e6df; font-size: 13px; min-height: 44px; padding: 0 16px">Hire</button>
+</div>
+
+<div style="display: flex; gap: 14px; align-items: center; padding: 12px 0">
+<div style="width: 48px; height: 36px; flex: none; display: flex; align-items: flex-end; justify-content: center"><img src="/_blob/af3b75da2fe201dc844b1a54c5d92008" alt="" style="width: 42px; height: 36px; opacity: 0.75"></div>
+<div style="flex: 1; min-width: 0">
+<div style="font-weight: 600">Penny the Accountant</div>
+<div style="font-size: 13px; color: #a3a199">Makes both sides of the books match</div>
+<div style="font-size: 12px; color: #a3a199">finance plugin · never used</div>
+</div>
+<button style="flex: none; appearance: none; background: #2c2c2a; border: 1px solid #454542; border-radius: 8px; color: #e8e6df; font-size: 13px; min-height: 44px; padding: 0 16px">Hire</button>
+</div>
+</div>
+
+<div style="font-size: 12px; color: #a3a199; border-top: 1px solid #2b2b29; padding-top: 12px">And 9 more in the pool · search to find them</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#7C9FD1","options":["#7C9FD1","#6C8EBF","#D97757","#5FB3A8"]},"$preview":{"width":600,"height":760}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#7C9FD1' };
+}
+}
+</script>
+</body>
+</html>

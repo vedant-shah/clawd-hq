@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clawd HQ decisions tab</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+body{margin:0}
+button,input{font:inherit}
+button{cursor:pointer}
+input::placeholder{color:#a3a199}
+</style>
+</helmet>
+<div style="width: 600px; min-height: 860px; box-sizing: border-box; padding: 20px; background: #1b1b1a; color: #e8e6df; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.4; display: flex; flex-direction: column; gap: 16px">
+
+<div style="display: flex; justify-content: space-between; align-items: center; gap: 16px">
+<div style="font-size: 13px; font-weight: 600; letter-spacing: 0.08em; color: {{accent}}">CLAWD HQ</div>
+<div style="display: flex; align-items: center; gap: 14px; font-size: 12px; color: #a3a199">
+<div style="display: flex; align-items: center; gap: 6px"><span>Context</span><div aria-hidden="true" style="width: 48px; height: 4px; border-radius: 2px; background: #353533"><div style="width: 21%; height: 4px; border-radius: 2px; background: {{accent}}"></div></div><span>21%</span></div>
+<span>Session 1h 48m</span>
+<span>Week 3d 4h</span>
+</div>
+</div>
+
+<div style="display: flex; gap: 4px; border-bottom: 1px solid #353533">
+<button style="appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 0 12px; height: 44px; font-size: 14px; color: #a3a199; display: flex; align-items: center; gap: 8px">Office <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #a3a199; border: 1px solid #454542; border-radius: 4px; padding: 1px 5px">O</span></button>
+<button style="appearance: none; background: none; border: 0; border-bottom: 2px solid {{accent}}; margin-bottom: -1px; padding: 0 12px; height: 44px; font-size: 14px; font-weight: 600; color: #e8e6df; display: flex; align-items: center; gap: 8px">Decisions <span style="font-weight: 400; color: #a3a199">27</span> <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 400; color: #a3a199; border: 1px solid #454542; border-radius: 4px; padding: 1px 5px">D</span></button>
+<button style="appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 0 12px; height: 44px; font-size: 14px; color: #a3a199; display: flex; align-items: center; gap: 8px">People <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #a3a199; border: 1px solid #454542; border-radius: 4px; padding: 1px 5px">P</span></button>
+</div>
+
+<div style="display: flex; align-items: center; gap: 10px; background: #232322; border: 1px solid #353533; border-radius: 8px; padding: 0 12px; height: 44px">
+<svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#a3a199" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
+<label for="filter-decisions" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%)">Filter decisions</label>
+<input id="filter-decisions" type="search" placeholder="Filter decisions" style="flex: 1; min-width: 0; background: none; border: 0; outline: none; color: #e8e6df; font-size: 14px; height: 42px">
+<span style="font-size: 12px; color: #a3a199; flex: none">27 total</span>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 14px">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.1em; color: #a3a199">OCTOBER 10</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; font-weight: 600; color: #1b1b1a; background: #d97757; border-radius: 4px; padding: 2px 0; margin-top: 1px">You</span>
+<div style="min-width: 0">The public default is a neutral Clawd HQ with no company logo. Your own company name comes from onboarding.</div>
+</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; font-weight: 600; color: #1b1b1a; background: #d97757; border-radius: 4px; padding: 2px 0; margin-top: 1px">You</span>
+<div style="min-width: 0">Publishing: public GitHub repo, MIT license, no fixed version number.</div>
+</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; color: #a3a199; border: 1px solid #454542; border-radius: 4px; padding: 1px 0; margin-top: 1px">Note</span>
+<div style="min-width: 0; color: #a3a199"><span style="color: #d6d3ca">Rex the Reviewer</span> · The accent is a neutral slate blue that does not clash with Clawd's orange.</div>
+</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; font-weight: 600; color: #1b1b1a; background: #d97757; border-radius: 4px; padding: 2px 0; margin-top: 1px">You</span>
+<div style="min-width: 0">The logbook lives as readable text files in a .clawd-hq folder, committed with the project.</div>
+</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; font-weight: 600; color: #1b1b1a; background: #d97757; border-radius: 4px; padding: 2px 0; margin-top: 1px">You</span>
+<div style="min-width: 0">The plan is approved: 18 steps, built one at a time.</div>
+</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; color: #a3a199; border: 1px solid #454542; border-radius: 4px; padding: 1px 0; margin-top: 1px">Note</span>
+<div style="min-width: 0; color: #a3a199"><span style="color: #d6d3ca">Poppy the Generalist</span> · Avatar parts are rows of characters with offsets, which is simple to bring into the plugin.</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 14px; padding-top: 4px">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.1em; color: #a3a199">OCTOBER 8</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; font-weight: 600; color: #1b1b1a; background: #d97757; border-radius: 4px; padding: 2px 0; margin-top: 1px">You</span>
+<div style="min-width: 0">Quiet mode is the default: tool calls hide behind one-line summaries.</div>
+</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; font-weight: 600; color: #1b1b1a; background: #d97757; border-radius: 4px; padding: 2px 0; margin-top: 1px">You</span>
+<div style="min-width: 0">Clawd only orchestrates and never does the work himself.</div>
+</div>
+
+<div style="display: flex; gap: 12px; align-items: flex-start">
+<span style="flex: none; width: 46px; text-align: center; font-size: 11px; font-weight: 600; color: #1b1b1a; background: #d97757; border-radius: 4px; padding: 2px 0; margin-top: 1px">You</span>
+<div style="min-width: 0">Clawd HQ is one project's logbook, not a control center for many projects.</div>
+</div>
+</div>
+
+<div style="font-size: 12px; color: #a3a199; border-top: 1px solid #2b2b29; padding-top: 12px">Showing 9 of 27 · scroll for older</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#7C9FD1","options":["#7C9FD1","#6C8EBF","#D97757","#5FB3A8"]},"$preview":{"width":600,"height":860}}'>
+class Component extends DCLogic {
+renderVals() {
+return { accent: this.props.accent ?? '#7C9FD1' };
+}
+}
+</script>
+</body>
+</html>

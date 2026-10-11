@@ -30,7 +30,7 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 - `/ceo` opens the CEO desk.
 - `/office-demo` plays a one-minute tour.
 
-In the office: `1` to `9` pick an employee, `i` opens the CEO desk, `d` shows the payroll, `m` shows the project memory, `c` sends the break room home.
+In the office, the tabs are `o` Office (who is at work), `d` Decisions (the project memory), `p` People (hire and lay off) and `l` Log (work finished this session). `i` opens the CEO desk. The top row shows how full the context is and, on a Claude subscription, how much of your session and weekly limits you have used.
 
 ## What this plugin changes
 

@@ -8,3 +8,8 @@ plugins/*/.claude-plugin/types/
 # Private working notes and an outdated internal deck, kept out of the public repo.
 docs/*.pptx
 docs/handoff.md
+docs/research/
+
+# An early terminal mockup, replaced by the design files in docs/panel/design.
+docs/panel/*.png
+docs/panel/build_mock.py

@@ -16,12 +16,13 @@ test('every view has its pane', () => {
   for (const pane of PANES) expect(paneOf(pane.view)).toBe(pane)
 })
 
-test('the footer is pinned by filling the room: in rows on a docked terminal, by percent elsewhere, and not at all inline on the terminal', () => {
-  expect(pinHeight('terminal', 'dock', 40)).toBe(40)
+test('the footer is pinned by filling the room: in rows where the surface gave them, by percent when it did not, and not at all inline on the terminal', () => {
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) expect(pinHeight(surface, 'dock', 40)).toBe(40)
   expect(pinHeight('terminal', 'inline', 12)).toBeUndefined()
-  for (const surface of ['desktop', 'vscode', 'mobile'] as const) expect(pinHeight(surface, 'dock', 40)).toBe('100%')
-  expect(pinHeight('desktop', 'inline', 12)).toBe('100%')
-  // A room that is not a positive whole number is no room to fill.
+  expect(pinHeight('desktop', 'inline', 12)).toBe(12)
+  // A room that is not a positive whole number is no room to fill: the terminal fits its tree, the others ask for their whole body.
   expect(pinHeight('terminal', 'dock', 0)).toBeUndefined()
   expect(pinHeight('terminal', 'dock', Number.NaN)).toBeUndefined()
+  expect(pinHeight('desktop', 'dock', 0)).toBe('100%')
+  expect(pinHeight('desktop', 'dock', Number.NaN)).toBe('100%')
 })

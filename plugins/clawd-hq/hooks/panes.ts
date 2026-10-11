@@ -21,12 +21,12 @@ export const PANES: readonly PaneSpec[] = [BY_VIEW.office, BY_VIEW.decisions, BY
 export const paneOf = (view: PaneView): PaneSpec => BY_VIEW[view]
 
 /**
- * The room a pane's column should fill so its footer sits on the bottom edge: the docked terminal's body rows (cells), a
- * percent of the surface's own body elsewhere (it grows with the content, never clips it). An inline terminal pane fits its tree.
+ * The room a pane's column should fill so its footer sits on the bottom edge: the rows the surface gave the body (it grows
+ * with the content, never clips it). Without them, the other surfaces ask for their whole body; an inline terminal pane fits its tree.
  */
 export function pinHeight(surface: string, placement: 'dock' | 'inline', bodyRows: number): number | string | undefined {
-  if (surface !== 'terminal') return '100%'
-  return placement === 'dock' && Number.isInteger(bodyRows) && bodyRows > 0 ? bodyRows : undefined
+  if (Number.isInteger(bodyRows) && bodyRows > 0 && !(surface === 'terminal' && placement === 'inline')) return bodyRows
+  return surface === 'terminal' ? undefined : '100%'
 }
 
 // ---- Opening, raising and retitling. The host's calls come in as `io`: `$` and the state atoms stay in register.tsx. ----

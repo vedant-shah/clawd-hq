@@ -142,7 +142,7 @@ test('the demo caption stays at the top of every pane, above everything else', a
   }
 })
 
-test('the footer sits on the bottom edge where the room is known: a docked terminal pane fills its rows, other surfaces fill their body, an inline terminal pane just ends with it', async ($, on) => {
+test('the footer sits on the bottom edge where the room is known: a docked terminal pane fills its rows, other surfaces too, falling back to their whole body, an inline terminal pane just ends with it', async ($, on) => {
   host(on)
   const rowsOf = async (surface: 'terminal' | 'desktop', over: Record<string, unknown>) => {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...paneProps('clawd-hq-log', 'Log', over) })
@@ -161,9 +161,14 @@ test('the footer sits on the bottom edge where the room is known: a docked termi
   expect(inline.rows.some(r => r.props.flexGrow === 1)).toBe(false)
   expect(inline.rows[inline.rows.length - 1]?.props.key).toBe('gauges')
 
-  const desktop = await rowsOf('desktop', { placement: 'dock' })
-  expect(desktop.root.props.minHeight).toBe('100%')
+  const desktop = await rowsOf('desktop', { placement: 'dock', scroll: { offset: 0, bodyRows: 52 } })
+  expect(desktop.root.props.minHeight).toBe(52)
   expect(desktop.rows[desktop.rows.length - 2]?.props.flexGrow).toBe(1)
+
+  // Where the surface gives no rows, the body's whole height stands in.
+  const unsized = await rowsOf('desktop', { placement: 'dock', scroll: { offset: 0, bodyRows: 0 } })
+  expect(unsized.root.props.minHeight).toBe('100%')
+  expect(unsized.rows[unsized.rows.length - 2]?.props.flexGrow).toBe(1)
 })
 
 // ---- The tour ----

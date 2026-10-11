@@ -39,7 +39,8 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 - It adds your project's recorded decisions to the conversation and to subagent briefs. Choices that agents report are marked as notes for reference, not instructions.
 - It adds three tools: one to file a question on the CEO desk, one to record a decision, and one that plays the demo.
 - It can hide agent types you lay off in the payroll.
-- It stores decisions, the payroll and the agent roster on your machine, in a file in your Claude Code configuration folder. Decisions and the payroll are kept per project folder, so every Claude Code session in that folder shares them. The roster of agent names is shared by all projects.
+- It saves your decisions as a plain Markdown file in your project, at `.clawd-hq/decisions.md`: one line per decision, which you can read and edit by hand. Commit it to share the decisions with your team, or add `.clawd-hq/` to `.gitignore` to keep them private. Notes and headings you add to the file are left alone, and it keeps the newest 1000 decisions. Treat the file like `CLAUDE.md`: whatever it says is given to the agents as your decisions.
+- It keeps the payroll (who you have laid off) and a count of how often each agent type was hired on your machine, in your Claude Code configuration folder. The payroll is kept per project folder.
 - It makes no network calls and starts no processes of its own.
 
 ## Development

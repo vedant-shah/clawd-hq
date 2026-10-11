@@ -11,6 +11,7 @@ import { ACCENT, BRAND, ago, clip, hash, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { DEMO, isActive, isWaiting, waitingSummary } from './panel-model'
+import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
@@ -34,7 +35,8 @@ const DEMO_TOOL = 'mcp__clawd-hq__demo'
 const ASK_TOOL = 'mcp__clawd-hq__ask_ceo'
 const MEM_TOOL = 'mcp__clawd-hq__remember'
 // The memory keeps this many entries per project; Clawd and each brief get the newest RECALL.
-const MAX_MEMORY = 200
+/** The newest this many decisions are kept: in the file and in the pane. */
+const MAX_MEMORY = 1000
 const RECALL = 25
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
@@ -217,17 +219,43 @@ async function answer($: EngineInterface, id: string, value: string, status: 'an
   await showStatus($)
 }
 
-// ---- Memory: kept per project in the store, mirrored in state for the pane ----
+// ---- Memory: the project's decisions, a plain file in its .clawd-hq folder, mirrored in state for the pane ----
 
-async function loadMemory($: EngineInterface): Promise<Memory[]> {
-  const saved = cwd ? ((await $.store.get(`memory:${cwd}`)) as Memory[] | undefined) : undefined
-  return saved ?? (await read($, memory))
+/** Set once a write failed this session, so the person is told once and not on every decision. */
+let isLogbookWarned = false
+
+/**
+ * The file's text and entries; where there is no file, what this session holds. When the file's state cannot be
+ * known (the check or the read failed), it is not safe to write over.
+ */
+async function loadLogbook($: EngineInterface): Promise<{ text: string; list: Memory[]; isWritable: boolean }> {
+  if (!cwd) return { text: '', list: await read($, memory), isWritable: false }
+  const path = `${cwd}/${LOGBOOK_FILE}`
+  try {
+    if (!(await $.fs.exists(path))) return { text: '', list: await read($, memory), isWritable: true }
+    const text = await $.fs.read(path)
+    return { text, list: fromMarkdown(text, await $.clock.now()), isWritable: true }
+  } catch {
+    return { text: '', list: await read($, memory), isWritable: false }
+  }
 }
 
+const loadMemory = async ($: EngineInterface): Promise<Memory[]> => (await loadLogbook($)).list
+
 async function saveMemory($: EngineInterface, fn: (list: Memory[]) => Memory[]) {
-  const list = fn(await loadMemory($)).slice(-MAX_MEMORY)
+  const { text, list: before, isWritable } = await loadLogbook($)
+  const list = fn(before).slice(-MAX_MEMORY)
   await update($, memory, () => list)
-  if (cwd) await $.store.set(`memory:${cwd}`, list)
+  if (cwd) {
+    try {
+      if (!isWritable) throw new Error('the file cannot be read, so it is not written over')
+      await $.fs.write(`${cwd}/${LOGBOOK_FILE}`, mergeMarkdown(text, list, await $.clock.now()))
+    } catch {
+      // The decision stays in this session; the person hears of it once.
+      if (!isLogbookWarned) $.ui.toast(`Could not save decisions to ${LOGBOOK_FILE}. They are kept for this session only.`)
+      isLogbookWarned = true
+    }
+  }
   await retitleDecisions(paneIo($))
 }
 
@@ -483,6 +511,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
     isPayrollFiled = false
+    isLogbookWarned = false
     await $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })
     await $.command.register({ name: 'ceo', description: 'Open the CEO Desk: decisions and questions the agents raised for you' })
     await $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })

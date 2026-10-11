@@ -117,7 +117,7 @@ test("Clawd's card says All clear with nothing waiting, offers to pick up the la
   }
 })
 
-test('the gauges are Context always, Session and Week with percent and time left only when the limits have a reading', async ($, on) => {
+test('the gauges are Context always, 5h and 7d with percent and time left only when the limits have a reading', async ($, on) => {
   const { clock } = host(on)
   const context = { window: 1_000_000, tokens: 210_000, percent: 21 }
   for (const surface of SURFACES) {
@@ -125,8 +125,8 @@ test('the gauges are Context always, Session and Week with percent and time left
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await ui.find({ type: 'Text', text: /^Context$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^21%$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Session/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /Week/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^5h$/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^7d$/ })).toBeUndefined()
     // The old counts line is gone.
     expect(await ui.find({ type: 'Text', text: /at desks|on break|tokens/ })).toBeUndefined()
 
@@ -139,15 +139,15 @@ test('the gauges are Context always, Session and Week with percent and time left
       ],
       changed: ['rateLimits'],
     } as never)
-    expect(await ui.find({ type: 'Text', text: /^Session$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^5h$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^62%$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^· 1h 15m$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^Week$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^7d$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^34%$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^· 4d 22h$/ })).toBeDefined()
     // The percent is bright; the label and the time are dim.
     expect((await ui.find({ type: 'Text', text: /^62%$/ }))?.props.dimColor).toBeUndefined()
-    expect((await ui.find({ type: 'Text', text: /^Session$/ }))?.props.dimColor).toBe(true)
+    expect((await ui.find({ type: 'Text', text: /^5h$/ }))?.props.dimColor).toBe(true)
     expect((await ui.find({ type: 'Text', text: /^· 1h 15m$/ }))?.props.dimColor).toBe(true)
 
     // A gauge never breaks in the middle: the row wraps between gauges, each one holds its width.

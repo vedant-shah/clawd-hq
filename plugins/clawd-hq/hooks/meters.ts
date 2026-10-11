@@ -60,8 +60,8 @@ export type GaugeView = {
 }
 
 const LIMITS: Array<{ key: 'session' | 'week'; label: string; kind: string }> = [
-  { key: 'session', label: 'Session', kind: 'five_hour' },
-  { key: 'week', label: 'Week', kind: 'seven_day' },
+  { key: 'session', label: '5h', kind: 'five_hour' },
+  { key: 'week', label: '7d', kind: 'seven_day' },
 ]
 
 /** Context always; a limit only while its reading is current (it has a reset time still to come). */

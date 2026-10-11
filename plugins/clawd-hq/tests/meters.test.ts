@@ -62,7 +62,7 @@ test('the header has context, then session and week with their percent and time 
     ],
   }, NOW)
   expect(gauges.map(g => g.key)).toEqual(['context', 'session', 'week'])
-  expect(gauges.map(g => g.label)).toEqual(['Context', 'Session', 'Week'])
+  expect(gauges.map(g => g.label)).toEqual(['Context', '5h', '7d'])
   expect(gauges.map(g => g.percent)).toEqual(['21%', '62%', '34%'])
   expect(gauges.map(g => g.value)).toEqual([20.6, 62.4, 33.6])
   expect(gauges.map(g => g.left)).toEqual([undefined, '1h 15m', '4d 22h'])

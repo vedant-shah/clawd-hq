@@ -17,3 +17,6 @@ docs/panel/build_mock.py
 # Throwaway experiment mods and their results (they hold local paths and usage counts).
 experiments/
 docs/experiments.md
+
+# This project's own Clawd HQ logbook (private decisions); other projects commit theirs.
+.clawd-hq/

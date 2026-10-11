@@ -1,5 +1,7 @@
 // What the side panel shows, as pure functions: who is at work, who finished, what is waiting, how decisions group.
 import type { Ask, Badge, Employee, Memory } from '../types'
+import { MAX_SENTENCE, READING_BRIEF } from './activity'
+import { oneLine } from './desk'
 import { ago, displayName, looksOf, roleOf } from './office'
 import type { PanelData } from './panel-types'
 
@@ -35,12 +37,15 @@ export function recentFailures(staff: Employee[], now: number, withinMs: number)
     .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
 }
 
-/** "Working · 4m", or "Waiting on you · 1m" while a question of theirs sits on the CEO desk. */
-export function workState(one: Employee, asks: Ask[], now: number): { isWaiting: boolean; label: string } {
-  const held = asks.filter(a => a.fromId === one.id && isWaiting(a))
-  if (held.length === 0) return { isWaiting: false, label: `Working · ${ago(now - one.startedAt)}` }
-  const since = Math.min(...held.map(a => a.askedAt))
-  return { isWaiting: true, label: `Waiting on you · ${ago(now - since)}` }
+/**
+ * The two lines of a row at work, apart from its name: the sentence for what it does now, or, while a question of
+ * its sits on the CEO desk, "Waiting on you: <the oldest question>"; and the dim run time and tokens used so far.
+ */
+export function workLine(one: Employee, asks: Ask[], now: number): { isWaiting: boolean; sentence: string; stats: string } {
+  const held = asks.filter(a => a.fromId === one.id && isWaiting(a)).sort((a, b) => a.askedAt - b.askedAt)
+  const sentence = held[0] ? oneLine(`Waiting on you: ${held[0].title}`, MAX_SENTENCE) : one.activity ?? READING_BRIEF
+  const tokens = one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''
+  return { isWaiting: held.length > 0, sentence, stats: `· ${ago(now - one.startedAt)}${tokens}` }
 }
 
 /** The right-hand lines of a finished row. Lost contact reads how long it was silent, not how long the run lasted. */
@@ -60,6 +65,14 @@ export function statusOf(waiting: number, failed: string[]): { isClear: boolean;
     failed[0] !== undefined ? `${failed[0]} failed${failed.length > 1 ? ` +${failed.length - 1}` : ''}` : '',
   ].filter(Boolean)
   return parts.length === 0 ? { isClear: true, text: 'All clear' } : { isClear: false, text: parts.join(' · ') }
+}
+
+/** "2 decisions · 1 question": what waits on the CEO, for the band above the prompt. */
+export function waitingSummary(waiting: Ask[]): string {
+  const decisions = waiting.filter(a => a.kind === 'decision').length
+  const questions = waiting.length - decisions
+  const count = (n: number, noun: string) => (n > 0 ? `${n} ${noun}${n === 1 ? '' : 's'}` : '')
+  return [count(decisions, 'decision'), count(questions, 'question')].filter(Boolean).join(' · ')
 }
 
 /** "Sage" from "Sage the Guard". */

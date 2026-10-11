@@ -56,3 +56,11 @@ test('agent choices are reference notes under their own lead-in, user decisions 
   }
   expect(recallNote([mem('decision', 'Use Postgres', 'CEO')])).not.toContain('Notes from agents, for reference')
 })
+
+test('oneLine cuts on whole characters: an emoji is never split in half', () => {
+  const cut = oneLine('😀😀😀😀😀😀', 4)
+  expect(cut).toBe('😀😀😀…')
+  expect(Array.from(cut)).toHaveLength(4)
+  expect(oneLine('😀😀😀😀', 4)).toBe('😀😀😀😀')
+  expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(oneLine('ab😀😀😀😀😀😀😀', 5))).toBe(false)
+})

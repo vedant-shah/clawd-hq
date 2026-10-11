@@ -76,32 +76,6 @@ export function looksOf(type: string, roster: Record<string, Badge> = {}) {
   return { name: roster[type]?.name ?? pick(NAMES, hash(type)) }
 }
 
-const VERBS: Record<string, string> = {
-  Read: 'reading', Edit: 'editing', Write: 'writing', MultiEdit: 'editing', NotebookEdit: 'editing',
-  Bash: 'running', Grep: 'searching', Glob: 'looking for', WebFetch: 'browsing', WebSearch: 'googling',
-  Agent: 'delegating', Task: 'delegating', TodoWrite: 'planning', Skill: 'studying',
-}
-
-export function verbOf(tool: string): string {
-  if (tool.startsWith('mcp__')) return tool.split('__').slice(-1)[0]?.replace(/_/g, ' ') ?? tool
-  return VERBS[tool] ?? tool
-}
-
-const base = (path: string) => path.split('/').filter(Boolean).slice(-1)[0] ?? path
-
-/** A few words naming what a tool call works on. */
-export function targetOf(input: Record<string, unknown>): string {
-  const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : undefined)
-  const path = str('file_path') ?? str('notebook_path') ?? str('path')
-  if (path) return base(path)
-  const url = str('url')
-  if (url) return url.replace(/^https?:\/\//, '').split('/')[0] ?? url
-  const skill = str('skill')
-  if (skill) return `📖 ${skill.replace(/^[^:]+:/, '')}`
-  const raw = str('subagent_type') ?? str('description') ?? str('command') ?? str('pattern') ?? str('query') ?? ''
-  return raw.replace(/\s+/g, ' ').trim()
-}
-
 export function clip(text: string, width: number): string {
   if (width <= 1) return ''
   return text.length > width ? text.slice(0, width - 1) + '…' : text

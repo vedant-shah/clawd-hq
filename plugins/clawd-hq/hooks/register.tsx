@@ -4,25 +4,25 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { Ask, Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
 import { BRIEF_NOTE, STAFFING_NOTE, answerText, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
+import { READING_BRIEF, THINKING, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
 import { renderDesk } from './desk-pane'
-import { ACCENT, BRAND, ago, clip, hash, looksOf, nameFor, roleOf, targetOf, verbOf } from './office'
+import { ACCENT, BRAND, ago, clip, hash, looksOf, nameFor, roleOf } from './office'
 import { renderPanel } from './panel'
-import { DEMO, isActive, isWaiting } from './panel-model'
+import { limitsOf } from './meters'
+import { DEMO, isActive, isWaiting, waitingSummary } from './panel-model'
+import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
+import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import { ASK_SPEC, REMEMBER_SPEC } from './tool-specs'
-import { QUIET_MS, endOfStatus, endRun, markEngine, note, quietFor, restart, touch, verdict, withStep } from './staff-model'
+import { QUIET_MS, endOfStatus, endRun, hire, markEngine, quietFor, restart, touch, verdict, withStep, withTool } from './staff-model'
 import { BOSS0, FX0, GAUGE0, PAYROLL0, edit } from './state'
 
-const PANE = 'clawd-hq'
-const TITLE = BRAND
 const DESK = 'ceo-desk'
 const DESK_TITLE = 'CEO Desk'
 const FRAME_MS = 400
 const CHEER_TICKS = 5
-// The Log can list 40 rows, so the books keep more finishers than that.
-const MAX_STAFF = 60
 const MAX_ASKS = 60
 const PROMPT_CHARS = 400
 const BLURB_CHARS = 200
@@ -63,17 +63,6 @@ const efforts = new Map<string, Effort>()
 
 const isAtDesk = (e: Employee, t: number) => isActive(e) || (e.doneTick !== undefined && t - e.doneTick < CHEER_TICKS)
 
-function hire(list: Employee[], fresh: Employee): Employee[] {
-  if (list.some(e => e.id === fresh.id)) {
-    // A tool call can land before the spawn answers: keep its progress, take the spawn's facts.
-    return list.map(e => (e.id === fresh.id ? { ...e, type: fresh.type, description: fresh.description || e.description, prompt: fresh.prompt || e.prompt } : e))
-  }
-  const all = [...list, fresh]
-  // Over the cap, the longest-gone finishers leave first; a running agent is never dropped.
-  let extra = all.length - MAX_STAFF
-  return extra <= 0 ? all : all.filter(e => (extra > 0 && !isActive(e) ? (extra--, false) : true))
-}
-
 /** Puts a type on the books with a name of its own, kept across sessions in the store. */
 async function enroll($: EngineInterface, type: string, jobs: number) {
   const mine = await read($, roster)
@@ -92,7 +81,7 @@ async function enroll($: EngineInterface, type: string, jobs: number) {
 
 async function newHire($: EngineInterface, id: string, type: string, description: string, prompt: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  const fresh: Employee = { id, type, description: oneLine(description, DESCRIPTION_CHARS), prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t, log: ['walked in'] }
+  const fresh: Employee = { id, type, description: oneLine(description, DESCRIPTION_CHARS), prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
   if ((await read($, staff)).some(e => e.id === id)) {
     await update($, staff, list => hire(list, fresh))
     return
@@ -132,9 +121,12 @@ async function clockOut($: EngineInterface, id: string, mood: Mood, how: EndedBy
 }
 
 /** Any sign of life from a specialist (a tool call, a model step): it is heard from now, and a finished one is back at work. */
-async function signOfLife($: EngineInterface, id: string) {
+async function signOfLife($: EngineInterface, id: string, activity?: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  await update($, staff, l => edit(l, id, one => touch(restart(one, now, t), now)))
+  await update($, staff, l => edit(l, id, one => {
+    const back = touch(restart(one, now, t), now)
+    return activity === undefined ? back : { ...back, activity }
+  }))
 }
 
 /** An agent the engine lists that no spawn announced (it started before this mod loaded) joins the books. */
@@ -164,6 +156,14 @@ async function showStatus($: EngineInterface) {
   const parts = [n > 0 ? `🦀 ${n} at desk${n === 1 ? '' : 's'}` : '', waiting > 0 ? `📥 ${waiting} for you` : ''].filter(Boolean)
   $.ui.status(parts.length ? `HQ · ${parts.join(' · ')}` : undefined)
 }
+
+// ---- The panes: one per view, so the host's own tab strip switches between them (hooks/panes.ts) ----
+
+const paneIo = ($: EngineInterface): PaneIo => ({
+  open: args => $.ui.open(args),
+  list: () => $.ui.panes(),
+  decisions: async () => (await read($, memory)).length,
+})
 
 // ---- The CEO's desk ----
 
@@ -230,6 +230,7 @@ async function saveMemory($: EngineInterface, fn: (list: Memory[]) => Memory[]) 
   const list = fn(await loadMemory($)).slice(-MAX_MEMORY)
   await update($, memory, () => list)
   if (cwd) await $.store.set(`memory:${cwd}`, list)
+  await retitleDecisions(paneIo($))
 }
 
 async function remember($: EngineInterface, m: Omit<Memory, 'id' | 'at'>, supersedes?: string) {
@@ -298,7 +299,7 @@ async function reviewPayroll($: EngineInterface) {
     kind: 'decision',
     title: `Payroll review: lay off ${plan.laidOff.length} of ${types.length} agent types this project doesn’t use?`,
     detail: `This project is ${plan.stacks.join(' + ') || 'an unknown stack'}. Not needed here: ${plan.why.join(', ')}. ` +
-      'Laid-off agents stop being listed to Clawd, which saves context on every turn. You can rehire them in People (p).',
+      'Laid-off agents stop being listed to Clawd, which saves context on every turn. You can rehire them in the People tab.',
     options: [`Lay off ${plan.laidOff.length}`, 'Keep everyone'],
     recommend: `Lay off ${plan.laidOff.length}`,
     from: 'Clawd',
@@ -311,7 +312,7 @@ async function applyPayroll($: EngineInterface, isLayoff: boolean) {
   const types = await knownTypes($)
   const plan = proposeLayoffs(types, await projectFiles($))
   await savePayroll($, { laidOff: isLayoff ? plan.laidOff : [], isReviewed: true, stacks: plan.stacks })
-  $.ui.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from People (p).` : '👥 Everyone stays on the payroll.')
+  $.ui.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from the People tab.` : '👥 Everyone stays on the payroll.')
 }
 
 // ---- The frame clock ----
@@ -349,7 +350,6 @@ async function setLaidOff($: EngineInterface, type: string, isOff: boolean) {
 
 function panelActions($: EngineInterface): PanelActions {
   return {
-    setView: view => setFx($, f => ({ ...f, view })),
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
     openDesk: () => $.ui.open({ id: DESK, title: DESK_TITLE, focus: true, columns: 60 }),
     resume: task => $.prompt.fill({ text: `Pick up where we left off: ${task}` }),
@@ -360,9 +360,6 @@ function panelActions($: EngineInterface): PanelActions {
 }
 
 // ---- The header meters: context and rate limits, kept as the engine reports them ----
-
-const limitsOf = (list: Array<{ kind: string; percentUsed: number; resetsAt?: string }>) =>
-  list.map(({ kind, percentUsed, resetsAt }) => ({ kind, percentUsed, resetsAt }))
 
 /** Reads the meters once at session start; where the engine cannot say, the session began now. */
 async function startGauge($: EngineInterface) {
@@ -379,11 +376,9 @@ async function startGauge($: EngineInterface) {
 
 let demoTimers: Timer[] = []
 
-async function demoWork($: EngineInterface, id: string, tool: string, target: string) {
-  await update($, staff, l => edit(l, id, one => ({
-    ...one, mood: 'working', tool, target, tools: one.tools + 1, tokens: (one.tokens ?? 0) + 18_000 + (hash(target) % 9000),
-    log: note(one.log, `${verbOf(tool)} ${target}`),
-  })))
+async function demoWork($: EngineInterface, id: string, tool: string, input: Record<string, unknown>) {
+  const activity = sentenceOf(tool, input)
+  await update($, staff, l => edit(l, id, one => ({ ...withTool(one, activity), tokens: (one.tokens ?? 0) + 18_000 + (hash(activity) % 9000) })))
 }
 
 async function demoSay($: EngineInterface, text: string, ticks = 10) {
@@ -400,26 +395,26 @@ async function startDemo($: EngineInterface) {
 
   const steps: Array<[string, () => Promise<void>]> = [
     [`Welcome to ${BRAND}. Clawd is your chief of staff; you are the CEO; every subagent is an employee.`, async () => {
-      await setFx($, f => ({ ...f, view: 'office' }))
+      await raise(paneIo($), 'office')
       await setBoss($, b => ({ ...b, isBusy: true }))
       await demoSay($, 'Welcome to the office! Mind the claws.')
     }],
     ['Hiring: each agent type gets an avatar of its own, with its own outfit, headwear and prop.', async () => {
       await newHire($, id('arch'), 'ecc:architect', 'Design the scoring API', 'Design the scoring service for roadmap rank')
     }],
-    ['Each specialist at work gets a card: its avatar, its task, and how long it has been at it.', async () => {
-      await demoWork($, id('arch'), 'Read', 'scoring.ts')
+    ['Each specialist at work gets a row: its avatar, its task, what it is doing right now, and how long it has been at it.', async () => {
+      await demoWork($, id('arch'), 'Read', { file_path: 'scoring.ts' })
       await newHire($, id('scout'), 'Explore', 'Map the backend', 'Find every place that computes a score')
     }],
     ['Each type keeps its name across sessions.', async () => {
-      await demoWork($, id('scout'), 'Grep', 'computeScore')
+      await demoWork($, id('scout'), 'Grep', { pattern: 'computeScore' })
       await newHire($, id('rev'), 'ecc:code-reviewer', 'Review the survey flow', 'Review the survey lifecycle code')
     }],
     ['Hire too many at once and Clawd starts to grumble.', async () => {
       await newHire($, id('tdd'), 'ecc:tdd-guide', 'Test the review panel', 'Write tests for the review panel')
       await newHire($, id('data'), 'acme-ops:(o_o) data-analyst', 'Crunch the deal data', 'Analyse deal metrics')
-      await demoWork($, id('rev'), 'Read', 'surveys.ts')
-      await demoWork($, id('arch'), 'Edit', 'design.md')
+      await demoWork($, id('rev'), 'Read', { file_path: 'surveys.ts' })
+      await demoWork($, id('arch'), 'Edit', { file_path: 'design.md' })
     }],
     ['Agents raise decisions and questions for you, the CEO. They land on the CEO Desk (i) and the band above the prompt.', async () => {
       decision = await fileAsk($, {
@@ -431,10 +426,10 @@ async function startDemo($: EngineInterface) {
         kind: 'question', title: 'Which quarter should the deal report cover?', options: [],
         from: looksOf('acme-ops:(o_o) data-analyst', await read($, roster)).name + ' the Analyst', fromId: id('data'), source: 'report',
       }, true)
-      await demoWork($, id('tdd'), 'Bash', 'npm test')
+      await demoWork($, id('tdd'), 'Bash', { command: 'npm test', description: 'Run the review panel tests' })
     }],
     ['Agents don’t wait on you: they carry on with their recommended option until you answer.', async () => {
-      await demoWork($, id('data'), 'Read', 'deals.csv')
+      await demoWork($, id('data'), 'Read', { file_path: 'deals.csv' })
     }],
     ['You decide; the answer goes straight back to the agent who asked.', async () => {
       if (decision) await answer($, decision, 'DynamoDB')
@@ -442,16 +437,16 @@ async function startDemo($: EngineInterface) {
     ['When an agent fails, it goes home sick and Clawd reacts.', async () => {
       await clockOut($, id('tdd'), 'failed')
     }],
-    ['Finishers move to the Log tab (l), with how long they took.', async () => {
+    ['Finishers move to the Log tab, with how long they took.', async () => {
       await clockOut($, id('arch'), 'done')
       await clockOut($, id('scout'), 'done')
-      await setFx($, f => ({ ...f, view: 'log' }))
+      await raise(paneIo($), 'log')
     }],
-    ['People (p) is the payroll: who’s on the team and who’s in the talent pool for this project.', async () => {
-      await setFx($, f => ({ ...f, view: 'people' }))
+    ['People is the payroll: who’s on the team and who’s in the talent pool for this project.', async () => {
+      await raise(paneIo($), 'people')
     }],
     ['Leave the office quiet for 2 minutes and Clawd gets drowsy.', async () => {
-      await setFx($, f => ({ ...f, view: 'office' }))
+      await raise(paneIo($), 'office')
       await clockOut($, id('rev'), 'done')
       await clockOut($, id('data'), 'done')
       await update($, desk, l => l.filter(a => !a.fromId?.startsWith(DEMO)))
@@ -469,14 +464,14 @@ async function startDemo($: EngineInterface) {
       void (async () => {
         await setFx($, f => ({ ...f, demo: { step: i + 1, total, caption } }))
         await run()
-      })()
+      })().catch(() => undefined) // a step that fails is skipped; it must not become an unhandled rejection
     }))
   })
   demoTimers.push($.clock.after(total * 5000 + 1500, () => {
     void (async () => {
       await update($, staff, l => l.filter(e => !e.id.startsWith(DEMO)))
       await update($, desk, l => l.filter(a => !a.fromId?.startsWith(DEMO)))
-      await setFx($, f => ({ ...f, demo: undefined, view: 'office' }))
+      await setFx($, f => ({ ...f, demo: undefined }))
       await setBoss($, b => ({ ...saved, turns: b.turns, quip: undefined }))
       await showStatus($)
     })()
@@ -519,7 +514,7 @@ export const register: Register = on => {
     })
 
     await reconcile($)
-    void $.ui.open({ id: PANE, title: TITLE, columns: 60 }).catch(() => undefined)
+    void openPanes(paneIo($), false)
 
     return next(e)
   })
@@ -531,8 +526,8 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'office' }, async $ => {
-    await $.ui.open({ id: PANE, title: TITLE, focus: true, columns: 60 })
-    return { text: `${BRAND} is open. o Office · d Decisions · p People · l Log · i CEO Desk.` }
+    await openPanes(paneIo($), true)
+    return { text: `${BRAND} is open: Office · Decisions · People · Log are the tabs at the top. i opens the CEO Desk.` }
   })
 
   // The header's context bar and limit countdowns follow the engine's own readings.
@@ -556,7 +551,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'office-demo' }, async $ => {
-    await $.ui.open({ id: PANE, title: TITLE, columns: 60 })
+    await openPanes(paneIo($), false)
     await startDemo($)
     return { text: `The ${BRAND} tour is playing in the side panel (about a minute).` }
   })
@@ -597,7 +592,7 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     const me = e.agentId ? (await read($, staff)).find(one => one.id === e.agentId) : undefined
     // A request is a sign of life, and a resumed specialist's first can come before any tool call.
-    if (me) await signOfLife($, me.id)
+    if (me) await signOfLife($, me.id, THINKING)
     const effort = e.agentId ? efforts.get(e.agentId) ?? me?.effort : undefined
     const result = yield* next(effort ? { ...e, effort } : e)
     const u = result.usage
@@ -613,7 +608,7 @@ export const register: Register = on => {
     const id = e.agentId
 
     if (tool === DEMO_TOOL) {
-      await $.ui.open({ id: PANE, title: TITLE, columns: 60 })
+      await openPanes(paneIo($), false)
       await startDemo($)
       return { result: `The ${BRAND} tour is playing in the side panel for about a minute. If the panel is not visible, the user can type /office.` } as never
     }
@@ -669,9 +664,8 @@ export const register: Register = on => {
       }
     }
 
-    const target = targetOf(input)
     if (id === undefined) {
-      if (tool !== 'Agent' && tool !== 'Task') await setBoss($, b => ({ ...b, activity: `${verbOf(tool)} ${target}`.trim() }))
+      if (tool !== 'Agent' && tool !== 'Task') await setBoss($, b => ({ ...b, activity: sentenceOf(tool, input) }))
       return next(e)
     }
 
@@ -681,10 +675,7 @@ export const register: Register = on => {
     if (!known && !listed) return next(e)
     if (listed) await hireFromList($)(listed)
     else await signOfLife($, id)
-    await update($, staff, l => edit(l, id, one => ({
-      ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', tool, target, tools: one.tools + 1,
-      log: note(one.log, `${verbOf(tool)} ${target}`.trim()),
-    })))
+    await update($, staff, l => edit(l, id, one => withTool(one, sentenceOf(tool, input))))
     try {
       return await next(e)
     } finally {
@@ -701,7 +692,7 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     const task = e.text ? clip(e.text.replace(/\s+/g, ' '), 60) : undefined
-    await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, task: task ?? b.task, activity: task ? 'Reading the brief' : 'Back at it' }))
+    await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, task: task ?? b.task, activity: task ? READING_BRIEF : 'Back at it' }))
     // Answers the CEO gave while Clawd was idle ride along with the new turn.
     await sendPending($, false)
     return next(e)
@@ -738,9 +729,7 @@ export const register: Register = on => {
     const waiting = (await read($, desk)).filter(a => a.status === 'open')
     if (e.props.hasSurvey || waiting.length === 0) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
-    const d = waiting.filter(a => a.kind === 'decision').length
-    const q = waiting.length - d
-    const what = [d ? `${d} decision${d === 1 ? '' : 's'}` : '', q ? `${q} question${q === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
+    const what = waitingSummary(waiting)
     return (
       <Box flexDirection="row" gap={1}>
         <Text color={ACCENT} bold>📥 CEO Desk</Text>
@@ -760,16 +749,19 @@ export const register: Register = on => {
     return renderDesk({ Box, Text, Button, Input }, data, { answer: (id, value, status) => answer($, id, value, status), send: () => sendPending($, true) })
   })
 
-  // ---- The office pane: drawn by panel.tsx from a snapshot of the state ----
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const ui = $.ui.resolve(e)
-    // Picked by `e.surface`: the resolved table does not answer an `in` check. Input is missing on mobile, Raster is the terminal's, Svg the others'.
-    const tools: PanelTools = {
-      Box: ui.Box, Text: ui.Text, Button: ui.Button,
-      Input: e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input,
-      Raster: e.surface === 'terminal' ? $.ui.resolve(e).Raster : undefined,
-      Svg: e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg,
-    }
-    return renderPanel(tools, e.props.bodyColumns, await panelData($), panelActions($))
-  })
+  // ---- The four office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----
+  for (const pane of PANES) {
+    on('ui.render', { component: 'Pane', requestId: pane.id }, async ($, e) => {
+      const ui = $.ui.resolve(e)
+      // Picked by `e.surface`: the resolved table does not answer an `in` check. Input is missing on mobile, Raster is the terminal's, Svg the others'.
+      const tools: PanelTools = {
+        Box: ui.Box, Text: ui.Text, Button: ui.Button,
+        Input: e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input,
+        Raster: e.surface === 'terminal' ? $.ui.resolve(e).Raster : undefined,
+        Svg: e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg,
+      }
+      const layout = { columns: e.props.bodyColumns, minHeight: pinHeight(e.surface, e.props.placement, e.props.scroll.bodyRows) }
+      return renderPanel(tools, layout, await panelData($), panelActions($), pane.view)
+    })
+  }
 }

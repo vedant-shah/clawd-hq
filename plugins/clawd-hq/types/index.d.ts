@@ -10,8 +10,8 @@ export type Employee = {
   description: string
   prompt: string
   mood: Mood
-  tool?: string
-  target?: string
+  /** What it is doing now, as one plain sentence (see hooks/activity.ts); none before its first step. */
+  activity?: string
   tools: number
   startedAt: number
   endedAt?: number
@@ -22,7 +22,6 @@ export type Employee = {
   engine?: string
   joinedTick: number
   doneTick?: number
-  log: string[]
   model?: string
   /** The effort Clawd hired it at, applied to every request it makes. */
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -98,7 +97,6 @@ export type Limit = { kind: string; percentUsed: number; resetsAt?: string }
 export type Gauge = { startedAt: number; contextPercent?: number; limits: Limit[] }
 
 export type Fx = {
-  view: 'office' | 'decisions' | 'people' | 'log'
   /** What the person typed into each tab's filter. */
   finds?: { decisions?: string; people?: string }
   demo?: { step: number; total: number; caption: string }

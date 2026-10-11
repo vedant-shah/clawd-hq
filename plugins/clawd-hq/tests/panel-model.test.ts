@@ -1,14 +1,14 @@
 import { expect, test } from 'claude-code/testing'
 import {
   atWork, buildPeople, newestFirst, recentFailures, canLayOff, dayLabel, doneLine, doneThisSession, filterMemory, firstName, groupByDay, pluginOf,
-  seeNeedsLabel, splitPeople, statusOf, tokensLabel, workState,
+  seeNeedsLabel, splitPeople, statusOf, tokensLabel, waitingSummary, workLine,
 } from '../hooks/panel-model'
 import type { Person } from '../hooks/panel-model'
 import type { Ask, Employee, Memory } from '../types'
 
 const MIN = 60_000
 const emp = (over: Partial<Employee>): Employee => ({
-  id: 'a1', type: 'ecc:planner', description: 'Plan it', prompt: '', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, log: [], ...over,
+  id: 'a1', type: 'ecc:planner', description: 'Plan it', prompt: '', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, ...over,
 })
 const ask = (over: Partial<Ask>): Ask => ({
   id: 'D1', kind: 'decision', title: 'OK?', options: [], from: 'Sage the Guard', source: 'tool', status: 'open', askedAt: 0, isDelivered: false, ...over,
@@ -41,13 +41,28 @@ test('done this session keeps only those that finished since the session began, 
   expect(list.map(e => e.id)).toEqual(['old', 'one', 'two', 'busy', 'noend'])
 })
 
-test('a specialist is working until it has a question waiting on the desk', () => {
-  const one = emp({ id: 'a1', startedAt: 0 })
-  expect(workState(one, [], 4 * MIN)).toEqual({ isWaiting: false, label: 'Working · 4m' })
-  const asks = [ask({ fromId: 'a1', askedAt: 3 * MIN }), ask({ id: 'D2', fromId: 'zz', askedAt: 0 })]
-  expect(workState(one, asks, 4 * MIN)).toEqual({ isWaiting: true, label: 'Waiting on you · 1m' })
+test('a specialist at work shows what it is doing, how long it has been at it and what it has used', () => {
+  const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', tokens: 84_000 })
+  expect(workLine(one, [], 12 * MIN)).toEqual({ isWaiting: false, sentence: 'Reading scoring.ts', stats: '· 12m · 84K tokens' })
+  // Nothing used yet: no tokens in the stats. Nothing seen yet: it is reading the brief.
+  expect(workLine(emp({ startedAt: 0 }), [], 30_000)).toEqual({ isWaiting: false, sentence: 'Reading the brief', stats: '· 30s' })
+})
+
+test('a specialist with a question waiting on the desk is waiting on you, named by the oldest question', () => {
+  const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', tokens: 1_500 })
+  const asks = [
+    ask({ id: 'D2', title: 'Newer question?', fromId: 'a1', askedAt: 3 * MIN }),
+    ask({ id: 'D1', title: 'Store scores in DynamoDB or Postgres?', fromId: 'a1', askedAt: 2 * MIN }),
+    ask({ id: 'D3', title: 'Not mine?', fromId: 'zz', askedAt: 0 }),
+  ]
+  expect(workLine(one, asks, 4 * MIN)).toEqual({ isWaiting: true, sentence: 'Waiting on you: Store scores in DynamoDB or Postgres?', stats: '· 4m · 2K tokens' })
   // An answered question no longer holds it up.
-  expect(workState(one, [ask({ fromId: 'a1', status: 'answered' })], 4 * MIN).isWaiting).toBe(false)
+  expect(workLine(one, [ask({ fromId: 'a1', status: 'answered' })], 4 * MIN).isWaiting).toBe(false)
+  // A long question is cut so the line stays one line of at most 80 characters.
+  const long = workLine(one, [ask({ title: 'Should we '.repeat(30), fromId: 'a1' })], 4 * MIN).sentence
+  expect(long.length).toBeLessThanOrEqual(80)
+  expect(long.startsWith('Waiting on you: Should we')).toBe(true)
+  expect(long.endsWith('…')).toBe(true)
 })
 
 test('a finished row says when, how long it took and the tokens; a failure says so', () => {
@@ -150,4 +165,12 @@ test('people are built from the books: a name, the plugin, the hire count and wh
   const pip = people.find(p => p.type === 'ecc:planner')!
   expect(pip).toMatchObject({ name: 'Pip the Planner', plugin: 'ecc', jobs: 4, blurb: 'Plans work', isOff: false })
   expect(people.find(p => p.type === 'Explore')).toMatchObject({ plugin: 'built in', jobs: 0, isOff: true })
+})
+
+test('the band above the prompt counts decisions and questions, each only when there are some', () => {
+  const [d1, d2, q1] = [ask({ id: 'D1' }), ask({ id: 'D2' }), ask({ id: 'Q1', kind: 'question' })]
+  expect(waitingSummary([d1!])).toBe('1 decision')
+  expect(waitingSummary([d1!, d2!, q1!])).toBe('2 decisions · 1 question')
+  expect(waitingSummary([q1!])).toBe('1 question')
+  expect(waitingSummary([])).toBe('')
 })

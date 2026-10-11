@@ -10,8 +10,9 @@ export const BRIEF_NOTE =
 
 /** Agent-written text as one short line: whitespace collapsed, cut to `max` characters with an ellipsis. */
 export function oneLine(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+  // Counted in whole characters (code points), so a cut never lands inside an emoji.
+  const chars = Array.from(text.replace(/\s+/g, ' ').trim())
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : chars.join('')
 }
 
 const LINE = /^[ \t]*[-*]?[ \t]*CEO-(DECISION|QUESTION):[ \t]*(.+?)[ \t]*$/gim

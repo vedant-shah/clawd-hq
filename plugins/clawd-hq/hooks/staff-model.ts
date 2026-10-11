@@ -10,13 +10,24 @@ export type StepUsage = {
   cache_creation_input_tokens: number
 }
 
+/** The books hold this many specialists; the longest-gone finishers leave first. The Log lists up to 40, so keep more. */
+export const MAX_STAFF = 60
+
+/** Puts `fresh` on the books. One already there (a tool call can land before the spawn answers) keeps its progress and takes the spawn's facts. */
+export function hire(list: Employee[], fresh: Employee): Employee[] {
+  if (list.some(e => e.id === fresh.id)) {
+    return list.map(e => (e.id === fresh.id ? { ...e, type: fresh.type, description: fresh.description || e.description, prompt: fresh.prompt || e.prompt } : e))
+  }
+  const all = [...list, fresh]
+  // Over the cap, the longest-gone finishers leave first; a running agent is never dropped.
+  let extra = all.length - MAX_STAFF
+  return extra <= 0 ? all : all.filter(e => (extra > 0 && !isActive(e) ? (extra--, false) : true))
+}
+
 /** An engine status counts as an end only after this long without a sign of life. */
 export const QUIET_MS = 15_000
 /** A specialist the engine calls running, silent this long, has lost contact (unless the engine says it waits). */
 export const STALE_MS = 30 * 60_000
-
-/** The last few lines of what an employee did. */
-export const note = (log: string[], line: string) => [...log, line].slice(-6)
 
 /** How long it has been since the last sign of life (for one never heard from since, since it started). */
 export const quietFor = (one: Employee, now: number) => now - (one.lastSeen ?? one.startedAt)
@@ -30,22 +41,24 @@ export const touch = (one: Employee, now: number): Employee => ({ ...one, lastSe
  */
 export function restart(one: Employee, now: number, tick: number): Employee {
   if (isActive(one)) return one
-  const back = note(one.log, 'back at it')
   if (one.endedBy === 'engine' || one.endedBy === 'stale') {
-    return { ...one, mood: 'working', endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: now, log: back }
+    return { ...one, mood: 'working', endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: now }
   }
   return {
-    ...one, mood: 'working', tool: undefined, target: undefined, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
-    startedAt: now, endedAt: undefined, doneTick: undefined, endedBy: undefined, joinedTick: tick, lastSeen: now, log: back,
+    ...one, mood: 'working', activity: undefined, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    startedAt: now, endedAt: undefined, doneTick: undefined, endedBy: undefined, joinedTick: tick, lastSeen: now,
   }
 }
 
 /** Ends the run. Lost contact is no cheer and no win, so it leaves no tick for the cheering. */
 export function endRun(one: Employee, mood: Mood, how: EndedBy, now: number, tick: number): Employee {
-  const line = mood === 'done' ? 'clocked out ✓' : mood === 'lost' ? 'lost contact' : 'went home sick ✗'
   const cheer = mood === 'lost' ? {} : { doneTick: tick }
-  return { ...one, ...cheer, mood, tool: undefined, endedAt: now, endedBy: how, log: note(one.log, line) }
+  return { ...one, ...cheer, mood, activity: undefined, endedAt: now, endedBy: how }
 }
+
+/** A tool call: the specialist is at work, one tool more, and the sentence says on what. One still arriving stays arriving. */
+export const withTool = (one: Employee, activity: string): Employee =>
+  ({ ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', activity, tools: one.tools + 1 })
 
 /**
  * One model request's cost. A request re-reads the whole prompt, so adding every request's context up counts

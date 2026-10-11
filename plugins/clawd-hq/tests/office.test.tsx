@@ -1,49 +1,8 @@
-import { expect, mock, test } from 'claude-code/testing'
-import type { Engine, Mounted } from 'claude-code/testing'
+import { expect, test } from 'claude-code/testing'
 import { assemble, avatarFor, clawdAvatar } from '../hooks/avatars'
 import { ACCENT, AMBER } from '../hooks/office'
 import { rasterCells, svgOf, trim } from '../hooks/pixels'
-
-const PANE = {
-  component: 'Pane',
-  requestId: 'clawd-hq',
-  props: { title: 'Clawd HQ', isFocused: true, bodyColumns: 58, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} } as never,
-} as const
-const DESK = { component: 'Pane', requestId: 'ceo-desk', props: { title: 'CEO Desk', isFocused: true, bodyColumns: 58, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} } as never } as const
-const SURFACES = ['terminal', 'desktop'] as const
-const HOUR = 3_600_000
-
-type On = Parameters<typeof mock.clock>[0]
-
-/** The quiet host every pane test runs on: a held clock, a store in memory, and the calls a hook makes answered. */
-function host(on: On, agents: unknown[] = []) {
-  const clock = mock.clock(on, { now: 1_000 })
-  mock.store(on)
-  const opened: unknown[] = []
-  const toasts: string[] = []
-  on('agent.list', () => ({ value: agents }) as never)
-  on('ui.status', () => ({ value: undefined }) as never)
-  on('ui.toast', (_$, e) => (toasts.push((e as { text: string }).text), { value: undefined }) as never)
-  on('ui.invalidate', () => ({ value: undefined }) as never)
-  on('ui.open', (_$, e) => (opened.push(e), { value: { isOpen: true } }) as never)
-  on('turn.complete', () => ({ text: '' }))
-  on('prompt.context', ($, e) => ({ blocks: (e as { blocks: never[] }).blocks }))
-  on('session.measure', (_$, e) => ({ changed: e.changed }))
-  on('session.start', (_$, e) => ({ cwd: (e as { cwd: string }).cwd }))
-  on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
-  on('classic.SubagentStop', () => ({}))
-  on('command.register', () => ({ value: undefined }) as never)
-  on('tool.register', () => ({ value: undefined }) as never)
-  // What the engine answers for the session's start; a test moves it as a new session would.
-  const session = { startedAt: 0 }
-  on('session.usage', () => ({ value: { startedAt: session.startedAt, context: { window: 1_000_000 }, rateLimits: [] } }) as never)
-  return { clock, opened, toasts, session }
-}
-
-const START = { cwd: '/repo', surface: 'terminal', isInteractive: true } as never
-const CLEAR = { reason: 'clear', sessionId: 's1', resume: { id: 's1' } } as never
-
-const planner = { id: 'a1', type: 'ecc:planner', description: 'Plan the scoring API', status: 'running' }
+import { CLEAR, DECISIONS, DESK, HOUR, LOG, PANE, PEOPLE, START, SURFACES, host, planner } from './host'
 
 test('a spawned architect gets a desk and shows as working', async ($, on) => {
   host(on, [{ id: 'a1', type: 'ecc:architect', description: 'Design scoring', status: 'running' }])
@@ -58,8 +17,8 @@ test('a spawned architect gets a desk and shows as working', async ($, on) => {
     expect(await ui.find({ type: 'Text', text: /AT WORK · 1/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Architect/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Design scoring/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Working · / })).toBeDefined()
-    // The pane's own frame carries the title; the header row is the gauges alone.
+    expect(await ui.find({ type: 'Text', text: /^Reading scoring\.ts$/ })).toBeDefined()
+    // The host's tab carries the title; the pane itself draws none.
     expect(await ui.find({ type: 'Text', text: /CLAWD HQ/i })).toBeUndefined()
     await ui.unmount()
   }
@@ -158,7 +117,7 @@ test("Clawd's card says All clear with nothing waiting, offers to pick up the la
   }
 })
 
-test('the header is the gauges alone: Context always, Session and Week with percent and time left only when the limits have a reading', async ($, on) => {
+test('the gauges are Context always, Session and Week with percent and time left only when the limits have a reading', async ($, on) => {
   const { clock } = host(on)
   const context = { window: 1_000_000, tokens: 210_000, percent: 21 }
   for (const surface of SURFACES) {
@@ -240,62 +199,6 @@ test('the gauge bar is a small rounded image wherever there is an Svg: desktop, 
   }
 })
 
-test('four tabs switch by their hotkeys, the active one is boxed in the accent color, and the old bottom buttons are gone', async ($, on) => {
-  host(on)
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Use Postgres' } as never)
-
-  const active = async (ui: Mounted<'terminal' | 'desktop', 'Pane'>, name: string) => {
-    for (const other of ['office', 'decisions', 'people', 'log']) {
-      const box = await ui.find({ key: `tabbox-${other}` })
-      expect(box?.props.borderStyle).toBe('round')
-      if (other === name) {
-        expect(box?.props.borderColor).toBe(ACCENT)
-        expect(box?.props.borderDimColor).toBeUndefined()
-        expect((await ui.find({ key: `tab-${other}` }))?.props.dimColor).toBeUndefined()
-      } else {
-        expect(box?.props.borderColor).toBeUndefined()
-        expect(box?.props.borderDimColor).toBe(true)
-        expect((await ui.find({ key: `tab-${other}` }))?.props.dimColor).toBe(true)
-      }
-    }
-  }
-
-  for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect((await ui.find({ key: 'tab-office' }))?.props.hotkey).toBe('o')
-    expect((await ui.find({ key: 'tab-decisions' }))?.props.hotkey).toBe('d')
-    expect((await ui.find({ key: 'tab-people' }))?.props.hotkey).toBe('p')
-    expect((await ui.find({ key: 'tab-log' }))?.props.hotkey).toBe('l')
-    expect((await ui.find({ key: 'tab-decisions' }))?.props.label).toBe('Decisions 1')
-    expect((await ui.find({ key: 'tab-log' }))?.props.label).toBe('Log')
-    expect(await ui.find({ type: 'Text', text: /No one at a desk yet/ })).toBeDefined()
-    for (const key of ['directory', 'memory', 'home']) expect(await ui.find({ key })).toBeUndefined()
-    // The row is a tab strip: no text rule under it that could wrap onto a second line.
-    expect(await ui.find({ type: 'Text', text: /[─━]{8,}/ })).toBeUndefined()
-    await active(ui, 'office')
-
-    await ui.press({ key: 'tab-decisions' })
-    expect(await ui.find({ type: 'Text', text: /Use Postgres/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /No one at a desk yet/ })).toBeUndefined()
-    await active(ui, 'decisions')
-
-    await ui.press({ key: 'tab-people' })
-    expect(await ui.find({ type: 'Text', text: /Use Postgres/ })).toBeUndefined()
-    expect(await ui.find({ key: 'find-people' })).toBeDefined()
-    await active(ui, 'people')
-
-    await ui.press({ key: 'tab-log' })
-    expect(await ui.find({ key: 'find-people' })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /Nothing has finished yet this session/ })).toBeDefined()
-    await active(ui, 'log')
-
-    await ui.press({ key: 'tab-office' })
-    expect(await ui.find({ type: 'Text', text: /No one at a desk yet/ })).toBeDefined()
-    await active(ui, 'office')
-    await ui.unmount()
-  }
-})
-
 test('a specialist with a question on the CEO desk is waiting on you, and Clawd says who needs you', async ($, on) => {
   const { opened } = host(on, [planner])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
@@ -308,8 +211,10 @@ test('a specialist with a question on the CEO desk is waiting on you, and Clawd 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await ui.find({ type: 'Text', text: /1 needs you/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Waiting on you · / })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Working · / })).toBeUndefined()
+    const waiting = await ui.find({ type: 'Text', text: /^Waiting on you: Store scores in DynamoDB or Postgres\?$/ })
+    expect(waiting?.props.color).toBe(AMBER)
+    // Its last action is not shown while it waits.
+    expect(await ui.find({ type: 'Text', text: /^Reading the brief$/ })).toBeUndefined()
     const button = await ui.find({ key: 'see-needs' })
     expect(String(button?.props.label)).toMatch(/^See what .+ needs$/)
     expect(button?.props.hotkey).toBe('i')
@@ -346,15 +251,16 @@ test('a finished specialist moves to the Log tab, not the Office; there is no br
     expect(await ui.find({ type: 'Text', text: /send home/i })).toBeUndefined()
     expect(await ui.find({ key: 'home' })).toBeUndefined()
 
-    await ui.press({ key: 'tab-log' })
-    expect(await ui.find({ type: 'Text', text: /the Writer$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /1h 0m ago/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /took \d+[sm]/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /AT WORK/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /Nothing has finished yet/ })).toBeUndefined()
-    await ui.press({ key: 'tab-office' }) // the open tab is kept for every drawing of the pane
     await ui.unmount()
+
+    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    expect(await log.find({ type: 'Text', text: /the Writer$/ })).toBeDefined()
+    expect(await log.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
+    expect(await log.find({ type: 'Text', text: /1h 0m ago/ })).toBeDefined()
+    expect(await log.find({ type: 'Text', text: /took \d+[sm]/ })).toBeDefined()
+    expect(await log.find({ type: 'Text', text: /AT WORK/ })).toBeUndefined()
+    expect(await log.find({ type: 'Text', text: /Nothing has finished yet/ })).toBeUndefined()
+    await log.unmount()
   }
 })
 
@@ -369,8 +275,7 @@ test('the Log lists work newest first, and each row has a dimmed compact avatar'
     await clock.advance(60_000)
   }
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    await ui.press({ key: 'tab-log' })
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
     const order = (await ui.findAll({ type: 'Text', text: /^(Planned the API|Reviewed the panel|Updated the guide)$/ })).map(t => String(t.text))
     expect(order).toEqual(['Updated the guide', 'Reviewed the panel', 'Planned the API'])
     expect(await ui.find({ type: 'Text', text: /DONE THIS SESSION|Showing/ })).toBeUndefined()
@@ -389,8 +294,7 @@ test('the Log shows 40 rows at most and says how many of how many', async ($, on
     await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: `t${i}`, agentId: `m${i}`, isAborted: false } as never)
     await clock.advance(1_000)
   }
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
-  await ui.press({ key: 'tab-log' })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...LOG })
   expect(await ui.find({ type: 'Text', text: /Showing 40 of 45/ })).toBeDefined()
   expect(await ui.findAll({ type: 'Text', text: /^Job number \d+$/ })).toHaveLength(40)
   expect(await ui.find({ type: 'Text', text: /^Job number 45$/ })).toBeDefined()
@@ -408,12 +312,12 @@ test('a specialist that failed shows as Failed in amber in the Log, and Clawd sa
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await ui.find({ type: 'Text', text: / failed$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeUndefined()
-    await ui.press({ key: 'tab-log' })
-    const failed = await ui.find({ type: 'Text', text: /Failed after/ })
+    await ui.unmount()
+    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    const failed = await log.find({ type: 'Text', text: /Failed after/ })
     expect(failed).toBeDefined()
     expect(failed?.props.color).toBe(AMBER)
-    await ui.press({ key: 'tab-office' }) // the open tab is kept for every drawing of the pane
-    await ui.unmount()
+    await log.unmount()
   }
 })
 
@@ -427,10 +331,8 @@ test('the Log empties on /clear, which only ends the session, and fills again af
   await $.agent.spawn({ prompt: 'Write docs', description: 'Updated the setup guide', subagentType: 'ecc:doc-updater' } as never)
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'a1', isAborted: false } as never)
 
-  const before = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  await before.press({ key: 'tab-log' })
+  const before = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...LOG })
   expect(await before.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
-  await before.press({ key: 'tab-office' })
   await before.unmount()
 
   // /clear: the engine ends the session with reason `clear` and fires no session.start.
@@ -439,19 +341,18 @@ test('the Log empties on /clear, which only ends the session, and fills again af
   for (const surface of SURFACES) {
     const after = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await after.find({ type: 'Text', text: /No one at a desk yet/ })).toBeDefined()
-    await after.press({ key: 'tab-log' })
-    expect(await after.find({ type: 'Text', text: /Updated the setup guide/ })).toBeUndefined()
-    expect(await after.find({ type: 'Text', text: /Nothing has finished yet this session/ })).toBeDefined()
-    await after.press({ key: 'tab-office' })
     await after.unmount()
+    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    expect(await log.find({ type: 'Text', text: /Updated the setup guide/ })).toBeUndefined()
+    expect(await log.find({ type: 'Text', text: /Nothing has finished yet this session/ })).toBeDefined()
+    await log.unmount()
   }
 
   // Work finished in the new session shows again.
   await clock.advance(1_000)
   await $.agent.spawn({ prompt: 'Fix', description: 'Fixed the build', subagentType: 'ecc:build-error-resolver' } as never)
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't2', agentId: 'a2', isAborted: false } as never)
-  const again = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
-  await again.press({ key: 'tab-log' })
+  const again = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...LOG })
   expect(await again.find({ type: 'Text', text: /Nothing has finished yet/ })).toBeUndefined()
   expect(await again.find({ type: 'Text', text: /Fixed the build/ })).toBeDefined()
   await again.unmount()
@@ -466,8 +367,7 @@ test('a session end that is not a clear leaves the list alone', async ($, on) =>
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'a1', isAborted: false } as never)
   await clock.advance(HOUR)
   await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } } as never)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  await ui.press({ key: 'tab-log' })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...LOG })
   expect(await ui.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
   await ui.unmount()
 })
@@ -486,43 +386,44 @@ test('text agents write is kept to one short line where it is stored', async ($,
 
   expect(toasts.find(t => t.includes('finished'))).not.toContain('\n')
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    await ui.press({ key: 'tab-log' }) // the tab is shared by every drawing of the pane
-    const done = await ui.find({ type: 'Text', text: /Update the setup guide/ })
+    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    const done = await log.find({ type: 'Text', text: /Update the setup guide/ })
     expect(String(done?.text)).not.toContain('\n')
     expect(String(done?.text).length).toBeLessThanOrEqual(160)
     expect(String(done?.text).endsWith('…')).toBe(true)
+    await log.unmount()
 
-    await ui.press({ key: 'tab-people' })
-    const blurb = await ui.find({ type: 'Text', text: /^Plans work before anyone builds/ })
+    const people = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
+    const blurb = await people.find({ type: 'Text', text: /^Plans work before anyone builds/ })
     expect(String(blurb?.text)).not.toContain('\n')
+    await people.unmount()
 
-    await ui.press({ key: 'tab-decisions' })
-    const decision = await ui.find({ type: 'Text', text: /Scores live in Postgres/ })
+    const decisions = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
+    const decision = await decisions.find({ type: 'Text', text: /Scores live in Postgres/ })
     expect(String(decision?.text)).not.toContain('\n')
     expect(String(decision?.text).length).toBeLessThanOrEqual(300)
     expect(String(decision?.text).endsWith('…')).toBe(true)
-    await ui.unmount()
+    await decisions.unmount()
   }
 })
 
-test('the Decisions filter text and results survive a trip to People and back', async ($, on) => {
+test('the Decisions filter text and results are kept for every drawing of the pane', async ($, on) => {
   host(on)
   await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Scores live in Postgres' } as never)
   await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Use Drizzle for migrations' } as never)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    await ui.press({ key: 'tab-decisions' })
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
     await $.ui.input({ plugin: 'clawd-hq', key: 'find-decisions', text: 'drizzle', kind: 'change', surface })
     expect(await ui.find({ type: 'Text', text: /Scores live/ })).toBeUndefined()
 
-    await ui.press({ key: 'tab-people' })
-    await ui.press({ key: 'tab-decisions' })
-    expect((await ui.find({ key: 'find-decisions' }))?.props.value).toBe('drizzle')
-    expect(await ui.find({ type: 'Text', text: /Use Drizzle/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Scores live/ })).toBeUndefined()
-    await $.ui.input({ plugin: 'clawd-hq', key: 'find-decisions', text: '', kind: 'change', surface })
     await ui.unmount()
+
+    const again = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
+    expect((await again.find({ key: 'find-decisions' }))?.props.value).toBe('drizzle')
+    expect(await again.find({ type: 'Text', text: /Use Drizzle/ })).toBeDefined()
+    expect(await again.find({ type: 'Text', text: /Scores live/ })).toBeUndefined()
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-decisions', text: '', kind: 'change', surface })
+    await again.unmount()
   }
 })
 
@@ -535,8 +436,7 @@ test('Decisions lists a user decision with a You tag and an agent note, dimmer, 
   await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Use Drizzle for migrations', agentId: 'a1' } as never)
 
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    await ui.press({ key: 'tab-decisions' })
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
     const you = await ui.find({ type: 'Text', text: /^\s*You\s*$/ })
     const note = await ui.find({ type: 'Text', text: /Note/ })
     expect(you).toBeDefined()
@@ -567,8 +467,7 @@ test('a decision can be forgotten, and a long list says how many are shown', asy
   host(on)
   await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Scores live in Postgres' } as never)
   for (let i = 0; i < 45; i++) await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: `Filler decision number ${i}` } as never)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
-  await ui.press({ key: 'tab-decisions' })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
   expect(await ui.find({ type: 'Text', text: /Showing 40 of 46/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Scores live in Postgres/ })).toBeUndefined()
   await ui.press({ key: 'forget-M46' })
@@ -585,8 +484,7 @@ test('People lists a team member and a laid-off one in their sections, and lay o
   await $.agent.offer({ agent: 'Explore', description: 'Maps a codebase' } as never)
 
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    await ui.press({ key: 'tab-people' })
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
     expect(await ui.find({ type: 'Text', text: /TEAM · 3/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /ecc plugin · never hired/ })).toBeDefined()
@@ -618,8 +516,7 @@ test('how often a type was hired shows on its People row', async ($, on) => {
   host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'h1' }))
   await $.agent.spawn({ prompt: 'Plan', description: 'Plan', subagentType: 'ecc:planner' } as never)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  await ui.press({ key: 'tab-people' })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
   expect(await ui.find({ type: 'Text', text: /ecc plugin · hired 1 time$/ })).toBeDefined()
   await ui.unmount()
 })
@@ -645,8 +542,7 @@ test('decisions and key choices are remembered, then handed to Clawd and the nex
   await $.agent.spawn({ prompt: 'Build the scores table', description: 'Build table', subagentType: 'ecc:tdd-guide' } as never)
   expect(briefs[1]).toContain('Postgres or DynamoDB? → Postgres')
 
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
-  await ui.press({ key: 'tab-decisions' })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
   expect(await ui.find({ type: 'Text', text: /Drizzle/ })).toBeDefined()
   await ui.press({ key: 'forget-M1' })
   expect(await ui.find({ type: 'Text', text: /Drizzle/ })).toBeUndefined()
@@ -667,351 +563,3 @@ test('a subagent calling remember leaves a reference note, not a user decision',
   expect(text).toContain('Choice (')
 })
 
-// ---- A specialist is at work only while its run goes on ----
-
-type Eng = Engine
-const BUILD = { prompt: 'Build the panel', description: 'Build redesigned panel', subagentType: 'ecc:tdd-guide' } as never
-const REPORT = 'Built it.\nCEO-QUESTION: Which launch date?\nCEO-DECISION: Ship Friday or Monday? | Friday / Monday | recommend: Friday'
-const stop = ($: Eng, id: string, n: number, answer = 'ok') => $.turn.complete({ reason: 'answer', answer, turnId: `r${n}`, agentId: id, isAborted: false } as never)
-const work = ($: Eng, id: string) => $.tool.call({ tool: 'Read', file_path: '/repo/src/panel.ts', agentId: id } as never)
-
-/** What the Office tab says about the floor right now, on one surface. */
-async function floorOf($: Eng, surface: 'terminal' | 'desktop') {
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-  const seen = {
-    atWork: (await ui.find({ type: 'Text', text: /AT WORK · 1/ })) !== undefined,
-    empty: (await ui.find({ type: 'Text', text: /No one at a desk yet/ })) !== undefined,
-    waiting: (await ui.find({ type: 'Text', text: /Waiting on you · / })) !== undefined,
-    working: (await ui.find({ type: 'Text', text: /Working · / })) !== undefined,
-    needs: String((await ui.find({ type: 'Text', text: /need[s]? you/ }))?.text ?? ''),
-  }
-  await ui.unmount()
-  return seen
-}
-
-/** The Log tab's rows of one surface: [when, took] lines. */
-async function logLines($: Eng, surface: 'terminal' | 'desktop') {
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-  await ui.press({ key: 'tab-log' })
-  const lines = (await ui.findAll({ type: 'Text', text: /took|Failed after|Lost contact/ })).map(t => String(t.text))
-  await ui.press({ key: 'tab-office' }) // the open tab is kept for every drawing of the pane
-  await ui.unmount()
-  return lines
-}
-
-test('a specialist whose run has ended is not at work even with questions still open; they stay on the desk and count for Clawd', async ($, on) => {
-  host(on, [])
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.agent.spawn(BUILD)
-  await work($, 't1')
-  await stop($, 't1', 1, REPORT)
-
-  for (const surface of SURFACES) {
-    const floor = await floorOf($, surface)
-    expect(floor).toMatchObject({ atWork: false, empty: true, waiting: false, working: false })
-    expect(floor.needs).toMatch(/2 need you/)
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /AT WORK/ })).toBeUndefined()
-    expect(String((await ui.find({ key: 'see-needs' }))?.props.label)).toMatch(/^See what .+ needs$/)
-    await ui.unmount()
-  }
-})
-
-test('a resumed specialist is at work again while it runs and done when it stops; each run is timed on its own', async ($, on) => {
-  const { clock } = host(on, [])
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.agent.spawn(BUILD)
-  await work($, 't1')
-  await clock.advance(60_000)
-  await stop($, 't1', 1, REPORT)
-
-  for (const run of [2, 3, 4]) {
-    await clock.advance(2 * HOUR)
-    for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
-    await work($, 't1')
-    for (const surface of SURFACES) {
-      // Running again, and its question is still open: waiting on you, not working.
-      expect(await floorOf($, surface)).toMatchObject({ atWork: true, empty: false, waiting: true, working: false })
-    }
-    await clock.advance(120_000)
-    await stop($, 't1', run)
-    for (const surface of SURFACES) {
-      const floor = await floorOf($, surface)
-      expect(floor).toMatchObject({ atWork: false, empty: true })
-      expect(floor.needs).toMatch(/2 need you/)
-    }
-  }
-  for (const surface of SURFACES) {
-    const lines = await logLines($, surface)
-    expect(lines).toHaveLength(1)
-    // The last run took two minutes, not the hours since the first spawn.
-    expect(lines[0]).toMatch(/took 2m/)
-  }
-})
-
-test('a resumed specialist with nothing to ask is Working from its first model step, before any tool call', async ($, on) => {
-  const { clock } = host(on, [])
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('turn.step', async function* (_$, e) {
-    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'm', input_tokens: 5, output_tokens: 50, cache_read_input_tokens: 1_000, cache_creation_input_tokens: 0 } } as never
-  })
-  await $.agent.spawn(BUILD)
-  await stop($, 't1', 1)
-  await clock.advance(HOUR)
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false, empty: true })
-
-  const run = $.turn.step({ turnId: 'r2', index: 0, model: 'm', messageCount: 3, agentId: 't1' } as never)
-  let part = await run.next()
-  while (!part.done) part = await run.next()
-  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: true, working: true, waiting: false })
-  await stop($, 't1', 2)
-  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
-})
-
-for (const [status, text] of [['idle', /took/], ['completed', /took/], ['failed', /Failed after/], ['killed', /Failed after/]] as const) {
-  test(`a specialist the engine reports as ${status} is sent home within a few frames even if no stop was seen`, async ($, on) => {
-    const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
-    const { clock } = host(on, agents)
-    on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-    on('tool.call', () => ({ result: 'ok' }) as never)
-    await $.session.start(START)
-    await $.agent.spawn(BUILD)
-    await work($, 't1')
-    await clock.advance(30_000)
-    expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-
-    agents[0]!.status = status
-    await clock.advance(5_000)
-    expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false, empty: true })
-    expect((await logLines($, 'terminal'))[0]).toMatch(text)
-  })
-}
-
-test('a resumed run is not ended by the engine\'s stale "completed" in its first seconds', async ($, on) => {
-  const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'completed' }]
-  const { clock } = host(on, agents)
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.session.start(START)
-  await $.agent.spawn(BUILD)
-  await stop($, 't1', 1)
-  await clock.advance(HOUR)
-  await work($, 't1')
-  await clock.advance(4_000)
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  // Once the run has gone on a while with the engine still saying completed, it has ended.
-  await clock.advance(30_000)
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false })
-})
-
-test('the token figure is what the agent used, not each request\'s whole context added up', async ($, on) => {
-  const { clock } = host(on, [])
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  // Every request reads an 80 000-token cached prompt and writes 500 tokens.
-  on('turn.step', async function* (_$, e) {
-    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'm', input_tokens: 10, output_tokens: 500, cache_read_input_tokens: 80_000, cache_creation_input_tokens: 0 } } as never
-  })
-  await $.agent.spawn(BUILD)
-  for (const index of [0, 1, 2]) {
-    const run = $.turn.step({ turnId: 'r1', index, model: 'm', messageCount: 3, agentId: 't1' } as never)
-    let part = await run.next()
-    while (!part.done) part = await run.next()
-  }
-  await clock.advance(60_000)
-  await stop($, 't1', 1)
-  for (const surface of SURFACES) {
-    const lines = await logLines($, surface)
-    // 80 010 in the latest request plus 3 x 500 generated: about 82K, not 3 x 80 510 = 242K.
-    expect(lines[0]).toMatch(/took 1m · 82K tokens/)
-    expect(lines[0]).not.toMatch(/242K/)
-  }
-})
-
-test('/office names the four tabs and the Log key', async ($, on) => {
-  host(on)
-  const result = (await $.command.run({ command: 'office', args: '' } as never)) as { text: string }
-  expect(result.text).toContain('o Office')
-  expect(result.text).toContain('d Decisions')
-  expect(result.text).toContain('p People')
-  expect(result.text).toContain('l Log')
-})
-
-test('the tour sends finishers to the Log tab, says so, and shows it', async ($, on) => {
-  const { clock } = host(on, [])
-  await $.command.run({ command: 'office-demo', args: '' } as never)
-  await clock.advance(9 * 5_000 + 100)
-  await clock.advance(100)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /Finishers move to the Log tab \(l\)/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /DONE THIS SESSION/ })).toBeUndefined()
-  expect((await ui.find({ key: 'tabbox-log' }))?.props.borderColor).toBe(ACCENT)
-  expect(await ui.find({ type: 'Text', text: /took/ })).toBeDefined()
-  await ui.unmount()
-})
-
-// ---- Lost contact, stop signals, and runs ended by a guess ----
-
-const stopSignal = ($: Eng, id: string) => $.classic.SubagentStop({ stop_hook_active: false, agent_id: id, agent_transcript_path: '', agent_type: 'ecc:tdd-guide' })
-const stepOf = async ($: Eng, id: string, index: number) => {
-  const run = $.turn.step({ turnId: 'r1', index, model: 'm', messageCount: 3, agentId: id } as never)
-  let part = await run.next()
-  while (!part.done) part = await run.next()
-}
-const MIN = 60_000
-
-test('a run the engine still calls running but that went silent for 30 minutes is recorded as lost contact, in amber, with no cheer', async ($, on) => {
-  const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
-  const { clock, toasts } = host(on, agents)
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.session.start(START)
-  await $.agent.spawn(BUILD)
-  await work($, 't1')
-  await clock.advance(29 * MIN)
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-
-  await clock.advance(2 * MIN)
-  for (const surface of SURFACES) {
-    expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    // Not a failure and not a win: Clawd stays at "All clear".
-    expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeDefined()
-    await ui.press({ key: 'tab-log' })
-    const lost = await ui.find({ type: 'Text', text: /Lost contact after 30m/ })
-    expect(lost).toBeDefined()
-    expect(lost?.props.color).toBe(AMBER)
-    expect(await ui.find({ type: 'Text', text: /took|Failed after/ })).toBeUndefined()
-    await ui.press({ key: 'tab-office' })
-    await ui.unmount()
-  }
-  expect(toasts.filter(t => /finished|could not finish/.test(t))).toEqual([])
-})
-
-test('a specialist the engine reports as waiting is never lost, however long it waits', async ($, on) => {
-  const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'waiting' }]
-  const { clock } = host(on, agents)
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.session.start(START)
-  await $.agent.spawn(BUILD)
-  await work($, 't1')
-  await clock.advance(50 * MIN)
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  // Once it runs and then goes silent, the limit applies from its last sign of life.
-  agents[0]!.status = 'running'
-  await clock.advance(5_000)
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  await clock.advance(31 * MIN)
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false })
-})
-
-test('a run ended by the engine list that then shows life goes on as the same run: clock and tokens kept, no leftover Log row', async ($, on) => {
-  const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
-  const { clock } = host(on, agents)
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  on('turn.step', async function* (_$, e) {
-    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'm', input_tokens: 10, output_tokens: 500, cache_read_input_tokens: 80_000, cache_creation_input_tokens: 0 } } as never
-  })
-  await $.session.start(START)
-  await $.agent.spawn(BUILD)
-  await work($, 't1')
-  await stepOf($, 't1', 0)
-  await clock.advance(10_000)
-
-  // The list says the run is over, though it is not: it is sent home once it has been quiet a while.
-  agents[0]!.status = 'completed'
-  await clock.advance(30_000)
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false })
-  expect(await logLines($, 'terminal')).toHaveLength(1)
-
-  // A late tool call: the same run is back, with nothing in the Log.
-  agents[0]!.status = 'running'
-  await work($, 't1')
-  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: true, working: true })
-  expect(await logLines($, 'terminal')).toEqual([])
-
-  await clock.advance(5_000)
-  await stop($, 't1', 2)
-  const [line] = await logLines($, 'terminal')
-  // About 55 seconds since the first spawn, and the first step's 80 510 tokens still counted.
-  expect(Number(/took (\d+)s/.exec(line!)?.[1])).toBeGreaterThanOrEqual(45)
-  expect(line).toMatch(/81K tokens/)
-})
-
-test('both stop signals for one stop end it once: one Log row and one toast, in either order', async ($, on) => {
-  const { toasts } = host(on, [])
-  let n = 0
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `s${(n += 1)}` }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.agent.spawn(BUILD)
-  await work($, 's1')
-  await stop($, 's1', 1)
-  await stopSignal($, 's1')
-  await $.agent.spawn(BUILD)
-  await work($, 's2')
-  await stopSignal($, 's2')
-  await stop($, 's2', 1)
-  for (const surface of SURFACES) expect(await logLines($, surface)).toHaveLength(2)
-  expect(toasts.filter(t => t.includes('finished'))).toHaveLength(2)
-})
-
-test('the SubagentStop signal alone ends a run, and one for an agent nobody knows changes nothing', async ($, on) => {
-  host(on, [])
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.agent.spawn(BUILD)
-  await work($, 't1')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  await stopSignal($, 'ghost')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  await stopSignal($, 't1')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false, empty: true })
-  expect(await logLines($, 'terminal')).toHaveLength(1)
-  // A message resumes it after a real stop: a new run.
-  await work($, 't1')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  expect(await logLines($, 'terminal')).toEqual([])
-})
-
-test('a tool call with an agent id nobody announced and the engine does not list hires no one', async ($, on) => {
-  const { clock } = host(on, [])
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.session.start(START)
-  await work($, 'ghost')
-  await clock.advance(1_000)
-  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
-  await clock.advance(40_000)
-  await work($, 'ghost')
-  expect(await logLines($, 'terminal')).toEqual([])
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  await ui.press({ key: 'tab-people' })
-  expect(await ui.find({ type: 'Text', text: /general-purpose|Generalist.*hired 1 time/ })).toBeUndefined()
-  await ui.press({ key: 'tab-office' })
-  await ui.unmount()
-})
-
-test('an agent the engine lists but no spawn announced is still hired on its first tool call', async ($, on) => {
-  host(on, [{ id: 'x1', type: 'ecc:code-reviewer', description: 'Review', status: 'running' }])
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await work($, 'x1')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-})
-
-test('the token figure does not go down when a compaction shrinks the next request', async ($, on) => {
-  const { clock } = host(on, [])
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('turn.step', async function* (_$, e) {
-    const [cache, output] = e.index === 0 ? [80_000, 500] : [20_000, 300]
-    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'm', input_tokens: 10, output_tokens: output, cache_read_input_tokens: cache, cache_creation_input_tokens: 0 } } as never
-  })
-  await $.agent.spawn(BUILD)
-  await stepOf($, 't1', 0)
-  await stepOf($, 't1', 1)
-  await clock.advance(60_000)
-  await stop($, 't1', 1)
-  // 80 010 at the peak plus 800 generated; the last request alone would read 21K.
-  expect((await logLines($, 'terminal'))[0]).toMatch(/81K tokens/)
-})

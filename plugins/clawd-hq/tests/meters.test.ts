@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { barGlyphs, barOf, barSvg, formatLeft, headerGauges } from '../hooks/meters'
+import { barGlyphs, barOf, barSvg, formatLeft, headerGauges, limitsOf } from '../hooks/meters'
 import { ACCENT } from '../hooks/office'
 
 const NOW = Date.parse('2026-10-11T12:00:00Z')
@@ -105,4 +105,10 @@ test('before the first reading context shows a dash and an empty bar', () => {
   const [context] = headerGauges({ startedAt: 0, limits: [] }, NOW)
   expect(context!.percent).toBe('–')
   expect(context!.value).toBe(0)
+})
+
+test('the limits are kept as the gauge reads them: kind, percent and reset time, nothing else', () => {
+  const engine = [{ kind: 'five_hour', percentUsed: 62, resetsAt: '2026-10-11T13:00:00Z', label: 'extra' }, { kind: 'seven_day', percentUsed: 3 }]
+  expect(limitsOf(engine)).toEqual([{ kind: 'five_hour', percentUsed: 62, resetsAt: '2026-10-11T13:00:00Z' }, { kind: 'seven_day', percentUsed: 3, resetsAt: undefined }])
+  expect(limitsOf([])).toEqual([])
 })

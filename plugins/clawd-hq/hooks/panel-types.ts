@@ -16,7 +16,6 @@ export type PanelData = {
 }
 
 export type PanelActions = {
-  setView: (view: Fx['view']) => unknown
   setFind: (tab: 'decisions' | 'people', text: string) => unknown
   openDesk: () => unknown
   resume: (task: string) => unknown

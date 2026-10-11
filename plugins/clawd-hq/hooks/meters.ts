@@ -77,3 +77,7 @@ export function headerGauges(gauge: Gauge, now: number): GaugeView[] {
   })
   return [context, ...limits]
 }
+
+/** The limit windows as the gauge keeps them: only the fields it reads. */
+export const limitsOf = (list: Array<{ kind: string; percentUsed: number; resetsAt?: string }>) =>
+  list.map(({ kind, percentUsed, resetsAt }) => ({ kind, percentUsed, resetsAt }))

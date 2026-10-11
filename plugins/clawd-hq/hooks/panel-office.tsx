@@ -1,8 +1,8 @@
 // The Office tab: Clawd's card and who is at work. Finished work lives in the Log tab.
 import { clawdAvatar, assemble, avatarFor } from './avatars'
 import { clawdMood, isBlinking, quipOf } from './clawd-says'
-import { ACCENT, AMBER, GREEN, clip, displayName } from './office'
-import { atWork, isWaiting, recentFailures, seeNeedsLabel, statusOf, titled, workState } from './panel-model'
+import { AMBER, GREEN, displayName } from './office'
+import { atWork, isWaiting, recentFailures, seeNeedsLabel, statusOf, titled, workLine } from './panel-model'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import type { Employee } from '../types'
@@ -50,30 +50,25 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   )
 }
 
-/** One specialist at work: the picture on top on the terminal, beside the words elsewhere. */
-function deskCard(one: Employee, cardW: number, { kit, data }: Ctx) {
-  const { Box, Text, sprite, isTerminal } = kit
-  const state = workState(one, data.asks, data.now)
-  const color = state.isWaiting ? AMBER : ACCENT
+/** One specialist at work, as wide as the pane: the picture, then its name and task, and what it is doing now. */
+function deskRow(one: Employee, { kit, data }: Ctx) {
+  const { Box, Text, sprite } = kit
+  const line = workLine(one, data.asks, data.now)
   const picture = sprite(`desk-${one.id}`, assemble(avatarFor(one.type)), { scale: 3, alt: `${titled(one, data)}` })
-  const words = (
-    <Box flexDirection="column" flexShrink={1}>
-      <Text bold wrap="truncate">{titled(one, data)}</Text>
-      <Text dimColor wrap="truncate">{clip(one.description || one.type, Math.max(12, cardW - (isTerminal ? 4 : 14)))}</Text>
-      <Text color={color} wrap="truncate">{state.isWaiting ? '■ ' : '● '}{state.label}</Text>
-    </Box>
-  )
   return (
-    <Box key={`desk-${one.id}`} width={cardW} borderStyle="round" borderColor={state.isWaiting ? AMBER : undefined} borderDimColor={!state.isWaiting}
-      paddingX={1} flexDirection={isTerminal ? 'column' : 'row'} gap={isTerminal ? 0 : 2} alignItems={isTerminal ? 'flex-start' : 'center'}>
-      {isTerminal ? <Box justifyContent="center" width={cardW - 4}>{picture}</Box> : <Box flexShrink={0}>{picture}</Box>}
-      {words}
+    <Box key={`desk-${one.id}`} borderStyle="round" borderColor={line.isWaiting ? AMBER : undefined} borderDimColor={!line.isWaiting}
+      paddingX={1} flexDirection="row" gap={2} alignItems="center">
+      <Box flexShrink={0}>{picture}</Box>
+      <Box flexDirection="column" flexShrink={1} flexGrow={1}>
+        <Text wrap="truncate"><Text bold>{titled(one, data)}</Text><Text dimColor>{` ${one.description || one.type}`}</Text></Text>
+        <Text wrap="truncate"><Text color={line.isWaiting ? AMBER : undefined}>{line.sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
+      </Box>
     </Box>
   )
 }
 
 function floor(ctx: Ctx) {
-  const { Box, Text, isTerminal } = ctx.kit
+  const { Box, Text } = ctx.kit
   const working = atWork(ctx.data.staff)
   if (working.length === 0) {
     return (
@@ -86,13 +81,10 @@ function floor(ctx: Ctx) {
       </Box>
     )
   }
-  // Two across when the cards fit; they wrap otherwise.
-  const across = isTerminal ? (ctx.cw >= 57 ? 2 : 1) : (ctx.cw >= 44 ? 2 : 1)
-  const cardW = Math.floor((ctx.cw - (across - 1)) / across)
   return (
     <Box flexDirection="column">
       <Text bold dimColor>{`AT WORK · ${working.length}`}</Text>
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>{working.map(one => deskCard(one, cardW, ctx))}</Box>
+      <Box key="floor-rows" flexDirection="column">{working.map(one => deskRow(one, ctx))}</Box>
     </Box>
   )
 }

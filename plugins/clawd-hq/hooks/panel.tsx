@@ -1,5 +1,4 @@
-// The side panel: a row of gauges, four tabs, and the tab's body.
-import { ACCENT } from './office'
+// One pane of the side panel: the view's body, then the gauges as a footer. The host draws the tabs between the views.
 import { headerGauges } from './meters'
 import type { GaugeView } from './meters'
 import { kitOf } from './panel-kit'
@@ -9,14 +8,10 @@ import { logTab } from './panel-log'
 import { officeTab } from './panel-office'
 import { peopleTab } from './panel-people'
 import type { PanelActions, PanelData } from './panel-types'
-import type { Fx } from '../types'
+import type { PaneView } from './panes'
 
-const TABS: Array<{ view: Fx['view']; hotkey: string; label: (data: PanelData) => string }> = [
-  { view: 'office', hotkey: 'o', label: () => 'Office' },
-  { view: 'decisions', hotkey: 'd', label: d => (d.memory.length > 0 ? `Decisions ${d.memory.length}` : 'Decisions') },
-  { view: 'people', hotkey: 'p', label: () => 'People' },
-  { view: 'log', hotkey: 'l', label: () => 'Log' },
-]
+/** What a pane knows about its room: cells across, and how much of its height the footer should stretch to. */
+export type PanelLayout = { columns: number; minHeight?: number | string }
 
 /** One gauge: a dim label, a thin bar, the bright percent, and the dim time left. It keeps its width, so the row wraps between gauges. */
 function gauge(kit: Kit, g: GaugeView) {
@@ -31,7 +26,7 @@ function gauge(kit: Kit, g: GaugeView) {
   )
 }
 
-function header(kit: Kit, data: PanelData) {
+function footer(kit: Kit, data: PanelData) {
   return (
     <kit.Box key="gauges" flexDirection="row" flexWrap="wrap" justifyContent="space-between" columnGap={2}>
       {headerGauges(data.gauge, data.now).map(g => gauge(kit, g))}
@@ -39,45 +34,27 @@ function header(kit: Kit, data: PanelData) {
   )
 }
 
-/** A strip of boxed tabs: the open one in a rounded accent box with a bright label, the rest in dim boxes. */
-function tabs(kit: Kit, data: PanelData, view: Fx['view'], actions: PanelActions) {
-  const { Box, Button } = kit
-  return (
-    <Box key="tabs" flexDirection="row" flexWrap="wrap" alignItems="center">
-      {TABS.map(t => {
-        const isOpen = t.view === view
-        return (
-          <Box key={`tabbox-${t.view}`} borderStyle="round" borderColor={isOpen ? ACCENT : undefined} borderDimColor={isOpen ? undefined : true} paddingX={1}>
-            <Button key={`tab-${t.view}`} plain hotkey={t.hotkey} dimColor={isOpen ? undefined : true} label={t.label(data)} onPress={() => actions.setView(t.view)} />
-          </Box>
-        )
-      })}
-    </Box>
-  )
-}
-
-function bodyOf(kit: Kit, data: PanelData, view: Fx['view'], actions: PanelActions, cw: number) {
+function bodyOf(kit: Kit, data: PanelData, view: PaneView, actions: PanelActions, cw: number) {
   if (view === 'decisions') return decisionsTab(kit, data, actions)
   if (view === 'people') return peopleTab(kit, data, actions)
   return view === 'log' ? logTab(kit, data) : officeTab(kit, data, actions, cw)
 }
 
-export function renderPanel(tools: PanelTools, bodyColumns: number, data: PanelData, actions: PanelActions) {
+export function renderPanel(tools: PanelTools, layout: PanelLayout, data: PanelData, actions: PanelActions, view: PaneView) {
   const kit = kitOf(tools)
   const { Box, Text } = kit
-  const cw = Math.max(24, bodyColumns)
-  // A view an older version stored (directory, memory) falls back to the office.
-  const view: Fx['view'] = TABS.some(t => t.view === data.fx.view) ? data.fx.view : 'office'
+  const cw = Math.max(24, layout.columns)
   return (
-    <Box flexDirection="column" gap={1}>
+    <Box flexDirection="column" gap={1} minHeight={layout.minHeight}>
       {data.fx.demo && (
         <Box borderStyle="single" borderColor="yellow" paddingX={1}>
           <Text color="yellow" wrap="wrap">{`🎬 ${data.fx.demo.step}/${data.fx.demo.total} · ${data.fx.demo.caption}`}</Text>
         </Box>
       )}
-      {header(kit, data)}
-      {tabs(kit, data, view, actions)}
       {bodyOf(kit, data, view, actions, cw)}
+      {/* Where the room is known, a spacer takes what is left and the footer sits on the bottom edge. */}
+      {layout.minHeight !== undefined && <Box flexGrow={1} />}
+      {footer(kit, data)}
     </Box>
   )
 }

@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { READING_BRIEF, THINKING, sentenceOf } from '../hooks/activity'
+import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from '../hooks/activity'
 
 test('reading, editing and writing name the file, never the path', () => {
   expect(sentenceOf('Read', { file_path: '/Users/me/repo/src/scoring.ts' })).toBe('Reading scoring.ts')
@@ -28,12 +28,12 @@ test('a Bash call shows its own description, and never the command', () => {
   expect(sentenceOf('Bash', { command, description: 'Fetch the account list' })).not.toContain('SECRET')
 })
 
-test('searching the code or the web quotes the pattern or query, cut to about 30 characters', () => {
+test('searching the code or the web quotes the pattern or query, cut to 40 characters, without a mark', () => {
   expect(sentenceOf('Grep', { pattern: 'computeScore' })).toBe('Searching the code for “computeScore”')
   expect(sentenceOf('Glob', { pattern: '**/*.tsx' })).toBe('Searching the code for “**/*.tsx”')
   expect(sentenceOf('WebSearch', { query: 'claude code plugin api' })).toBe('Searching the web for “claude code plugin api”')
   const long = sentenceOf('Grep', { pattern: 'a'.repeat(80) })
-  expect(long).toBe(`Searching the code for “${'a'.repeat(29)}…”`)
+  expect(long).toBe(`Searching the code for “${'a'.repeat(40)}”`)
   expect(sentenceOf('WebSearch', { query: 'one\ntwo   three' })).toBe('Searching the web for “one two three”')
   expect(sentenceOf('Grep', {})).toBe('Searching the code')
   expect(sentenceOf('WebSearch', {})).toBe('Searching the web')
@@ -67,18 +67,19 @@ test('any other tool is named plainly', () => {
   expect(sentenceOf('ToolSearch', { query: 'select:Foo' })).toBe('Using ToolSearch')
 })
 
-test('a sentence is always one line of at most 80 characters', () => {
-  const wordy = `Run the whole\nintegration suite ${'and then keep going '.repeat(10)}`
+test('a sentence is one line that wraps in the pane: it is cut only at a word and never ends in a mark', () => {
+  const wordy = `Run the whole\nintegration suite ${'and then keep going '.repeat(20)}`
   const bash = sentenceOf('Bash', { command: 'x', description: wordy })
   expect(bash).not.toContain('\n')
-  expect(bash.length).toBeLessThanOrEqual(80)
-  expect(bash.endsWith('…')).toBe(true)
-  const file = sentenceOf('Read', { file_path: `/repo/${'very-long-name-'.repeat(12)}.ts` })
-  expect(file.length).toBeLessThanOrEqual(80)
+  expect(bash.length).toBeLessThanOrEqual(200)
+  expect(bash).not.toMatch(/…|\.\.\.|\s$/)
+  expect(bash.startsWith('Run the whole integration suite and then keep going')).toBe(true)
+  // A sentence of ordinary length is kept whole.
+  const note = 'Run the whole integration suite and then keep going until the end of the run'
+  expect(sentenceOf('Bash', { command: 'x', description: note })).toBe(note)
+  const file = sentenceOf('Read', { file_path: `/repo/${'very-long-name-'.repeat(20)}.ts` })
+  expect(file.length).toBeLessThanOrEqual(200)
   expect(file.startsWith('Reading very-long-name-')).toBe(true)
-  const skill = sentenceOf('Skill', { skill: 'x'.repeat(200) })
-  expect(skill.length).toBeLessThanOrEqual(80)
-  expect(sentenceOf('mcp__srv__' + 'tool_'.repeat(40), {}).length).toBeLessThanOrEqual(80)
 })
 
 test('the two resting sentences', () => {
@@ -89,4 +90,43 @@ test('the two resting sentences', () => {
 test('a sentence deliberately keeps the quoted search pattern or query, so the user can see what a specialist is looking for', () => {
   expect(sentenceOf('Grep', { pattern: 'TODO' })).toContain('“TODO”')
   expect(sentenceOf('WebSearch', { query: 'rate limit headers' })).toContain('“rate limit headers”')
+})
+
+// ---- The specialist's own words ----
+
+test('what a specialist says is its first one to three sentences, in its own words', () => {
+  expect(narrationOf('I will run the tests now.')).toBe('I will run the tests now.')
+  expect(narrationOf('Now I will run the tests. They cover the scoring rules. After that I will fix what fails. Then I will report back.'))
+    .toBe('Now I will run the tests. They cover the scoring rules. After that I will fix what fails.')
+  expect(narrationOf('  Checking\nthe   panel.  Then the footer.  ')).toBe('Checking the panel. Then the footer.')
+  // A question or an exclamation ends a sentence too.
+  expect(narrationOf('Found it! The bug is in scores.ts. Fixing that now.')).toBe('Found it! The bug is in scores.ts. Fixing that now.')
+})
+
+test('what a specialist says is plain text: code, links and marks are dropped, a list or a table is not a sentence', () => {
+  expect(narrationOf('I will edit `scores.ts` and the **footer**.')).toBe('I will edit scores.ts and the footer.')
+  expect(narrationOf('See [the guide](https://example.com/a) first. Then I start.')).toBe('See the guide first. Then I start.')
+  expect(narrationOf('```ts\nconst a = 1\n```\nThat compiles. Moving on.')).toBe('That compiles. Moving on.')
+  // A heading is its own block, not part of the sentence after it; a list under an intro line is not read.
+  expect(narrationOf('## Plan\nFirst the tests. Then the code.')).toBe('First the tests. Then the code.')
+  expect(narrationOf('Checking files:\n- a.ts\n- b.ts')).toBe('Checking files:')
+  expect(narrationOf('Two things:\n1. a\n2. b\nThen done.')).toBe('Two things:')
+  // Only paired marks are dropped: a lone star or a code span in a sentence stays what it is.
+  expect(narrationOf('Edit src/*.ts and compute 2 * 3 now.')).toBe('Edit src/*.ts and compute 2 * 3 now.')
+  expect(narrationOf('Run ```npm test``` now. Then stop.')).toBe('Run npm test now. Then stop.')
+  expect(narrationOf('This is **bold** and ~~gone~~ text.')).toBe('This is bold and gone text.')
+  expect(narrationOf('- one\n- two')).toBeUndefined()
+  expect(narrationOf('| a | b |\n|---|---|')).toBeUndefined()
+  expect(narrationOf('   ')).toBeUndefined()
+  expect(narrationOf('')).toBeUndefined()
+})
+
+test('what a specialist says is cut only whole sentences at a time, or at a word for one very long sentence, never with a mark', () => {
+  const sentence = (n: number) => `Word ${'word '.repeat(n - 1).trim()}.`
+  const said = narrationOf(`${sentence(25)} ${sentence(25)} ${sentence(25)}`)!
+  expect(said).toBe(`${sentence(25)} ${sentence(25)}`)
+  const huge = narrationOf(sentence(200))!
+  expect(huge.length).toBeLessThanOrEqual(280)
+  expect(huge).not.toMatch(/…|\.\.\.|\s$/)
+  expect(huge.startsWith('Word word word')).toBe(true)
 })

@@ -15,6 +15,15 @@ export function oneLine(text: string, max: number): string {
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : chars.join('')
 }
 
+/** One line like `oneLine`, but cut at a word and without a mark: for text the pane wraps, where an ellipsis would only hide words. */
+export function fit(text: string, max: number): string {
+  const chars = Array.from(text.replace(/\s+/g, ' ').trim())
+  if (chars.length <= max) return chars.join('')
+  const cut = chars.slice(0, max).join('')
+  const space = cut.lastIndexOf(' ')
+  return (space > max / 2 ? cut.slice(0, space) : cut).trimEnd()
+}
+
 const LINE = /^[ \t]*[-*]?[ \t]*CEO-(DECISION|QUESTION):[ \t]*(.+?)[ \t]*$/gim
 
 /** The CEO-DECISION and CEO-QUESTION lines of a subagent's final report. */
@@ -22,7 +31,7 @@ export function parseReport(text: string): Array<Pick<Ask, 'kind' | 'title' | 'o
   const found: Array<Pick<Ask, 'kind' | 'title' | 'options' | 'recommend'>> = []
   for (const m of text.matchAll(LINE)) {
     const [rawTitle = '', choices = '', rec = ''] = (m[2] ?? '').split('|').map(s => s.trim())
-    const title = oneLine(rawTitle, 160)
+    const title = fit(rawTitle, 160)
     const options = choices ? choices.split('/').map(s => oneLine(s, 160)).filter(Boolean).slice(0, 6) : []
     const recommend = rec.replace(/^recommend(ed)?:\s*/i, '').trim()
     const kind = m[1]!.toUpperCase() === 'DECISION' && options.length > 1 ? 'decision' : 'question'

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { AMBER } from '../hooks/office'
-import { FOUR, PANE, SURFACES, host } from './host'
+import { FOUR, PANE, START, SURFACES, host } from './host'
 
 const MIN = 60_000
 const BUILD = { prompt: 'Build the panel', description: 'Build redesigned panel', subagentType: 'ecc:tdd-guide' } as never
@@ -39,7 +39,7 @@ function hostWithSpecialist(on: Parameters<typeof host>[0]) {
   return h
 }
 
-test('a specialist at work is one full-width row: avatar, name and task, then a sentence with its time and tokens', async ($, on) => {
+test('a specialist at work is one full-width row: avatar, name and task, then what it is doing, with its time and tokens', async ($, on) => {
   const { clock } = hostWithSpecialist(on)
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage } as never
@@ -58,7 +58,7 @@ test('a specialist at work is one full-width row: avatar, name and task, then a 
     expect((await ui.find({ key: 'floor-rows' }))?.props).toMatchObject({ flexDirection: 'column' })
     expect((await ui.find({ key: 'floor-rows' }))?.props.flexWrap).toBeUndefined()
 
-    // Line 1: the name in bold, then the task, dim, cut with an ellipsis when long.
+    // Line 1: the name in bold, then the task, dim.
     expect((await ui.find({ type: 'Text', text: /^\w+ the Tester$/ }))?.props.bold).toBe(true)
     const task = await ui.find({ type: 'Text', text: /^ Build redesigned panel$/ })
     expect(task?.props.dimColor).toBe(true)
@@ -72,10 +72,11 @@ test('a specialist at work is one full-width row: avatar, name and task, then a 
     expect(await ui.find({ type: 'Text', text: /Working · / })).toBeUndefined()
     await ui.unmount()
   }
-  // Both lines are cut, never wrapped.
+  // Both lines wrap: nothing in the row is cut to fit.
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  const lines = (await ui.findAll({ type: 'Text' })).filter(t => t.props.wrap === 'truncate')
+  const lines = (await ui.findAll({ type: 'Text' })).filter(t => t.props.wrap === 'wrap' && /Tester|Reading panel/.test(t.text))
   expect(lines.length).toBeGreaterThanOrEqual(2)
+  expect((await ui.findAll({ type: 'Text' })).some(t => /Tester/.test(t.text) && t.props.wrap === 'truncate')).toBe(false)
   await ui.unmount()
 })
 
@@ -97,16 +98,16 @@ test('every specialist at work gets its own row, one under the other', async ($,
   await ui.unmount()
 })
 
-test('a long task is cut to one line, not wrapped', async ($, on) => {
+test('a long task wraps in the row: it is never cut with a mark', async ($, on) => {
   hostWithSpecialist(on)
   await $.agent.spawn({ prompt: 'p', description: 'Write a very long description '.repeat(10), subagentType: 'ecc:tdd-guide' } as never)
   await call($, 'Read', { file_path: '/repo/a.ts' })
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  const line = (await ui.findAll({ type: 'Text' })).find(t => t.props.wrap === 'truncate' && /^\w+ the Tester Write a very long/.test(t.text))
+  const line = (await ui.findAll({ type: 'Text' })).find(t => /^\w+ the Tester Write a very long/.test(t.text))
   expect(line).toBeDefined()
+  expect(line?.props.wrap).toBe('wrap')
   expect(line?.text).not.toContain('\n')
-  // The task is cut where it is stored, with an ellipsis, so even a pane that cannot truncate shows one line.
-  expect(line?.text.endsWith('…')).toBe(true)
+  expect(line?.text).not.toMatch(/…/)
   await ui.unmount()
 })
 
@@ -155,14 +156,15 @@ test('a Bash command with no description reads "Running a command" and its text 
   await ui.unmount()
 })
 
-test('a sentence is one line of at most 80 characters, with a path cut to the file name', async ($, on) => {
+test('a long sentence wraps in the row, is kept whole up to a generous length and never ends in a mark', async ($, on) => {
   hostWithSpecialist(on)
   await $.agent.spawn(BUILD)
-  const { lines } = await sentenceAfter($, 'Bash', { command: 'x', description: `Run all\nof the ${'long '.repeat(40)}checks` })
-  const sentence = lines.find(l => l.startsWith('Run all of the') && l.endsWith('…'))
-  expect(sentence).toBeDefined()
-  expect(sentence!.length).toBeLessThanOrEqual(80)
-  expect(sentence).not.toContain('\n')
+  const note = `Run all of the ${'long '.repeat(15)}checks`
+  const { lines, row } = await sentenceAfter($, 'Bash', { command: 'x', description: note })
+  expect(lines).toContain(note)
+  expect(lines.join('\n')).not.toMatch(/…/)
+  const text = JSON.stringify(row)
+  expect(text).not.toContain('"wrap":"truncate"')
 })
 
 test('before anything is seen the row reads "Reading the brief"; a model step with no tool call since reads "Thinking"', async ($, on) => {
@@ -246,4 +248,107 @@ test('Clawd\'s own activity line says what he is doing in the same plain sentenc
   const stored = writes.join('\n')
   expect(stored).toContain('"activity":"Searching the code for “computeScore”"')
   expect(stored).toContain('"activity":"Reading a.ts"')
+})
+
+
+// ---- What the specialist is saying: its own words, one to three sentences, wrapped ----
+
+const linesOf = async ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') => {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+  const texts = await ui.findAll({ type: 'Text' })
+  await ui.unmount()
+  return texts
+}
+
+test('the row shows what the specialist says, wrapped, above the tool line, and it follows the specialist as it goes on', async ($, on) => {
+  hostWithSpecialist(on)
+  let answer = 'Now I will read the scoring rules. They decide the ranking. I will compare them with the tests. Then I will report.'
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer, toolUses: [], stopReason: 'end_turn', usage } as never
+  })
+  await $.agent.spawn(BUILD)
+  await step($, 0)
+  await call($, 'Read', { file_path: '/repo/scoring.ts' })
+
+  for (const surface of SURFACES) {
+    const texts = await linesOf($, surface)
+    const line = texts.find(t => t.text.startsWith('Now I will read the scoring rules.'))
+    // One to three sentences, in full.
+    expect(line?.text).toBe('Now I will read the scoring rules. They decide the ranking. I will compare them with the tests.')
+    expect(line?.props.wrap).toBe('wrap')
+    // The tool line is still there, under it.
+    expect(texts.map(t => t.text)).toContain('Reading scoring.ts')
+  }
+
+  // The next request starts: the old words are gone while it thinks, and the new ones replace them.
+  answer = 'The ranking looks right. Checking the footer next.'
+  const run = $.turn.step({ turnId: 'r1', index: 1, model: 'm', messageCount: 5, agentId: 't1' } as never)
+  await run.next()
+  expect((await linesOf($)).some(t => t.text.startsWith('Now I will read'))).toBe(false)
+  let part = await run.next()
+  while (!part.done) part = await run.next()
+  await call($, 'Edit', { file_path: '/repo/footer.tsx', old_string: 'a', new_string: 'b' })
+  const after = await linesOf($)
+  expect(after.some(t => t.text === 'The ranking looks right. Checking the footer next.')).toBe(true)
+  expect(after.map(t => t.text)).toContain('Editing footer.tsx')
+})
+
+test('a step that only calls tools says nothing, so the row shows just the tool line', async ($, on) => {
+  hostWithSpecialist(on)
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage } as never
+  })
+  await $.agent.spawn(BUILD)
+  await step($, 0)
+  await call($, 'Read', { file_path: '/repo/a.ts' })
+  const texts = (await linesOf($)).map(t => t.text)
+  expect(texts).toContain('Reading a.ts')
+  expect(texts.some(t => /^(Now|I will)/.test(t))).toBe(false)
+})
+
+test('the words are the specialist\'s own and are kept short: only the first sentences, with nothing of its code', async ($, on) => {
+  hostWithSpecialist(on)
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '```sh\nexport TOKEN=SECRET\n```\nWriting the config now.', toolUses: [], stopReason: 'end_turn', usage } as never
+  })
+  await $.agent.spawn(BUILD)
+  await step($, 0)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  const drawn = JSON.stringify(await ui.drawn())
+  await ui.unmount()
+  expect(drawn).toContain('Writing the config now.')
+  expect(drawn).not.toContain('SECRET')
+})
+
+test('words that arrive after a run was sent home are not kept: if the run goes on, the row does not show them', async ($, on) => {
+  const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
+  const { clock } = host(on, agents)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  let release: () => void = () => {}
+  const gate = new Promise<void>(resolve => { release = resolve })
+  on('turn.step', async function* (_$, e) {
+    await gate
+    return { turnId: e.turnId, index: e.index, answer: 'Writing the config with the key now.', toolUses: [], stopReason: 'end_turn', usage } as never
+  })
+  await $.session.start(START)
+  await $.agent.spawn(BUILD)
+  await call($, 'Read', { file_path: '/repo/a.ts' })
+  // A request goes out; while it is out, the engine's list says the run is over and the quiet rule sends it home.
+  const run = $.turn.step({ turnId: 'r1', index: 1, model: 'm', messageCount: 5, agentId: 't1' } as never)
+  const first = run.next()
+  agents[0]!.status = 'completed'
+  await clock.advance(30_000)
+  expect((await linesOf($)).map(t => t.text)).not.toContain('Thinking')
+  release()
+  await first
+  let part = await run.next()
+  while (!part.done) part = await run.next()
+
+  // The run shows life again (the list was wrong): the late words must not come back with it.
+  agents[0]!.status = 'running'
+  await call($, 'Edit', { file_path: '/repo/b.ts', old_string: 'a', new_string: 'b' })
+  const texts = (await linesOf($)).map(t => t.text)
+  expect(texts).toContain('Editing b.ts')
+  expect(texts.join('\n')).not.toContain('with the key')
 })

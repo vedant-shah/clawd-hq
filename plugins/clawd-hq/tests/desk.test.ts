@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from '../hooks/desk'
+import { fit, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from '../hooks/desk'
 
 test('report lines parse into decisions and questions', () => {
   const found = parseReport('x\n- CEO-DECISION: A or B? | A / B | recommend: A\nCEO-QUESTION: Why?\nCEO-DECISION: lonely? | only')
@@ -63,4 +63,21 @@ test('oneLine cuts on whole characters: an emoji is never split in half', () => 
   expect(Array.from(cut)).toHaveLength(4)
   expect(oneLine('😀😀😀😀', 4)).toBe('😀😀😀😀')
   expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(oneLine('ab😀😀😀😀😀😀😀', 5))).toBe(false)
+})
+
+test('fit collapses whitespace and cuts long text at a word, with no mark', () => {
+  expect(fit('  a\n\n  b\t c  ', 50)).toBe('a b c')
+  expect(fit('one two three four', 12)).toBe('one two')
+  expect(fit('abcdefghij', 5)).toBe('abcde')
+  expect(fit('abcde', 5)).toBe('abcde')
+  expect(fit('   ', 5)).toBe('')
+  // Whole characters: an emoji is never split in half.
+  expect(fit('😀😀😀😀😀😀', 4)).toBe('😀😀😀😀')
+})
+
+test('a question title longer than the limit is cut at a word with no mark, so a row that wraps it never ends in an ellipsis', () => {
+  const [ask] = parseReport(`CEO-QUESTION: ${'Should we keep going '.repeat(20)}`)
+  expect(ask!.title.length).toBeLessThanOrEqual(160)
+  expect(ask!.title).not.toMatch(/…/)
+  expect(ask!.title.startsWith('Should we keep going')).toBe(true)
 })

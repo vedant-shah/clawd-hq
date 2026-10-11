@@ -2,9 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Ask, Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, STAFFING_NOTE, answerText, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
+import { BRIEF_NOTE, STAFFING_NOTE, answerText, fit, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
-import { READING_BRIEF, THINKING, sentenceOf } from './activity'
+import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
 import { renderDesk } from './desk-pane'
 import { ACCENT, BRAND, ago, clip, hash, looksOf, nameFor, roleOf } from './office'
@@ -16,7 +16,7 @@ import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import { ASK_SPEC, REMEMBER_SPEC } from './tool-specs'
-import { QUIET_MS, endOfStatus, endRun, hire, markEngine, quietFor, restart, touch, verdict, withStep, withTool } from './staff-model'
+import { QUIET_MS, endOfStatus, endRun, hire, markEngine, quietFor, restart, touch, verdict, withSaid, withStep, withTool } from './staff-model'
 import { BOSS0, FX0, GAUGE0, PAYROLL0, edit } from './state'
 
 const DESK = 'ceo-desk'
@@ -81,7 +81,7 @@ async function enroll($: EngineInterface, type: string, jobs: number) {
 
 async function newHire($: EngineInterface, id: string, type: string, description: string, prompt: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  const fresh: Employee = { id, type, description: oneLine(description, DESCRIPTION_CHARS), prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
+  const fresh: Employee = { id, type, description: fit(description, DESCRIPTION_CHARS), prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
   if ((await read($, staff)).some(e => e.id === id)) {
     await update($, staff, list => hire(list, fresh))
     return
@@ -125,7 +125,8 @@ async function signOfLife($: EngineInterface, id: string, activity?: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
   await update($, staff, l => edit(l, id, one => {
     const back = touch(restart(one, now, t), now)
-    return activity === undefined ? back : { ...back, activity }
+    // A new request starts: what was said in the last one is behind it now.
+    return activity === undefined ? back : { ...back, activity, said: undefined }
   }))
 }
 
@@ -595,10 +596,14 @@ export const register: Register = on => {
     if (me) await signOfLife($, me.id, THINKING)
     const effort = e.agentId ? efforts.get(e.agentId) ?? me?.effort : undefined
     const result = yield* next(effort ? { ...e, effort } : e)
-    const u = result.usage
-    if (!e.agentId || !u) return result
+    const [u, said] = [result.usage, narrationOf(result.answer ?? '')]
+    if (!e.agentId || (!u && !said)) return result
     const now = await $.clock.now()
-    await update($, staff, l => edit(l, e.agentId!, one => withStep(one, u, u.model || e.model, now)))
+    await update($, staff, l => edit(l, e.agentId!, one => {
+      const stepped = u ? withStep(one, u, u.model || e.model, now) : one
+      // A request that comes back after the run was sent home says nothing: its words would outlive the run.
+      return said && isActive(one) ? withSaid(stepped, said) : stepped
+    }))
     return result
   })
 

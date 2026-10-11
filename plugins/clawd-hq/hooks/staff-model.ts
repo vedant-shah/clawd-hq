@@ -45,7 +45,7 @@ export function restart(one: Employee, now: number, tick: number): Employee {
     return { ...one, mood: 'working', endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: now }
   }
   return {
-    ...one, mood: 'working', activity: undefined, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    ...one, mood: 'working', activity: undefined, said: undefined, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
     startedAt: now, endedAt: undefined, doneTick: undefined, endedBy: undefined, joinedTick: tick, lastSeen: now,
   }
 }
@@ -53,12 +53,15 @@ export function restart(one: Employee, now: number, tick: number): Employee {
 /** Ends the run. Lost contact is no cheer and no win, so it leaves no tick for the cheering. */
 export function endRun(one: Employee, mood: Mood, how: EndedBy, now: number, tick: number): Employee {
   const cheer = mood === 'lost' ? {} : { doneTick: tick }
-  return { ...one, ...cheer, mood, activity: undefined, endedAt: now, endedBy: how }
+  return { ...one, ...cheer, mood, activity: undefined, said: undefined, endedAt: now, endedBy: how }
 }
 
 /** A tool call: the specialist is at work, one tool more, and the sentence says on what. One still arriving stays arriving. */
 export const withTool = (one: Employee, activity: string): Employee =>
   ({ ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', activity, tools: one.tools + 1 })
+
+/** What the specialist said in its last step. */
+export const withSaid = (one: Employee, said: string): Employee => ({ ...one, said })
 
 /**
  * One model request's cost. A request re-reads the whole prompt, so adding every request's context up counts

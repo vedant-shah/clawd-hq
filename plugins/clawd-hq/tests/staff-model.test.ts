@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { AgentStatus } from 'claude-code'
-import { MAX_STAFF, QUIET_MS, STALE_MS, endOfStatus, endRun, hire, markEngine, restart, touch, verdict, withStep, withTool } from '../hooks/staff-model'
+import { MAX_STAFF, QUIET_MS, STALE_MS, endOfStatus, endRun, hire, markEngine, restart, touch, verdict, withSaid, withStep, withTool } from '../hooks/staff-model'
 import type { Employee } from '../types'
 
 const MIN = 60_000
@@ -180,4 +180,15 @@ test('over the cap the longest-gone finishers leave first, and a running special
   expect(out.map(e => e.id)).toContain('new')
   expect(out.map(e => e.id)).not.toContain('f0')
   expect(out.map(e => e.id)).not.toContain('f1')
+})
+
+// ---- The specialist's own words ----
+
+test('what a specialist says is kept on its record, and a new request, the end of a run or a new run clears it', () => {
+  const talking = withSaid(emp({ activity: 'Reading a.ts' }), 'Checking the rules.')
+  expect(talking.said).toBe('Checking the rules.')
+  expect(withTool(talking, 'Editing b.ts').said).toBe('Checking the rules.')
+  expect(withStep(talking, usage({ input_tokens: 5 }), 'm', 10).said).toBe('Checking the rules.')
+  expect(endRun(talking, 'done', 'signal', 500, 3).said).toBeUndefined()
+  expect(restart(endRun(talking, 'done', 'signal', 500, 3), 9_000, 40).said).toBeUndefined()
 })

@@ -1,7 +1,6 @@
 // What the side panel shows, as pure functions: who is at work, who finished, what is waiting, how decisions group.
 import type { Ask, Badge, Employee, Memory } from '../types'
-import { MAX_SENTENCE, READING_BRIEF } from './activity'
-import { oneLine } from './desk'
+import { READING_BRIEF } from './activity'
 import { ago, displayName, looksOf, roleOf } from './office'
 import type { PanelData } from './panel-types'
 
@@ -38,14 +37,15 @@ export function recentFailures(staff: Employee[], now: number, withinMs: number)
 }
 
 /**
- * The two lines of a row at work, apart from its name: the sentence for what it does now, or, while a question of
- * its sits on the CEO desk, "Waiting on you: <the oldest question>"; and the dim run time and tokens used so far.
+ * The lines of a row at work, apart from its name: what it said in its last step (not while it waits on you); the
+ * sentence for what it does now, or, while a question of its sits on the CEO desk, "Waiting on you: <the oldest question>";
+ * and the dim run time and tokens used so far.
  */
-export function workLine(one: Employee, asks: Ask[], now: number): { isWaiting: boolean; sentence: string; stats: string } {
+export function workLine(one: Employee, asks: Ask[], now: number): { isWaiting: boolean; said?: string; sentence: string; stats: string } {
   const held = asks.filter(a => a.fromId === one.id && isWaiting(a)).sort((a, b) => a.askedAt - b.askedAt)
-  const sentence = held[0] ? oneLine(`Waiting on you: ${held[0].title}`, MAX_SENTENCE) : one.activity ?? READING_BRIEF
+  const sentence = held[0] ? `Waiting on you: ${held[0].title}` : one.activity ?? READING_BRIEF
   const tokens = one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''
-  return { isWaiting: held.length > 0, sentence, stats: `· ${ago(now - one.startedAt)}${tokens}` }
+  return { isWaiting: held.length > 0, said: held.length > 0 ? undefined : one.said, sentence, stats: `· ${ago(now - one.startedAt)}${tokens}` }
 }
 
 /** The right-hand lines of a finished row. Lost contact reads how long it was silent, not how long the run lasted. */

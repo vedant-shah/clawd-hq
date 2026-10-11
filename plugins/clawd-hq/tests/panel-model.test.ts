@@ -48,6 +48,13 @@ test('a specialist at work shows what it is doing, how long it has been at it an
   expect(workLine(emp({ startedAt: 0 }), [], 30_000)).toEqual({ isWaiting: false, sentence: 'Reading the brief', stats: '· 30s' })
 })
 
+test('what a specialist says rides on its line, and waiting on you hides it', () => {
+  const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', said: 'I will check the scoring rules first.' })
+  expect(workLine(one, [], MIN).said).toBe('I will check the scoring rules first.')
+  expect(workLine(emp({ startedAt: 0 }), [], MIN).said).toBeUndefined()
+  expect(workLine(one, [ask({ fromId: 'a1' })], MIN).said).toBeUndefined()
+})
+
 test('a specialist with a question waiting on the desk is waiting on you, named by the oldest question', () => {
   const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', tokens: 1_500 })
   const asks = [
@@ -58,11 +65,10 @@ test('a specialist with a question waiting on the desk is waiting on you, named 
   expect(workLine(one, asks, 4 * MIN)).toEqual({ isWaiting: true, sentence: 'Waiting on you: Store scores in DynamoDB or Postgres?', stats: '· 4m · 2K tokens' })
   // An answered question no longer holds it up.
   expect(workLine(one, [ask({ fromId: 'a1', status: 'answered' })], 4 * MIN).isWaiting).toBe(false)
-  // A long question is cut so the line stays one line of at most 80 characters.
+  // A long question is kept as the specialist wrote it; the pane wraps it.
   const long = workLine(one, [ask({ title: 'Should we '.repeat(30), fromId: 'a1' })], 4 * MIN).sentence
-  expect(long.length).toBeLessThanOrEqual(80)
   expect(long.startsWith('Waiting on you: Should we')).toBe(true)
-  expect(long.endsWith('…')).toBe(true)
+  expect(long).not.toMatch(/…/)
 })
 
 test('a finished row says when, how long it took and the tokens; a failure says so', () => {

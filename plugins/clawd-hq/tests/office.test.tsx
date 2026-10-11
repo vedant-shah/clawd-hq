@@ -372,7 +372,7 @@ test('a session end that is not a clear leaves the list alone', async ($, on) =>
   await ui.unmount()
 })
 
-test('text agents write is kept to one short line where it is stored', async ($, on) => {
+test('text agents write is kept to one short line where it is stored (a task is cut at a word, with no mark)', async ($, on) => {
   const { toasts } = host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
   on('agent.offer', () => ({ isOffered: true }) as never)
@@ -390,7 +390,7 @@ test('text agents write is kept to one short line where it is stored', async ($,
     const done = await log.find({ type: 'Text', text: /Update the setup guide/ })
     expect(String(done?.text)).not.toContain('\n')
     expect(String(done?.text).length).toBeLessThanOrEqual(160)
-    expect(String(done?.text).endsWith('…')).toBe(true)
+    expect(String(done?.text)).not.toMatch(/…/)
     await log.unmount()
 
     const people = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })

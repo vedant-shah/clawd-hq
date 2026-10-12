@@ -15,6 +15,14 @@ export function oneLine(text: string, max: number): string {
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : chars.join('')
 }
 
+/**
+ * The most that is kept of anything saved as a decision or a choice. Saved text is kept whole; this only stops a
+ * runaway one, at a word and without a mark, so a saved line never ends in an ellipsis that hides the answer.
+ */
+export const SAVED_CHARS = 2000
+/** A specialist's own choice is a note, and the newest notes ride along in every brief, so it gets a tighter stop. */
+const CHOICE_CHARS = 600
+
 /** One line like `oneLine`, but cut at a word and without a mark: for text the pane wraps, where an ellipsis would only hide words. */
 export function fit(text: string, max: number): string {
   const chars = Array.from(text.replace(/\s+/g, ' ').trim())
@@ -113,7 +121,7 @@ const DECIDED = /^[ \t]*[-*]?[ \t]*DECIDED:[ \t]*(.+?)[ \t]*$/gim
 
 /** The DECIDED lines of a subagent's final report. */
 export function parseChoices(text: string): string[] {
-  return [...text.matchAll(DECIDED)].map(m => oneLine(m[1] ?? '', 200)).filter(Boolean)
+  return [...text.matchAll(DECIDED)].map(m => fit(m[1] ?? '', CHOICE_CHARS)).filter(Boolean)
 }
 
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)

@@ -34,9 +34,13 @@ test('oneLine collapses whitespace and cuts long text with an ellipsis', () => {
   expect(oneLine('   ', 5)).toBe('')
 })
 
-test('agent-written choices, titles and options are cut to one short line', () => {
+test('agent-written titles and options are cut to one short line; a choice is kept whole', () => {
   const long = 'x'.repeat(500)
-  expect(parseChoices(`DECIDED: ${long}`)[0]).toHaveLength(200)
+  // A choice is saved, so it is kept whole: only a runaway one is cut, at a word, with no mark.
+  const choice = `Use Drizzle ${'because it is typed '.repeat(20)}`.trim()
+  expect(parseChoices(`DECIDED: ${choice}`)[0]).toBe(choice)
+  expect(parseChoices(`DECIDED: ${'word '.repeat(900)}`)[0]!.length).toBeLessThanOrEqual(600)
+  expect(parseChoices(`DECIDED: ${'word '.repeat(900)}`)[0]).not.toMatch(/…/)
   const [ask] = parseReport(`CEO-DECISION: ${long} | ${long} / B | recommend: B`)
   expect(ask!.title).toHaveLength(160)
   expect(ask!.options[0]).toHaveLength(160)

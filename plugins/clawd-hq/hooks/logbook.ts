@@ -1,18 +1,19 @@
 // The project's decisions as a plain Markdown file in its own .clawd-hq folder, read and written by people and by this plugin alike.
 // Pure: no file is touched here. One line per entry, so a hand edit is a one-line change in git.
-import { fit } from './desk'
+import { SAVED_CHARS, fit } from './desk'
 import type { Memory } from '../types'
 
 export const LOGBOOK_FILE = '.clawd-hq/decisions.md'
 
-/** A line you add by hand is cut to this many characters, as an entry the plugin writes is. */
-const TEXT_CHARS = 300
+/** The most that is read of one line: above anything the plugin writes (a question, an arrow and its answer), so a read never cuts what a save wrote. */
+const LINE_CHARS = SAVED_CHARS + 1000
+
 
 const HEADER = [
   '# Clawd HQ decisions',
   '',
   'What you decided and what your agents chose, one line each, oldest first.',
-  'You can edit this file by hand: add a line starting with "- " and it is picked up (up to 300 characters).',
+  'You can edit this file by hand: add a line starting with "- " and it is picked up.',
   'Other lines, such as notes and headings, are left as they are.',
   '',
 ].join('\n')
@@ -50,7 +51,7 @@ export function parseEntries(text: string, now: number): Parsed[] {
     if (!isEntry(raw)) return
     const m = FULL.exec(raw)
     const at = m ? Date.parse(`${m[2]!.replace(' ', 'T')}:00Z`) : NaN
-    const body = fit(m ? m[6]! : raw.slice(2), TEXT_CHARS)
+    const body = fit(m ? m[6]! : raw.slice(2), LINE_CHARS)
     if (body === '') return
     const id = m && !taken.has(m[1]!) ? m[1]! : fresh()
     taken.add(id)

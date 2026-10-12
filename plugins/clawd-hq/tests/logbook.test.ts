@@ -45,10 +45,14 @@ test('a line with an unknown kind or source is still kept, as a decision of your
   expect(m!.text).toContain('Ship it')
 })
 
-test('a hand-added line is cut to a sane length and kept to one line', () => {
-  const [m] = fromMarkdown(`- ${'word '.repeat(200)}\n`, AT)
-  expect(m!.text.length).toBeLessThanOrEqual(300)
-  expect(m!.text).not.toContain('\n')
+test('a long line is read whole: only a runaway one is cut, at a word, with no mark', () => {
+  const long = 'word '.repeat(200).trim()
+  expect(fromMarkdown(`- ${long}\n`, AT)[0]!.text).toBe(long)
+  expect(fromMarkdown(`- M1 · 2026-10-10 14:03 · decision · CEO · desk · ${long}\n`, AT)[0]!.text).toBe(long)
+  const [m] = fromMarkdown(`- ${'word '.repeat(900)}\n`, AT)
+  expect(m!.text.length).toBeLessThanOrEqual(3000)
+  expect(m!.text.length).toBeGreaterThan(2500)
+  expect(m!.text).not.toMatch(/…|\n/)
 })
 
 test('two entries with the same id keep the later one\'s place but not a clash', () => {

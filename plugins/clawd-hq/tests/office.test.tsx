@@ -401,8 +401,9 @@ test('text agents write is kept to one short line where it is stored (a task is 
     const decisions = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
     const decision = await decisions.find({ type: 'Text', text: /Scores live in Postgres/ })
     expect(String(decision?.text)).not.toContain('\n')
-    expect(String(decision?.text).length).toBeLessThanOrEqual(300)
-    expect(String(decision?.text).endsWith('…')).toBe(true)
+    // A decision is saved whole: nothing is cut and no mark is added.
+    expect(String(decision?.text)).toContain(`Scores live in Postgres ${'because it is better '.repeat(30)}`.trim())
+    expect(String(decision?.text)).not.toMatch(/…/)
     await decisions.unmount()
   }
 })

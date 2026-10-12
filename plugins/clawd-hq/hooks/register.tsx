@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Ask, Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, STAFFING_NOTE, answerText, fit, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
+import { BRIEF_NOTE, SAVED_CHARS, STAFFING_NOTE, answerText, fit, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
@@ -26,10 +26,13 @@ const FRAME_MS = 400
 const CHEER_TICKS = 5
 const MAX_ASKS = 60
 const PROMPT_CHARS = 400
+/** How much of a question is kept in front of its answer in a saved decision. */
+const TITLE_CHARS = 600
+/** The last request, kept for the resume button. */
+const TASK_CHARS = 4000
 const BLURB_CHARS = 200
 // Agent-written text is cut to one line where it is stored.
 const DESCRIPTION_CHARS = 160
-const DECISION_CHARS = 300
 const MAX_BLURBS = 120
 const DEMO_TOOL = 'mcp__clawd-hq__demo'
 const ASK_TOOL = 'mcp__clawd-hq__ask_ceo'
@@ -211,7 +214,8 @@ async function answer($: EngineInterface, id: string, value: string, status: 'an
   const a = picked as Ask | undefined
   if (!a) return
   if (a.action === 'payroll') await applyPayroll($, status === 'answered' && value.startsWith('Lay off'))
-  else if (status === 'answered' && !a.fromId?.startsWith(DEMO)) await remember($, { kind: 'decision', text: `${a.title} → ${value}`, by: 'CEO', source: 'desk' })
+  // The question is cut before the answer is, so a long question never pushes the answer out of what is saved.
+  else if (status === 'answered' && !a.fromId?.startsWith(DEMO)) await remember($, { kind: 'decision', text: `${fit(a.title, TITLE_CHARS)} → ${fit(value, SAVED_CHARS)}`, by: 'CEO', source: 'desk' })
   const isDelivered = status === 'dismissed' || (await deliver($, a))
   if (isDelivered) await update($, desk, list => list.map(x => (x.id === id ? { ...x, isDelivered: true } : x)))
   const t = await read($, tick)
@@ -661,7 +665,7 @@ export const register: Register = on => {
     }
 
     if (tool === MEM_TOOL) {
-      const decision = oneLine(String(input.decision ?? ''), DECISION_CHARS)
+      const decision = fit(String(input.decision ?? ''), SAVED_CHARS)
       // A subagent's call is its own note, never the user's decision.
       const caller = id ? (await read($, staff)).find(one => one.id === id) : undefined
       const by = caller ? roleOf(caller.type).title : 'agent'
@@ -685,8 +689,15 @@ export const register: Register = on => {
       await update($, desk, l => l.map(a => (ids.includes(a.id) ? { ...a, status: 'live' as const } : a)))
       try {
         const ran = await next(e)
-        const said = clip(String((ran as { text?: string }).text ?? 'answered').replace(/\s+/g, ' '), 140)
-        for (const one of ids) await answer($, one, said)
+        // Each question is saved with its own answer: the box hands them back keyed by the question's text. A reply typed
+        // without picking anything stands for a question that has no pick; one left unanswered saves nothing.
+        const box = (ran as { result?: { answers?: Record<string, unknown>; response?: unknown } }).result
+        for (const [i, one] of ids.entries()) {
+          const picked = box?.answers?.[String(questions[i]?.question ?? '')] ?? box?.response
+          const said = typeof picked === 'string' ? fit(picked, SAVED_CHARS) : ''
+          if (said) await answer($, one, said)
+          else await answer($, one, 'no answer', 'dismissed')
+        }
         return ran
       } catch (err) {
         for (const one of ids) await answer($, one, 'no answer', 'dismissed')
@@ -721,7 +732,8 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
-    const task = e.text ? clip(e.text.replace(/\s+/g, ' '), 60) : undefined
+    // Kept whole: the resume button puts it back in the prompt box.
+    const task = e.text ? fit(e.text, TASK_CHARS) : undefined
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, task: task ?? b.task, activity: task ? READING_BRIEF : 'Back at it' }))
     // Answers the CEO gave while Clawd was idle ride along with the new turn.
     await sendPending($, false)

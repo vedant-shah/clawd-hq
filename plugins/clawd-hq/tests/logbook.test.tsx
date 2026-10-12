@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { DECISIONS, SURFACES, START, host } from './host'
+import { DECISIONS, PANE, SURFACES, START, host } from './host'
 
 const FILE = '/repo/.clawd-hq/decisions.md'
 const remember = ($: Parameters<Parameters<typeof test>[1]>[0], decision: string) =>
@@ -111,4 +111,91 @@ test('if the plugin cannot tell whether the file is there, it does not write', a
   await remember($, 'Carry on')
   expect(files.get(FILE)).toBe('- M1 · 2026-10-10 14:03 · decision · CEO · desk · Precious\n')
   expect(toasts.filter(t => /decisions\.md/.test(t))).toHaveLength(1)
+})
+
+// ---- What is saved is saved whole ----
+
+test('a long decision reaches the file whole, with no ellipsis', async ($, on) => {
+  const { files } = host(on)
+  await $.session.start(START)
+  const long = `Decisions and agent notes move into the project files; ${'lay-offs stay in the config folder because they are personal; '.repeat(8)}end of decision`
+  expect(long.length).toBeGreaterThan(400)
+  await remember($, long)
+  expect(files.get(FILE)).toContain(long)
+  expect(files.get(FILE)).not.toMatch(/…/)
+})
+
+// The engine hands a question box's answers back as a map from each question's text to its answer, beside a `text` the model reads.
+const boxResult = (answers: Record<string, string>, response?: string) => ({
+  result: { questions: [], answers, ...(response === undefined ? {} : { response }) },
+  text: `The user answered: ${Object.entries(answers).map(([q, a]) => `"${q}"="${a}"`).join(', ')}`,
+})
+const ask = ($: Parameters<Parameters<typeof test>[1]>[0], questions: string[]) =>
+  $.tool.call({ tool: 'AskUserQuestion', questions: questions.map(question => ({ question, options: [{ label: 'A' }, { label: 'B' }] })) } as never)
+
+test('your answer in a question box is saved whole, however long', async ($, on) => {
+  const { files } = host(on)
+  const answer = `Start fresh, and ${'keep the old ones where they are for now, '.repeat(6)}then decide later`
+  expect(answer.length).toBeGreaterThan(200)
+  on('tool.call', () => boxResult({ 'What happens to the old decisions?': answer }) as never)
+  await $.session.start(START)
+  await ask($, ['What happens to the old decisions?'])
+  expect(files.get(FILE)).toContain(`What happens to the old decisions? → ${answer}`)
+  expect(files.get(FILE)).not.toMatch(/…|The user answered/)
+})
+
+test('each question in a box is saved with its own answer, not with the whole reply', async ($, on) => {
+  const { files } = host(on)
+  on('tool.call', () => boxResult({ 'Which format?': 'Markdown', 'Copy the old ones?': 'Start fresh' }) as never)
+  await $.session.start(START)
+  await ask($, ['Which format?', 'Copy the old ones?'])
+  const text = files.get(FILE)!
+  expect(text).toMatch(/· Which format\? → Markdown\n/)
+  expect(text).toMatch(/· Copy the old ones\? → Start fresh\n/)
+  expect(text).not.toContain('The user answered')
+})
+
+test('a question you left unanswered in a box saves no decision; a typed reply with no picks is saved for it', async ($, on) => {
+  const { files } = host(on)
+  let reply: ReturnType<typeof boxResult> = boxResult({ 'Which format?': 'Markdown' })
+  on('tool.call', () => reply as never)
+  await $.session.start(START)
+  await ask($, ['Which format?', 'Skipped one?'])
+  expect(files.get(FILE)).toContain('Which format? → Markdown')
+  expect(files.get(FILE)).not.toContain('Skipped one?')
+
+  reply = boxResult({}, 'Do it the simple way')
+  await ask($, ['How should it work?'])
+  expect(files.get(FILE)).toContain('How should it work? → Do it the simple way')
+})
+
+test('a very long question never pushes its answer out of the saved decision', async ($, on) => {
+  const { files } = host(on)
+  const question = `Should we ${'keep going with this plan and '.repeat(90)}ship?`
+  expect(question.length).toBeGreaterThan(2300)
+  on('tool.call', () => boxResult({ [question]: 'Yes' }) as never)
+  await $.session.start(START)
+  await ask($, [question])
+  expect(files.get(FILE)).toMatch(/ → Yes\n$/)
+  // And it reads back the same on the next session.
+  await $.session.start(START)
+  await remember($, 'Another one')
+  expect(files.get(FILE)).toMatch(/ → Yes\n- M2 /)
+})
+
+test('the "pick up where we left off" button sends your whole last request back, not a cut one', async ($, on) => {
+  const { clock } = host(on, [])
+  const fills: string[] = []
+  on('prompt.fill', (_$, e) => (fills.push((e as { text: string }).text), { isFilled: true }) as never)
+  on('turn.start', () => ({ turnId: 't1' }))
+  const request = `Refactor the auth module so that ${'every route checks the session first and '.repeat(4)}nothing else changes`
+  expect(request.length).toBeGreaterThan(120)
+  await $.turn.start({ text: request, turnId: 't1' } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', isAborted: false } as never)
+  await clock.advance(2 * 3_600_000)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  await ui.press({ key: 'resume' })
+  await ui.unmount()
+  expect(fills[0]).toContain(request)
+  expect(fills[0]).not.toMatch(/…/)
 })

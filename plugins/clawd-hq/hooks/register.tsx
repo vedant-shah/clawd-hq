@@ -11,6 +11,7 @@ import { ACCENT, BRAND, ago, clip, hash, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { DEMO, isActive, isWaiting, waitingSummary } from './panel-model'
+import { tourSteps } from './demo'
 import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
@@ -429,72 +430,21 @@ async function startDemo($: EngineInterface) {
   demoTimers = []
   const saved = await getBoss($)
   const id = (n: string) => `${DEMO}${n}`
-  let decision = ''
-
-  const steps: Array<[string, () => Promise<void>]> = [
-    [`Welcome to ${BRAND}. Clawd is your chief of staff; you are the CEO; every subagent is an employee.`, async () => {
-      await raise(paneIo($), 'office')
-      await setBoss($, b => ({ ...b, isBusy: true }))
-      await demoSay($, 'Welcome to the office! Mind the claws.')
-    }],
-    ['Hiring: each agent type gets an avatar of its own, with its own outfit, headwear and prop.', async () => {
-      await newHire($, id('arch'), 'ecc:architect', 'Design the scoring API', 'Design the scoring service for roadmap rank')
-    }],
-    ['Each specialist at work gets a row: its avatar, its task, what it is doing right now, and how long it has been at it.', async () => {
-      await demoWork($, id('arch'), 'Read', { file_path: 'scoring.ts' })
-      await newHire($, id('scout'), 'Explore', 'Map the backend', 'Find every place that computes a score')
-    }],
-    ['Each type keeps its name across sessions.', async () => {
-      await demoWork($, id('scout'), 'Grep', { pattern: 'computeScore' })
-      await newHire($, id('rev'), 'ecc:code-reviewer', 'Review the survey flow', 'Review the survey lifecycle code')
-    }],
-    ['Hire too many at once and Clawd starts to grumble.', async () => {
-      await newHire($, id('tdd'), 'ecc:tdd-guide', 'Test the review panel', 'Write tests for the review panel')
-      await newHire($, id('data'), 'acme-ops:(o_o) data-analyst', 'Crunch the deal data', 'Analyse deal metrics')
-      await demoWork($, id('rev'), 'Read', { file_path: 'surveys.ts' })
-      await demoWork($, id('arch'), 'Edit', { file_path: 'design.md' })
-    }],
-    ['Agents raise decisions and questions for you, the CEO. They land on the CEO Desk (i) and the band above the prompt.', async () => {
-      decision = await fileAsk($, {
-        kind: 'decision', title: 'Store scores in DynamoDB or Postgres?', detail: 'Scores are read per survey, written once a day.',
-        options: ['DynamoDB', 'Postgres'], recommend: 'DynamoDB', fallback: 'carrying on with DynamoDB',
-        from: 'Architect', fromType: 'ecc:architect', fromId: id('arch'), source: 'tool',
-      }, true)
-      await fileAsk($, {
-        kind: 'question', title: 'Which quarter should the deal report cover?', options: [],
-        from: 'Analyst', fromId: id('data'), source: 'report',
-      }, true)
-      await demoWork($, id('tdd'), 'Bash', { command: 'npm test', description: 'Run the review panel tests' })
-    }],
-    ['Agents don’t wait on you: they carry on with their recommended option until you answer.', async () => {
-      await demoWork($, id('data'), 'Read', { file_path: 'deals.csv' })
-    }],
-    ['You decide; the answer goes straight back to the agent who asked.', async () => {
-      if (decision) await answer($, decision, 'DynamoDB')
-    }],
-    ['When an agent fails, it goes home sick and Clawd reacts.', async () => {
-      await clockOut($, id('tdd'), 'failed')
-    }],
-    ['Finishers move to the Log tab, with how long they took.', async () => {
-      await clockOut($, id('arch'), 'done')
-      await clockOut($, id('scout'), 'done')
-      await raise(paneIo($), 'log')
-    }],
-    ['People is the payroll: who’s on the team and who’s in the talent pool for this project.', async () => {
-      await raise(paneIo($), 'people')
-    }],
-    ['Leave the office quiet for 2 minutes and Clawd gets drowsy.', async () => {
-      await raise(paneIo($), 'office')
-      await clockOut($, id('rev'), 'done')
-      await clockOut($, id('data'), 'done')
-      await update($, desk, l => l.filter(a => !a.fromId?.startsWith(DEMO)))
+  const steps = tourSteps({
+    show: view => raise(paneIo($), view),
+    setBusy: () => setBoss($, b => ({ ...b, isBusy: true })),
+    say: (text, ticks) => demoSay($, text, ticks),
+    hire: (n, type, description, prompt) => newHire($, id(n), type, description, prompt),
+    work: (n, tool, input) => demoWork($, id(n), tool, input),
+    ask: (ask, from) => fileAsk($, { ...ask, fromId: id(from) }, true),
+    answer: (askId, value) => answer($, askId, value),
+    finish: (n, mood) => clockOut($, id(n), mood),
+    clearDesk: () => update($, desk, l => l.filter(a => !a.fromId?.startsWith(DEMO))),
+    goQuiet: async () => {
       const now = await $.clock.now()
       await setBoss($, b => ({ ...b, isBusy: false, proudUntil: 0, oopsUntil: 0, quip: undefined, idleSince: now - NAP_MS - 1 }))
-    }],
-    ['That’s the tour! The demo staff are heading home.', async () => {
-      await demoSay($, 'Thanks for visiting. Now, back to work!', 12)
-    }],
-  ]
+    },
+  })
 
   const total = steps.length
   steps.forEach(([caption, run], i) => {

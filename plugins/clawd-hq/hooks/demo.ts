@@ -1,0 +1,86 @@
+// The one-minute tour's script: what each step says and does. Pure: the office's own actions come in as `io`,
+// so `$` and the state stay in register.tsx. Each step's caption is drawn at the top of every pane while it plays.
+import { BRAND } from './office'
+import type { PaneView } from './panes'
+import type { Ask, Mood } from '../types'
+
+/** A question the tour files; the stand-in specialist that asks it is named by `from` in `io.ask`. */
+type TourAsk = Omit<Ask, 'id' | 'status' | 'askedAt' | 'isDelivered' | 'fromId'>
+
+export type TourIo = {
+  show: (view: PaneView) => Promise<unknown>
+  setBusy: () => Promise<unknown>
+  say: (text: string, ticks?: number) => Promise<unknown>
+  /** `n` names a stand-in specialist for the length of the tour. */
+  hire: (n: string, type: string, description: string, prompt: string) => Promise<unknown>
+  work: (n: string, tool: string, input: Record<string, unknown>) => Promise<unknown>
+  ask: (ask: TourAsk, from: string) => Promise<string>
+  answer: (askId: string, value: string) => Promise<unknown>
+  finish: (n: string, mood: Mood) => Promise<unknown>
+  clearDesk: () => Promise<unknown>
+  goQuiet: () => Promise<unknown>
+}
+
+export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
+  let decision = ''
+  return [
+    [`Welcome to ${BRAND}. Clawd is your chief of staff; you are the CEO; every subagent is an employee.`, async () => {
+      await io.show('office')
+      await io.setBusy()
+      await io.say('Welcome to the office! Mind the claws.')
+    }],
+    ['Hiring: each agent type gets an avatar of its own, with its own outfit, headwear and prop.', async () => {
+      await io.hire('arch', 'ecc:architect', 'Design the scoring API', 'Design the scoring service for roadmap rank')
+    }],
+    ['Each specialist at work gets a row: its avatar, its task, what it is doing right now, and how long it has been at it.', async () => {
+      await io.work('arch', 'Read', { file_path: 'scoring.ts' })
+      await io.hire('scout', 'Explore', 'Map the backend', 'Find every place that computes a score')
+    }],
+    ['Each type keeps its name across sessions.', async () => {
+      await io.work('scout', 'Grep', { pattern: 'computeScore' })
+      await io.hire('rev', 'ecc:code-reviewer', 'Review the survey flow', 'Review the survey lifecycle code')
+    }],
+    ['Hire too many at once and Clawd starts to grumble.', async () => {
+      await io.hire('tdd', 'ecc:tdd-guide', 'Test the review panel', 'Write tests for the review panel')
+      await io.hire('data', 'acme-ops:(o_o) data-analyst', 'Crunch the deal data', 'Analyse deal metrics')
+      await io.work('rev', 'Read', { file_path: 'surveys.ts' })
+      await io.work('arch', 'Edit', { file_path: 'design.md' })
+    }],
+    ['Agents raise decisions and questions for you, the CEO. They land on the CEO Desk (i) and the band above the prompt.', async () => {
+      decision = await io.ask({
+        kind: 'decision', title: 'Store scores in DynamoDB or Postgres?', detail: 'Scores are read per survey, written once a day.',
+        options: ['DynamoDB', 'Postgres'], recommend: 'DynamoDB', fallback: 'carrying on with DynamoDB',
+        from: 'Architect', fromType: 'ecc:architect', source: 'tool',
+      }, 'arch')
+      await io.ask({ kind: 'question', title: 'Which quarter should the deal report cover?', options: [], from: 'Analyst', source: 'report' }, 'data')
+      await io.work('tdd', 'Bash', { command: 'npm test', description: 'Run the review panel tests' })
+    }],
+    ['Agents don’t wait on you: they carry on with their recommended option until you answer.', async () => {
+      await io.work('data', 'Read', { file_path: 'deals.csv' })
+    }],
+    ['You decide; the answer goes straight back to the agent who asked.', async () => {
+      if (decision) await io.answer(decision, 'DynamoDB')
+    }],
+    ['When an agent fails, it goes home sick and Clawd reacts.', async () => {
+      await io.finish('tdd', 'failed')
+    }],
+    ['Finishers move to the Log tab, with how long they took.', async () => {
+      await io.finish('arch', 'done')
+      await io.finish('scout', 'done')
+      await io.show('log')
+    }],
+    ['People is the payroll: who’s on the team and who’s in the talent pool for this project.', async () => {
+      await io.show('people')
+    }],
+    ['Leave the office quiet for 2 minutes and Clawd gets drowsy.', async () => {
+      await io.show('office')
+      await io.finish('rev', 'done')
+      await io.finish('data', 'done')
+      await io.clearDesk()
+      await io.goQuiet()
+    }],
+    ['That’s the tour! The demo staff are heading home.', async () => {
+      await io.say('Thanks for visiting. Now, back to work!', 12)
+    }],
+  ]
+}

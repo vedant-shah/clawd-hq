@@ -1,4 +1,4 @@
-// The Clawd HQ avatars, pure: layered 24x24 sprites and 16x12 list icons built from the embedded parts.
+// The Clawd HQ avatars, pure: layered 24x24 sprites, 16x12 list icons and 8x8 tiny pictures built from the embedded parts.
 import { BLINK, BODY, CHARACTERS, COMPACT, COMPACT_GRID, GRID, LAYER_ORDER, PALETTE, PARTS } from './avatar-data'
 import type { Character, Part } from './avatar-data'
 import { hash } from './office'
@@ -27,6 +27,60 @@ export function assemble(character: Character, isBlinking = false): Grid {
 /** The hand-drawn 16x12 list icon: body, hat, then the accent. */
 export function compactIcon(character: Character): Grid {
   return paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, COMPACT.headwear[character.headwear]!, COMPACT.accent[character.compactAccent]!])
+}
+
+// ---- The tiny picture: 8 by 8, for a terminal row, where a picture cannot be scaled ----
+
+export const TINY_GRID = { width: 8, height: 8 } as const
+const [BODY_KEY, SHADE_KEY, INK_KEY] = ['o', 'd', 'k']
+
+/** The colour key most cells hold, leaving out the ones named; nothing when no cell counts. */
+function commonest(keys: string[], except: string[] = []): string | undefined {
+  const counts = new Map<string, number>()
+  for (const k of keys) if (k !== '.' && !except.includes(k)) counts.set(k, (counts.get(k) ?? 0) + 1)
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0]
+}
+
+const cellsOf = (part: Part) => part.rows.flatMap(row => [...row])
+
+/** The columns of the 24-wide drawing that tiny column `c` stands for: the body's 14 columns go to the middle six. */
+const spanOf = (c: number): [number, number] => (c === 0 ? [0, 3] : c === 7 ? [17, 20] : [3 + Math.round(((c - 1) * 14) / 6), 3 + Math.round((c * 14) / 6)])
+
+/** A hat as two rows of eight: each cell takes the colour most of its patch of the big hat holds, or stays empty where the hat is thin. */
+function tinyHat(hat: Part): Array<Array<string | undefined>> {
+  const height = hat.rows.length
+  return [0, 1].map(band => {
+    const [top, bottom] = [Math.floor((band * height) / 2), Math.max(Math.floor((band * height) / 2) + 1, Math.ceil(((band + 1) * height) / 2))]
+    return Array.from({ length: TINY_GRID.width }, (_, c) => {
+      const [from, to] = spanOf(c)
+      const patch = hat.rows.slice(top, bottom).flatMap(row => Array.from({ length: to - from }, (_, i) => row[from + i - hat.x] ?? '.'))
+      const filled = patch.filter(k => k !== '.')
+      return filled.length * 3 >= patch.length ? commonest(filled) : undefined
+    })
+  })
+}
+
+/**
+ * The 8 by 8 picture of a character: its hat in two rows, the body with two eyes, its outfit's colour across the
+ * lower body, a dab of its prop's colour at the raised claw, and the legs.
+ */
+export function tinyIcon(character: Character): Grid {
+  const outfit = commonest(cellsOf(PARTS.outfit![character.outfit] ?? BODY), [BODY_KEY, SHADE_KEY, INK_KEY]) ?? BODY_KEY
+  const prop = commonest(cellsOf(PARTS.prop![character.prop] ?? BODY), [INK_KEY, BODY_KEY, SHADE_KEY])
+  const hat = PARTS.headwear![character.headwear]
+  const [top, brim] = hat ? tinyHat(hat) : [[], []]
+  const o = BODY_KEY
+  const rows: Array<Array<string | undefined>> = [
+    Array.from({ length: 8 }, (_, c) => top![c]),
+    Array.from({ length: 8 }, (_, c) => brim![c]),
+    [undefined, o, o, o, o, o, o, prop],
+    [undefined, o, INK_KEY, o, o, INK_KEY, o, prop],
+    [o, outfit, outfit, outfit, outfit, outfit, outfit, o],
+    [undefined, outfit, outfit, outfit, outfit, outfit, outfit, undefined],
+    [undefined, o, undefined, SHADE_KEY, SHADE_KEY, undefined, o, undefined],
+    [undefined, o, undefined, SHADE_KEY, SHADE_KEY, undefined, o, undefined],
+  ]
+  return rows.map(row => row.map(k => (k === undefined ? null : PALETTE[k] ?? null)))
 }
 
 // ---- Lookup ----

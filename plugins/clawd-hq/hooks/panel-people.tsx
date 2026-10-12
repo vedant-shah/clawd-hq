@@ -1,5 +1,5 @@
 // The People tab: the team on the payroll and the talent pool of laid-off agents.
-import { avatarFor, compactIcon } from './avatars'
+import { avatarFor, compactIcon, tinyIcon } from './avatars'
 import { GREEN, clip } from './office'
 import { buildPeople, canLayOff, splitPeople } from './panel-model'
 import type { Person } from './panel-model'
@@ -12,8 +12,8 @@ const hiredLine = (p: Person) =>
   `${p.plugin === 'built in' ? 'built in' : `${p.plugin} plugin`} · ${p.jobs === 0 ? 'never hired' : `hired ${p.jobs} ${p.jobs === 1 ? 'time' : 'times'}`}`
 
 function row(p: Person, kit: Kit, actions: PanelActions) {
-  const { Box, Text, Button, sprite } = kit
-  const icon = sprite(`person-${p.type}`, compactIcon(avatarFor(p.type)), { scale: 3, alt: '', keep: p.isOff ? 0.75 : undefined })
+  const { Box, Text, Button, sprite, isTerminal } = kit
+  const icon = sprite(`person-${p.type}`, (isTerminal ? tinyIcon : compactIcon)(avatarFor(p.type)), { scale: 3, alt: '', keep: p.isOff ? 0.75 : undefined })
   return (
     <Box key={`person-${p.type}`} flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
       <Box flexShrink={0}>{icon}</Box>

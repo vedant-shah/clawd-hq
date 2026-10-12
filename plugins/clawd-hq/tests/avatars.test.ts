@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { assemble, avatarFor, clawdAvatar, compactIcon } from '../hooks/avatars'
+import { assemble, avatarFor, clawdAvatar, compactIcon, tinyIcon } from '../hooks/avatars'
 import { BODY, CHARACTERS, LAYER_ORDER, PALETTE, PARTS } from '../hooks/avatar-data'
 import type { Character, Part } from '../hooks/avatar-data'
 
@@ -114,4 +114,55 @@ test('Clawd blinks by swapping only his eyes', () => {
   expect(Math.min(...changed)).toBeGreaterThanOrEqual(10)
   expect(Math.max(...changed)).toBeLessThanOrEqual(13)
   expect(clawdAvatar(true).compact).toEqual(clawdAvatar().compact)
+})
+
+// ---- The tiny picture, for a terminal row ----
+
+test('a tiny picture is 8 by 8, in palette colours only, and the same character always gets the same one', () => {
+  const colours = new Set(Object.values(PALETTE))
+  for (const c of CHARACTERS) {
+    const grid = tinyIcon(c)
+    expect(grid).toHaveLength(8)
+    for (const row of grid) {
+      expect(row).toHaveLength(8)
+      for (const cell of row) expect(cell === null || colours.has(cell)).toBe(true)
+    }
+    expect(tinyIcon(c)).toEqual(grid)
+  }
+})
+
+test('every tiny picture has the body, two eyes and legs, whatever it wears', () => {
+  for (const c of CHARACTERS) {
+    const grid = tinyIcon(c)
+    expect([grid[3]![2], grid[3]![5]]).toEqual([PALETTE.k, PALETTE.k])
+    expect(grid[2]!.slice(1, 7).every(cell => cell === PALETTE.o)).toBe(true)
+    expect(grid[7]!.filter(Boolean).length).toBe(4)
+  }
+})
+
+test('a tiny picture has no chest dots: the outfit is one colour across the chest', () => {
+  for (const c of CHARACTERS) {
+    const chest = tinyIcon(c)[4]!.slice(1, 7)
+    expect(new Set(chest).size).toBe(1)
+  }
+})
+
+test('every tiny picture keeps its hat on top and its prop at the raised claw', () => {
+  for (const c of CHARACTERS) {
+    const grid = tinyIcon(c)
+    const hat = new Set(cells([...PARTS.headwear![c.headwear]!.rows].map(row => [...row].map(k => (k === '.' ? null : PALETTE[k] ?? null)))))
+    const worn = cells([grid[0]!, grid[1]!])
+    expect(worn.length).toBeGreaterThan(0)
+    expect(worn.every(cell => hat.has(cell))).toBe(true)
+    const held = new Set(cells([...PARTS.prop![c.prop]!.rows].map(row => [...row].map(k => (k === '.' ? null : PALETTE[k] ?? null)))))
+    expect(grid[2]![7]).not.toBeNull()
+    expect(held.has(grid[2]![7]!)).toBe(true)
+    expect(grid[3]![7]).toBe(grid[2]![7])
+  }
+})
+
+test('the hand-made characters do not all look alike when tiny, and a made-up one gets a picture too', () => {
+  const made = CHARACTERS.filter(c => c.id !== 'clawd').map(c => JSON.stringify(tinyIcon(c)))
+  expect(new Set(made).size).toBeGreaterThanOrEqual(Math.ceil(made.length * 0.8))
+  expect(JSON.stringify(tinyIcon(avatarFor('acme:mystery')))).not.toBe(JSON.stringify(tinyIcon(avatarFor('designer'))))
 })

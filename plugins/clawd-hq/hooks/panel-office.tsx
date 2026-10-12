@@ -1,5 +1,5 @@
 // The Office tab: Clawd's card and who is at work. Finished work lives in the Log tab.
-import { clawdAvatar, assemble, avatarFor, compactIcon } from './avatars'
+import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
 import { clawdMood, isBlinking, quipOf } from './clawd-says'
 import { AMBER, GREEN, givenName } from './office'
 import { atWork, isWaiting, recentFailures, seeNeedsLabel, statusOf, titled, workLine } from './panel-model'
@@ -24,10 +24,11 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   const said = quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length, q: waiting.length })
   const canResume = !boss.isBusy && working.length === 0 && boss.task !== undefined
   const isStacked = cw < 50
-  const { full } = clawdAvatar(isBlinking(tick))
+  // On the terminal, which cannot scale a picture, Clawd gets his small drawing: still the largest in the pane.
+  const { full, compact } = clawdAvatar(isBlinking(tick))
   return (
     <Box borderStyle="round" borderDimColor paddingX={1} flexDirection={isStacked ? 'column' : 'row'} gap={2} alignItems={isStacked ? 'flex-start' : 'center'}>
-      <Box flexShrink={0}>{sprite('clawd', full, { scale: 4, alt: 'Clawd, the chief of staff, in a navy blazer and red tie, holding a logbook' })}</Box>
+      <Box flexShrink={0}>{sprite('clawd', kit.isTerminal ? compact : full, { scale: 4, alt: 'Clawd, the chief of staff, in a navy blazer and red tie, holding a logbook' })}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text bold>Clawd <Text dimColor>Chief of Staff</Text></Text>
         <Text bold color={status.isClear ? GREEN : AMBER} wrap="truncate">{status.isClear ? '✓ ' : '! '}{status.text}</Text>
@@ -54,9 +55,9 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
 function deskRow(one: Employee, { kit, data }: Ctx) {
   const { Box, Text, sprite } = kit
   const line = workLine(one, data.asks, data.now)
-  // The terminal cannot scale a picture, so a row there gets the small icon and its words get the room.
+  // The terminal cannot scale a picture, so a row there gets the tiny 8 by 8 one and its words get the room.
   const look = avatarFor(givenName(one) ?? one.type)
-  const picture = sprite(`desk-${one.id}`, kit.isTerminal ? compactIcon(look) : assemble(look), { scale: 3, alt: `${titled(one, data)}` })
+  const picture = sprite(`desk-${one.id}`, kit.isTerminal ? tinyIcon(look) : assemble(look), { scale: 3, alt: `${titled(one, data)}` })
   return (
     <Box key={`desk-${one.id}`} borderStyle="round" borderColor={line.isWaiting ? AMBER : undefined} borderDimColor={!line.isWaiting}
       paddingX={1} flexDirection="row" gap={2} alignItems="center">

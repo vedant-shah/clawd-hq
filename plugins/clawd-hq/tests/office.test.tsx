@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
-import { assemble, avatarFor, clawdAvatar, compactIcon } from '../hooks/avatars'
+import { assemble, avatarFor, clawdAvatar, tinyIcon } from '../hooks/avatars'
 import { ACCENT, AMBER } from '../hooks/office'
-import { rasterCells, svgOf, trim } from '../hooks/pixels'
+import { fade, rasterCells, svgOf, trim } from '../hooks/pixels'
 import { CLEAR, DECISIONS, DESK, HOUR, LOG, PANE, PEOPLE, START, SURFACES, host, planner } from './host'
 
 test('a spawned architect gets a desk and shows as working', async ($, on) => {
@@ -43,12 +43,12 @@ test('avatars are pixel art on the terminal: Clawd and each specialist at work',
   expect(rasters.length).toBe(2)
   const clawd = rasters.find(r => r.props.key === 'clawd')!
   const desk = rasters.find(r => r.props.key === 'desk-x1')!
-  // Clawd is 23 columns by 8 rows once trimmed, blinking or not.
-  expect([clawd.props.columns, clawd.props.rows]).toEqual([23, 8])
-  expect([rasterCells(trim(clawdAvatar(false).full)), rasterCells(trim(clawdAvatar(true).full))]).toContain(clawd.props.cells)
-  // The reviewer is drawn with the code-reviewer's own parts, not another's: the small icon, since the terminal cannot scale.
-  expect(desk.props.cells).toBe(rasterCells(trim(compactIcon(avatarFor('ecc:code-reviewer')))))
-  expect(desk.props.cells).not.toBe(rasterCells(trim(compactIcon(avatarFor('ecc:planner')))))
+  // Clawd's small drawing is 14 columns by 4 rows once trimmed: as tall as a specialist's picture, and wider.
+  expect([clawd.props.columns, clawd.props.rows]).toEqual([14, 4])
+  expect(clawd.props.cells).toBe(rasterCells(trim(clawdAvatar(false).compact)))
+  // The reviewer is drawn with the code-reviewer's own colours, not another's: the tiny picture, since the terminal cannot scale.
+  expect(desk.props.cells).toBe(rasterCells(trim(tinyIcon(avatarFor('ecc:code-reviewer')))))
+  expect(desk.props.cells).not.toBe(rasterCells(trim(tinyIcon(avatarFor('ecc:planner')))))
   await ui.unmount()
 })
 
@@ -279,7 +279,12 @@ test('the Log lists work newest first, and each row has a dimmed compact avatar'
     const order = (await ui.findAll({ type: 'Text', text: /^(Planned the API|Reviewed the panel|Updated the guide)$/ })).map(t => String(t.text))
     expect(order).toEqual(['Updated the guide', 'Reviewed the panel', 'Planned the API'])
     expect(await ui.find({ type: 'Text', text: /DONE THIS SESSION|Showing/ })).toBeUndefined()
-    if (surface === 'terminal') expect((await ui.findAll({ type: 'Raster' })).filter(r => String(r.props.key).startsWith('done-'))).toHaveLength(3)
+    if (surface === 'terminal') {
+      const done = (await ui.findAll({ type: 'Raster' })).filter(r => String(r.props.key).startsWith('done-'))
+      expect(done).toHaveLength(3)
+      // A finished row draws the tiny picture too, dimmed.
+      expect(done.find(r => r.props.key === 'done-l1')!.props.cells).toBe(rasterCells(fade(trim(tinyIcon(avatarFor('ecc:planner'))), 0.7)))
+    }
     else expect((await ui.findAll({ type: 'Svg' })).filter(svg => String(svg.props.source).includes('opacity="0.7"'))).toHaveLength(3)
     await ui.unmount()
   }
@@ -490,6 +495,11 @@ test('People lists a team member and a laid-off one in their sections, and lay o
     expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /ecc plugin · never hired/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /built in · never hired/ })).toBeDefined()
+    // On the terminal a person's row draws the tiny picture.
+    if (surface === 'terminal') {
+      const person = (await ui.findAll({ type: 'Raster' })).find(r => r.props.key === 'person-ecc:planner')!
+      expect(person.props.cells).toBe(rasterCells(trim(tinyIcon(avatarFor('ecc:planner')))))
+    }
     // Built-in agents are never laid off.
     expect(await ui.find({ key: 'layoff-Explore' })).toBeUndefined()
 

@@ -457,7 +457,7 @@ test('the toast and Clawd use the same label as the row: a named agent finishes 
 
 // ---- On the terminal a specialist's picture is the small one, so the words get the room ----
 
-test('a specialist row draws the small picture on the terminal and the full one elsewhere; Clawd keeps his full picture', async ($, on) => {
+test('on the terminal a specialist row draws the tiny picture and Clawd his small one; elsewhere both are full size', async ($, on) => {
   hostWithSpecialist(on)
   await $.agent.spawn(BUILD)
   await call($, 'Read', { file_path: '/repo/a.ts' })
@@ -465,12 +465,12 @@ test('a specialist row draws the small picture on the terminal and the full one 
   const small = pictureOf(await terminal.find({ key: 'desk-t1' }))!
   const drawn = (await terminal.drawn()) as unknown
   await terminal.unmount()
-  // A half-block row is two picture rows: the 16 by 12 icon is 6 rows at most.
-  expect(small.props.rows).toBeLessThanOrEqual(6)
-  expect(small.props.columns).toBeLessThanOrEqual(16)
-  // Clawd's own picture, the first one in the pane, stays the full drawing.
-  expect(pictureOf(drawn)!.props.rows).toBeGreaterThan(small.props.rows!)
-  expect(pictureOf(drawn)!.props.columns).toBeGreaterThan(20)
+  // A half-block row is two picture rows: the 8 by 8 picture is 4 rows and 8 columns at most.
+  expect(small.props.rows).toBeLessThanOrEqual(4)
+  expect(small.props.columns).toBeLessThanOrEqual(8)
+  // Clawd's own picture, the first one in the pane, is his small drawing: no taller than a specialist's, and wider.
+  expect(pictureOf(drawn)!.props.rows).toBeLessThanOrEqual(4)
+  expect(pictureOf(drawn)!.props.columns).toBeGreaterThan(small.props.columns!)
 
   const desktop = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
   const big = pictureOf(await desktop.find({ key: 'desk-t1' })) as unknown as { props: { height: number } }

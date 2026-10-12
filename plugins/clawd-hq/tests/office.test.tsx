@@ -582,3 +582,18 @@ test('the toasts and Clawd say the role, never a made-up name', async ($, on) =>
     await ui.unmount()
   }
 })
+
+test('many agent types offered at the same moment are all recorded, and none is skipped', async ($, on) => {
+  host(on, [])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  const types = Array.from({ length: 60 }, (_, i) => `acme:agent-${i}`)
+  // As at session start: the engine offers every type at once, not one after another.
+  const offered = await Promise.all(types.map(agent => $.agent.offer({ agent, description: `Does job ${agent}` } as never)))
+  expect(offered.every(o => (o as { isOffered?: boolean }).isOffered === true)).toBe(true)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  const text = JSON.stringify(await ui.drawn())
+  await ui.unmount()
+  // Every one is on the books (the list itself shows only so many rows).
+  expect(text).toContain('60 total')
+  expect(text).toContain('TEAM · 60')
+})

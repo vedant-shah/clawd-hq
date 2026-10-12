@@ -66,6 +66,14 @@ let isPayrollFiled = false
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
+/** Runs tasks one after another, in the order asked, whatever each one's outcome: for writes many hooks make at the same moment. */
+let line: Promise<unknown> = Promise.resolve()
+function inLine<T>(task: () => Promise<T>): Promise<T> {
+  const run = line.then(task, task)
+  line = run.catch(() => undefined)
+  return run
+}
+
 const isAtDesk = (e: Employee, t: number) => isActive(e) || (e.doneTick !== undefined && t - e.doneTick < CHEER_TICKS)
 
 /** Puts a type on the books, with how often it was hired, kept across sessions in the store. */
@@ -590,10 +598,14 @@ export const register: Register = on => {
   // Instruction-aware: remember what each agent type is for, put it on the books, and keep laid-off types off the listing.
   on('agent.offer', async ($, e, next) => {
     const blurb = oneLine(e.description, BLURB_CHARS)
-    if ((await read($, blurbs))[e.agent] !== blurb) {
-      await update($, blurbs, m => Object.fromEntries([...Object.entries(m).filter(([k]) => k !== e.agent), [e.agent, blurb]].slice(-MAX_BLURBS)))
-    }
-    if (!(await read($, roster))[e.agent]) await enroll($, e.agent, 0)
+    // The engine offers every agent type at the same moment when a session starts. Their writes go one at a time:
+    // the state refuses a write that lost the race too often, and the hook was then skipped for that type.
+    await inLine(async () => {
+      if ((await read($, blurbs))[e.agent] !== blurb) {
+        await update($, blurbs, m => Object.fromEntries([...Object.entries(m).filter(([k]) => k !== e.agent), [e.agent, blurb]].slice(-MAX_BLURBS)))
+      }
+      if (!(await read($, roster))[e.agent]) await enroll($, e.agent, 0)
+    })
     if ((await getPayroll($)).laidOff.includes(e.agent)) return { isOffered: false }
     return next(e)
   })

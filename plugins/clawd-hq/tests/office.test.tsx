@@ -597,3 +597,20 @@ test('many agent types offered at the same moment are all recorded, and none is 
   expect(text).toContain('60 total')
   expect(text).toContain('TEAM · 60')
 })
+
+test('a hire made while agent types are still being recorded is counted, and no offer is lost', async ($, on) => {
+  host(on, [])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'h1' }))
+  const types = Array.from({ length: 40 }, (_, i) => `acme:agent-${i}`)
+  // The offers and a hire of one of those types land together.
+  await Promise.all([
+    ...types.map(agent => $.agent.offer({ agent, description: `Does job ${agent}` } as never)),
+    $.agent.spawn({ prompt: 'p', description: 'Do the job', subagentType: 'acme:agent-0' } as never),
+  ])
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  const text = JSON.stringify(await ui.drawn())
+  await ui.unmount()
+  expect(text).toContain('40 total')
+  expect(text).toContain('hired 1 time')
+})

@@ -77,8 +77,14 @@ function inLine<T>(task: () => Promise<T>): Promise<T> {
 
 const isAtDesk = (e: Employee, t: number) => isActive(e) || (e.doneTick !== undefined && t - e.doneTick < CHEER_TICKS)
 
-/** Puts a type on the books, with how often it was hired, kept across sessions in the store. */
-async function enroll($: EngineInterface, type: string, jobs: number) {
+/**
+ * Puts a type on the books, with how often it was hired, kept across sessions in the store. Queued, so it never
+ * overlaps another write to the books.
+ */
+const enroll = ($: EngineInterface, type: string, jobs: number) => inLine(() => enrollNow($, type, jobs))
+
+/** The write itself, for a caller already inside `inLine`: queueing it again there would wait on itself for ever. */
+async function enrollNow($: EngineInterface, type: string, jobs: number) {
   const mine = await read($, roster)
   const saved = Object.keys(mine).length === 0 ? ((await $.store.get('roster')) as Record<string, Badge> | undefined) : undefined
   const cur = { ...(saved ?? {}), ...mine }
@@ -554,7 +560,7 @@ export const register: Register = on => {
       if ((await read($, blurbs))[e.agent] !== blurb) {
         await update($, blurbs, m => Object.fromEntries([...Object.entries(m).filter(([k]) => k !== e.agent), [e.agent, blurb]].slice(-MAX_BLURBS)))
       }
-      if (!(await read($, roster))[e.agent]) await enroll($, e.agent, 0)
+      if (!(await read($, roster))[e.agent]) await enrollNow($, e.agent, 0)
     })
     if ((await getPayroll($)).laidOff.includes(e.agent)) return { isOffered: false }
     return next(e)

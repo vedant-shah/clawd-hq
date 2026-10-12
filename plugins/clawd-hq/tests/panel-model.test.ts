@@ -8,7 +8,7 @@ import type { Ask, Employee, Memory } from '../types'
 
 const MIN = 60_000
 const emp = (over: Partial<Employee>): Employee => ({
-  id: 'a1', type: 'ecc:planner', description: 'Plan it', prompt: '', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, ...over,
+  id: 'a1', type: 'ecc:planner', description: 'Plan it', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, ...over,
 })
 const ask = (over: Partial<Ask>): Ask => ({
   id: 'D1', kind: 'decision', title: 'OK?', options: [], from: 'Guard', source: 'tool', status: 'open', askedAt: 0, isDelivered: false, ...over,

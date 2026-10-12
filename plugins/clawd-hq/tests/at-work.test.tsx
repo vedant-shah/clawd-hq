@@ -399,3 +399,81 @@ test('a specialist reads as its role alone, and two of one role read the same, e
     expect(texts.some(t => /#\d|\bthe Tester\b/.test(t))).toBe(false)
   }
 })
+
+// ---- Labels come from the given name or the agent type, never from words in the brief ----
+
+type Cells = { type: string; props: { cells?: string; rows?: number; columns?: number; source?: string } }
+const pictureOf = (node: unknown): Cells | undefined => {
+  if (typeof node !== 'object' || node === null) return undefined
+  const tree = node as Tree
+  if (tree.type === 'Raster' || tree.type === 'Svg') return tree as unknown as Cells
+  for (const child of tree.children ?? []) { const hit = pictureOf(child); if (hit) return hit }
+  return undefined
+}
+
+test('two named general agents read as their names and get different pictures; the brief does not decide', async ($, on) => {
+  const agents = [
+    { id: 'n1', type: 'general-purpose', description: 'Designer proposal', status: 'running', name: 'designer' },
+    { id: 'n2', type: 'general-purpose', description: 'Engineer proposal', status: 'running', name: 'engineer' },
+  ]
+  host(on, agents)
+  let n = 0
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: `n${(n += 1)}` }))
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  // Each brief is full of words that used to steer the label the wrong way.
+  await $.agent.spawn({ prompt: 'Argue the technical side as an engineer would; test and execute.', description: 'Designer proposal', subagentType: 'general-purpose', name: 'designer' } as never)
+  await $.agent.spawn({ prompt: 'Write tests, review the plan and execute it.', description: 'Engineer proposal', subagentType: 'general-purpose', name: 'engineer' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
+    expect(texts).toContain('Designer')
+    expect(texts).toContain('Engineer')
+    expect(texts.some(t => /^(Tester|Executive|Generalist)$/.test(t))).toBe(false)
+    const [one, two] = [pictureOf(await ui.find({ key: 'desk-n1' })), pictureOf(await ui.find({ key: 'desk-n2' }))]
+    expect(one).toBeDefined()
+    expect(JSON.stringify(one!.props)).not.toBe(JSON.stringify(two!.props))
+    await ui.unmount()
+  }
+})
+
+test('an unnamed general agent is a Generalist even when its brief talks of testing and executing', async ($, on) => {
+  host(on, [{ id: 'g1', type: 'general-purpose', description: 'Check README against plugin', status: 'running' }])
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'g1' }))
+  await $.agent.spawn({ prompt: 'Execute a careful check; test every claim an engineer would.', description: 'Check README against plugin', subagentType: 'general-purpose' } as never)
+  for (const surface of SURFACES) {
+    const texts = (await linesOf($, surface)).map(t => t.text)
+    expect(texts).toContain('Generalist')
+    expect(texts.some(t => /^(Tester|Executive|Engineer)$/.test(t))).toBe(false)
+  }
+})
+
+test('the toast and Clawd use the same label as the row: a named agent finishes under its name', async ($, on) => {
+  const { toasts } = host(on, [])
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'n1' }))
+  await $.agent.spawn({ prompt: 'p', description: 'Designer proposal', subagentType: 'general-purpose', name: 'designer' } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'n1', isAborted: false } as never)
+  expect(toasts.find(t => t.includes('finished'))).toMatch(/^\S+ Designer finished: Designer proposal \(/)
+})
+
+// ---- On the terminal a specialist's picture is the small one, so the words get the room ----
+
+test('a specialist row draws the small picture on the terminal and the full one elsewhere; Clawd keeps his full picture', async ($, on) => {
+  hostWithSpecialist(on)
+  await $.agent.spawn(BUILD)
+  await call($, 'Read', { file_path: '/repo/a.ts' })
+  const terminal = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  const small = pictureOf(await terminal.find({ key: 'desk-t1' }))!
+  const drawn = (await terminal.drawn()) as unknown
+  await terminal.unmount()
+  // A half-block row is two picture rows: the 16 by 12 icon is 6 rows at most.
+  expect(small.props.rows).toBeLessThanOrEqual(6)
+  expect(small.props.columns).toBeLessThanOrEqual(16)
+  // Clawd's own picture, the first one in the pane, stays the full drawing.
+  expect(pictureOf(drawn)!.props.rows).toBeGreaterThan(small.props.rows!)
+  expect(pictureOf(drawn)!.props.columns).toBeGreaterThan(20)
+
+  const desktop = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
+  const big = pictureOf(await desktop.find({ key: 'desk-t1' })) as unknown as { props: { height: number } }
+  await desktop.unmount()
+  expect(big.props.height).toBeGreaterThan(40)
+})

@@ -27,7 +27,7 @@ export const ROLES: Role[] = [
   { key: 'engineer', title: 'Engineer', prop: '🏗', words: /generat|applier|packag|forker|engineer|implement|executor/i, hello: 'An Engineer! Ship it, ship it.' },
   { key: 'comms', title: 'Comms Desk', prop: '📬', words: /chief-of-staff|email|slack|comms|newsletter|\bvoc\b|messag/i, hello: 'Comms Desk! My inbox thanks you.' },
   { key: 'people', title: 'People Team', prop: '🪪', words: /onyx|onboard|\bhr\b|policy|employee|persona/i, hello: 'People Team’s here. Remember to take your leave!' },
-  { key: 'exec', title: 'Executive', prop: '👔', words: /execut|stakeholder|strateg|leadership/i, hello: 'An Executive. Everyone look busy.' },
+  { key: 'exec', title: 'Executive', prop: '👔', words: /\bexecutives?\b|stakeholder|strateg|leadership/i, hello: 'An Executive. Everyone look busy.' },
   { key: 'customer', title: 'Customer Success', prop: '🤝', words: /customer|renewal|partner|success/i, hello: 'Customer Success! Our customers are in good claws.' },
   { key: 'librarian', title: 'Librarian', prop: '📖', words: /guide|lookup|reference|knowledge|docs-?lookup/i, hello: 'The Librarian! Shh, everyone.' },
   { key: 'explorer', title: 'Scout', prop: '🧭', words: /explor|scout|locat|^search|code-explorer/i, hello: 'A Scout! Map me that codebase.' },
@@ -49,11 +49,45 @@ const pick = <T>(list: T[], seed: number): T => list[seed % list.length] as T
 
 export const bareType = (type: string) => type.replace(/^[^:]+:/, '').replace(/^\([^()]*\)\s*/, '')
 
-/** The role is read from the agent's type first, then its instructions. */
+/** Types that say nothing about what the agent is for: a general agent, whatever its own description happens to mention. */
+const GENERIC = /^(general-purpose|agent|teammate|task)$/i
+
+/**
+ * The role an agent type has: read from the type's name, else from the type's own description. Never from a brief:
+ * the same type must read the same on every hire.
+ */
 export function roleOf(type: string, blurb = ''): Role {
   const bare = bareType(type)
-  return ROLES.find(r => r.words.test(bare)) ?? ROLES.find(r => r.words.test(blurb)) ?? GENERALIST
+  const named = ROLES.find(r => r.words.test(bare))
+  if (named) return named
+  return GENERIC.test(bare.trim()) ? GENERALIST : ROLES.find(r => r.words.test(blurb)) ?? GENERALIST
 }
+
+const NAME_WORDS = 2
+const NAME_CHARS = 24
+/** Names that would pass for the person or for Clawd himself: a specialist never wears one. */
+const RESERVED = /^(ceo|clawd|user|you|system|admin)$/i
+
+/**
+ * A given name as a plain label: "security-reviewer-2" reads "Security reviewer". The name comes from the model, so
+ * only letters, digits and spaces survive, a plugin prefix and a trailing number go, and it is cut to two words.
+ */
+export function nameLabel(name: string): string {
+  const plain = bareType(name).replace(/[-_\s]+/g, ' ').replace(/[^\p{L}\p{N} ]/gu, '').replace(/ +/g, ' ').trim().replace(/ \d+$/, '')
+  const words = plain.split(' ').filter(Boolean).slice(0, NAME_WORDS).join(' ').slice(0, NAME_CHARS).trim()
+  return words === '' ? '' : `${words[0]!.toUpperCase()}${words.slice(1)}`
+}
+
+/** The name a specialist was given, as a label; nothing for one with no letters, a reserved one, an id, or one that only repeats its type. */
+export function givenName(one: { type: string; name?: string }): string | undefined {
+  const label = nameLabel(one.name ?? '')
+  const isId = /^[a-f0-9]{8,}$/i.test((one.name ?? '').trim())
+  const repeatsType = label.toLowerCase() === nameLabel(one.type).toLowerCase()
+  return !/\p{L}/u.test(label) || RESERVED.test(label) || isId || repeatsType ? undefined : label
+}
+
+/** What a specialist is called, in one or two plain words: the name it was given, else its role. */
+export const labelOf = (one: { type: string; name?: string }, blurb = ''): string => givenName(one) ?? roleOf(one.type, blurb).title
 
 export function clip(text: string, width: number): string {
   if (width <= 1) return ''

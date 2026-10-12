@@ -1,7 +1,7 @@
 // The Office tab: Clawd's card and who is at work. Finished work lives in the Log tab.
-import { clawdAvatar, assemble, avatarFor } from './avatars'
+import { clawdAvatar, assemble, avatarFor, compactIcon } from './avatars'
 import { clawdMood, isBlinking, quipOf } from './clawd-says'
-import { AMBER, GREEN } from './office'
+import { AMBER, GREEN, givenName } from './office'
 import { atWork, isWaiting, recentFailures, seeNeedsLabel, statusOf, titled, workLine } from './panel-model'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -54,7 +54,9 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
 function deskRow(one: Employee, { kit, data }: Ctx) {
   const { Box, Text, sprite } = kit
   const line = workLine(one, data.asks, data.now)
-  const picture = sprite(`desk-${one.id}`, assemble(avatarFor(one.type)), { scale: 3, alt: `${titled(one, data)}` })
+  // The terminal cannot scale a picture, so a row there gets the small icon and its words get the room.
+  const look = avatarFor(givenName(one) ?? one.type)
+  const picture = sprite(`desk-${one.id}`, kit.isTerminal ? compactIcon(look) : assemble(look), { scale: 3, alt: `${titled(one, data)}` })
   return (
     <Box key={`desk-${one.id}`} borderStyle="round" borderColor={line.isWaiting ? AMBER : undefined} borderDimColor={!line.isWaiting}
       paddingX={1} flexDirection="row" gap={2} alignItems="center">

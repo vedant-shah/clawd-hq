@@ -2,7 +2,7 @@
 import type { Ask, Badge, Employee, Memory } from '../types'
 import { READING_BRIEF } from './activity'
 import { whoOf } from './desk'
-import { ago, bareType, roleOf } from './office'
+import { ago, bareType, labelOf, roleOf } from './office'
 import type { PanelData } from './panel-types'
 
 /** Stand-in employees of the tour have ids that start with this. */
@@ -17,9 +17,8 @@ export function tokensLabel(n = 0): string {
   return n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n)
 }
 
-/** "Tester": what this specialist is, in one or two plain words: the role its type, description and brief suggest. */
-export const titled = (one: Employee, data: Pick<PanelData, 'blurbs'>) =>
-  roleOf(one.type, `${data.blurbs[one.type] ?? ''} ${one.prompt}`).title
+/** "Tester", or "Designer" for one given that name: what this specialist is called, in one or two plain words. */
+export const titled = (one: Employee, data: Pick<PanelData, 'blurbs'>) => labelOf(one, data.blurbs[one.type] ?? '')
 
 export const atWork = (staff: Employee[]): Employee[] => staff.filter(isActive)
 

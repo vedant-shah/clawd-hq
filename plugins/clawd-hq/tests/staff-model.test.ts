@@ -5,7 +5,7 @@ import type { Employee } from '../types'
 
 const MIN = 60_000
 const emp = (over: Partial<Employee>): Employee => ({
-  id: 'a1', type: 'ecc:tdd-guide', description: 'Build', prompt: '', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, ...over,
+  id: 'a1', type: 'ecc:tdd-guide', description: 'Build', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, ...over,
 })
 const usage = (over: Partial<Record<'input_tokens' | 'output_tokens' | 'cache_read_input_tokens' | 'cache_creation_input_tokens', number>>) => ({
   input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, ...over,
@@ -21,7 +21,7 @@ test('a specialist resumed after a real stop starts a new run: fresh clock, no e
   })
   const again = restart(ended, 9_000, 40)
   expect(again).toEqual({
-    id: 'a1', type: 'ecc:tdd-guide', description: 'Build', prompt: '', mood: 'working', tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    id: 'a1', type: 'ecc:tdd-guide', description: 'Build', mood: 'working', tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
     startedAt: 9_000, endedAt: undefined, doneTick: undefined, joinedTick: 40, lastSeen: 9_000, endedBy: undefined, activity: undefined,
   })
   // The old value was not touched.
@@ -31,7 +31,7 @@ test('a specialist resumed after a real stop starts a new run: fresh clock, no e
 test('a failed specialist is restarted the same way, whole', () => {
   const failed = emp({ mood: 'failed', startedAt: 5, endedAt: 50, doneTick: 2, tools: 4, tokens: 900, endedBy: 'signal', activity: 'Reading b.ts' })
   expect(restart(failed, 100, 7)).toEqual({
-    id: 'a1', type: 'ecc:tdd-guide', description: 'Build', prompt: '', mood: 'working', tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    id: 'a1', type: 'ecc:tdd-guide', description: 'Build', mood: 'working', tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
     startedAt: 100, endedAt: undefined, doneTick: undefined, joinedTick: 7, lastSeen: 100, endedBy: undefined, activity: undefined,
   })
 })
@@ -163,10 +163,12 @@ test('a tool call puts a specialist to work, counts the tool and keeps the sente
 // ---- The books ----
 
 test('hiring appends; the same id again keeps its progress and takes the spawn\'s facts', () => {
-  const one = emp({ id: 'a1', type: 'Explore', description: '', prompt: '', tools: 3, activity: 'Reading a.ts' })
+  const one = emp({ id: 'a1', type: 'Explore', description: '', tools: 3, activity: 'Reading a.ts' })
   const list = [one]
-  const again = hire(list, emp({ id: 'a1', type: 'ecc:planner', description: 'Plan it', prompt: 'brief', tools: 0 }))
-  expect(again).toEqual([{ ...one, type: 'ecc:planner', description: 'Plan it', prompt: 'brief' }])
+  const again = hire(list, emp({ id: 'a1', type: 'ecc:planner', description: 'Plan it', name: 'planner-one', tools: 0 }))
+  expect(again).toEqual([{ ...one, type: 'ecc:planner', description: 'Plan it', name: 'planner-one' }])
+  // A spawn that gives no name leaves a name already known alone.
+  expect(hire(again, emp({ id: 'a1', type: 'ecc:planner', description: 'Plan it' }))[0]!.name).toBe('planner-one')
   expect(hire(list, emp({ id: 'b2' })).map(e => e.id)).toEqual(['a1', 'b2'])
   expect(list).toEqual([one])
 })

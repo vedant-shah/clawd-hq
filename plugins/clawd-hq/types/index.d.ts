@@ -8,7 +8,8 @@ export type Employee = {
   id: string
   type: string
   description: string
-  prompt: string
+  /** The name the hiring call gave it (a teammate, or a specialist addressed by name); most have none. */
+  name?: string
   mood: Mood
   /** What it is doing now, as one plain sentence (see hooks/activity.ts); none before its first step. */
   activity?: string

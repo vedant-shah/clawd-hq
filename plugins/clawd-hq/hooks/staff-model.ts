@@ -16,7 +16,7 @@ export const MAX_STAFF = 60
 /** Puts `fresh` on the books. One already there (a tool call can land before the spawn answers) keeps its progress and takes the spawn's facts. */
 export function hire(list: Employee[], fresh: Employee): Employee[] {
   if (list.some(e => e.id === fresh.id)) {
-    return list.map(e => (e.id === fresh.id ? { ...e, type: fresh.type, description: fresh.description || e.description, prompt: fresh.prompt || e.prompt } : e))
+    return list.map(e => (e.id === fresh.id ? { ...e, type: fresh.type, description: fresh.description || e.description, name: fresh.name ?? e.name } : e))
   }
   const all = [...list, fresh]
   // Over the cap, the longest-gone finishers leave first; a running agent is never dropped.

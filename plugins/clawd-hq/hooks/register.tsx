@@ -7,7 +7,7 @@ import type { Effort } from './desk'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
 import { renderDesk } from './desk-pane'
-import { ACCENT, BRAND, ago, clip, hash, roleOf } from './office'
+import { ACCENT, BRAND, ago, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { DEMO, isActive, isWaiting, waitingSummary } from './panel-model'
@@ -26,7 +26,8 @@ const DESK_TITLE = 'CEO Desk'
 const FRAME_MS = 400
 const CHEER_TICKS = 5
 const MAX_ASKS = 60
-const PROMPT_CHARS = 400
+/** A given name is a word or two; anything longer is cut. */
+const NAME_CHARS = 40
 /** How much of a question is kept in front of its answer in a saved decision. */
 const TITLE_CHARS = 600
 /** The last request, kept for the resume button. */
@@ -98,16 +99,17 @@ async function enrollNow($: EngineInterface, type: string, jobs: number) {
   await $.store.set('roster', next)
 }
 
-async function newHire($: EngineInterface, id: string, type: string, description: string, prompt: string) {
+async function newHire($: EngineInterface, id: string, type: string, description: string, name?: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  const fresh: Employee = { id, type, description: fit(description, DESCRIPTION_CHARS), prompt: clip(prompt, PROMPT_CHARS), mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
+  const named = name ? { name: fit(name, NAME_CHARS) } : {}
+  const fresh: Employee = { id, type, description: fit(description, DESCRIPTION_CHARS), ...named, mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
   if ((await read($, staff)).some(e => e.id === id)) {
     await update($, staff, list => hire(list, fresh))
     return
   }
   await enroll($, type, id.startsWith(DEMO) ? 0 : 1)
   await update($, staff, list => hire(list, fresh))
-  const role = roleOf(type, ((await read($, blurbs))[type] ?? '') + ' ' + prompt)
+  const role = roleOf(type, (await read($, blurbs))[type] ?? '')
   await setBoss($, b => ({ ...b, activity: role.hello, waveUntil: t + 6, hires: b.hires + 1 }))
 }
 
@@ -129,13 +131,14 @@ async function clockOut($: EngineInterface, id: string, mood: Mood, how: EndedBy
   const e = ended as Employee | undefined
   // Lost contact is neither a win nor a failure: no toast, no cheer.
   if (!e || mood === 'lost') return
-  const role = roleOf(e.type, e.description)
+  const blurb = (await read($, blurbs))[e.type] ?? ''
+  const [role, label] = [roleOf(e.type, blurb), labelOf(e, blurb)]
   await setBoss($, b => (mood === 'done'
-    ? { ...b, proudUntil: t + 10, oopsUntil: 0, lastTitle: role.title, wins: b.wins + 1 }
-    : { ...b, oopsUntil: t + 10, proudUntil: 0, lastTitle: role.title, fails: b.fails + 1 }))
+    ? { ...b, proudUntil: t + 10, oopsUntil: 0, lastTitle: label, wins: b.wins + 1 }
+    : { ...b, oopsUntil: t + 10, proudUntil: 0, lastTitle: label, fails: b.fails + 1 }))
   $.ui.toast(mood === 'done'
-    ? `${role.prop} ${role.title} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
-    : `🤕 ${role.title} could not finish: ${e.description || e.type}`)
+    ? `${role.prop} ${label} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
+    : `🤕 ${label} could not finish: ${e.description || e.type}`)
 }
 
 /** Any sign of life from a specialist (a tool call, a model step): it is heard from now, and a finished one is back at work. */
@@ -148,7 +151,7 @@ async function signOfLife($: EngineInterface, id: string, activity?: string) {
 }
 
 /** An agent the engine lists that no spawn announced (it started before this mod loaded) joins the books. */
-const hireFromList = ($: EngineInterface) => (a: { id: string; type: string; description: string }) => newHire($, a.id, a.type, a.description, '')
+const hireFromList = ($: EngineInterface) => (a: { id: string; type: string; description: string; name?: string }) => newHire($, a.id, a.type, a.description, a.name)
 
 /**
  * The engine's own list catches agents spawned before this mod loaded and stops nobody saw; the clock catches
@@ -440,7 +443,7 @@ async function startDemo($: EngineInterface) {
     show: view => raise(paneIo($), view),
     setBusy: () => setBoss($, b => ({ ...b, isBusy: true })),
     say: (text, ticks) => demoSay($, text, ticks),
-    hire: (n, type, description, prompt) => newHire($, id(n), type, description, prompt),
+    hire: (n, type, description) => newHire($, id(n), type, description),
     work: (n, tool, input) => demoWork($, id(n), tool, input),
     ask: (ask, from) => fileAsk($, { ...ask, fromId: id(from) }, true),
     answer: (askId, value) => answer($, askId, value),
@@ -580,7 +583,7 @@ export const register: Register = on => {
     const r = await next({ ...e, prompt: prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE })
     if (r.agentId) {
       if (effort) efforts.set(r.agentId, effort)
-      await newHire($, r.agentId, e.subagentType, e.description, prompt)
+      await newHire($, r.agentId, e.subagentType, e.description, e.name)
       if (effort) await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, effort })))
       await showStatus($)
     }
@@ -618,7 +621,7 @@ export const register: Register = on => {
 
     if (tool === ASK_TOOL) {
       const asker = id ? (await read($, staff)).find(one => one.id === id) : undefined
-      const from = asker ? roleOf(asker.type).title : 'Clawd'
+      const from = asker ? labelOf(asker, (await read($, blurbs))[asker.type] ?? '') : 'Clawd'
       const options = Array.isArray(input.options) ? (input.options as unknown[]).map(String).slice(0, 6) : []
       const kind = input.kind === 'decision' && options.length > 1 ? 'decision' : 'question'
       const filed = await fileAsk($, {
@@ -636,7 +639,7 @@ export const register: Register = on => {
       const decision = fit(String(input.decision ?? ''), SAVED_CHARS)
       // A subagent's call is its own note, never the user's decision.
       const caller = id ? (await read($, staff)).find(one => one.id === id) : undefined
-      const by = caller ? roleOf(caller.type).title : 'agent'
+      const by = caller ? labelOf(caller, (await read($, blurbs))[caller.type] ?? '') : 'agent'
       const mine = id === undefined ? { kind: 'decision' as const, by: 'CEO' } : { kind: 'choice' as const, by }
       await remember($, { ...mine, text: decision, source: 'clawd' }, typeof input.supersedes === 'string' ? input.supersedes : undefined)
       const t = await read($, tick)
@@ -714,12 +717,12 @@ export const register: Register = on => {
       // A report's CEO-DECISION and CEO-QUESTION lines land on the desk.
       const raised = parseReport(e.answer ?? '')
       if (asker && raised.length > 0) {
-        const from = roleOf(asker.type).title
+        const from = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
         for (const r of raised) await fileAsk($, { ...r, from, fromType: asker.type, fromId: asker.id, source: 'report' })
       }
       // Key choices the agent made itself go into the project's memory.
       if (asker && !asker.id.startsWith(DEMO)) {
-        const by = roleOf(asker.type).title
+        const by = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
         for (const text of parseChoices(e.answer ?? '')) await remember($, { kind: 'choice', text, by, source: 'report' })
       }
       await clockOut($, e.agentId, e.reason === 'answer' ? 'done' : 'failed')

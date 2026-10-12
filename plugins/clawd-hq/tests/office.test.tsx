@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { assemble, avatarFor, clawdAvatar } from '../hooks/avatars'
+import { assemble, avatarFor, clawdAvatar, compactIcon } from '../hooks/avatars'
 import { ACCENT, AMBER } from '../hooks/office'
 import { rasterCells, svgOf, trim } from '../hooks/pixels'
 import { CLEAR, DECISIONS, DESK, HOUR, LOG, PANE, PEOPLE, START, SURFACES, host, planner } from './host'
@@ -46,9 +46,9 @@ test('avatars are pixel art on the terminal: Clawd and each specialist at work',
   // Clawd is 23 columns by 8 rows once trimmed, blinking or not.
   expect([clawd.props.columns, clawd.props.rows]).toEqual([23, 8])
   expect([rasterCells(trim(clawdAvatar(false).full)), rasterCells(trim(clawdAvatar(true).full))]).toContain(clawd.props.cells)
-  // The reviewer is drawn with the code-reviewer's own parts, not another's.
-  expect(desk.props.cells).toBe(rasterCells(trim(assemble(avatarFor('ecc:code-reviewer')))))
-  expect(desk.props.cells).not.toBe(rasterCells(trim(assemble(avatarFor('ecc:planner')))))
+  // The reviewer is drawn with the code-reviewer's own parts, not another's: the small icon, since the terminal cannot scale.
+  expect(desk.props.cells).toBe(rasterCells(trim(compactIcon(avatarFor('ecc:code-reviewer')))))
+  expect(desk.props.cells).not.toBe(rasterCells(trim(compactIcon(avatarFor('ecc:planner')))))
   await ui.unmount()
 })
 

@@ -1,5 +1,6 @@
 // The Log tab: the specialists that finished this session, newest first.
 import { avatarFor, compactIcon } from './avatars'
+import { givenName } from './office'
 import { AMBER } from './office'
 import { doneLine, doneThisSession, titled } from './panel-model'
 import type { Kit } from './panel-kit'
@@ -10,7 +11,7 @@ const MAX_ROWS = 40
 
 function row(one: Employee, { Box, Text, sprite, isTerminal }: Kit, data: PanelData) {
   const line = doneLine(one, data.now)
-  const icon = sprite(`done-${one.id}`, compactIcon(avatarFor(one.type)), { scale: 3, alt: '', keep: 0.7 })
+  const icon = sprite(`done-${one.id}`, compactIcon(avatarFor(givenName(one) ?? one.type)), { scale: 3, alt: '', keep: 0.7 })
   const isAlert = line.isFailed || line.isLost
   const tookColor = isAlert ? AMBER : undefined
   return (

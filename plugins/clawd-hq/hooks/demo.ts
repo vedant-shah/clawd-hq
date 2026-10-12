@@ -12,7 +12,7 @@ export type TourIo = {
   setBusy: () => Promise<unknown>
   say: (text: string, ticks?: number) => Promise<unknown>
   /** `n` names a stand-in specialist for the length of the tour. */
-  hire: (n: string, type: string, description: string, prompt: string) => Promise<unknown>
+  hire: (n: string, type: string, description: string) => Promise<unknown>
   work: (n: string, tool: string, input: Record<string, unknown>) => Promise<unknown>
   ask: (ask: TourAsk, from: string) => Promise<string>
   answer: (askId: string, value: string) => Promise<unknown>
@@ -30,19 +30,19 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.say('Welcome to the office! Mind the claws.')
     }],
     ['Hiring: each agent type gets an avatar of its own, with its own outfit, headwear and prop.', async () => {
-      await io.hire('arch', 'ecc:architect', 'Design the scoring API', 'Design the scoring service for roadmap rank')
+      await io.hire('arch', 'ecc:architect', 'Design the scoring API')
     }],
     ['Each specialist at work gets a row: its avatar, its task, what it is doing right now, and how long it has been at it.', async () => {
       await io.work('arch', 'Read', { file_path: 'scoring.ts' })
-      await io.hire('scout', 'Explore', 'Map the backend', 'Find every place that computes a score')
+      await io.hire('scout', 'Explore', 'Map the backend')
     }],
-    ['Each type keeps its name across sessions.', async () => {
+    ['A specialist is known by its role, in one or two plain words, or by the name it was given.', async () => {
       await io.work('scout', 'Grep', { pattern: 'computeScore' })
-      await io.hire('rev', 'ecc:code-reviewer', 'Review the survey flow', 'Review the survey lifecycle code')
+      await io.hire('rev', 'ecc:code-reviewer', 'Review the survey flow')
     }],
     ['Hire too many at once and Clawd starts to grumble.', async () => {
-      await io.hire('tdd', 'ecc:tdd-guide', 'Test the review panel', 'Write tests for the review panel')
-      await io.hire('data', 'acme-ops:(o_o) data-analyst', 'Crunch the deal data', 'Analyse deal metrics')
+      await io.hire('tdd', 'ecc:tdd-guide', 'Test the review panel')
+      await io.hire('data', 'acme-ops:(o_o) data-analyst', 'Crunch the deal data')
       await io.work('rev', 'Read', { file_path: 'surveys.ts' })
       await io.work('arch', 'Edit', { file_path: 'design.md' })
     }],

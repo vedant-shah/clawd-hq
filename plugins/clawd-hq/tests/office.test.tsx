@@ -1,8 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { assemble, avatarFor, clawdAvatar, tinyIcon } from '../hooks/avatars'
+import type { Pose } from '../hooks/avatars'
 import { ACCENT, AMBER, GREEN } from '../hooks/office'
-import { fade, rasterCells, svgOf, trim } from '../hooks/pixels'
+import { fade, overlay, rasterCells, svgOf, trim, trimLike } from '../hooks/pixels'
 import { CLEAR, DECISIONS, HOUR, LOG, PANE, PEOPLE, START, SURFACES, host, planner } from './host'
 
 test('a spawned architect gets a desk and shows as working', async ($, on) => {
@@ -35,6 +36,11 @@ test('an agent clocked out twice gets one toast', async ($, on) => {
   expect(toasts.filter(t => t.includes('finished'))).toHaveLength(1)
 })
 
+/** Every moment of a picture's small motions, each cut to the size of the still one, as the panel draws them. */
+const POSES: Pose[] = [{}, { isBlinking: true }, { isLifted: true }, { isBlinking: true, isLifted: true }]
+const moments = <T,>(draw: (pose: Pose) => Array<Array<string | null>>, as: (g: Array<Array<string | null>>) => T, hasRoomToLift = false): T[] =>
+  POSES.map(pose => as(trimLike(draw(pose), hasRoomToLift ? overlay(draw({}), draw({ isLifted: true })) : draw({}))))
+
 test('avatars are pixel art on the terminal: Clawd and each specialist at work', async ($, on) => {
   host(on, [{ id: 'x1', type: 'ecc:code-reviewer', description: 'Review', status: 'running' }])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'x1' }))
@@ -46,10 +52,10 @@ test('avatars are pixel art on the terminal: Clawd and each specialist at work',
   const desk = rasters.find(r => r.props.key === 'desk-x1')!
   // Clawd's small drawing is 14 columns by 4 rows once trimmed: as tall as a specialist's picture, and wider.
   expect([clawd.props.columns, clawd.props.rows]).toEqual([14, 4])
-  expect(clawd.props.cells).toBe(rasterCells(trim(clawdAvatar(false).compact)))
+  expect(moments(pose => clawdAvatar(pose).compact, rasterCells)).toContain(clawd.props.cells)
   // The reviewer is drawn with the code-reviewer's own colours, not another's: the tiny picture, since the terminal cannot scale.
-  expect(desk.props.cells).toBe(rasterCells(trim(tinyIcon(avatarFor('ecc:code-reviewer')))))
-  expect(desk.props.cells).not.toBe(rasterCells(trim(tinyIcon(avatarFor('ecc:planner')))))
+  expect(moments(pose => tinyIcon(avatarFor('ecc:code-reviewer'), pose), rasterCells)).toContain(desk.props.cells)
+  expect(moments(pose => tinyIcon(avatarFor('ecc:planner'), pose), rasterCells)).not.toContain(desk.props.cells)
   await ui.unmount()
 })
 
@@ -64,11 +70,11 @@ test('avatars are SVGs on the desktop, in the avatars own colors', async ($, on)
   const [clawd, desk] = svgs
   // Clawd is 23 by 16 sprite pixels at 4px: 92 by 64.
   expect([clawd!.props.width, clawd!.props.height]).toEqual([92, 64])
-  expect([svgOf(trim(clawdAvatar(false).full), 4), svgOf(trim(clawdAvatar(true).full), 4)]).toContain(clawd!.props.source)
+  expect(moments(pose => clawdAvatar(pose).full, g => svgOf(g, 4))).toContain(clawd!.props.source)
   // The reviewer is drawn from the code-reviewer's parts (a teal cardigan), not another's.
-  expect(desk!.props.source).toBe(svgOf(trim(assemble(avatarFor('ecc:code-reviewer'))), 3))
+  expect(moments(pose => assemble(avatarFor('ecc:code-reviewer'), pose), g => svgOf(g, 3), true)).toContain(desk!.props.source)
   expect(String(desk!.props.source)).toContain('#2FA8A0')
-  expect(desk!.props.source).not.toBe(svgOf(trim(assemble(avatarFor('ecc:planner'))), 3))
+  expect(moments(pose => assemble(avatarFor('ecc:planner'), pose), g => svgOf(g, 3), true)).not.toContain(desk!.props.source)
   await ui.unmount()
 })
 
@@ -108,6 +114,8 @@ test("Clawd's card says All clear in an empty office, has no button of its own, 
     const [saidAt, statusAt] = [lines.findIndex(t => t.props.italic === true), lines.findIndex(t => /^✓ All clear$/.test(String(t.text)))]
     expect(saidAt).toBeGreaterThan(-1)
     expect(saidAt).toBeLessThan(statusAt)
+    // Room between his name, his words and the status where there is room to give; a terminal line is too dear.
+    expect((await ui.find({ key: 'clawd-lines' }))?.props.gap).toBe(surface === 'terminal' ? 0 : 1)
     expect(await ui.find({ type: 'Text', text: /Chief of Staff/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /No one at a desk yet\./ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Specialists appear here while they work\./ })).toBeDefined()

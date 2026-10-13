@@ -6,15 +6,24 @@ export type Px = string | null
 const DEF = 0x01000000
 const hex = (c: string) => parseInt(c.slice(1), 16)
 
-/** The grid without empty columns or rows around it; an even number of rows above and below, so half-blocks stay aligned. */
-export function trim(g: Px[][]): Px[][] {
+/** The box a grid is cut to: its drawn rows and columns, with an even number of rows above and below, so half-blocks stay aligned. */
+function boxOf(g: Px[][]): { top: number; end: number; left: number; right: number } | undefined {
   const rows = g.flatMap((row, y) => (row.some(c => c !== null) ? [y] : []))
-  if (rows.length === 0) return []
+  if (rows.length === 0) return undefined
   const cols = g[0]!.map((_, x) => x).filter(x => g.some(row => row[x] !== null && row[x] !== undefined))
-  const top = rows[0]! - (rows[0]! % 2)
   const bottom = rows[rows.length - 1]! + 1
-  const end = bottom + (bottom % 2)
-  return g.slice(top, end).map(row => row.slice(cols[0]!, cols[cols.length - 1]! + 1))
+  return { top: rows[0]! - (rows[0]! % 2), end: bottom + (bottom % 2), left: cols[0]!, right: cols[cols.length - 1]! + 1 }
+}
+
+/** The grid without empty columns or rows around it. */
+export function trim(g: Px[][]): Px[][] {
+  return trimLike(g, g)
+}
+
+/** `g` cut to the box of `like`: a picture that moves keeps the size of its still one, so nothing around it shifts. */
+export function trimLike(g: Px[][], like: Px[][]): Px[][] {
+  const box = boxOf(like)
+  return box === undefined ? [] : g.slice(box.top, box.end).map(row => row.slice(box.left, box.right))
 }
 
 const mix = (color: string, base: string, keep: number) => {
@@ -22,6 +31,9 @@ const mix = (color: string, base: string, keep: number) => {
   const channel = (shift: number) => Math.round((((a >> shift) & 255) * keep) + (((b >> shift) & 255) * (1 - keep)))
   return `#${[16, 8, 0].map(s => channel(s).toString(16).padStart(2, '0')).join('')}`
 }
+
+/** Two grids of one size as one: `a`, with `b` showing wherever `a` is empty. The box of both, for a picture that moves between them. */
+export const overlay = (a: Px[][], b: Px[][]): Px[][] => a.map((row, y) => row.map((c, x) => c ?? b[y]?.[x] ?? null))
 
 /** The same grid with each color pulled toward `base`, for the terminal, where a cell has no opacity. */
 export function fade(g: Px[][], keep: number, base = '#1a1a1a'): Px[][] {

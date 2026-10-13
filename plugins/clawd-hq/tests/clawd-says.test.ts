@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { NAP_MS, clawdMood, isBlinking, quipOf } from '../hooks/clawd-says'
+import { NAP_MS, clawdMood, isBlinking, poseOf, quipOf } from '../hooks/clawd-says'
 import { CLAWD_LINES } from '../hooks/office'
 import type { Boss } from '../types'
 
@@ -49,4 +49,16 @@ test('no line of Clawd\'s counts questions for the person or points at a desk: t
   const lines = Object.values(CLAWD_LINES).flat()
   expect(Object.keys(CLAWD_LINES)).not.toContain('waiting')
   expect(lines.some(l => /\{q\}|your desk|CEO/i.test(l))).toBe(false)
+})
+
+test('a picture blinks once in eleven beats, on its own beat, and lifts what it holds on every other pair of beats only while it works', () => {
+  const beats = Array.from({ length: 44 }, (_, t) => t)
+  expect(beats.filter(t => poseOf(t, 0, true).isBlinking)).toEqual([0, 11, 22, 33])
+  expect(beats.filter(t => poseOf(t, 3, true).isBlinking)).toEqual([8, 19, 30, 41])
+  // Two beats down, two beats up.
+  expect(beats.slice(0, 8).map(t => poseOf(t, 0, true).isLifted)).toEqual([false, false, true, true, false, false, true, true])
+  expect(beats.slice(0, 4).map(t => poseOf(t, 1, true).isLifted)).toEqual([false, true, true, false])
+  // At rest nothing is lifted: only the blink is left.
+  expect(beats.some(t => poseOf(t, 0, false).isLifted)).toBe(false)
+  expect(beats.filter(t => poseOf(t, 0, false).isBlinking)).toHaveLength(4)
 })

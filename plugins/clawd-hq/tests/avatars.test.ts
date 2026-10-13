@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { assemble, avatarFor, clawdAvatar, compactIcon, tinyIcon } from '../hooks/avatars'
+import { overlay, trim, trimLike } from '../hooks/pixels'
 import { BODY, CHARACTERS, LAYER_ORDER, PALETTE, PARTS } from '../hooks/avatar-data'
 import type { Character, Part } from '../hooks/avatar-data'
 
@@ -108,12 +109,15 @@ test('Clawd wears his blazer and a red tie, with no crown or emblem', () => {
 
 test('Clawd blinks by swapping only his eyes', () => {
   const open = clawdAvatar().full
-  const shut = clawdAvatar(true).full
+  const shut = clawdAvatar({ isBlinking: true }).full
   const changed = open.flatMap((row, y) => row.map((c, x) => (c !== shut[y]![x] ? y : -1))).filter(y => y >= 0)
   expect(changed.length).toBeGreaterThan(0)
   expect(Math.min(...changed)).toBeGreaterThanOrEqual(10)
   expect(Math.max(...changed)).toBeLessThanOrEqual(13)
-  expect(clawdAvatar(true).compact).toEqual(clawdAvatar().compact)
+  // His small drawing blinks too: the upper dot of each eye closes, and nothing else changes.
+  const [small, smallShut] = [clawdAvatar().compact, clawdAvatar({ isBlinking: true }).compact]
+  const moved = small.flatMap((row, y) => row.map((c, x) => (c !== smallShut[y]![x] ? `${x},${y}` : '')).filter(Boolean))
+  expect(moved).toEqual(['5,5', '10,5'])
 })
 
 // ---- The tiny picture, for a terminal row ----
@@ -165,4 +169,73 @@ test('the hand-made characters do not all look alike when tiny, and a made-up on
   const made = CHARACTERS.filter(c => c.id !== 'clawd').map(c => JSON.stringify(tinyIcon(c)))
   expect(new Set(made).size).toBeGreaterThanOrEqual(Math.ceil(made.length * 0.8))
   expect(JSON.stringify(tinyIcon(avatarFor('acme:mystery')))).not.toBe(JSON.stringify(tinyIcon(avatarFor('designer'))))
+})
+
+// ---- Small motions: a blink, and what is held raised a dot ----
+
+const changed = (a: Array<Array<string | null>>, b: Array<Array<string | null>>) =>
+  a.flatMap((row, y) => row.map((c, x) => (c !== b[y]![x] ? [x, y] as const : undefined)).filter((at): at is readonly [number, number] => at !== undefined))
+
+test('a blink changes only the eyes of a full picture, and a lift only moves what it holds', () => {
+  for (const c of CHARACTERS) {
+    const still = assemble(c)
+    const blink = changed(still, assemble(c, { isBlinking: true }))
+    expect(blink.length).toBeGreaterThan(0)
+    expect(blink.every(([, y]) => y >= 10 && y <= 13)).toBe(true)
+    const prop = PARTS.prop![c.prop]!
+    const lift = changed(still, assemble(c, { isLifted: true }))
+    expect(lift.length).toBeGreaterThan(0)
+    expect(lift.every(([x, y]) => x >= prop.x && x < prop.x + Math.max(...prop.rows.map(r => r.length)) && y >= prop.y - 1 && y < prop.y + prop.rows.length)).toBe(true)
+    expect(assemble(c, {})).toEqual(still)
+  }
+})
+
+test('a tiny picture blinks by shading its two eyes and lifts its dab one dot, and stays 8 by 8', () => {
+  for (const c of CHARACTERS) {
+    const still = tinyIcon(c)
+    const blink = tinyIcon(c, { isBlinking: true })
+    expect(changed(still, blink)).toEqual([[2, 3], [5, 3]])
+    expect([blink[3]![2], blink[3]![5]]).toEqual([PALETTE.d, PALETTE.d])
+    const lift = tinyIcon(c, { isLifted: true })
+    expect(lift).toHaveLength(8)
+    expect(lift.every(row => row.length === 8)).toBe(true)
+    const moved = changed(still, lift)
+    expect(moved.every(([x, y]) => x === 7 && y >= 1 && y <= 3)).toBe(true)
+    // The hat is never drawn over: every hat cell of the still picture is there when lifted.
+    for (const y of [0, 1]) for (const x of [0, 1, 2, 3, 4, 5, 6, 7]) if (still[y]![x] !== null) expect(lift[y]![x]).toBe(still[y]![x])
+  }
+})
+
+test('Clawd lifts his logbook in both of his drawings', () => {
+  const [still, lifted] = [clawdAvatar(), clawdAvatar({ isLifted: true })]
+  expect(changed(still.full, lifted.full).length).toBeGreaterThan(0)
+  expect(changed(still.compact, lifted.compact).length).toBeGreaterThan(0)
+  expect(changed(still.compact, lifted.compact).every(([x]) => x >= 13)).toBe(true)
+})
+
+test('a picture in motion is cut to the size of its still one, so nothing around it shifts', () => {
+  for (const c of CHARACTERS) {
+    for (const draw of [assemble, tinyIcon]) {
+      const still = trim(draw(c))
+      for (const pose of [{ isBlinking: true }, { isLifted: true }, { isBlinking: true, isLifted: true }]) {
+        const cut = trimLike(draw(c, pose), draw(c))
+        expect([cut.length, cut[0]!.length]).toEqual([still.length, still[0]!.length])
+      }
+    }
+  }
+  expect(trimLike([[null, 'x']], [[null, null]])).toEqual([])
+  expect(trimLike(assemble(CHARACTERS[0]!), assemble(CHARACTERS[0]!))).toEqual(trim(assemble(CHARACTERS[0]!)))
+})
+
+test('on the desktop a picture\'s room covers its lifted moment too, so what it holds is never cut off', () => {
+  const drawnCells = (g: Array<Array<string | null>>) => g.flat().filter(c => c !== null).length
+  for (const c of CHARACTERS) {
+    const room = overlay(assemble(c), assemble(c, { isLifted: true }))
+    for (const pose of [{}, { isBlinking: true }, { isLifted: true }, { isBlinking: true, isLifted: true }]) {
+      const cut = trimLike(assemble(c, pose), room)
+      expect(drawnCells(cut)).toBe(drawnCells(assemble(c, pose)))
+      expect([cut.length, cut[0]!.length]).toEqual([trim(room).length, trim(room)[0]!.length])
+    }
+  }
+  expect(overlay([[null, 'a']], [['b', 'c']])).toEqual([['b', 'a']])
 })

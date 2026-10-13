@@ -1,8 +1,9 @@
 // The Office tab: Clawd's card and who is at work. Finished work lives in the Log tab.
 import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
-import { clawdMood, isBlinking, quipOf } from './clawd-says'
-import { ACCENT, AMBER, GREEN, givenName } from './office'
+import { clawdMood, poseOf, quipOf } from './clawd-says'
+import { ACCENT, AMBER, GREEN, givenName, hash } from './office'
 import { atWork, recentFailures, statusOf, titled, workLine } from './panel-model'
+import { overlay } from './pixels'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import type { Employee } from '../types'
@@ -10,6 +11,8 @@ import type { Employee } from '../types'
 // A failure stays on Clawd's status line this long.
 const SICK_MS = 10 * 60_000
 const BORDER = '#454542'
+/** How many different beats the pictures at work are spread over. */
+const BEATS = 11
 /** How the status line opens and what colour it takes: all clear, Clawd at work, or a failure. */
 const TONE = { clear: { mark: '✓ ', color: GREEN }, busy: { mark: '● ', color: ACCENT }, alert: { mark: '! ', color: AMBER } } as const
 
@@ -25,11 +28,13 @@ function clawdCard({ kit, data, cw }: Ctx) {
   const said = quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length })
   const isStacked = cw < 50
   // On the terminal, which cannot scale a picture, Clawd gets his small drawing: still the largest in the pane.
-  const { full, compact } = clawdAvatar(isBlinking(tick))
+  // He blinks now and then, and his logbook moves while a turn of his runs.
+  const [still, moving] = [clawdAvatar(), clawdAvatar(poseOf(tick, 0, boss.isBusy))]
+  const [like, drawn] = kit.isTerminal ? [still.compact, moving.compact] : [still.full, moving.full]
   return (
     <Box borderStyle="round" borderDimColor paddingX={1} flexDirection={isStacked ? 'column' : 'row'} gap={2} alignItems={isStacked ? 'flex-start' : 'center'}>
-      <Box flexShrink={0}>{sprite('clawd', kit.isTerminal ? compact : full, { scale: 4, alt: 'Clawd, the chief of staff, in a navy blazer and red tie, holding a logbook' })}</Box>
-      <Box flexDirection="column" flexShrink={1} flexGrow={1}>
+      <Box flexShrink={0}>{sprite('clawd', drawn, { scale: 4, like, alt: 'Clawd, the chief of staff, in a navy blazer and red tie, holding a logbook' })}</Box>
+      <Box key="clawd-lines" flexDirection="column" flexShrink={1} flexGrow={1} gap={kit.isTerminal ? 0 : 1}>
         <Text bold>Clawd <Text dimColor>Chief of Staff</Text></Text>
         {/* What he says comes first, under his name; the status line sits below it. */}
         <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
@@ -38,7 +43,7 @@ function clawdCard({ kit, data, cw }: Ctx) {
         <Text bold color={TONE[status.tone].color} wrap="wrap">{TONE[status.tone].mark}{status.text}</Text>
         {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
         {!boss.isBusy && boss.recap !== undefined && (
-          <Box key="recap" marginTop={1} flexDirection="column">
+          <Box key="recap" marginTop={kit.isTerminal ? 1 : 0} flexDirection="column">
             <Text bold dimColor>WHERE WE LEFT OFF</Text>
             <Text wrap="wrap">{boss.recap}</Text>
           </Box>
@@ -54,7 +59,11 @@ function deskRow(one: Employee, { kit, data }: Ctx) {
   const line = workLine(one, data.now)
   // The terminal cannot scale a picture, so a row there gets the tiny 8 by 8 one and its words get the room.
   const look = avatarFor(givenName(one) ?? one.type)
-  const picture = sprite(`desk-${one.id}`, kit.isTerminal ? tinyIcon(look) : assemble(look), { scale: 3, alt: `${titled(one, data)}` })
+  // At work it blinks now and then and moves what it holds, on a beat of its own.
+  const [draw, pose] = [kit.isTerminal ? tinyIcon : assemble, poseOf(data.tick, hash(one.id) % BEATS, true)]
+  // Its room is the still picture's; where there is height to spare, the lifted one's too, so what it holds is never cut.
+  const like = kit.isTerminal ? draw(look) : overlay(draw(look), draw(look, { isLifted: true }))
+  const picture = sprite(`desk-${one.id}`, draw(look, pose), { scale: 3, like, alt: `${titled(one, data)}` })
   return (
     <Box key={`desk-${one.id}`} borderStyle="round" borderDimColor paddingX={1} flexDirection="row" gap={2} alignItems="center">
       <Box flexShrink={0}>{picture}</Box>

@@ -18,9 +18,17 @@ function paint(grid: Grid, part: Part): Grid {
 
 const paintAll = (grid: Grid, parts: Part[]): Grid => parts.reduce(paint, grid)
 
+/** A moment of a picture's small motions: the eyes shut for a blink, and what it holds raised one dot while it works. */
+export type Pose = { isBlinking?: boolean; isLifted?: boolean }
+
+const raised = (part: Part): Part => ({ ...part, y: part.y - 1 })
+
 /** The full 24x24 avatar: body, then outfit, emblem, expression, headwear and prop, each over the last. */
-export function assemble(character: Character, isBlinking = false): Grid {
-  const layers = LAYER_ORDER.map(layer => (layer === 'expression' && isBlinking ? BLINK : PARTS[layer]![character[layer]]!))
+export function assemble(character: Character, pose: Pose = {}): Grid {
+  const layers = LAYER_ORDER.map(layer => {
+    const part = layer === 'expression' && pose.isBlinking ? BLINK : PARTS[layer]![character[layer]]!
+    return layer === 'prop' && pose.isLifted ? raised(part) : part
+  })
   return paintAll(blank(GRID.width, GRID.height), [BODY, ...layers])
 }
 
@@ -62,19 +70,22 @@ function tinyHat(hat: Part): Array<Array<string | undefined>> {
 
 /**
  * The 8 by 8 picture of a character: its hat in two rows, the body with two eyes, its outfit's colour across the
- * lower body, a dab of its prop's colour at the raised claw, and the legs.
+ * lower body, a dab of its prop's colour at the raised claw, and the legs. A blink shades the eyes; a lift moves the dab up a dot.
  */
-export function tinyIcon(character: Character): Grid {
+export function tinyIcon(character: Character, pose: Pose = {}): Grid {
   const outfit = commonest(cellsOf(PARTS.outfit![character.outfit] ?? BODY), [BODY_KEY, SHADE_KEY, INK_KEY]) ?? BODY_KEY
   const prop = commonest(cellsOf(PARTS.prop![character.prop] ?? BODY), [INK_KEY, BODY_KEY, SHADE_KEY])
   const hat = PARTS.headwear![character.headwear]
   const [top, brim] = hat ? tinyHat(hat) : [[], []]
-  const o = BODY_KEY
+  const [o, eye] = [BODY_KEY, pose.isBlinking ? SHADE_KEY : INK_KEY]
+  // The dab at the claw, down the last column of rows 1 to 3: two dots tall, one row higher when lifted.
+  const held = pose.isLifted ? [prop, prop, undefined] : [undefined, prop, prop]
   const rows: Array<Array<string | undefined>> = [
     Array.from({ length: 8 }, (_, c) => top![c]),
-    Array.from({ length: 8 }, (_, c) => brim![c]),
-    [undefined, o, o, o, o, o, o, prop],
-    [undefined, o, INK_KEY, o, o, INK_KEY, o, prop],
+    // A hat that reaches the last column keeps its cell: the dab only rises into empty room.
+    Array.from({ length: 8 }, (_, c) => (c === 7 ? brim![c] ?? held[0] : brim![c])),
+    [undefined, o, o, o, o, o, o, held[1]],
+    [undefined, o, eye, o, o, eye, o, held[2]],
     [o, outfit, outfit, outfit, outfit, outfit, outfit, o],
     [undefined, outfit, outfit, outfit, outfit, outfit, outfit, undefined],
     [undefined, o, undefined, SHADE_KEY, SHADE_KEY, undefined, o, undefined],
@@ -130,11 +141,16 @@ export function avatarFor(agentType: string): Character {
 const TIE: Part[] = [{ x: 9, y: 15, rows: ['rr', 'rr', 'rr', 'rr'] }, { x: 8, y: 18, rows: ['rrrr'] }]
 const TIE_ICON: Part = { x: 7, y: 6, rows: ['rr', 'rr'] }
 
-/** Clawd's interim look: his outfit, expression and prop, no crown or emblem, plus the tie. Blinking swaps only the eyes. */
-export function clawdAvatar(isBlinking = false): { full: Grid; compact: Grid } {
+// The small drawing's eyes are two dots tall: a blink covers the upper dot of each with the body's colour.
+const BLINK_ICON: Part = { x: 0, y: 5, rows: ['.....o....o.....'] }
+
+/** Clawd's interim look: his outfit, expression and prop, no crown or emblem, plus the tie. A blink swaps only the eyes; a lift raises his logbook a dot. */
+export function clawdAvatar(pose: Pose = {}): { full: Grid; compact: Grid } {
   const clawd = CHARACTERS.find(c => c.id === 'clawd')!
-  const expression = isBlinking ? BLINK : PARTS.expression![clawd.expression]!
-  const full = paintAll(blank(GRID.width, GRID.height), [BODY, PARTS.outfit![clawd.outfit]!, expression, PARTS.prop![clawd.prop]!, ...TIE])
-  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, COMPACT.accent[clawd.compactAccent]!, TIE_ICON])
+  const expression = pose.isBlinking ? BLINK : PARTS.expression![clawd.expression]!
+  const [prop, accent] = [PARTS.prop![clawd.prop]!, COMPACT.accent[clawd.compactAccent]!]
+  const full = paintAll(blank(GRID.width, GRID.height), [BODY, PARTS.outfit![clawd.outfit]!, expression, pose.isLifted ? raised(prop) : prop, ...TIE])
+  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height),
+    [COMPACT.body, ...(pose.isBlinking ? [BLINK_ICON] : []), pose.isLifted ? raised(accent) : accent, TIE_ICON])
   return { full, compact }
 }

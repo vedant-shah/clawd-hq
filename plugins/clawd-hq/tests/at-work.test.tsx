@@ -493,3 +493,25 @@ test('a hire whose model comes back empty shows only its time, with no stray sep
   expect(await ui.find({ type: 'Text', text: /Opus|· ·/ })).toBeUndefined()
   await ui.unmount()
 })
+
+test('a specialist at work moves a little: its picture changes from beat to beat and never changes size; a finished one stands still', async ($, on) => {
+  const { clock } = hostWithSpecialist(on)
+  await $.session.start(START)
+  await $.agent.spawn(BUILD)
+  for (const surface of SURFACES) {
+    const seen = new Set<string>()
+    const sizes = new Set<string>()
+    for (let beat = 0; beat < 14; beat += 1) {
+      await clock.advance(400)
+      const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+      const picture = surface === 'terminal'
+        ? (await ui.findAll({ type: 'Raster' })).find(r => r.props.key === 'desk-t1')!
+        : (await ui.findAll({ type: 'Svg' })).filter(svg => svg.props.height !== 4)[1]!
+      seen.add(String(surface === 'terminal' ? picture.props.cells : picture.props.source))
+      sizes.add(surface === 'terminal' ? `${picture.props.columns}x${picture.props.rows}` : `${picture.props.width}x${picture.props.height}`)
+      await ui.unmount()
+    }
+    expect(seen.size).toBeGreaterThanOrEqual(2)
+    expect(sizes.size).toBe(1)
+  }
+})

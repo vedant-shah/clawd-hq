@@ -1,5 +1,6 @@
 // How Clawd feels and what he says; pure, so the panel only draws it.
 import type { Boss } from '../types'
+import type { Pose } from './avatars'
 import { CLAWD_LINES, fill, hash, lineOf } from './office'
 import type { ClawdMood } from './office'
 
@@ -24,5 +25,12 @@ export function quipOf(b: Boss, mood: ClawdMood, t: number, vars: Record<string,
   return fill(lineOf(CLAWD_LINES[mood], seed), vars)
 }
 
-/** Clawd's only liveness: an occasional blink. */
+/** An occasional blink. */
 export const isBlinking = (t: number) => t % BLINK_EVERY === 0
+
+/**
+ * The small motions of one picture at this tick: a blink now and then, and, while it works, what it holds raised on
+ * every other beat. `seed` puts each picture on a beat of its own, so the office does not move as one.
+ */
+export const poseOf = (t: number, seed: number, isWorking: boolean): Pose =>
+  ({ isBlinking: isBlinking(t + seed), isLifted: isWorking && Math.floor((t + seed) / 2) % 2 === 1 })

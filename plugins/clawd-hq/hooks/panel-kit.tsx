@@ -3,7 +3,7 @@
 import type { Elements } from 'claude-code'
 import { barGlyphs, barSvg } from './meters'
 import { ACCENT } from './office'
-import { fade, rasterCells, svgOf, trim } from './pixels'
+import { fade, rasterCells, svgOf, trim, trimLike } from './pixels'
 import type { Px } from './pixels'
 
 /** What the surface offers: Input is missing on mobile, Raster only exists on the terminal, Svg everywhere else. */
@@ -22,6 +22,8 @@ export type SpriteOptions = {
   alt: string
   /** 0 to 1: how much of the color is kept, for a dimmed picture. */
   keep?: number
+  /** The picture standing still: one that moves is cut to this one's size, so it never shifts what is around it. */
+  like?: Px[][]
 }
 
 export function kitOf(tools: PanelTools) {
@@ -29,7 +31,7 @@ export function kitOf(tools: PanelTools) {
 
   /** A pixel grid, margins trimmed: a Raster of half-block cells on the terminal, an SVG on the other surfaces. */
   const sprite = (key: string, grid: Px[][], o: SpriteOptions) => {
-    const g = trim(grid)
+    const g = o.like ? trimLike(grid, o.like) : trim(grid)
     const [gw, gh] = [g[0]?.length ?? 0, g.length]
     if (Raster) return <Raster key={key} columns={gw} rows={Math.ceil(gh / 2)} cells={rasterCells(o.keep === undefined ? g : fade(g, o.keep))} />
     if (Svg) return <Svg source={svgOf(g, o.scale, o.keep ?? 1)} alt={o.alt} width={gw * o.scale} height={gh * o.scale} />

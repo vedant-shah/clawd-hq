@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { RULES_FILE, VOICE_CHARS, VOICE_END, VOICE_FILE, VOICE_GUARD, isBriefed, loadBriefing, optionsOf } from '../hooks/instructions'
+import { NO_UPDATE } from '../hooks/quiet'
 
 /** A plugin folder in memory, and what the person was told. */
 function io(files: Record<string, string>) {
@@ -14,10 +15,10 @@ function io(files: Record<string, string>) {
 const SHIPPED = { [`/plugin/${RULES_FILE}`]: '# Rules\n\nHand work over.\n', [`/plugin/${VOICE_FILE}`]: '# Voice\n\nPlain words.\n' }
 
 test('the options are on by default, with no voice file of the person\'s own', () => {
-  expect(optionsOf({})).toEqual({ isOn: true, voiceFile: '', isRecapOn: true })
-  expect(optionsOf({ chiefOfStaff: false, voiceFile: '  /me/voice.md ', recap: false })).toEqual({ isOn: false, voiceFile: '/me/voice.md', isRecapOn: false })
+  expect(optionsOf({})).toEqual({ isOn: true, voiceFile: '', isRecapOn: true, isQuiet: true })
+  expect(optionsOf({ chiefOfStaff: false, voiceFile: '  /me/voice.md ', recap: false, quietChat: false })).toEqual({ isOn: false, voiceFile: '/me/voice.md', isRecapOn: false, isQuiet: false })
   // A value of the wrong kind counts as unset.
-  expect(optionsOf({ chiefOfStaff: 'no', voiceFile: 7, recap: 0 })).toEqual({ isOn: true, voiceFile: '', isRecapOn: true })
+  expect(optionsOf({ chiefOfStaff: 'no', voiceFile: 7, recap: 0, quietChat: 'off' })).toEqual({ isOn: true, voiceFile: '', isRecapOn: true, isQuiet: true })
 })
 
 test('a bare session and a teammate are not briefed; every other session is', () => {
@@ -81,4 +82,14 @@ test('a warning that itself fails does not cost the briefing', async () => {
   const failing = { ...at, warn: () => { throw new Error('no toast here') } }
   expect(await loadBriefing(failing, '/me/gone.md')).toContain('Plain words.')
   expect(await loadBriefing({ ...failing, read: async () => { throw new Error('ENOENT') } }, '')).toBeUndefined()
+})
+
+test('the rule about the no-update mark is in the briefing only while the quiet chat is on', async () => {
+  const rules = `# Rules\n\n- Report once the job is done.\n- Nothing to tell: your whole reply is \`${NO_UPDATE}\`.\n- Ask before spending.\n`
+  const { io: at } = io({ ...SHIPPED, [`/plugin/${RULES_FILE}`]: rules })
+  expect(await loadBriefing(at, '')).toContain(NO_UPDATE)
+  expect(await loadBriefing(at, '', true)).toContain(NO_UPDATE)
+  const loud = (await loadBriefing(at, '', false))!
+  expect(loud).not.toContain(NO_UPDATE)
+  expect(loud).toContain('- Report once the job is done.\n- Ask before spending.')
 })

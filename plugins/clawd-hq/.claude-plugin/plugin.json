@@ -26,6 +26,13 @@
       "description": "On (default): after at least three turns and three quiet minutes, Clawd's card shows one line on where things stand, the way Claude Code's own session recap does. It asks the model one short question about the session, which uses a little of your plan. Off: no recap is made.",
       "required": false,
       "default": true
+    },
+    "quietChat": {
+      "type": "boolean",
+      "title": "Quiet chat",
+      "description": "On (default): while Clawd runs the chat, it hides the 'finished' notices of specialists he hired, the messages of teammates he hired by name, and his own no-update lines. He reports once the job is done, and the Log tab lists what finished. A failure or a request (a question, permission, approval) always shows, and the full view (ctrl+o) shows everything. Off: the chat shows every row as Claude Code draws it.",
+      "required": false,
+      "default": true
     }
   }
 }

@@ -14,6 +14,7 @@ import { tourSteps } from './demo'
 import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
 import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
+import { isHandback, isNoUpdate } from './quiet'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
@@ -441,7 +442,7 @@ export const register: Register = (on, options) => {
   on('prompt.compose', async ($, e, next) => {
     const base = await next(e)
     if (!brief.isOn || !isBriefed(e.traits)) return base
-    briefing ??= loadBriefing({ root: $.plugin.root, read: path => $.fs.read(path), warn: text => void $.ui.toast(text) }, brief.voiceFile)
+    briefing ??= loadBriefing({ root: $.plugin.root, read: path => $.fs.read(path), warn: text => void $.ui.toast(text) }, brief.voiceFile, brief.isQuiet)
     const text = await briefing
     return text === undefined ? base : { sections: [...base.sections, { id: SECTION_ID, scope: 'session', text } as const] }
   })
@@ -666,6 +667,25 @@ export const register: Register = (on, options) => {
     }
     return next(e)
   })
+
+  // ---- The quiet chat: filler rows are not drawn (hooks/quiet.ts says which); the full view shows everything ----
+  // Only while Clawd runs the chat: his rules are what make him report on what is hidden.
+  if (brief.isQuiet && brief.isOn) {
+    on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+      const p = e.props
+      // Most rows are the person's own or already in full: nothing is read for them.
+      if (p.isExpanded || (!p.task && !p.from)) return next(e)
+      if (!isHandback({ isExpanded: p.isExpanded, originKind: p.origin.kind, text: p.text, task: p.task, from: p.from }, await read($, staff))) return next(e)
+      const { Text } = $.ui.resolve(e)
+      return <Text>{''}</Text>
+    })
+
+    on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+      if (!isNoUpdate(e.props.text)) return next(e)
+      const { Text } = $.ui.resolve(e)
+      return <Text>{''}</Text>
+    })
+  }
 
   // ---- The four office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----
   for (const pane of PANES) {

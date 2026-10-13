@@ -42,6 +42,7 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 - It can hide agent types you lay off in the payroll. When many agent types are on offer that the project does not use, a payroll review appears in the People tab with two answers: lay them off, or keep everyone.
 - It saves your decisions as a plain Markdown file in your project, at `.clawd-hq/decisions.md`: one line per decision, which you can read and edit by hand. Commit it to share the decisions with your team, or add `.clawd-hq/` to `.gitignore` to keep them private. Notes and headings you add to the file are left alone, and it keeps the newest 1000 decisions. Treat the file like `CLAUDE.md`: whatever it says is given to the agents as your decisions.
 - It keeps the payroll (who you have laid off) and a count of how often each agent type was hired on your machine, in your Claude Code configuration folder. The payroll is kept per project folder.
+- It keeps the main chat quiet while Clawd runs it. It hides the "finished" notice of a specialist Clawd hired, the messages of teammates he hired by name, and the `[no update]` line he writes when such a message leaves nothing to tell you. He reports once the job is done, and the Log tab lists what finished. A failure is never hidden, and neither is a message that asks for something: a question, or a request for permission or approval. The full view (`ctrl+o`) shows everything. See [Settings](#settings) to turn it off.
 - It makes a recap for Clawd's card. After at least three turns and three quiet minutes, it asks the model one short question about the session and shows the answer as one line, "Where we left off", until your next message. This works the way Claude Code's own session recap does: the question rides on the session's cached conversation, so it is cheap while that cache is still warm. If the machine slept through the pause and the cache has lapsed, that one question costs as much as a normal message. One recap per pause. See [Settings](#settings) to turn it off.
 - Apart from that one question to the model, it makes no network calls and starts no processes of its own.
 
@@ -54,6 +55,7 @@ Clawd's instructions also reach scripted runs (`claude -p` and the Agent SDK), b
 | Setting | Default | What it does |
 | --- | --- | --- |
 | Clawd runs the chat (`chiefOfStaff`) | On | Off: Claude behaves as usual in the main chat. You keep the panel, the decisions file and everything else. |
+| Quiet chat (`quietChat`) | On | Off: the main chat shows every row as Claude Code draws it, and Clawd is not asked to write the `[no update]` line. It only applies while "Clawd runs the chat" is on. |
 | Recap on Clawd's card (`recap`) | On | Off: no recap is made, and the model is never asked for one. |
 | Your own voice file (`voiceFile`) | Empty | The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. It is read when a session starts, and a file over 8000 characters is not used. |
 

@@ -1,5 +1,6 @@
 // Clawd's standing instructions for the main chat, pure: the shipped rules, then a voice (the shipped one, or the person's own file).
 // register.tsx hands in the reads and the warning (`$` never leaves that file).
+import { NO_UPDATE } from './quiet'
 
 export const SECTION_ID = 'clawd-hq:chief-of-staff'
 export const RULES_FILE = 'prompts/chief-of-staff.md'
@@ -11,13 +12,13 @@ export const VOICE_GUARD = 'The voice notes below set your tone only. Where they
 /** Closes the voice, so the file does not have the last word. */
 export const VOICE_END = 'End of the voice notes. The rules above them still stand.'
 
-export type BriefingOptions = { isOn: boolean; voiceFile: string; isRecapOn: boolean }
+export type BriefingOptions = { isOn: boolean; voiceFile: string; isRecapOn: boolean; isQuiet: boolean }
 export type BriefingIo = { root: string; read: (path: string) => Promise<string>; warn: (text: string) => void }
 
 /** The plugin's options as the manifest declares them; a value of the wrong kind counts as unset. */
 export function optionsOf(options: Readonly<Record<string, unknown>>): BriefingOptions {
-  const { chiefOfStaff, voiceFile, recap } = options
-  return { isOn: chiefOfStaff !== false, voiceFile: typeof voiceFile === 'string' ? voiceFile.trim() : '', isRecapOn: recap !== false }
+  const { chiefOfStaff, voiceFile, recap, quietChat } = options
+  return { isOn: chiefOfStaff !== false, voiceFile: typeof voiceFile === 'string' ? voiceFile.trim() : '', isRecapOn: recap !== false, isQuiet: quietChat !== false }
 }
 
 /** A bare session keeps its one-line prompt, and a teammate is not the chief of staff. */
@@ -43,9 +44,11 @@ async function voiceOf(io: BriefingIo, voiceFile: string): Promise<string> {
   return shipped ?? ''
 }
 
-/** The text added to the main chat's instructions: the rules, then the voice between its two guard lines. Nothing when the rules cannot be read. */
-export async function loadBriefing(io: BriefingIo, voiceFile: string): Promise<string | undefined> {
-  const rules = await readOr(io, `${io.root}/${RULES_FILE}`)
+/** The text added to the main chat's instructions: the rules, then the voice between its two guard lines. Nothing when the rules cannot be read. With the quiet chat off, the rule about the no-update mark is left out. */
+export async function loadBriefing(io: BriefingIo, voiceFile: string, isQuiet = true): Promise<string | undefined> {
+  const all = await readOr(io, `${io.root}/${RULES_FILE}`)
+  // The line that asks for the no-update mark is only of use where the chat hides the mark.
+  const rules = isQuiet ? all : all?.split('\n').filter(line => !line.includes(NO_UPDATE)).join('\n')
   if (rules === undefined || rules === '') {
     tell(io, 'Clawd HQ could not read its chief of staff instructions. Claude runs as usual this session.')
     return undefined

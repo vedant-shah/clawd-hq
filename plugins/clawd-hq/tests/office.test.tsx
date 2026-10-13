@@ -95,14 +95,19 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   }
 })
 
-test("Clawd's card says All clear with no one at work, has no button of its own, and shows the empty floor", async ($, on) => {
+test("Clawd's card says All clear in an empty office, has no button of its own, and shows the empty floor", async ($, on) => {
   const { clock } = host(on)
   on('turn.start', () => ({ turnId: 't1' }))
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    const status = await ui.find({ type: 'Text', text: /^✓ All clear · no one at work$/ })
+    const status = await ui.find({ type: 'Text', text: /^✓ All clear$/ })
     expect(status?.props.color).toBe(GREEN)
+    // What Clawd says comes first, right under his name; the status line sits below it.
+    const lines = await ui.findAll({ type: 'Text' })
+    const [saidAt, statusAt] = [lines.findIndex(t => t.props.italic === true), lines.findIndex(t => /^✓ All clear$/.test(String(t.text)))]
+    expect(saidAt).toBeGreaterThan(-1)
+    expect(saidAt).toBeLessThan(statusAt)
     expect(await ui.find({ type: 'Text', text: /Chief of Staff/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /No one at a desk yet\./ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Specialists appear here while they work\./ })).toBeDefined()
@@ -320,7 +325,7 @@ test('a specialist that failed shows as Failed in amber in the Log, and Clawd sa
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect((await ui.find({ type: 'Text', text: /^! .+ failed · no one at work$/ }))?.props.color).toBe(AMBER)
+    expect((await ui.find({ type: 'Text', text: /^! .+ failed$/ }))?.props.color).toBe(AMBER)
     expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeUndefined()
     await ui.unmount()
     const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
@@ -593,7 +598,7 @@ test('the toasts and Clawd say the role, never a made-up name', async ($, on) =>
   expect(toasts.find(t => t.includes('could not finish'))).toBe('🤕 Fixer could not finish: Fix the build')
     for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /^! Fixer failed · no one at work$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^! Fixer failed$/ })).toBeDefined()
     await ui.unmount()
   }
 })

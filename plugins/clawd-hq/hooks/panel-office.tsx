@@ -31,10 +31,11 @@ function clawdCard({ kit, data, cw }: Ctx) {
       <Box flexShrink={0}>{sprite('clawd', kit.isTerminal ? compact : full, { scale: 4, alt: 'Clawd, the chief of staff, in a navy blazer and red tie, holding a logbook' })}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text bold>Clawd <Text dimColor>Chief of Staff</Text></Text>
-        <Text bold color={TONE[status.tone].color} wrap="wrap">{TONE[status.tone].mark}{status.text}</Text>
-        <Box marginTop={1} borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
+        {/* What he says comes first, under his name; the status line sits below it. */}
+        <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>
         </Box>
+        <Text bold color={TONE[status.tone].color} wrap="wrap">{TONE[status.tone].mark}{status.text}</Text>
         {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
         {!boss.isBusy && boss.recap !== undefined && (
           <Box key="recap" marginTop={1} flexDirection="column">

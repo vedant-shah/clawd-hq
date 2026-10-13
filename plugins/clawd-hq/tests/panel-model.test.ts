@@ -87,13 +87,15 @@ test('a finished row says when, how long it took and the tokens; a failure says 
   expect(doneThisSession([lost], 0)).toEqual([lost])
 })
 
-test('Clawd\'s status line says what he is doing and how many are at work; a failure comes first, and questions are never counted', () => {
-  expect(statusOf(false, 0, [])).toEqual({ tone: 'clear', text: 'All clear · no one at work' })
+test('Clawd\'s status line says what he is doing, and how many are at work only when someone is; a failure comes first, and questions are never counted', () => {
+  expect(statusOf(false, 0, [])).toEqual({ tone: 'clear', text: 'All clear' })
   expect(statusOf(false, 2, [])).toEqual({ tone: 'clear', text: 'Free to talk · 2 at work' })
   expect(statusOf(true, 1, [])).toEqual({ tone: 'busy', text: 'Working on your request · 1 at work' })
-  expect(statusOf(true, 0, [])).toEqual({ tone: 'busy', text: 'Working on your request · no one at work' })
+  expect(statusOf(true, 0, [])).toEqual({ tone: 'busy', text: 'Working on your request' })
   expect(statusOf(false, 2, ['Reviewer'])).toEqual({ tone: 'alert', text: 'Reviewer failed · 2 at work' })
-  expect(statusOf(true, 0, ['Reviewer', 'Tester'])).toEqual({ tone: 'alert', text: 'Reviewer failed +1 · no one at work' })
+  expect(statusOf(true, 0, ['Reviewer', 'Tester'])).toEqual({ tone: 'alert', text: 'Reviewer failed +1' })
+  // An empty office is not news.
+  for (const s of [statusOf(false, 0, []), statusOf(true, 0, []), statusOf(false, 0, ['Reviewer'])]) expect(s.text).not.toMatch(/no one|at work/)
   for (const s of [statusOf(false, 0, []), statusOf(true, 3, []), statusOf(false, 1, ['Reviewer'])]) expect(s.text).not.toMatch(/need|waiting|question/i)
 })
 

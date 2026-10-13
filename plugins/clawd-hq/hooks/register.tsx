@@ -13,6 +13,7 @@ import { limitsOf } from './meters'
 import { DEMO, isActive, isWaiting, waitingSummary } from './panel-model'
 import { tourSteps } from './demo'
 import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
+import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
@@ -475,9 +476,20 @@ async function startDemo($: EngineInterface) {
   }))
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
   let timer: Timer | undefined
   let isFraming = false
+  const brief = optionsOf(options)
+  let briefing: Promise<string | undefined> | undefined
+
+  // Clawd's rules and voice join the main chat's instructions: read once, then the same text on every request, so the prompt cache holds.
+  on('prompt.compose', async ($, e, next) => {
+    const base = await next(e)
+    if (!brief.isOn || !isBriefed(e.traits)) return base
+    briefing ??= loadBriefing({ root: $.plugin.root, read: path => $.fs.read(path), warn: text => void $.ui.toast(text) }, brief.voiceFile)
+    const text = await briefing
+    return text === undefined ? base : { sections: [...base.sections, { id: SECTION_ID, scope: 'session', text } as const] }
+  })
 
   on('session.start', async ($, e, next) => {
     cwd = e.cwd

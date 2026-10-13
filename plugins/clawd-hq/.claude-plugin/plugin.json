@@ -4,5 +4,21 @@
   "author": {
     "name": "Vedant Shah"
   },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "chiefOfStaff": {
+      "type": "boolean",
+      "title": "Clawd runs the chat",
+      "description": "On (default): the main chat works as Clawd, the chief of staff. He hands real work to specialists, asks you only what needs you, and reports in plain words. Off: Claude behaves as usual and you keep the panel.",
+      "required": false,
+      "default": true
+    },
+    "voiceFile": {
+      "type": "string",
+      "title": "Your own voice file",
+      "description": "The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. Leave empty for the built-in voice. Read when a session starts, up to 8000 characters.",
+      "required": false,
+      "default": ""
+    }
+  }
 }

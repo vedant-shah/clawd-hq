@@ -34,6 +34,7 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 
 ## What this plugin changes
 
+- It adds Clawd's instructions to the main chat. With them, Claude works as a chief of staff: it does small jobs itself, hands real work to specialists in the background, asks you only what needs you (in one batch, not one by one), and reports in plain words. The two texts are in [`plugins/clawd-hq/prompts`](plugins/clawd-hq/prompts): the rules and the voice. Subagents and teammates do not get them. See [Settings](#settings) to turn this off or to use your own voice.
 - It adds a short note to every subagent brief. The note asks agents to raise questions for you and to report choices they made.
 - It adds a note to the description of the agent tool, so Clawd picks a model and effort for each hire.
 - It adds your project's recorded decisions to the conversation and to subagent briefs. Choices that agents report are marked as notes for reference, not instructions.
@@ -42,6 +43,17 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 - It saves your decisions as a plain Markdown file in your project, at `.clawd-hq/decisions.md`: one line per decision, which you can read and edit by hand. Commit it to share the decisions with your team, or add `.clawd-hq/` to `.gitignore` to keep them private. Notes and headings you add to the file are left alone, and it keeps the newest 1000 decisions. Treat the file like `CLAUDE.md`: whatever it says is given to the agents as your decisions.
 - It keeps the payroll (who you have laid off) and a count of how often each agent type was hired on your machine, in your Claude Code configuration folder. The payroll is kept per project folder.
 - It makes no network calls and starts no processes of its own.
+
+## Settings
+
+Change these in `/plugin`, on the plugin's own page, or in `/config`. A change takes effect when the plugin reloads.
+
+Clawd's instructions also reach scripted runs (`claude -p` and the Agent SDK), because the plugin's hooks run there too. If you script Claude and want its usual behaviour, turn the first setting off.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Clawd runs the chat (`chiefOfStaff`) | On | Off: Claude behaves as usual in the main chat. You keep the panel, the decisions file and everything else. |
+| Your own voice file (`voiceFile`) | Empty | The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. It is read when a session starts, and a file over 8000 characters is not used. |
 
 ## Development
 

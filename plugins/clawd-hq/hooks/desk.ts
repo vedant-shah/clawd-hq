@@ -6,7 +6,9 @@ export const BRIEF_NOTE =
   '\n\n(Office note from Clawd HQ: if you reach a decision or question only the user, the CEO, can settle, do not stall. ' +
   'Make your best call, carry on, and end your final report with one line per item: ' +
   '`CEO-DECISION: <question> | <option> / <option> | recommend: <option>` or `CEO-QUESTION: <question>`. ' +
-  'For each key choice you made yourself that later work should follow (a library, a schema, an interface, a convention), add `DECIDED: <choice> — <why>`.)'
+  'For each key choice you made yourself that later work should follow (a library, a schema, an interface, a convention), add `DECIDED: <choice> — <why>`. ' +
+  'The user watches your progress live. As you work, start each step with one short sentence in everyday words that says what you are doing now, ' +
+  'for example "Step 2 of 4: checking that the tests pass." Use no tool names, file paths or jargon in that sentence.)'
 
 /** Agent-written text as one short line: whitespace collapsed, cut to `max` characters with an ellipsis. */
 export function oneLine(text: string, max: number): string {

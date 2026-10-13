@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { fit, memoryBlock, whoOf, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from '../hooks/desk'
+import { BRIEF_NOTE, fit, memoryBlock, whoOf, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from '../hooks/desk'
 
 test('report lines parse into decisions and questions', () => {
   const found = parseReport('x\n- CEO-DECISION: A or B? | A / B | recommend: A\nCEO-QUESTION: Why?\nCEO-DECISION: lonely? | only')
@@ -94,4 +94,13 @@ test('whoOf reads who something is from: a role, or the role of an older "Name t
   expect(whoOf('Bean 71 the Writer')).toBe('Writer')
   expect(whoOf('CEO')).toBe('CEO')
   expect(whoOf('Clawd')).toBe('Clawd')
+})
+
+test('the note on every brief asks a specialist to say, in plain words, what step it is on', () => {
+  expect(BRIEF_NOTE).toMatch(/start each step with one short sentence/i)
+  expect(BRIEF_NOTE).toMatch(/everyday words/)
+  expect(BRIEF_NOTE).toMatch(/Step 2 of 4/)
+  // The older asks are still there.
+  expect(BRIEF_NOTE).toContain('CEO-DECISION:')
+  expect(BRIEF_NOTE).toContain('DECIDED:')
 })

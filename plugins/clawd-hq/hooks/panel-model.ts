@@ -36,16 +36,36 @@ export function recentFailures(staff: Employee[], now: number, withinMs: number)
     .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
 }
 
+const MODEL_CHARS = 24
+const FAMILY = /(opus|sonnet|haiku|fable)/i
+/** "5.5" from "…-5-5", wherever the numbers sit; a date or a build stamp is not a version. */
+const versionOf = (id: string, family: string): string => {
+  const after = new RegExp(`${family}-(\\d{1,2})(?:-(\\d{1,2}))?(?!\\d)`, 'i').exec(id)
+  const before = new RegExp(`(\\d{1,2})(?:-(\\d{1,2}))?-${family}`, 'i').exec(id)
+  const [major, minor] = (after ?? before ?? []).slice(1)
+  return major === undefined ? '' : ` ${major}${minor === undefined ? '' : `.${minor}`}`
+}
+
+/** A model id as a person reads it: "claude-opus-5-5" is "Opus 5.5". An id that is not Claude's is shown as it is. */
+export function modelLabel(id: string | undefined): string | undefined {
+  if (id === undefined || id.trim() === '') return undefined
+  const family = FAMILY.exec(id)?.[1]
+  // Untrusted text on its way to the panel: control characters and line breaks become spaces before the cut.
+  if (family === undefined) return id.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MODEL_CHARS) || undefined
+  return `${family[0]!.toUpperCase()}${family.slice(1).toLowerCase()}${versionOf(id, family)}`
+}
+
 /**
  * The lines of a row at work, apart from its name: what it said in its last step (not while it waits on you); the
  * sentence for what it does now, or, while a question of its sits on the CEO desk, "Waiting on you: <the oldest question>";
- * and the dim run time and tokens used so far.
+ * and the dim model, run time and tokens used so far.
  */
 export function workLine(one: Employee, asks: Ask[], now: number): { isWaiting: boolean; said?: string; sentence: string; stats: string } {
   const held = asks.filter(a => a.fromId === one.id && isWaiting(a)).sort((a, b) => a.askedAt - b.askedAt)
   const sentence = held[0] ? `Waiting on you: ${held[0].title}` : one.activity ?? READING_BRIEF
   const tokens = one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''
-  return { isWaiting: held.length > 0, said: held.length > 0 ? undefined : one.said, sentence, stats: `· ${ago(now - one.startedAt)}${tokens}` }
+  const model = modelLabel(one.model)
+  return { isWaiting: held.length > 0, said: held.length > 0 ? undefined : one.said, sentence, stats: `· ${model ? `${model} · ` : ''}${ago(now - one.startedAt)}${tokens}` }
 }
 
 /** The right-hand lines of a finished row. Lost contact reads how long it was silent, not how long the run lasted. */

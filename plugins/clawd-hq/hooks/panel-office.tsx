@@ -51,7 +51,7 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   )
 }
 
-/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics) with only its time and tokens under it, or, until it has said anything, the tool it is running. Every line wraps. */
+/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics) with only its model, time and tokens under it, or, until it has said anything, the tool it is running. Every line wraps. */
 function deskRow(one: Employee, { kit, data }: Ctx) {
   const { Box, Text, sprite } = kit
   const line = workLine(one, data.asks, data.now)
@@ -67,7 +67,7 @@ function deskRow(one: Employee, { kit, data }: Ctx) {
         {line.said !== undefined
           ? [
             <Text key={`said-${one.id}`} italic wrap="wrap">{line.said}</Text>,
-            // The specialist has said what it does, so the tool is not repeated: only the time and tokens, muted.
+            // The specialist has said what it does, so the tool is not repeated: only the model, time and tokens, muted.
             <Text key={`stats-${one.id}`} dimColor wrap="wrap">{line.stats.replace(/^· /, '')}</Text>,
           ]
           : (

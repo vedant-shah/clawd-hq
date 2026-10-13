@@ -11,7 +11,7 @@ const step = async ($: Engine, index: number, agentId = 't1') => {
   let part = await run.next()
   while (!part.done) part = await run.next()
 }
-const usage = { model: 'm', input_tokens: 10, output_tokens: 500, cache_read_input_tokens: 83_490, cache_creation_input_tokens: 0 }
+const usage = { model: 'claude-opus-5-5', input_tokens: 10, output_tokens: 500, cache_read_input_tokens: 83_490, cache_creation_input_tokens: 0 }
 
 type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const find = (node: unknown, key: string): Tree | undefined => {
@@ -68,7 +68,7 @@ test('a specialist at work is one full-width row: avatar, name and task, then wh
     expect(sentence?.props.color).toBeUndefined()
     // The tool line is muted, so what the specialist says reads as the main line above it.
     expect(sentence?.props.dimColor).toBe(true)
-    const stats = await ui.find({ type: 'Text', text: /^ · 12m · 84K tokens$/ })
+    const stats = await ui.find({ type: 'Text', text: /^ · Opus 5\.5 · 12m · 84K tokens$/ })
     expect(stats?.props.dimColor).toBe(true)
     // The old card's words are gone.
     expect(await ui.find({ type: 'Text', text: /Working · / })).toBeUndefined()
@@ -207,7 +207,7 @@ test('a specialist waiting on you shows "Waiting on you: <the question>" in ambe
     // A question waiting on you is not muted: it needs you.
     expect(waiting?.props.dimColor).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /^Now: $/ })).toBeUndefined()
-    expect((await ui.find({ type: 'Text', text: /^ · 4m$/ }))?.props.dimColor).toBe(true)
+    expect((await ui.find({ type: 'Text', text: /^ · Opus 5\.5 · 4m$/ }))?.props.dimColor).toBe(true)
     expect((await ui.find({ key: 'desk-t1' }))?.props.borderColor).toBe(AMBER)
     expect(await ui.find({ type: 'Text', text: /^Reading a\.ts$/ })).toBeUndefined()
     await ui.unmount()
@@ -284,11 +284,11 @@ test('the row shows what the specialist says, wrapped, with only its time and to
     expect(line?.props.dimColor).toBeUndefined()
     // Its words are in italics, as someone speaking.
     expect(line?.props.italic).toBe(true)
-    // Under them only the time and tokens, muted: the tool is not repeated when the specialist has said what it does.
+    // Under them only the model, time and tokens, muted: the tool is not repeated when the specialist has said what it does.
     const all = texts.map(t => t.text)
     expect(all).not.toContain('Reading scoring.ts')
     expect(all).not.toContain('Now: ')
-    const stats = texts.find(t => /^\d+[sm]( · [\d.]+K tokens)?$/.test(t.text))
+    const stats = texts.find(t => /^Opus 5\.5 · \d+[sm]( · [\d.]+K tokens)?$/.test(t.text))
     expect(stats?.props.dimColor).toBe(true)
   }
 
@@ -476,4 +476,24 @@ test('on the terminal a specialist row draws the tiny picture and Clawd his smal
   const big = pictureOf(await desktop.find({ key: 'desk-t1' })) as unknown as { props: { height: number } }
   await desktop.unmount()
   expect(big.props.height).toBeGreaterThan(40)
+})
+
+test('a new hire\'s row names its model at once, before its first step', async ($, on) => {
+  hostWithSpecialist(on)
+  await $.agent.spawn(BUILD)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect(await ui.find({ type: 'Text', text: /Opus 5\.5 · / })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('a hire whose model comes back empty shows only its time, with no stray separator', async ($, on) => {
+  host(on, [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }])
+  on('agent.spawn', () => ({ model: '', agentId: 't1' }))
+  await $.agent.spawn(BUILD)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /^ · \d+s$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Opus|· ·/ })).toBeUndefined()
+  await ui.unmount()
 })

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import {
   atWork, buildPeople, newestFirst, recentFailures, canLayOff, dayLabel, doneLine, doneThisSession, filterMemory, groupByDay, pluginOf,
-  seeNeedsLabel, splitPeople, statusOf, tokensLabel, waitingSummary, workLine,
+  modelLabel, seeNeedsLabel, splitPeople, statusOf, tokensLabel, waitingSummary, workLine,
 } from '../hooks/panel-model'
 import type { Person } from '../hooks/panel-model'
 import type { Ask, Employee, Memory } from '../types'
@@ -39,6 +39,30 @@ test('done this session keeps only those that finished since the session began, 
   expect(doneThisSession(list, 0).map(e => e.id)).toEqual(['two', 'one', 'old'])
   // Nothing was mutated.
   expect(list.map(e => e.id)).toEqual(['old', 'one', 'two', 'busy', 'noend'])
+})
+
+test('a model id reads as its family and version, in plain words', () => {
+  expect(modelLabel('claude-opus-5-5')).toBe('Opus 5.5')
+  expect(modelLabel('claude-haiku-5-5[1m]')).toBe('Haiku 5.5')
+  expect(modelLabel('claude-sonnet-4-5-20250929')).toBe('Sonnet 4.5')
+  expect(modelLabel('claude-opus-4')).toBe('Opus 4')
+  expect(modelLabel('claude-3-5-sonnet-20241022')).toBe('Sonnet 3.5')
+  expect(modelLabel('us.anthropic.claude-fable-5-1-v1:0')).toBe('Fable 5.1')
+  expect(modelLabel('sonnet')).toBe('Sonnet')
+  // An id that is not Claude's is shown as it is, cut if it runs long; none at all shows nothing.
+  expect(modelLabel('gpt-x')).toBe('gpt-x')
+  expect(modelLabel('m'.repeat(60))!.length).toBeLessThanOrEqual(24)
+  // Line breaks and control characters never reach the panel.
+  expect(modelLabel('local\n\u001b[31mmodel\tx')).toBe('local [31mmodel x')
+  expect(modelLabel('\n\t')).toBeUndefined()
+  expect(modelLabel('')).toBeUndefined()
+  expect(modelLabel(undefined)).toBeUndefined()
+})
+
+test('a specialist at work shows its model ahead of its time and tokens, once the model is known', () => {
+  const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', tokens: 84_000, model: 'claude-sonnet-5-5' })
+  expect(workLine(one, [], 12 * MIN).stats).toBe('· Sonnet 5.5 · 12m · 84K tokens')
+  expect(workLine(emp({ startedAt: 0, model: 'claude-haiku-5-5' }), [], 30_000).stats).toBe('· Haiku 5.5 · 30s')
 })
 
 test('a specialist at work shows what it is doing, how long it has been at it and what it has used', () => {

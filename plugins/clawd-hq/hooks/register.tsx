@@ -596,7 +596,7 @@ export const register: Register = (on, options) => {
     if (r.agentId) {
       if (effort) efforts.set(r.agentId, effort)
       await newHire($, r.agentId, e.subagentType, e.description, e.name)
-      if (effort) await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, effort })))
+      await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), model: one.model || r.model })))
       await showStatus($)
     }
     return r

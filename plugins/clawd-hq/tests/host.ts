@@ -27,7 +27,6 @@ type OpenArgs = { id: string; title?: string; focus?: true; columns?: number }
 /** A held clock, a store in memory, and the calls a hook makes answered. `panes` is what the host has open, in tab order. */
 export function host(on: On, agents: unknown[] = [], store: Record<string, unknown> = {}) {
   const clock = mock.clock(on, { now: 1_000 })
-  mock.store(on, store)
   const opened: OpenArgs[] = []
   const panes: Array<{ id: string; title: string }> = []
   const toasts: string[] = []
@@ -50,6 +49,18 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
     files.set((e as { path: string }).path, (e as { text: string }).text)
     return { value: undefined } as never
   })
+  /** The plugin's store, in memory and seeded from `store`. `isWriteFailing` is a store that refuses a write; `held` is a write that waits until it settles. */
+  const saved = new Map<string, unknown>(Object.entries(store))
+  const kv = { isWriteFailing: false, held: undefined as Promise<void> | undefined }
+  on('store.get', (_$, e) => ({ value: saved.get((e as { key: string }).key) }) as never)
+  on('store.set', async (_$, e) => {
+    await kv.held
+    if (kv.isWriteFailing) throw new Error('the store refused the write')
+    saved.set((e as { key: string }).key, (e as { value: unknown }).value)
+    return { value: undefined } as never
+  })
+  on('store.delete', (_$, e) => (saved.delete((e as { key: string }).key), { value: undefined }) as never)
+  on('store.keys', () => ({ value: [...saved.keys()] }) as never)
   on('agent.list', () => ({ value: agents }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   on('ui.toast', (_$, e) => (toasts.push((e as { text: string }).text), { value: undefined }) as never)
@@ -83,5 +94,5 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('session.usage', () => ({ value: { startedAt: session.startedAt, context: { window: 1_000_000 }, rateLimits: [] } }) as never)
   /** The person closing a pane by hand. */
   const closePane = (id: string) => { const at = panes.findIndex(p => p.id === id); if (at >= 0) panes.splice(at, 1) }
-  return { clock, opened, toasts, session, panes, closePane, fail, files, disk, commands, tools }
+  return { clock, opened, toasts, session, panes, closePane, fail, files, disk, saved, kv, commands, tools }
 }

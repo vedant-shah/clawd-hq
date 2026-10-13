@@ -1,5 +1,6 @@
 // The Office tab: Clawd's card and who is at work. Finished work lives in the Log tab.
 import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
+import { artifactsShown, since } from './artifacts'
 import { clawdMood, poseOf, quipOf } from './clawd-says'
 import { ACCENT, AMBER, GREEN, givenName, hash } from './office'
 import { atWork, recentFailures, statusOf, titled, workLine } from './panel-model'
@@ -106,12 +107,33 @@ function floor(ctx: Ctx) {
   )
 }
 
+/** The pages Claude made in this project, newest first: each title a link that opens it, with how long ago. None, no section. */
+function artifactDesk({ kit, data }: Ctx) {
+  const { Box, Text, Link } = kit
+  const { rows, older } = artifactsShown(data.artifacts)
+  if (rows.length === 0) return null
+  return (
+    <Box key="artifact-desk" flexDirection="column">
+      <Text bold dimColor>{`ARTIFACTS · ${rows.length + older}`}</Text>
+      {rows.map(one => (
+        // A long title wraps under itself and is never cut with a mark; the time keeps its place beside it.
+        <Box key={`artifact-${one.url}`} flexDirection="row" columnGap={1}>
+          <Box flexShrink={1}><Text wrap="wrap"><Link href={one.url}>{one.title}</Link></Text></Box>
+          <Box flexShrink={0}><Text dimColor wrap="truncate">{since(data.now - one.at)}</Text></Box>
+        </Box>
+      ))}
+      {older > 0 && <Text dimColor>{older === 1 ? '1 older artifact' : `${older} older artifacts`}</Text>}
+    </Box>
+  )
+}
+
 export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: number) {
   const ctx: Ctx = { kit, data, actions, cw }
   return (
     <kit.Box flexDirection="column" gap={1}>
       {clawdCard(ctx)}
       {floor(ctx)}
+      {artifactDesk(ctx)}
     </kit.Box>
   )
 }

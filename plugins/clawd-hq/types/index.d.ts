@@ -47,6 +47,16 @@ export type Memory = {
   source: 'desk' | 'report' | 'clawd'
 }
 
+/** A page on claude.ai that Claude published or opened with the Artifact tool in this project, newest first. */
+export type Artifact = {
+  /** Its link, one of the two shapes hooks/artifacts.ts accepts. */
+  url: string
+  /** Untrusted text, one line. */
+  title: string
+  /** When it was last published or opened. */
+  at: number
+}
+
 export type Payroll = { laidOff: string[]; isReviewed: boolean; stacks: string[] }
 
 /** An agent type's place on the books, kept across sessions. */
@@ -96,6 +106,7 @@ declare module 'claude-code' {
       payroll: Payroll
       memory: Memory[]
       gauge: Gauge
+      artifacts: Artifact[]
     }
   }
 }

@@ -1,9 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
+import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
 import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, fit, memoryBlock, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
+import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './artifacts'
+import type { ArtifactAnswer } from './artifacts'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
 import { BRAND, ago, clip, hash, labelOf, roleOf } from './office'
@@ -49,6 +51,7 @@ const roster = atom({ plugin: 'clawd-hq', key: 'roster' } as const, {} as Record
 const payroll = atom({ plugin: 'clawd-hq', key: 'payroll' } as const, PAYROLL0)
 const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory[])
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
+const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
 
 // Values written by an older version of the mod lack the newer fields: fill them in.
 async function getBoss($: EngineInterface): Promise<Boss> { return { ...BOSS0, ...(await read($, boss)) } }
@@ -187,6 +190,8 @@ const paneIo = ($: EngineInterface): PaneIo => ({
 
 /** Set once a write failed this session, so the person is told once and not on every decision. */
 let isLogbookWarned = false
+/** The same for the artifact list. */
+let isArtifactsWarned = false
 
 /**
  * The file's text and entries; where there is no file, what this session holds. When the file's state cannot be
@@ -297,6 +302,28 @@ async function applyPayroll($: EngineInterface, isLayoff: boolean) {
   $.ui.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from the People tab.` : '👥 Everyone stays on the payroll.')
 }
 
+// ---- The Artifact Desk: the pages Claude published or opened here, kept per project folder ----
+
+/** Notes what a call to the Artifact tool did. The change is made on the list as it stands when the write lands, so calls made at the same moment all land. */
+async function keepArtifact($: EngineInterface, folder: string, input: Record<string, unknown>, ran: ArtifactAnswer) {
+  const call = artifactCall(input, ran)
+  if (!call) return
+  const at = await $.clock.now()
+  await inLine(async () => {
+    // The session moved to another project while the call ran: this page is not that project's, so it is dropped.
+    if (cwd !== folder) return
+    const next = await update($, artifacts, list => (call.isDelete ? withoutArtifact(list, call.link) : withArtifact(list, call.link, call.title, at)))
+    if (!folder) return
+    try {
+      await $.store.set(`artifacts:${folder}`, next)
+    } catch {
+      // The page stays in this session's list; the person hears of it once.
+      if (!isArtifactsWarned) $.ui.toast('Could not save the artifact list. It is kept for this session only.')
+      isArtifactsWarned = true
+    }
+  })
+}
+
 // ---- The recap: one line on where things stand, after a few quiet minutes ----
 
 /**
@@ -348,7 +375,7 @@ async function panelData($: EngineInterface): Promise<PanelData> {
   return {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
-    gauge: await read($, gauge), now: await $.clock.now(),
+    artifacts: await read($, artifacts), gauge: await read($, gauge), now: await $.clock.now(),
   }
 }
 
@@ -451,6 +478,7 @@ export const register: Register = (on, options) => {
     cwd = e.cwd
     isPayrollFiled = false
     isLogbookWarned = false
+    isArtifactsWarned = false
     // A recap is for someone looking at the panel: none where nothing is drawn.
     isRecapOn = brief.isRecapOn && e.surface !== null
     await resetRecap($)
@@ -468,6 +496,9 @@ export const register: Register = (on, options) => {
     if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved }))
     const recalled = await loadMemory($)
     await update($, memory, () => recalled)
+    // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
+    const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`))
+    await update($, artifacts, () => pages)
     await $.tool.register(REMEMBER_SPEC)
     await enroll($, 'general-purpose', 0)
     await startGauge($)
@@ -574,6 +605,15 @@ export const register: Register = (on, options) => {
       return said && isActive(one) ? withSaid(stepped, said) : stepped
     }))
     return result
+  })
+
+  // A page Claude publishes or opens, by Clawd or by a specialist, joins the Artifact Desk on the Office tab.
+  on('tool.call', { tool: 'Artifact' }, async ($, e, next) => {
+    const folder = cwd
+    const ran = await next(e)
+    // The tool's answer matters more than the desk: the save is started, not waited for, and a desk that cannot be kept is skipped, not thrown.
+    void keepArtifact($, folder, e as unknown as Record<string, unknown>, ran as ArtifactAnswer).catch(() => undefined)
+    return ran
   })
 
   on('tool.call', async ($, e, next) => {
@@ -693,7 +733,7 @@ export const register: Register = (on, options) => {
       const ui = $.ui.resolve(e)
       // Picked by `e.surface`: the resolved table does not answer an `in` check. Input is missing on mobile, Raster is the terminal's, Svg the others'.
       const tools: PanelTools = {
-        Box: ui.Box, Text: ui.Text, Button: ui.Button,
+        Box: ui.Box, Text: ui.Text, Button: ui.Button, Link: ui.Link,
         Input: e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input,
         Raster: e.surface === 'terminal' ? $.ui.resolve(e).Raster : undefined,
         Svg: e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg,

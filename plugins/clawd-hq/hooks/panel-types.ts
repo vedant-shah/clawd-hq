@@ -1,5 +1,5 @@
 // What the side panel is handed to draw, and the things it may ask for; register.tsx fills both.
-import type { Badge, Boss, Employee, Fx, Gauge, Memory, Payroll } from '../types'
+import type { Artifact, Badge, Boss, Employee, Fx, Gauge, Memory, Payroll } from '../types'
 
 export type PanelData = {
   staff: Employee[]
@@ -10,6 +10,8 @@ export type PanelData = {
   roster: Record<string, Badge>
   payroll: Payroll
   memory: Memory[]
+  /** The pages Claude published or opened in this project, newest first. */
+  artifacts: Artifact[]
   gauge: Gauge
   now: number
 }

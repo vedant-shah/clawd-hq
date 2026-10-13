@@ -35,7 +35,7 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 
 - It adds Clawd's instructions to the main chat. With them, Claude works as a chief of staff: it does small jobs itself, hands real work to specialists in the background, asks you only what needs you (in one batch, not one by one), and reports in plain words. The two texts are in [`plugins/clawd-hq/prompts`](plugins/clawd-hq/prompts): the rules and the voice. Subagents and teammates do not get them. See [Settings](#settings) to turn this off or to use your own voice.
 - It adds a short note to every subagent brief. The note asks agents not to stop for a question: they make their best call, list their questions at the end of their report for Clawd, and report the choices they made. It also asks them to start each step with one plain sentence about what they are doing, which is what a specialist's row in the Office tab shows, along with its model.
-- It adds a note to the description of the agent tool, so Clawd picks a model and effort for each hire.
+- It adds a note to the description of the agent tool, so Clawd picks a model and effort for each hire. While Clawd runs the chat, the note also says that handing work to agents is your standing wish, so he does not wait to be asked each time.
 - It adds your project's recorded decisions to the conversation and to subagent briefs. Choices that agents report are marked as notes for reference, not instructions.
 - It adds two tools: one to record a decision, and one that plays the demo.
 - It saves what you answer in Clawd's question box as your decision.

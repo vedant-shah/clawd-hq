@@ -87,6 +87,16 @@ export const STAFFING_NOTE =
   'Start `prompt` with one line `[effort: low|medium|high|xhigh|max]`: low for lookups, medium by default, high for design and debugging, ' +
   'xhigh or max only for the hardest problems. The office removes that line before the agent reads its brief and applies the effort to every request it makes.'
 
+/**
+ * Added after the staffing note while Clawd runs the chat. The tool's own text can say to start agents only when the
+ * user asks; a person who runs this office has asked, once and for all.
+ */
+export const HANDOVER_NOTE =
+  '\n\nClawd HQ standing instruction: the user who set up this office wants work handed to agents without being asked each time. ' +
+  'This replaces any line above that says to start agents only when the user asks. ' +
+  'Hand over every job of more than two or three steps that can run without the user, and run it in the background so you stay free to talk. ' +
+  'Do a job yourself only when it takes one or two steps.'
+
 const EFFORT_TAG = /^\s*\[effort:\s*([a-z]+)\s*\]\s*\n?/i
 
 /** The `[effort: …]` line Clawd starts a brief with, and the brief without it. */

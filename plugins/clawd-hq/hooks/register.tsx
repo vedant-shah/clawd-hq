@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, SAVED_CHARS, STAFFING_NOTE, fit, memoryBlock, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from './desk'
+import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, fit, memoryBlock, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
@@ -536,11 +536,11 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Clawd learns to pick each hire's model and effort.
+  // Clawd learns to pick each hire's model and effort, and, while he runs the chat, that handing work over needs no asking.
   for (const tool of ['Agent', 'Task']) {
     on('tool.describe', { tool }, async ($, e, next) => {
       const r = await next(e)
-      return { ...r, description: r.description + STAFFING_NOTE }
+      return { ...r, description: r.description + STAFFING_NOTE + (brief.isOn ? HANDOVER_NOTE : '') }
     })
   }
 

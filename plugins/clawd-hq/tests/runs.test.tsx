@@ -7,7 +7,7 @@ import { HOUR, LOG, PANE, PEOPLE, START, SURFACES, host } from './host'
 
 type Eng = Engine
 const BUILD = { prompt: 'Build the panel', description: 'Build redesigned panel', subagentType: 'ecc:tdd-guide' } as never
-const REPORT = 'Built it.\nCEO-QUESTION: Which launch date?\nCEO-DECISION: Ship Friday or Monday? | Friday / Monday | recommend: Friday'
+const REPORT = 'Built it.\nQUESTION: Which launch date?\nQUESTION: Ship Friday or Monday? | Friday / Monday | recommend: Friday'
 const stop = ($: Eng, id: string, n: number, answer = 'ok') => $.turn.complete({ reason: 'answer', answer, turnId: `r${n}`, agentId: id, isAborted: false } as never)
 const work = ($: Eng, id: string) => $.tool.call({ tool: 'Read', file_path: '/repo/src/panel.ts', agentId: id } as never)
 
@@ -15,13 +15,11 @@ const work = ($: Eng, id: string) => $.tool.call({ tool: 'Read', file_path: '/re
 async function floorOf($: Eng, surface: 'terminal' | 'desktop') {
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
   const atWork = (await ui.find({ type: 'Text', text: /AT WORK · 1/ })) !== undefined
-  const waiting = (await ui.find({ type: 'Text', text: /^Waiting on you: / })) !== undefined
   const seen = {
     atWork,
     empty: (await ui.find({ type: 'Text', text: /No one at a desk yet/ })) !== undefined,
-    waiting,
-    working: atWork && !waiting,
-    needs: String((await ui.find({ type: 'Text', text: /need[s]? you/ }))?.text ?? ''),
+    // Nothing on the floor ever waits on the person: questions reach them in Clawd's question box.
+    asks: /needs? you|Waiting on you/.test(JSON.stringify(await ui.drawn())),
   }
   await ui.unmount()
   return seen
@@ -35,7 +33,7 @@ async function logLines($: Eng, surface: 'terminal' | 'desktop') {
   return lines
 }
 
-test('a specialist whose run has ended is not at work even with questions still open; they stay on the desk and count for Clawd', async ($, on) => {
+test('a specialist whose run has ended is not at work, and the questions in its report put nothing on the floor', async ($, on) => {
   host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('tool.call', () => ({ result: 'ok' }) as never)
@@ -44,12 +42,10 @@ test('a specialist whose run has ended is not at work even with questions still 
   await stop($, 't1', 1, REPORT)
 
   for (const surface of SURFACES) {
-    const floor = await floorOf($, surface)
-    expect(floor).toMatchObject({ atWork: false, empty: true, waiting: false, working: false })
-    expect(floor.needs).toMatch(/2 need you/)
+    expect(await floorOf($, surface)).toEqual({ atWork: false, empty: true, asks: false })
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await ui.find({ type: 'Text', text: /AT WORK/ })).toBeUndefined()
-    expect(String((await ui.find({ key: 'see-needs' }))?.props.label)).toMatch(/^See what .+ needs$/)
+    expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
     await ui.unmount()
   }
 })
@@ -68,15 +64,13 @@ test('a resumed specialist is at work again while it runs and done when it stops
     for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
     await work($, 't1')
     for (const surface of SURFACES) {
-      // Running again, and its question is still open: waiting on you, not working.
-      expect(await floorOf($, surface)).toMatchObject({ atWork: true, empty: false, waiting: true, working: false })
+      // Running again: at work, whatever its earlier report asked.
+      expect(await floorOf($, surface)).toEqual({ atWork: true, empty: false, asks: false })
     }
     await clock.advance(120_000)
     await stop($, 't1', run)
     for (const surface of SURFACES) {
-      const floor = await floorOf($, surface)
-      expect(floor).toMatchObject({ atWork: false, empty: true })
-      expect(floor.needs).toMatch(/2 need you/)
+      expect(await floorOf($, surface)).toEqual({ atWork: false, empty: true, asks: false })
     }
   }
   for (const surface of SURFACES) {
@@ -101,7 +95,7 @@ test('a resumed specialist with nothing to ask is Working from its first model s
   const run = $.turn.step({ turnId: 'r2', index: 0, model: 'm', messageCount: 3, agentId: 't1' } as never)
   let part = await run.next()
   while (!part.done) part = await run.next()
-  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: true, working: true, waiting: false })
+  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: true, asks: false })
   await stop($, 't1', 2)
   for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
 })
@@ -244,7 +238,7 @@ test('a run ended by the engine list that then shows life goes on as the same ru
   // A late tool call: the same run is back, with nothing in the Log.
   agents[0]!.status = 'running'
   await work($, 't1')
-  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: true, working: true })
+  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: true, asks: false })
   expect(await logLines($, 'terminal')).toEqual([])
 
   await clock.advance(5_000)

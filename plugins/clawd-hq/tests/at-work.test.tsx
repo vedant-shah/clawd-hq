@@ -1,6 +1,5 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { AMBER } from '../hooks/office'
 import { FOUR, PANE, START, SURFACES, host } from './host'
 
 const MIN = 60_000
@@ -194,22 +193,19 @@ test('before anything is seen the row reads "Reading the brief"; a model step wi
   expect(await sentence()).toContain('Editing a.ts')
 })
 
-test('a specialist waiting on you shows "Waiting on you: <the question>" in amber instead, with its time and tokens still dim', async ($, on) => {
+test('a row never waits on the person: its border stays dim and its line stays muted, whatever its report will ask', async ($, on) => {
   const { clock } = hostWithSpecialist(on)
   await $.agent.spawn(BUILD)
   await call($, 'Read', { file_path: '/repo/a.ts' })
-  await call($, 'mcp__clawd-hq__ask_ceo', { kind: 'decision', question: 'Store scores in DynamoDB or Postgres?', options: ['DynamoDB', 'Postgres'] })
   await clock.advance(4 * MIN)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    const waiting = await ui.find({ type: 'Text', text: /^Waiting on you: Store scores in DynamoDB or Postgres\?$/ })
-    expect(waiting?.props.color).toBe(AMBER)
-    // A question waiting on you is not muted: it needs you.
-    expect(waiting?.props.dimColor).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /^Now: $/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^Waiting on you/ })).toBeUndefined()
+    expect((await ui.find({ type: 'Text', text: /^Reading a\.ts$/ }))?.props.dimColor).toBe(true)
     expect((await ui.find({ type: 'Text', text: /^ · Opus 5\.5 · 4m$/ }))?.props.dimColor).toBe(true)
-    expect((await ui.find({ key: 'desk-t1' }))?.props.borderColor).toBe(AMBER)
-    expect(await ui.find({ type: 'Text', text: /^Reading a\.ts$/ })).toBeUndefined()
+    const row = await ui.find({ key: 'desk-t1' })
+    expect(row?.props.borderColor).toBeUndefined()
+    expect(row?.props.borderDimColor).toBe(true)
     await ui.unmount()
   }
 })

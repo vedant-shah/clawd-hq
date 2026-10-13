@@ -34,7 +34,7 @@ export function decisionsTab(kit: Kit, data: PanelData, actions: PanelActions) {
   const groups = groupByDay(newestFirst(matches, MAX_SHOWN), data.now)
   const shown = groups.reduce((n, g) => n + g.entries.length, 0)
   const empty = data.memory.length === 0
-    ? 'Nothing yet. Decisions you make on the desk, and key choices agents report back, land here.'
+    ? 'Nothing yet. What you answer in Clawd’s question box or decide in chat, and key choices agents report back, land here.'
     : 'Nothing matches that.'
   return (
     <Box flexDirection="column" gap={1}>

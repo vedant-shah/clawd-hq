@@ -1,5 +1,5 @@
-// What the side panel shows, as pure functions: who is at work, who finished, what is waiting, how decisions group.
-import type { Ask, Badge, Employee, Memory } from '../types'
+// What the side panel shows, as pure functions: who is at work, who finished, Clawd's status line, how decisions group.
+import type { Badge, Employee, Memory } from '../types'
 import { READING_BRIEF } from './activity'
 import { whoOf } from './desk'
 import { ago, bareType, labelOf, roleOf } from './office'
@@ -9,7 +9,6 @@ import type { PanelData } from './panel-types'
 export const DEMO = 'demo-'
 
 export const isActive = (e: Employee) => e.mood === 'arriving' || e.mood === 'working' || e.mood === 'thinking'
-export const isWaiting = (a: Ask) => a.status === 'open' || a.status === 'live'
 
 /** 22K, 1.3M, or the plain count under a thousand. */
 export function tokensLabel(n = 0): string {
@@ -56,16 +55,13 @@ export function modelLabel(id: string | undefined): string | undefined {
 }
 
 /**
- * The lines of a row at work, apart from its name: what it said in its last step (not while it waits on you); the
- * sentence for what it does now, or, while a question of its sits on the CEO desk, "Waiting on you: <the oldest question>";
- * and the dim model, run time and tokens used so far.
+ * The lines of a row at work, apart from its name: what it said in its last step; the sentence for what it does now,
+ * which stands in until it has said anything; and the dim model, run time and tokens used so far.
  */
-export function workLine(one: Employee, asks: Ask[], now: number): { isWaiting: boolean; said?: string; sentence: string; stats: string } {
-  const held = asks.filter(a => a.fromId === one.id && isWaiting(a)).sort((a, b) => a.askedAt - b.askedAt)
-  const sentence = held[0] ? `Waiting on you: ${held[0].title}` : one.activity ?? READING_BRIEF
+export function workLine(one: Employee, now: number): { said?: string; sentence: string; stats: string } {
   const tokens = one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''
   const model = modelLabel(one.model)
-  return { isWaiting: held.length > 0, said: held.length > 0 ? undefined : one.said, sentence, stats: `· ${model ? `${model} · ` : ''}${ago(now - one.startedAt)}${tokens}` }
+  return { said: one.said, sentence: one.activity ?? READING_BRIEF, stats: `· ${model ? `${model} · ` : ''}${ago(now - one.startedAt)}${tokens}` }
 }
 
 /** The right-hand lines of a finished row. Lost contact reads how long it was silent, not how long the run lasted. */
@@ -78,28 +74,15 @@ export function doneLine(one: Employee, now: number): { when: string; took: stri
   return { when, took: `took ${span}${one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''}`, isFailed: false, isLost: false }
 }
 
-/** Clawd's one status line: all clear, how many need the CEO, and who failed. */
-export function statusOf(waiting: number, failed: string[]): { isClear: boolean; text: string } {
-  const parts = [
-    waiting > 0 ? `${waiting} ${waiting === 1 ? 'needs' : 'need'} you` : '',
-    failed[0] !== undefined ? `${failed[0]} failed${failed.length > 1 ? ` +${failed.length - 1}` : ''}` : '',
-  ].filter(Boolean)
-  return parts.length === 0 ? { isClear: true, text: 'All clear' } : { isClear: false, text: parts.join(' · ') }
-}
-
-/** "2 decisions · 1 question": what waits on the CEO, for the band above the prompt. */
-export function waitingSummary(waiting: Ask[]): string {
-  const decisions = waiting.filter(a => a.kind === 'decision').length
-  const questions = waiting.length - decisions
-  const count = (n: number, noun: string) => (n > 0 ? `${n} ${noun}${n === 1 ? '' : 's'}` : '')
-  return [count(decisions, 'decision'), count(questions, 'question')].filter(Boolean).join(' · ')
-}
-
-/** The label of the button that opens the CEO desk. */
-export function seeNeedsLabel(waiting: Ask[]): string {
-  const names = [...new Set(waiting.map(a => whoOf(a.from)))]
-  if (names.length === 1) return `See what ${names[0]} needs`
-  return names.length === 2 ? `See what ${names[0]} and ${names[1]} need` : `See what ${names.length} people need`
+/**
+ * Clawd's one status line: who failed, else what he is doing, and how many specialists are at work. Questions for the
+ * person are not counted here: they reach the person in Clawd's question box.
+ */
+export function statusOf(isBusy: boolean, working: number, failed: string[]): { tone: 'clear' | 'busy' | 'alert'; text: string } {
+  const team = working > 0 ? `${working} at work` : 'no one at work'
+  if (failed[0] !== undefined) return { tone: 'alert', text: `${failed[0]} failed${failed.length > 1 ? ` +${failed.length - 1}` : ''} · ${team}` }
+  if (isBusy) return { tone: 'busy', text: `Working on your request · ${team}` }
+  return { tone: 'clear', text: `${working > 0 ? 'Free to talk' : 'All clear'} · ${team}` }
 }
 
 // ---- Decisions ----

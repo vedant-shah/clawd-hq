@@ -1,17 +1,14 @@
 import { expect, test } from 'claude-code/testing'
 import {
   atWork, buildPeople, newestFirst, recentFailures, canLayOff, dayLabel, doneLine, doneThisSession, filterMemory, groupByDay, pluginOf,
-  modelLabel, seeNeedsLabel, splitPeople, statusOf, tokensLabel, waitingSummary, workLine,
+  modelLabel, splitPeople, statusOf, tokensLabel, workLine,
 } from '../hooks/panel-model'
 import type { Person } from '../hooks/panel-model'
-import type { Ask, Employee, Memory } from '../types'
+import type { Employee, Memory } from '../types'
 
 const MIN = 60_000
 const emp = (over: Partial<Employee>): Employee => ({
   id: 'a1', type: 'ecc:planner', description: 'Plan it', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, ...over,
-})
-const ask = (over: Partial<Ask>): Ask => ({
-  id: 'D1', kind: 'decision', title: 'OK?', options: [], from: 'Guard', source: 'tool', status: 'open', askedAt: 0, isDelivered: false, ...over,
 })
 const mem = (over: Partial<Memory>): Memory => ({ id: 'M1', kind: 'decision', text: 'Use Postgres', by: 'CEO', at: 0, source: 'desk', ...over })
 
@@ -61,38 +58,21 @@ test('a model id reads as its family and version, in plain words', () => {
 
 test('a specialist at work shows its model ahead of its time and tokens, once the model is known', () => {
   const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', tokens: 84_000, model: 'claude-sonnet-5-5' })
-  expect(workLine(one, [], 12 * MIN).stats).toBe('· Sonnet 5.5 · 12m · 84K tokens')
-  expect(workLine(emp({ startedAt: 0, model: 'claude-haiku-5-5' }), [], 30_000).stats).toBe('· Haiku 5.5 · 30s')
+  expect(workLine(one, 12 * MIN).stats).toBe('· Sonnet 5.5 · 12m · 84K tokens')
+  expect(workLine(emp({ startedAt: 0, model: 'claude-haiku-5-5' }), 30_000).stats).toBe('· Haiku 5.5 · 30s')
 })
 
 test('a specialist at work shows what it is doing, how long it has been at it and what it has used', () => {
   const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', tokens: 84_000 })
-  expect(workLine(one, [], 12 * MIN)).toEqual({ isWaiting: false, sentence: 'Reading scoring.ts', stats: '· 12m · 84K tokens' })
+  expect(workLine(one, 12 * MIN)).toEqual({ said: undefined, sentence: 'Reading scoring.ts', stats: '· 12m · 84K tokens' })
   // Nothing used yet: no tokens in the stats. Nothing seen yet: it is reading the brief.
-  expect(workLine(emp({ startedAt: 0 }), [], 30_000)).toEqual({ isWaiting: false, sentence: 'Reading the brief', stats: '· 30s' })
+  expect(workLine(emp({ startedAt: 0 }), 30_000)).toEqual({ said: undefined, sentence: 'Reading the brief', stats: '· 30s' })
 })
 
-test('what a specialist says rides on its line, and waiting on you hides it', () => {
+test('what a specialist says rides on its line', () => {
   const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', said: 'I will check the scoring rules first.' })
-  expect(workLine(one, [], MIN).said).toBe('I will check the scoring rules first.')
-  expect(workLine(emp({ startedAt: 0 }), [], MIN).said).toBeUndefined()
-  expect(workLine(one, [ask({ fromId: 'a1' })], MIN).said).toBeUndefined()
-})
-
-test('a specialist with a question waiting on the desk is waiting on you, named by the oldest question', () => {
-  const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', tokens: 1_500 })
-  const asks = [
-    ask({ id: 'D2', title: 'Newer question?', fromId: 'a1', askedAt: 3 * MIN }),
-    ask({ id: 'D1', title: 'Store scores in DynamoDB or Postgres?', fromId: 'a1', askedAt: 2 * MIN }),
-    ask({ id: 'D3', title: 'Not mine?', fromId: 'zz', askedAt: 0 }),
-  ]
-  expect(workLine(one, asks, 4 * MIN)).toEqual({ isWaiting: true, sentence: 'Waiting on you: Store scores in DynamoDB or Postgres?', stats: '· 4m · 2K tokens' })
-  // An answered question no longer holds it up.
-  expect(workLine(one, [ask({ fromId: 'a1', status: 'answered' })], 4 * MIN).isWaiting).toBe(false)
-  // A long question is kept as the specialist wrote it; the pane wraps it.
-  const long = workLine(one, [ask({ title: 'Should we '.repeat(30), fromId: 'a1' })], 4 * MIN).sentence
-  expect(long.startsWith('Waiting on you: Should we')).toBe(true)
-  expect(long).not.toMatch(/…/)
+  expect(workLine(one, MIN).said).toBe('I will check the scoring rules first.')
+  expect(workLine(emp({ startedAt: 0 }), MIN).said).toBeUndefined()
 })
 
 test('a finished row says when, how long it took and the tokens; a failure says so', () => {
@@ -107,20 +87,14 @@ test('a finished row says when, how long it took and the tokens; a failure says 
   expect(doneThisSession([lost], 0)).toEqual([lost])
 })
 
-test('Clawd says "All clear", or how many need the CEO, or who failed', () => {
-  expect(statusOf(0, [])).toEqual({ isClear: true, text: 'All clear' })
-  expect(statusOf(1, [])).toEqual({ isClear: false, text: '1 needs you' })
-  expect(statusOf(2, [])).toEqual({ isClear: false, text: '2 need you' })
-  expect(statusOf(0, ['Rex'])).toEqual({ isClear: false, text: 'Rex failed' })
-  expect(statusOf(0, ['Rex', 'Pip'])).toEqual({ isClear: false, text: 'Rex failed +1' })
-  expect(statusOf(1, ['Rex'])).toEqual({ isClear: false, text: '1 needs you · Rex failed' })
-})
-
-test('the button names who is waiting, by role; an older "Name the Role" reads as its role', () => {
-  expect(seeNeedsLabel([ask({}), ask({ id: 'D2' })])).toBe('See what Guard needs')
-  expect(seeNeedsLabel([ask({}), ask({ id: 'D2', from: 'Reviewer' })])).toBe('See what Guard and Reviewer need')
-  expect(seeNeedsLabel([ask({}), ask({ from: 'Reviewer' }), ask({ from: 'Planner' })])).toBe('See what 3 people need')
-  expect(seeNeedsLabel([ask({}), ask({ from: 'Sage the Guard' })])).toBe('See what Guard needs')
+test('Clawd\'s status line says what he is doing and how many are at work; a failure comes first, and questions are never counted', () => {
+  expect(statusOf(false, 0, [])).toEqual({ tone: 'clear', text: 'All clear · no one at work' })
+  expect(statusOf(false, 2, [])).toEqual({ tone: 'clear', text: 'Free to talk · 2 at work' })
+  expect(statusOf(true, 1, [])).toEqual({ tone: 'busy', text: 'Working on your request · 1 at work' })
+  expect(statusOf(true, 0, [])).toEqual({ tone: 'busy', text: 'Working on your request · no one at work' })
+  expect(statusOf(false, 2, ['Reviewer'])).toEqual({ tone: 'alert', text: 'Reviewer failed · 2 at work' })
+  expect(statusOf(true, 0, ['Reviewer', 'Tester'])).toEqual({ tone: 'alert', text: 'Reviewer failed +1 · no one at work' })
+  for (const s of [statusOf(false, 0, []), statusOf(true, 3, []), statusOf(false, 1, ['Reviewer'])]) expect(s.text).not.toMatch(/need|waiting|question/i)
 })
 
 test('a day reads as OCTOBER 10, with the year only when it is not this one', () => {
@@ -193,14 +167,6 @@ test('people are built from the books: a plain role name, the plugin, the hire c
   const pip = people.find(p => p.type === 'ecc:planner')!
   expect(pip).toMatchObject({ name: 'Planner', plugin: 'ecc', jobs: 4, blurb: 'Plans work', isOff: false })
   expect(people.find(p => p.type === 'Explore')).toMatchObject({ plugin: 'built in', jobs: 0, isOff: true })
-})
-
-test('the band above the prompt counts decisions and questions, each only when there are some', () => {
-  const [d1, d2, q1] = [ask({ id: 'D1' }), ask({ id: 'D2' }), ask({ id: 'Q1', kind: 'question' })]
-  expect(waitingSummary([d1!])).toBe('1 decision')
-  expect(waitingSummary([d1!, d2!, q1!])).toBe('2 decisions · 1 question')
-  expect(waitingSummary([q1!])).toBe('1 question')
-  expect(waitingSummary([])).toBe('')
 })
 
 test('the memory search matches a note\'s role, not an old made-up name', () => {

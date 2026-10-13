@@ -1,8 +1,8 @@
 // The Office tab: Clawd's card and who is at work. Finished work lives in the Log tab.
 import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
 import { clawdMood, isBlinking, quipOf } from './clawd-says'
-import { AMBER, GREEN, givenName } from './office'
-import { atWork, isWaiting, recentFailures, seeNeedsLabel, statusOf, titled, workLine } from './panel-model'
+import { ACCENT, AMBER, GREEN, givenName } from './office'
+import { atWork, recentFailures, statusOf, titled, workLine } from './panel-model'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import type { Employee } from '../types'
@@ -10,18 +10,19 @@ import type { Employee } from '../types'
 // A failure stays on Clawd's status line this long.
 const SICK_MS = 10 * 60_000
 const BORDER = '#454542'
+/** How the status line opens and what colour it takes: all clear, Clawd at work, or a failure. */
+const TONE = { clear: { mark: '✓ ', color: GREEN }, busy: { mark: '● ', color: ACCENT }, alert: { mark: '! ', color: AMBER } } as const
 
 type Ctx = { kit: Kit; data: PanelData; actions: PanelActions; cw: number }
 
 function clawdCard({ kit, data, actions, cw }: Ctx) {
   const { Box, Text, Button, sprite } = kit
-  const { staff, boss, tick, now, asks } = data
-  const waiting = asks.filter(isWaiting)
+  const { staff, boss, tick, now } = data
   const working = atWork(staff)
   const failed = recentFailures(staff, now, SICK_MS).map(one => titled(one, data))
-  const status = statusOf(waiting.length, failed)
-  const mood = clawdMood(boss, working.length, waiting.length, tick, now)
-  const said = quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length, q: waiting.length })
+  const status = statusOf(boss.isBusy, working.length, failed)
+  const mood = clawdMood(boss, working.length, tick, now)
+  const said = quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length })
   const canResume = !boss.isBusy && working.length === 0 && boss.task !== undefined
   const isStacked = cw < 50
   // On the terminal, which cannot scale a picture, Clawd gets his small drawing: still the largest in the pane.
@@ -31,16 +32,11 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
       <Box flexShrink={0}>{sprite('clawd', kit.isTerminal ? compact : full, { scale: 4, alt: 'Clawd, the chief of staff, in a navy blazer and red tie, holding a logbook' })}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text bold>Clawd <Text dimColor>Chief of Staff</Text></Text>
-        <Text bold color={status.isClear ? GREEN : AMBER} wrap="truncate">{status.isClear ? '✓ ' : '! '}{status.text}</Text>
+        <Text bold color={TONE[status.tone].color} wrap="wrap">{TONE[status.tone].mark}{status.text}</Text>
         <Box marginTop={1} borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>
         </Box>
-        {waiting.length > 0 && (
-          <Box marginTop={1}>
-            <Button key="see-needs" hotkey="i" variant="primary" label={seeNeedsLabel(waiting)} onPress={() => actions.openDesk()} />
-          </Box>
-        )}
-        {waiting.length === 0 && canResume && (
+        {canResume && (
           <Box marginTop={1}>
             <Button key="resume" label={boss.outcome === 'stopped' ? 'retry last task' : 'pick up where we left off'}
               onPress={() => actions.resume(boss.task ?? '')} />
@@ -51,16 +47,15 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   )
 }
 
-/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics) with only its model, time and tokens under it, or, until it has said anything, the tool it is running. Every line wraps. */
+/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics) with only its model, time and tokens under it, or, until it has said anything, the step it is on. Every line wraps. */
 function deskRow(one: Employee, { kit, data }: Ctx) {
   const { Box, Text, sprite } = kit
-  const line = workLine(one, data.asks, data.now)
+  const line = workLine(one, data.now)
   // The terminal cannot scale a picture, so a row there gets the tiny 8 by 8 one and its words get the room.
   const look = avatarFor(givenName(one) ?? one.type)
   const picture = sprite(`desk-${one.id}`, kit.isTerminal ? tinyIcon(look) : assemble(look), { scale: 3, alt: `${titled(one, data)}` })
   return (
-    <Box key={`desk-${one.id}`} borderStyle="round" borderColor={line.isWaiting ? AMBER : undefined} borderDimColor={!line.isWaiting}
-      paddingX={1} flexDirection="row" gap={2} alignItems="center">
+    <Box key={`desk-${one.id}`} borderStyle="round" borderDimColor paddingX={1} flexDirection="row" gap={2} alignItems="center">
       <Box flexShrink={0}>{picture}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text wrap="wrap"><Text bold>{titled(one, data)}</Text><Text dimColor>{` ${one.description || one.type}`}</Text></Text>
@@ -71,8 +66,8 @@ function deskRow(one: Employee, { kit, data }: Ctx) {
             <Text key={`stats-${one.id}`} dimColor wrap="wrap">{line.stats.replace(/^· /, '')}</Text>,
           ]
           : (
-            // Nothing said yet: the tool it is running stands in, labelled and muted (a question waiting on you stays amber and bright).
-            <Text wrap="wrap">{!line.isWaiting && <Text dimColor>Now: </Text>}<Text color={line.isWaiting ? AMBER : undefined} dimColor={line.isWaiting ? undefined : true}>{line.sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
+            // Nothing said yet: the step it is on stands in, labelled and muted.
+            <Text wrap="wrap"><Text dimColor>Now: </Text><Text dimColor>{line.sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
           )}
       </Box>
     </Box>

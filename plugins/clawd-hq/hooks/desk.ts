@@ -1,11 +1,12 @@
-// The CEO's side of the office: what lands on the desk, and who stays on the payroll.
-import type { Ask, Memory } from '../types'
+// What every specialist is told, who stays on the payroll, how Clawd sizes a hire, and what the project remembers.
+import type { Memory } from '../types'
 
-/** Appended to every subagent's brief, so any agent (whatever its tools) can raise things for the CEO. */
+/** Appended to every subagent's brief: questions go into the report for Clawd, who asks the user only what needs the user. */
 export const BRIEF_NOTE =
-  '\n\n(Office note from Clawd HQ: if you reach a decision or question only the user, the CEO, can settle, do not stall. ' +
+  '\n\n(Office note from Clawd HQ: if you reach a decision or question only the user can settle, do not stall. ' +
   'Make your best call, carry on, and end your final report with one line per item: ' +
-  '`CEO-DECISION: <question> | <option> / <option> | recommend: <option>` or `CEO-QUESTION: <question>`. ' +
+  '`QUESTION: <question> | <option> / <option> | recommend: <option>`. ' +
+  'Clawd, the chief of staff, reads these and asks the user only what needs the user. ' +
   'For each key choice you made yourself that later work should follow (a library, a schema, an interface, a convention), add `DECIDED: <choice> — <why>`. ' +
   'The user watches your progress live. As you work, start each step with one short sentence in everyday words that says what you are doing now, ' +
   'for example "Step 2 of 4: checking that the tests pass." Use no tool names, file paths or jargon in that sentence.)'
@@ -36,27 +37,6 @@ export function fit(text: string, max: number): string {
 
 /** Who something is from: "Guard", or "Guard" from an older "Sage the Guard"; "CEO" and "Clawd" stay as they are. */
 export const whoOf = (from: string) => from.split(' the ').pop() ?? from
-
-const LINE = /^[ \t]*[-*]?[ \t]*CEO-(DECISION|QUESTION):[ \t]*(.+?)[ \t]*$/gim
-
-/** The CEO-DECISION and CEO-QUESTION lines of a subagent's final report. */
-export function parseReport(text: string): Array<Pick<Ask, 'kind' | 'title' | 'options' | 'recommend'>> {
-  const found: Array<Pick<Ask, 'kind' | 'title' | 'options' | 'recommend'>> = []
-  for (const m of text.matchAll(LINE)) {
-    const [rawTitle = '', choices = '', rec = ''] = (m[2] ?? '').split('|').map(s => s.trim())
-    const title = fit(rawTitle, 160)
-    const options = choices ? choices.split('/').map(s => oneLine(s, 160)).filter(Boolean).slice(0, 6) : []
-    const recommend = rec.replace(/^recommend(ed)?:\s*/i, '').trim()
-    const kind = m[1]!.toUpperCase() === 'DECISION' && options.length > 1 ? 'decision' : 'question'
-    if (title) found.push({ kind, title, options: kind === 'decision' ? options : [], recommend: recommend || undefined })
-  }
-  return found
-}
-
-export function answerText(a: Ask): string {
-  const what = a.kind === 'decision' ? 'decision' : 'answer'
-  return `CEO ${what} on ${a.id} (“${a.title}”): ${a.answer ?? ''}`
-}
 
 // ---- Payroll ----
 

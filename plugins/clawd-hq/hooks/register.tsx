@@ -1,16 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Ask, Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, SAVED_CHARS, STAFFING_NOTE, answerText, fit, memoryBlock, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from './desk'
+import type { Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
+import { BRIEF_NOTE, SAVED_CHARS, STAFFING_NOTE, fit, memoryBlock, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
-import { renderDesk } from './desk-pane'
-import { ACCENT, BRAND, ago, clip, hash, labelOf, roleOf } from './office'
+import { BRAND, ago, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
-import { DEMO, isActive, isWaiting, waitingSummary } from './panel-model'
+import { DEMO, isActive } from './panel-model'
 import { tourSteps } from './demo'
 import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
 import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
@@ -18,15 +17,12 @@ import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
-import { ASK_SPEC, REMEMBER_SPEC } from './tool-specs'
+import { REMEMBER_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, hire, markEngine, quietFor, restart, touch, verdict, withSaid, withStep, withTool } from './staff-model'
 import { BOSS0, FX0, GAUGE0, PAYROLL0, edit } from './state'
 
-const DESK = 'ceo-desk'
-const DESK_TITLE = 'CEO Desk'
 const FRAME_MS = 400
 const CHEER_TICKS = 5
-const MAX_ASKS = 60
 /** A given name is a word or two; anything longer is cut. */
 const NAME_CHARS = 40
 /** How much of a question is kept in front of its answer in a saved decision. */
@@ -38,7 +34,6 @@ const BLURB_CHARS = 200
 const DESCRIPTION_CHARS = 160
 const MAX_BLURBS = 120
 const DEMO_TOOL = 'mcp__clawd-hq__demo'
-const ASK_TOOL = 'mcp__clawd-hq__ask_ceo'
 const MEM_TOOL = 'mcp__clawd-hq__remember'
 // The memory keeps this many entries per project; Clawd and each brief get the newest RECALL.
 /** The newest this many decisions are kept: in the file and in the pane. */
@@ -51,7 +46,6 @@ const fx = atom({ plugin: 'clawd-hq', key: 'fx' } as const, FX0)
 const tick = atom({ plugin: 'clawd-hq', key: 'tick' } as const, 0)
 const blurbs = atom({ plugin: 'clawd-hq', key: 'blurbs' } as const, {} as Record<string, string>)
 const roster = atom({ plugin: 'clawd-hq', key: 'roster' } as const, {} as Record<string, Badge>)
-const desk = atom({ plugin: 'clawd-hq', key: 'desk' } as const, [] as Ask[])
 const payroll = atom({ plugin: 'clawd-hq', key: 'payroll' } as const, PAYROLL0)
 const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory[])
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
@@ -174,9 +168,7 @@ async function reconcile($: EngineInterface) {
 
 async function showStatus($: EngineInterface) {
   const n = (await read($, staff)).filter(isActive).length
-  const waiting = (await read($, desk)).filter(isWaiting).length
-  const parts = [n > 0 ? `🦀 ${n} at desk${n === 1 ? '' : 's'}` : '', waiting > 0 ? `📥 ${waiting} for you` : ''].filter(Boolean)
-  $.ui.status(parts.length ? `HQ · ${parts.join(' · ')}` : undefined)
+  $.ui.status(n > 0 ? `HQ · 🦀 ${n} at desk${n === 1 ? '' : 's'}` : undefined)
 }
 
 // ---- The panes: one per view, so the host's own tab strip switches between them (hooks/panes.ts) ----
@@ -186,61 +178,6 @@ const paneIo = ($: EngineInterface): PaneIo => ({
   list: () => $.ui.panes(),
   decisions: async () => (await read($, memory)).length,
 })
-
-// ---- The CEO's desk ----
-
-async function fileAsk($: EngineInterface, ask: Omit<Ask, 'id' | 'status' | 'askedAt' | 'isDelivered'>, isQuiet = false): Promise<string> {
-  const now = await $.clock.now()
-  let id = ''
-  await update($, desk, list => {
-    const n = list.filter(a => a.kind === ask.kind).length + 1
-    id = `${ask.kind === 'decision' ? 'D' : 'Q'}${n}`
-    return [...list, { ...ask, id, status: 'open' as const, askedAt: now, isDelivered: false }].slice(-MAX_ASKS)
-  })
-  if (!isQuiet) {
-    $.ui.toast(`📥 ${ask.kind === 'decision' ? 'Decision' : 'Question'} for the CEO from ${ask.from}: ${clip(ask.title, 70)}`)
-    void $.ui.open({ id: DESK, title: DESK_TITLE, columns: 60 }).catch(() => undefined)
-  }
-  await showStatus($)
-  return id
-}
-
-/** Sends one answer where it is needed: the agent that asked if it still runs, else Clawd's conversation. */
-async function deliver($: EngineInterface, ask: Ask): Promise<boolean> {
-  if (ask.fromId?.startsWith(DEMO) || ask.source === 'dialog') return true
-  if (ask.action === 'payroll') return true
-  const text = answerText(ask)
-  const asker = ask.fromId ? (await read($, staff)).find(e => e.id === ask.fromId) : undefined
-  if (asker && isActive(asker)) {
-    await $.session.send({ to: { agentId: asker.id }, text })
-    return true
-  }
-  if ((await getBoss($)).isBusy) {
-    await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } })
-    return true
-  }
-  return false
-}
-
-async function answer($: EngineInterface, id: string, value: string, status: 'answered' | 'dismissed' = 'answered') {
-  const now = await $.clock.now()
-  let picked: Ask | undefined
-  await update($, desk, list => list.map(a => {
-    if (a.id !== id || !isWaiting(a)) return a
-    picked = { ...a, status, answer: value, answeredAt: now }
-    return picked
-  }))
-  const a = picked as Ask | undefined
-  if (!a) return
-  if (a.action === 'payroll') await applyPayroll($, status === 'answered' && value.startsWith('Lay off'))
-  // The question is cut before the answer is, so a long question never pushes the answer out of what is saved.
-  else if (status === 'answered' && !a.fromId?.startsWith(DEMO)) await remember($, { kind: 'decision', text: `${fit(a.title, TITLE_CHARS)} → ${fit(value, SAVED_CHARS)}`, by: 'CEO', source: 'desk' })
-  const isDelivered = status === 'dismissed' || (await deliver($, a))
-  if (isDelivered) await update($, desk, list => list.map(x => (x.id === id ? { ...x, isDelivered: true } : x)))
-  const t = await read($, tick)
-  await setBoss($, b => ({ ...b, quip: { text: status === 'dismissed' ? 'Noted. Moving on.' : `On it, boss: “${clip(value, 32)}”`, until: t + 8 } }))
-  await showStatus($)
-}
 
 // ---- Memory: the project's decisions, a plain file in its .clawd-hq folder, mirrored in state for the pane ----
 
@@ -294,15 +231,11 @@ async function remember($: EngineInterface, m: Omit<Memory, 'id' | 'at'>, supers
   })
 }
 
-/** Answers that reached nobody yet (Clawd was idle): handed over as one prompt. */
-async function sendPending($: EngineInterface, isNewTurn: boolean) {
-  const pending = (await read($, desk)).filter(a => a.status === 'answered' && !a.isDelivered)
-  if (pending.length === 0) return
-  const text = 'The CEO answered on the CEO Desk:\n' + pending.map(a => `- ${answerText(a)}`).join('\n')
-  if (isNewTurn) await $.prompt.submit({ text: text + '\nCarry on with these.' })
-  else await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } })
-  const ids = new Set(pending.map(a => a.id))
-  await update($, desk, list => list.map(a => (ids.has(a.id) ? { ...a, isDelivered: true } : a)))
+/** An answer the person gave in Clawd's question box, saved as their decision. The question is cut before the answer is, so a long question never pushes the answer out of what is saved. */
+async function saveBoxAnswer($: EngineInterface, question: string, said: string) {
+  await remember($, { kind: 'decision', text: `${fit(question, TITLE_CHARS)} → ${said}`, by: 'CEO', source: 'desk' })
+  const t = await read($, tick)
+  await setBoss($, b => ({ ...b, quip: { text: `On it, boss: “${clip(said, 32)}”`, until: t + 8 } }))
 }
 
 // ---- Payroll: which agent types Clawd is offered ----
@@ -329,6 +262,8 @@ async function knownTypes($: EngineInterface): Promise<string[]> {
 async function savePayroll($: EngineInterface, p: Payroll) {
   await update($, payroll, () => p)
   if (cwd) await $.store.set(`payroll:${cwd}`, p)
+  // Once the payroll is settled, by the review or by hand, the review leaves the People tab.
+  if (p.isReviewed && (await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined }))
   // The agent listing is drawn from the offer: ask for it again.
   $.ui.invalidate('tool.describe')
   $.ui.invalidate('prompt.attachment')
@@ -344,17 +279,11 @@ async function reviewPayroll($: EngineInterface) {
     await savePayroll($, { ...(await getPayroll($)), isReviewed: true, stacks: plan.stacks })
     return
   }
-  await fileAsk($, {
-    kind: 'decision',
-    title: `Payroll review: lay off ${plan.laidOff.length} of ${types.length} agent types this project doesn’t use?`,
-    detail: `This project is ${plan.stacks.join(' + ') || 'an unknown stack'}. Not needed here: ${plan.why.join(', ')}. ` +
-      'Laid-off agents stop being listed to Clawd, which saves context on every turn. You can rehire them in the People tab.',
-    options: [`Lay off ${plan.laidOff.length}`, 'Keep everyone'],
-    recommend: `Lay off ${plan.laidOff.length}`,
-    from: 'Clawd',
-    source: 'office',
-    action: 'payroll',
-  }, true)
+  // The files took a moment to list: a payroll the person settled by hand meanwhile needs no review.
+  if ((await getPayroll($)).isReviewed) return
+  // The review waits in the People tab, where the payroll is; the person hears of it once.
+  await setFx($, f => ({ ...f, layoffs: { count: plan.laidOff.length, total: types.length, stacks: plan.stacks, why: plan.why } }))
+  $.ui.toast(`📋 Payroll review: ${plan.laidOff.length} agent types this project does not use. See the People tab.`)
 }
 
 async function applyPayroll($: EngineInterface, isLayoff: boolean) {
@@ -386,7 +315,7 @@ async function onFrame($: EngineInterface, frames: number) {
 async function panelData($: EngineInterface): Promise<PanelData> {
   return {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
-    roster: await read($, roster), asks: await read($, desk), payroll: await getPayroll($), memory: await read($, memory),
+    roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
     gauge: await read($, gauge), now: await $.clock.now(),
   }
 }
@@ -400,11 +329,11 @@ async function setLaidOff($: EngineInterface, type: string, isOff: boolean) {
 function panelActions($: EngineInterface): PanelActions {
   return {
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
-    openDesk: () => $.ui.open({ id: DESK, title: DESK_TITLE, focus: true, columns: 60 }),
     resume: task => $.prompt.fill({ text: `Pick up where we left off: ${task}` }),
     forget: id => saveMemory($, list => list.filter(x => x.id !== id)),
     layOff: type => setLaidOff($, type, true),
     hire: type => setLaidOff($, type, false),
+    settlePayroll: isLayoff => applyPayroll($, isLayoff),
   }
 }
 
@@ -446,10 +375,7 @@ async function startDemo($: EngineInterface) {
     say: (text, ticks) => demoSay($, text, ticks),
     hire: (n, type, description) => newHire($, id(n), type, description),
     work: (n, tool, input) => demoWork($, id(n), tool, input),
-    ask: (ask, from) => fileAsk($, { ...ask, fromId: id(from) }, true),
-    answer: (askId, value) => answer($, askId, value),
     finish: (n, mood) => clockOut($, id(n), mood),
-    clearDesk: () => update($, desk, l => l.filter(a => !a.fromId?.startsWith(DEMO))),
     goQuiet: async () => {
       const now = await $.clock.now()
       await setBoss($, b => ({ ...b, isBusy: false, proudUntil: 0, oopsUntil: 0, quip: undefined, idleSince: now - NAP_MS - 1 }))
@@ -468,7 +394,6 @@ async function startDemo($: EngineInterface) {
   demoTimers.push($.clock.after(total * 5000 + 1500, () => {
     void (async () => {
       await update($, staff, l => l.filter(e => !e.id.startsWith(DEMO)))
-      await update($, desk, l => l.filter(a => !a.fromId?.startsWith(DEMO)))
       await setFx($, f => ({ ...f, demo: undefined }))
       await setBoss($, b => ({ ...saved, turns: b.turns, quip: undefined }))
       await showStatus($)
@@ -495,15 +420,15 @@ export const register: Register = (on, options) => {
     cwd = e.cwd
     isPayrollFiled = false
     isLogbookWarned = false
+    // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
+    if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined }))
     await $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })
-    await $.command.register({ name: 'ceo', description: 'Open the CEO Desk: decisions and questions the agents raised for you' })
     await $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })
     await $.tool.register({
       name: 'demo',
       description: `Plays the ${BRAND} office tour in the side panel (about a minute, stand-in employees, nothing real is spawned). Call only when the user asks to see the office demo.`,
       inputSchema: { type: 'object', properties: {} },
     })
-    await $.tool.register(ASK_SPEC)
 
     const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined
     if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved }))
@@ -537,7 +462,7 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'office' }, async $ => {
     await openPanes(paneIo($), true)
-    return { text: `${BRAND} is open: Office · Decisions · People · Log are the tabs at the top. i opens the CEO Desk.` }
+    return { text: `${BRAND} is open: Office · Decisions · People · Log are the tabs at the top.` }
   })
 
   // The header's context bar and limit countdowns follow the engine's own readings.
@@ -553,11 +478,6 @@ export const register: Register = (on, options) => {
       await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined }))
     }
     return next(e)
-  })
-
-  on('command.run', { command: 'ceo' }, async $ => {
-    await $.ui.open({ id: DESK, title: DESK_TITLE, focus: true, columns: 60 })
-    return { text: 'CEO Desk is open. 1–6 pick an option on the top item · x dismiss it · s send answers to Clawd.' }
   })
 
   on('command.run', { command: 'office-demo' }, async $ => {
@@ -590,7 +510,7 @@ export const register: Register = (on, options) => {
   }
 
   on('agent.spawn', async ($, e, next) => {
-    // Clawd's [effort: …] line comes off the brief; every agent learns how to raise things for the CEO.
+    // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     const { effort, prompt } = parseEffort(e.prompt)
     const r = await next({ ...e, prompt: prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE })
     if (r.agentId) {
@@ -631,22 +551,6 @@ export const register: Register = (on, options) => {
       return { result: `The ${BRAND} tour is playing in the side panel for about a minute. If the panel is not visible, the user can type /office.` } as never
     }
 
-    if (tool === ASK_TOOL) {
-      const asker = id ? (await read($, staff)).find(one => one.id === id) : undefined
-      const from = asker ? labelOf(asker, (await read($, blurbs))[asker.type] ?? '') : 'Clawd'
-      const options = Array.isArray(input.options) ? (input.options as unknown[]).map(String).slice(0, 6) : []
-      const kind = input.kind === 'decision' && options.length > 1 ? 'decision' : 'question'
-      const filed = await fileAsk($, {
-        kind, title: String(input.question ?? ''), detail: typeof input.context === 'string' ? input.context : undefined,
-        options: kind === 'decision' ? options : [], recommend: typeof input.recommended === 'string' ? input.recommended : undefined,
-        fallback: typeof input.default === 'string' ? input.default : undefined,
-        from, fromType: asker?.type, fromId: id, source: 'tool',
-      })
-      return {
-        result: `Filed as ${filed} on the CEO Desk. Don't wait for it: carry on with ${typeof input.default === 'string' ? `“${input.default}”` : 'your best call'} and say so; the CEO's answer will arrive as a message.`,
-      } as never
-    }
-
     if (tool === MEM_TOOL) {
       const decision = fit(String(input.decision ?? ''), SAVED_CHARS)
       // A subagent's call is its own note, never the user's decision.
@@ -659,33 +563,20 @@ export const register: Register = (on, options) => {
       return { result: `Recorded in the project memory: ${decision}` } as never
     }
 
-    // Clawd asking the CEO directly shows on the desk too, answered in the dialog.
+    // What the person answers in Clawd's question box is saved as their decision, each question with its own answer.
     if (tool === 'AskUserQuestion' && id === undefined) {
-      const questions = Array.isArray(input.questions) ? (input.questions as Array<{ question?: string; options?: Array<{ label?: string }> }>) : []
-      const ids: string[] = []
+      const questions = Array.isArray(input.questions) ? (input.questions as Array<{ question?: string }>) : []
+      const ran = await next(e)
+      // The box hands the answers back keyed by the question's text. A reply typed without picking anything stands for
+      // a question that has no pick; one left unanswered saves nothing.
+      const box = (ran as { result?: { answers?: Record<string, unknown>; response?: unknown } }).result
       for (const q of questions) {
-        ids.push(await fileAsk($, {
-          kind: (q.options?.length ?? 0) > 1 ? 'decision' : 'question', title: String(q.question ?? ''),
-          options: [], from: 'Clawd', source: 'dialog',
-        }, true))
+        const question = String(q.question ?? '')
+        const picked = box?.answers?.[question] ?? box?.response
+        const said = typeof picked === 'string' ? fit(picked, SAVED_CHARS) : ''
+        if (said) await saveBoxAnswer($, question, said)
       }
-      await update($, desk, l => l.map(a => (ids.includes(a.id) ? { ...a, status: 'live' as const } : a)))
-      try {
-        const ran = await next(e)
-        // Each question is saved with its own answer: the box hands them back keyed by the question's text. A reply typed
-        // without picking anything stands for a question that has no pick; one left unanswered saves nothing.
-        const box = (ran as { result?: { answers?: Record<string, unknown>; response?: unknown } }).result
-        for (const [i, one] of ids.entries()) {
-          const picked = box?.answers?.[String(questions[i]?.question ?? '')] ?? box?.response
-          const said = typeof picked === 'string' ? fit(picked, SAVED_CHARS) : ''
-          if (said) await answer($, one, said)
-          else await answer($, one, 'no answer', 'dismissed')
-        }
-        return ran
-      } catch (err) {
-        for (const one of ids) await answer($, one, 'no answer', 'dismissed')
-        throw err
-      }
+      return ran
     }
 
     if (id === undefined) {
@@ -718,21 +609,13 @@ export const register: Register = (on, options) => {
     // Kept whole: the resume button puts it back in the prompt box.
     const task = e.text ? fit(e.text, TASK_CHARS) : undefined
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, task: task ?? b.task, activity: task ? READING_BRIEF : 'Back at it' }))
-    // Answers the CEO gave while Clawd was idle ride along with the new turn.
-    await sendPending($, false)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) {
       const asker = (await read($, staff)).find(one => one.id === e.agentId)
-      // A report's CEO-DECISION and CEO-QUESTION lines land on the desk.
-      const raised = parseReport(e.answer ?? '')
-      if (asker && raised.length > 0) {
-        const from = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
-        for (const r of raised) await fileAsk($, { ...r, from, fromType: asker.type, fromId: asker.id, source: 'report' })
-      }
-      // Key choices the agent made itself go into the project's memory.
+      // Key choices the agent made itself go into the project's memory. Its questions stay in its report, for Clawd.
       if (asker && !asker.id.startsWith(DEMO)) {
         const by = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
         for (const text of parseChoices(e.answer ?? '')) await remember($, { kind: 'choice', text, by, source: 'report' })
@@ -747,31 +630,6 @@ export const register: Register = (on, options) => {
       }))
     }
     return next(e)
-  })
-
-  // ---- The band above the prompt: what's waiting for the CEO ----
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const waiting = (await read($, desk)).filter(a => a.status === 'open')
-    if (e.props.hasSurvey || waiting.length === 0) return next(e)
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const what = waitingSummary(waiting)
-    return (
-      <Box flexDirection="row" gap={1}>
-        <Text color={ACCENT} bold>📥 CEO Desk</Text>
-        <Text>{what} waiting:</Text>
-        <Text dimColor wrap="truncate">{clip(waiting[0]!.title, Math.max(10, e.props.bodyColumns - what.length - 34))}</Text>
-        <Button key="open-desk" label="open" onPress={() => $.ui.open({ id: DESK, title: DESK_TITLE, focus: true, columns: 60 })} />
-      </Box>
-    )
-  })
-
-  // ---- The CEO Desk pane: drawn by desk-pane.tsx ----
-  on('ui.render', { component: 'Pane', requestId: DESK }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
-    // Every surface but mobile draws Input; an `in` check on the table always says no.
-    const Input = e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input
-    const data = { list: await read($, desk), boss: await getBoss($), now: await $.clock.now() }
-    return renderDesk({ Box, Text, Button, Input }, data, { answer: (id, value, status) => answer($, id, value, status), send: () => sendPending($, true) })
   })
 
   // ---- The four office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----

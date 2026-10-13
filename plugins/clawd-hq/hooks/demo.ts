@@ -2,10 +2,7 @@
 // so `$` and the state stay in register.tsx. Each step's caption is drawn at the top of every pane while it plays.
 import { BRAND } from './office'
 import type { PaneView } from './panes'
-import type { Ask, Mood } from '../types'
-
-/** A question the tour files; the stand-in specialist that asks it is named by `from` in `io.ask`. */
-type TourAsk = Omit<Ask, 'id' | 'status' | 'askedAt' | 'isDelivered' | 'fromId'>
+import type { Mood } from '../types'
 
 export type TourIo = {
   show: (view: PaneView) => Promise<unknown>
@@ -14,15 +11,11 @@ export type TourIo = {
   /** `n` names a stand-in specialist for the length of the tour. */
   hire: (n: string, type: string, description: string) => Promise<unknown>
   work: (n: string, tool: string, input: Record<string, unknown>) => Promise<unknown>
-  ask: (ask: TourAsk, from: string) => Promise<string>
-  answer: (askId: string, value: string) => Promise<unknown>
   finish: (n: string, mood: Mood) => Promise<unknown>
-  clearDesk: () => Promise<unknown>
   goQuiet: () => Promise<unknown>
 }
 
 export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
-  let decision = ''
   return [
     [`Welcome to ${BRAND}. Clawd is your chief of staff; you are the CEO; every subagent is an employee.`, async () => {
       await io.show('office')
@@ -46,20 +39,12 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.work('rev', 'Read', { file_path: 'surveys.ts' })
       await io.work('arch', 'Edit', { file_path: 'design.md' })
     }],
-    ['Agents raise decisions and questions for you, the CEO. They land on the CEO Desk (i) and the band above the prompt.', async () => {
-      decision = await io.ask({
-        kind: 'decision', title: 'Store scores in DynamoDB or Postgres?', detail: 'Scores are read per survey, written once a day.',
-        options: ['DynamoDB', 'Postgres'], recommend: 'DynamoDB', fallback: 'carrying on with DynamoDB',
-        from: 'Architect', fromType: 'ecc:architect', source: 'tool',
-      }, 'arch')
-      await io.ask({ kind: 'question', title: 'Which quarter should the deal report cover?', options: [], from: 'Analyst', source: 'report' }, 'data')
+    ['Specialists do not stop to ask you. They make their best call, carry on, and put their questions in their report to Clawd.', async () => {
       await io.work('tdd', 'Bash', { command: 'npm test', description: 'Run the review panel tests' })
-    }],
-    ['Agents don’t wait on you: they carry on with their recommended option until you answer.', async () => {
       await io.work('data', 'Read', { file_path: 'deals.csv' })
     }],
-    ['You decide; the answer goes straight back to the agent who asked.', async () => {
-      if (decision) await io.answer(decision, 'DynamoDB')
+    ['Clawd settles what he can and asks you the rest in one question box, at a natural pause. Your answers are saved as decisions.', async () => {
+      await io.say('Two questions saved up. I’ll ask them in one go.')
     }],
     ['When an agent fails, it goes home sick and Clawd reacts.', async () => {
       await io.finish('tdd', 'failed')
@@ -76,7 +61,6 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.show('office')
       await io.finish('rev', 'done')
       await io.finish('data', 'done')
-      await io.clearDesk()
       await io.goQuiet()
     }],
     ['That’s the tour! The demo staff are heading home.', async () => {

@@ -103,14 +103,14 @@ export function ago(ms: number): string {
 
 // ---- Clawd, the chief of staff ----
 
-export type ClawdMood = 'chill' | 'focused' | 'delegating' | 'proud' | 'stressed' | 'oops' | 'sleepy' | 'waiting'
+export type ClawdMood = 'chill' | 'focused' | 'delegating' | 'proud' | 'stressed' | 'oops' | 'sleepy'
 
 export const CLAWD_COLOR = '#d97757'
 
 /** The office's brand: a neutral slate blue for the chrome; Clawd keeps his own orange. */
 export const BRAND = 'Clawd HQ'
 export const ACCENT = '#7C9FD1'
-/** "Needs you" and "waiting on you". */
+/** A failure, or lost contact. */
 export const AMBER = '#e0a83a'
 /** Done, all clear. */
 export const GREEN = '#6bbf7a'
@@ -118,12 +118,11 @@ export const GREEN = '#6bbf7a'
 export const CLAWD_LINES: Record<ClawdMood, string[]> = {
   chill: ['Shell yeah, quiet day.', 'Sipping coffee, admiring the roadmap.', 'Anyone need anything? No? Great.', 'I alphabetised the agents. Again.', 'Inbox zero. I am unstoppable.'],
   focused: ['Claws on keyboard.', 'Let’s get cracking.', 'Reading. Thinking. Pinching.', 'In the zone. Do not disturb.'],
-  delegating: ['Delegation is a love language.', 'Teamwork makes the dream work.'],
+  delegating: ['Desks are busy. I’m all ears.', 'Delegation is a love language.', 'Teamwork makes the dream work.'],
   proud: ['Claw-some work, {title}!', 'The {title} nailed it. Raise incoming.', 'That’s my {title}!'],
   stressed: ['{n} agents at once? I’m a crab, not an octopus.', 'Everything is fine. Totally fine. 💦', 'Who approved all this headcount? Oh. Me.'],
   oops: ['Nobody panic. I’m panicking.', 'Take the rest of the day, {title}.', 'We’ll call that a learning opportunity.'],
   sleepy: ['zZz…', '…five more minutes…', '…mmh… delegate… the… zZz'],
-  waiting: ['The CEO has {q} thing(s) to decide. No pressure.', 'Your desk, boss: {q} waiting. I’ve kept everyone busy meanwhile.', 'Holding the fort until the CEO decides.'],
 }
 
 export function fill(line: string, vars: Record<string, string | number>): string {

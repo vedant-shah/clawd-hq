@@ -134,7 +134,7 @@ test('the demo caption stays at the top of every pane, above everything else', a
   await clock.advance(100)
   for (const pane of FOUR) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...pane })
-    expect(await ui.find({ type: 'Text', text: /🎬 1\/13/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /🎬 1\/12/ })).toBeDefined()
     const rows = elementsOf((await ui.drawn()) as unknown as Tree)
     expect(rows[0]?.props.borderColor).toBe('yellow')
     expect(rows[rows.length - 1]?.props.key).toBe('gauges')
@@ -178,7 +178,7 @@ test('the tour brings the Log pane forward for the finishers, then People, then 
   await $.command.run({ command: 'office-demo', args: '' } as never)
   const raised = () => opened.filter(o => o.focus === true).map(o => o.id)
 
-  await clock.advance(9 * 5_000 + 100)
+  await clock.advance(8 * 5_000 + 100)
   await clock.advance(100)
   expect(raised().pop()).toBe('clawd-hq-log')
   const log = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...LOG })
@@ -190,7 +190,7 @@ test('the tour brings the Log pane forward for the finishers, then People, then 
   await clock.advance(5_000)
   expect(raised().pop()).toBe('clawd-hq-people')
   const people = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...paneProps('clawd-hq-people', 'People') })
-  expect(await people.find({ type: 'Text', text: /^🎬 11\/13 · People is the payroll/ })).toBeDefined()
+  expect(await people.find({ type: 'Text', text: /^🎬 10\/12 · People is the payroll/ })).toBeDefined()
   await people.unmount()
 
   await clock.advance(5_000)

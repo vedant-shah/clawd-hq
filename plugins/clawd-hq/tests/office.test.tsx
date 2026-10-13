@@ -1,8 +1,9 @@
 import { expect, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import { assemble, avatarFor, clawdAvatar, tinyIcon } from '../hooks/avatars'
-import { ACCENT, AMBER } from '../hooks/office'
+import { ACCENT, AMBER, GREEN } from '../hooks/office'
 import { fade, rasterCells, svgOf, trim } from '../hooks/pixels'
-import { CLEAR, DECISIONS, DESK, HOUR, LOG, PANE, PEOPLE, START, SURFACES, host, planner } from './host'
+import { CLEAR, DECISIONS, HOUR, LOG, PANE, PEOPLE, START, SURFACES, host, planner } from './host'
 
 test('a spawned architect gets a desk and shows as working', async ($, on) => {
   host(on, [{ id: 'a1', type: 'ecc:architect', description: 'Design scoring', status: 'running' }])
@@ -71,22 +72,27 @@ test('avatars are SVGs on the desktop, in the avatars own colors', async ($, on)
   await ui.unmount()
 })
 
-test('a CEO-DECISION line in a report lands on the CEO desk and can be decided', async ($, on) => {
-  host(on)
+test('a specialist\'s questions stay in its report for Clawd: nothing is filed for the person, no desk opens and nothing pops up', async ($, on) => {
+  const { opened, toasts, commands, tools } = host(on)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'r1' }))
+  await $.session.start(START)
 
   await $.agent.spawn({ prompt: 'Plan it', description: 'Plan storage', subagentType: 'ecc:planner' } as never)
-  const report = 'Done.\nCEO-DECISION: Store scores in DynamoDB or Postgres? | DynamoDB / Postgres | recommend: DynamoDB\nCEO-QUESTION: Launch date?'
+  const report = 'Done.\nQUESTION: Store scores in DynamoDB or Postgres? | DynamoDB / Postgres | recommend: DynamoDB\nCEO-DECISION: Launch Friday or Monday? | Friday / Monday'
   await $.turn.complete({ reason: 'answer', answer: report, turnId: 't1', agentId: 'r1', isAborted: false } as never)
 
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...DESK })
-  expect(await ui.find({ type: 'Text', text: /DynamoDB or Postgres/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Launch date/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /2 waiting/ })).toBeDefined()
-  await ui.press({ key: 'opt-D1-0' })
-  expect(await ui.find({ type: 'Text', text: /1 waiting/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /→ DynamoDB/ })).toBeDefined()
-  await ui.unmount()
+  expect(opened.some(o => /desk/i.test(o.id))).toBe(false)
+  expect(toasts.some(t => /for the CEO|DynamoDB|Launch Friday/.test(t))).toBe(false)
+  // No command opens a desk, and no tool files a question on one.
+  expect(commands).toEqual(['office', 'office-demo'])
+  expect(tools).toEqual(['demo', 'remember'])
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    const text = JSON.stringify(await ui.drawn())
+    expect(text).not.toMatch(/needs? you|Waiting on you|DynamoDB|CEO Desk/)
+    expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
+    await ui.unmount()
+  }
 })
 
 test("Clawd's card says All clear with nothing waiting, offers to pick up the last task, and shows the empty floor", async ($, on) => {
@@ -95,7 +101,8 @@ test("Clawd's card says All clear with nothing waiting, offers to pick up the la
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeDefined()
+    const status = await ui.find({ type: 'Text', text: /^✓ All clear · no one at work$/ })
+    expect(status?.props.color).toBe(GREEN)
     expect(await ui.find({ type: 'Text', text: /Chief of Staff/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /No one at a desk yet\./ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Specialists appear here while they work\./ })).toBeDefined()
@@ -199,31 +206,28 @@ test('the gauge bar is a small rounded image wherever there is an Svg: desktop, 
   }
 })
 
-test('a specialist with a question on the CEO desk is waiting on you, and Clawd says who needs you', async ($, on) => {
-  const { opened } = host(on, [planner])
+test('Clawd\'s card says what he is doing and how many are at work, and never counts questions or points at a desk', async ($, on) => {
+  host(on, [planner])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
+  on('turn.start', () => ({ turnId: 't1' }))
   await $.agent.spawn({ prompt: 'Plan it', description: 'Plan the scoring API', subagentType: 'ecc:planner' } as never)
-  await $.tool.call({
-    tool: 'mcp__clawd-hq__ask_ceo', kind: 'decision', question: 'Store scores in DynamoDB or Postgres?', options: ['DynamoDB', 'Postgres'], agentId: 'a1',
-  } as never)
 
+  // Clawd is between turns with one specialist at work: he is free to talk.
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /1 needs you/ })).toBeDefined()
-    const waiting = await ui.find({ type: 'Text', text: /^Waiting on you: Store scores in DynamoDB or Postgres\?$/ })
-    expect(waiting?.props.color).toBe(AMBER)
-    // Its last action is not shown while it waits.
-    expect(await ui.find({ type: 'Text', text: /^Reading the brief$/ })).toBeUndefined()
-    const button = await ui.find({ key: 'see-needs' })
-    expect(String(button?.props.label)).toMatch(/^See what .+ needs$/)
-    expect(button?.props.hotkey).toBe('i')
-    // The old yellow box and its button are gone.
-    expect(await ui.find({ type: 'Text', text: /FOR THE CEO/ })).toBeUndefined()
-    expect(await ui.find({ key: 'desk' })).toBeUndefined()
+    expect((await ui.find({ type: 'Text', text: /^✓ Free to talk · 1 at work$/ }))?.props.color).toBe(GREEN)
+    expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
+    // A specialist is still at work, so there is nothing to pick up yet.
     expect(await ui.find({ key: 'resume' })).toBeUndefined()
-    await ui.press({ key: 'see-needs' })
-    expect(JSON.stringify(opened[opened.length - 1])).toContain('ceo-desk')
+    expect(JSON.stringify(await ui.drawn())).not.toMatch(/needs? you|Waiting on you/)
+    await ui.unmount()
+  }
+
+  // While a turn of his runs, the line says so.
+  await $.turn.start({ text: 'Plan the scoring API', turnId: 't1' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect((await ui.find({ type: 'Text', text: /^● Working on your request · 1 at work$/ }))?.props.color).toBe(ACCENT)
     await ui.unmount()
   }
 })
@@ -315,7 +319,7 @@ test('a specialist that failed shows as Failed in amber in the Log, and Clawd sa
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: / failed$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^! .+ failed · no one at work$/ }))?.props.color).toBe(AMBER)
     expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeUndefined()
     await ui.unmount()
     const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
@@ -536,14 +540,14 @@ test('decisions and key choices are remembered, then handed to Clawd and the nex
   host(on)
   const briefs: string[] = []
   on('agent.spawn', ($, e) => (briefs.push((e as { prompt: string }).prompt), { model: 'claude-opus-5-5', agentId: `a${briefs.length}` }))
+  on('tool.call', () => ({ result: { answers: { 'Postgres or DynamoDB?': 'Postgres' } } }) as never)
 
   await $.agent.spawn({ prompt: 'Plan storage', description: 'Plan storage', subagentType: 'ecc:planner' } as never)
-  const report = 'Done.\nDECIDED: Use Drizzle for migrations — typed and light\nCEO-DECISION: Postgres or DynamoDB? | Postgres / DynamoDB | recommend: Postgres'
+  const report = 'Done.\nDECIDED: Use Drizzle for migrations — typed and light\nQUESTION: Postgres or DynamoDB? | Postgres / DynamoDB | recommend: Postgres'
   await $.turn.complete({ reason: 'answer', answer: report, turnId: 't1', agentId: 'a1', isAborted: false } as never)
 
-  const desk = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...DESK })
-  await desk.press({ key: 'opt-D1-0' })
-  await desk.unmount()
+  // Clawd asks the person in his question box; the answer is saved as their decision.
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Postgres or DynamoDB?', options: [{ label: 'Postgres' }, { label: 'DynamoDB' }] }] } as never)
 
   const ctx = await $.prompt.context({ blocks: [] } as never)
   const block = (ctx as { blocks: Array<{ name: string; text: string }> }).blocks.find(b => b.name === 'clawdMemory')
@@ -588,7 +592,7 @@ test('the toasts and Clawd say the role, never a made-up name', async ($, on) =>
   expect(toasts.find(t => t.includes('could not finish'))).toBe('🤕 Fixer could not finish: Fix the build')
     for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /^! Fixer failed$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^! Fixer failed · no one at work$/ })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -623,4 +627,118 @@ test('a hire made while agent types are still being recorded is counted, and no 
   await ui.unmount()
   expect(text).toContain('40 total')
   expect(text).toContain('hired 1 time')
+})
+
+// ---- The payroll review: in the People tab, where the payroll is ----
+
+const MANY = [
+  ...['go-reviewer', 'rust-reviewer', 'python-reviewer', 'kotlin-reviewer', 'swift-reviewer', 'cpp-reviewer', 'healthcare-reviewer'].map(n => `ecc:${n}`),
+  ...['planner', 'architect', 'tdd-guide', 'code-reviewer', 'doc-updater', 'e2e-runner', 'refactor-cleaner', 'security-reviewer'].map(n => `ecc:${n}`),
+]
+
+/** A project with many agent types on offer, and the clock run until the review is made. */
+async function untilReview($: Engine, on: Parameters<typeof host>[0], types = MANY) {
+  const h = host(on, [])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  on('fs.list', () => ({ value: [{ name: 'package.json', kind: 'file' }] }) as never)
+  await $.session.start(START)
+  for (const agent of types) await $.agent.offer({ agent, description: `Does ${agent}` } as never)
+  await h.clock.advance(25 * 400 + 100)
+  return h
+}
+const reviewShown = async ($: Engine) => {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  const isShown = (await ui.find({ key: 'payroll-review' })) !== undefined
+  await ui.unmount()
+  return isShown
+}
+
+test('the payroll review waits in the People tab with both answers, and the person hears of it once', async ($, on) => {
+  const { toasts, clock, opened } = await untilReview($, on)
+  expect(toasts.filter(t => /Payroll review/.test(t))).toEqual(['📋 Payroll review: 7 agent types this project does not use. See the People tab.'])
+  expect(opened.some(o => /desk/i.test(o.id))).toBe(false)
+  await clock.advance(60 * 400)
+  expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(1)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
+    expect(await ui.find({ type: 'Text', text: /^Payroll review: lay off 7 of 1[56] agent types this project does not use\?$/ })).toBeDefined()
+    expect(String((await ui.find({ key: 'payroll-layoff' }))?.props.label)).toBe('Lay off 7')
+    expect(await ui.find({ key: 'payroll-keep' })).toBeDefined()
+    await ui.unmount()
+    // The review is the People tab's alone.
+    const office = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect(JSON.stringify(await office.drawn())).not.toMatch(/Payroll review/)
+    await office.unmount()
+  }
+})
+
+test('answering the payroll review lays the unused types off, or keeps everyone, and the review goes away', async ($, on) => {
+  const { toasts } = await untilReview($, on)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  await ui.press({ key: 'payroll-layoff' })
+  expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /TALENT POOL · 7/ })).toBeDefined()
+  expect(toasts.some(t => /7 agent types laid off/.test(t))).toBe(true)
+  await ui.unmount()
+})
+
+test('keeping everyone also ends the review', async ($, on) => {
+  const { toasts } = await untilReview($, on)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  await ui.press({ key: 'payroll-keep' })
+  expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
+  expect(toasts.some(t => /Everyone stays on the payroll/.test(t))).toBe(true)
+  await ui.unmount()
+})
+
+test('laying one type off by hand settles the payroll, so the review goes away', async ($, on) => {
+  await untilReview($, on)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  expect(await ui.find({ key: 'payroll-review' })).toBeDefined()
+  await ui.press({ key: 'layoff-ecc:planner' })
+  expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /TALENT POOL · 1/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a small team gets no payroll review; the review is made once the team grows past 15 types', async ($, on) => {
+  // Fewer than 15 agent types: nothing to review.
+  const { toasts, clock } = await untilReview($, on, MANY.slice(0, 10))
+  expect(await reviewShown($)).toBe(false)
+  expect(toasts.some(t => /Payroll review/.test(t))).toBe(false)
+  // Six more types join: the team is large enough now, and seven of its types are of no use here.
+  for (const n of [1, 2, 3, 4, 5, 6]) await $.agent.offer({ agent: `ecc:planner-${n}`, description: 'Plans' } as never)
+  await clock.advance(25 * 400)
+  expect(await reviewShown($)).toBe(true)
+  expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(1)
+})
+
+test('a team with nothing to lay off is marked reviewed with no card and no pop-up', async ($, on) => {
+  const useful = Array.from({ length: 16 }, (_, i) => `ecc:planner-${i}`)
+  const { toasts, clock } = await untilReview($, on, useful)
+  expect(await reviewShown($)).toBe(false)
+  expect(toasts.some(t => /Payroll review/.test(t))).toBe(false)
+  // Types that could be laid off arrive later: the payroll is already reviewed, so nothing is proposed.
+  for (const agent of MANY.slice(0, 7)) await $.agent.offer({ agent, description: 'x' } as never)
+  await clock.advance(50 * 400)
+  expect(await reviewShown($)).toBe(false)
+})
+
+test('once the payroll is settled a new session brings back no review; an unsettled one is made again', async ($, on) => {
+  const { toasts, clock } = await untilReview($, on)
+  // A new session with the review still open: the old card goes, and the review is made again for this session.
+  await $.session.start(START)
+  expect(await reviewShown($)).toBe(false)
+  await clock.advance(25 * 400 + 100)
+  expect(await reviewShown($)).toBe(true)
+  expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(2)
+
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  await ui.press({ key: 'payroll-keep' })
+  await ui.unmount()
+  await $.session.start(START)
+  await clock.advance(60 * 400)
+  expect(await reviewShown($)).toBe(false)
+  expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(2)
 })

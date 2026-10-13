@@ -14,7 +14,6 @@ export const PANE = paneProps('clawd-hq', 'Office')
 export const DECISIONS = paneProps('clawd-hq-decisions', 'Decisions')
 export const PEOPLE = paneProps('clawd-hq-people', 'People')
 export const LOG = paneProps('clawd-hq-log', 'Log')
-export const DESK = paneProps('ceo-desk', 'CEO Desk')
 export const FOUR = [PANE, DECISIONS, PEOPLE, LOG] as const
 export const SURFACES = ['terminal', 'desktop'] as const
 export const HOUR = 3_600_000
@@ -74,12 +73,15 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('session.start', (_$, e) => ({ cwd: (e as { cwd: string }).cwd }))
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('classic.SubagentStop', () => ({}))
-  on('command.register', () => ({ value: undefined }) as never)
-  on('tool.register', () => ({ value: undefined }) as never)
+  /** The names of the commands and tools the plugin registered. */
+  const commands: string[] = []
+  const tools: string[] = []
+  on('command.register', (_$, e) => (commands.push((e as { name: string }).name), { value: undefined }) as never)
+  on('tool.register', (_$, e) => (tools.push((e as { name: string }).name), { value: undefined }) as never)
   // What the engine answers for the session's start; a test moves it as a new session would.
   const session = { startedAt: 0 }
   on('session.usage', () => ({ value: { startedAt: session.startedAt, context: { window: 1_000_000 }, rateLimits: [] } }) as never)
   /** The person closing a pane by hand. */
   const closePane = (id: string) => { const at = panes.findIndex(p => p.id === id); if (at >= 0) panes.splice(at, 1) }
-  return { clock, opened, toasts, session, panes, closePane, fail, files, disk }
+  return { clock, opened, toasts, session, panes, closePane, fail, files, disk, commands, tools }
 }

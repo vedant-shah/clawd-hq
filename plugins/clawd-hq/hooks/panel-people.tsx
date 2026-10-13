@@ -45,6 +45,24 @@ function section(title: string, people: Person[], kit: Kit, actions: PanelAction
   )
 }
 
+/** The payroll review, when one waits: what the project has no use for, and the two answers. */
+function review(kit: Kit, plan: NonNullable<PanelData['fx']['layoffs']>, actions: PanelActions) {
+  const { Box, Text, Button } = kit
+  return (
+    <Box key="payroll-review" borderStyle="round" borderDimColor paddingX={1} flexDirection="column">
+      <Text bold wrap="wrap">{`Payroll review: lay off ${plan.count} of ${plan.total} agent types this project does not use?`}</Text>
+      <Text dimColor wrap="wrap">
+        {`This project is ${plan.stacks.join(' + ') || 'an unknown stack'}. Not needed here: ${plan.why.join(', ')}. `}
+        Laid-off agents stop being listed to Clawd, which saves context on every turn. You can rehire any of them below.
+      </Text>
+      <Box flexDirection="row" gap={1} marginTop={1}>
+        <Button key="payroll-layoff" variant="primary" label={`Lay off ${plan.count}`} onPress={() => actions.settlePayroll(true)} />
+        <Button key="payroll-keep" label="Keep everyone" onPress={() => actions.settlePayroll(false)} />
+      </Box>
+    </Box>
+  )
+}
+
 export function peopleTab(kit: Kit, data: PanelData, actions: PanelActions) {
   const { Box, Text, Input } = kit
   const { staff, blurbs, roster, payroll } = data
@@ -63,6 +81,7 @@ export function peopleTab(kit: Kit, data: PanelData, actions: PanelActions) {
         )}
         <Text dimColor>{`${everyone.length} total`}</Text>
       </Box>
+      {data.fx.layoffs && review(kit, data.fx.layoffs, actions)}
       {team.length + pool.length === 0 && <Text dimColor>No one on the books yet. Agents appear here once they are offered to Clawd.</Text>}
       {team.length > 0 && section('TEAM', team, kit, actions)}
       {pool.length > 0 && section('TALENT POOL', pool, kit, actions)}

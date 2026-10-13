@@ -37,27 +37,6 @@ export type Employee = {
   context?: number
 }
 
-/** Something on the CEO's desk: a decision with options, or an open question. */
-export type Ask = {
-  id: string
-  kind: 'decision' | 'question'
-  title: string
-  detail?: string
-  options: string[]
-  recommend?: string
-  fallback?: string
-  from: string
-  fromType?: string
-  fromId?: string
-  source: 'tool' | 'report' | 'dialog' | 'office'
-  status: 'open' | 'live' | 'answered' | 'dismissed'
-  answer?: string
-  askedAt: number
-  answeredAt?: number
-  isDelivered: boolean
-  action?: 'payroll'
-}
-
 /** One thing Clawd remembers for this project: a decision the user made, or a key choice an agent came back with. */
 export type Memory = {
   id: string
@@ -102,6 +81,8 @@ export type Fx = {
   /** What the person typed into each tab's filter. */
   finds?: { decisions?: string; people?: string }
   demo?: { step: number; total: number; caption: string }
+  /** The payroll review waiting in the People tab: how many agent types this project has no use for, and why. */
+  layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
 }
 
 declare module 'claude-code' {
@@ -113,7 +94,6 @@ declare module 'claude-code' {
       tick: number
       blurbs: Record<string, string>
       roster: Record<string, Badge>
-      desk: Ask[]
       payroll: Payroll
       memory: Memory[]
       gauge: Gauge

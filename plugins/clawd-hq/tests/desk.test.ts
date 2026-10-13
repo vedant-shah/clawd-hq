@@ -1,14 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { BRIEF_NOTE, fit, memoryBlock, whoOf, oneLine, parseChoices, parseEffort, parseReport, proposeLayoffs, recallNote } from '../hooks/desk'
-
-test('report lines parse into decisions and questions', () => {
-  const found = parseReport('x\n- CEO-DECISION: A or B? | A / B | recommend: A\nCEO-QUESTION: Why?\nCEO-DECISION: lonely? | only')
-  expect(found).toEqual([
-    { kind: 'decision', title: 'A or B?', options: ['A', 'B'], recommend: 'A' },
-    { kind: 'question', title: 'Why?', options: [], recommend: undefined },
-    { kind: 'question', title: 'lonely?', options: [], recommend: undefined },
-  ])
-})
+import { BRIEF_NOTE, fit, memoryBlock, whoOf, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from '../hooks/desk'
 
 test('a TypeScript project lays off other stacks and niche domains, never built-ins', () => {
   const types = ['Explore', 'general-purpose', 'ecc:go-reviewer', 'ecc:typescript-reviewer', 'ecc:react-reviewer', 'ecc:rust-build-resolver', 'ecc:healthcare-reviewer', 'ecc:architect', 'acme-ops:Robin']
@@ -24,7 +15,7 @@ test("Clawd's effort line comes off the brief", () => {
 })
 
 test('DECIDED lines are read from a report', () => {
-  expect(parseChoices('ok\n- DECIDED: Use Drizzle — typed\nDECIDED:   \nCEO-QUESTION: x?')).toEqual(['Use Drizzle — typed'])
+  expect(parseChoices('ok\n- DECIDED: Use Drizzle — typed\nDECIDED:   \nQUESTION: x?')).toEqual(['Use Drizzle — typed'])
 })
 
 test('oneLine collapses whitespace and cuts long text with an ellipsis', () => {
@@ -32,18 +23,6 @@ test('oneLine collapses whitespace and cuts long text with an ellipsis', () => {
   expect(oneLine('abcdefghij', 5)).toBe('abcd…')
   expect(oneLine('abcde', 5)).toBe('abcde')
   expect(oneLine('   ', 5)).toBe('')
-})
-
-test('agent-written titles and options are cut to one short line; a choice is kept whole', () => {
-  const long = 'x'.repeat(500)
-  // A choice is saved, so it is kept whole: only a runaway one is cut, at a word, with no mark.
-  const choice = `Use Drizzle ${'because it is typed '.repeat(20)}`.trim()
-  expect(parseChoices(`DECIDED: ${choice}`)[0]).toBe(choice)
-  expect(parseChoices(`DECIDED: ${'word '.repeat(900)}`)[0]!.length).toBeLessThanOrEqual(600)
-  expect(parseChoices(`DECIDED: ${'word '.repeat(900)}`)[0]).not.toMatch(/…/)
-  const [ask] = parseReport(`CEO-DECISION: ${long} | ${long} / B | recommend: B`)
-  expect(ask!.title).toHaveLength(160)
-  expect(ask!.options[0]).toHaveLength(160)
 })
 
 const mem = (kind: 'decision' | 'choice', text: string, by: string) => ({ id: 'M1', kind, text, by, at: 0, source: 'desk' as const })
@@ -81,13 +60,6 @@ test('fit collapses whitespace and cuts long text at a word, with no mark', () =
   expect(fit('😀😀😀😀😀😀', 4)).toBe('😀😀😀😀')
 })
 
-test('a question title longer than the limit is cut at a word with no mark, so a row that wraps it never ends in an ellipsis', () => {
-  const [ask] = parseReport(`CEO-QUESTION: ${'Should we keep going '.repeat(20)}`)
-  expect(ask!.title.length).toBeLessThanOrEqual(160)
-  expect(ask!.title).not.toMatch(/…/)
-  expect(ask!.title.startsWith('Should we keep going')).toBe(true)
-})
-
 test('whoOf reads who something is from: a role, or the role of an older "Name the Role"; CEO and Clawd stay as they are', () => {
   expect(whoOf('Guard')).toBe('Guard')
   expect(whoOf('Sage the Guard')).toBe('Guard')
@@ -100,7 +72,22 @@ test('the note on every brief asks a specialist to say, in plain words, what ste
   expect(BRIEF_NOTE).toMatch(/start each step with one short sentence/i)
   expect(BRIEF_NOTE).toMatch(/everyday words/)
   expect(BRIEF_NOTE).toMatch(/Step 2 of 4/)
-  // The older asks are still there.
-  expect(BRIEF_NOTE).toContain('CEO-DECISION:')
   expect(BRIEF_NOTE).toContain('DECIDED:')
+})
+
+test('the note on every brief sends a specialist\'s questions to Clawd in its report, and names no CEO desk', () => {
+  expect(BRIEF_NOTE).toContain('`QUESTION: <question> | <option> / <option> | recommend: <option>`')
+  expect(BRIEF_NOTE).toMatch(/Clawd, the chief of staff, reads these and asks the user only what needs the user/)
+  expect(BRIEF_NOTE).toMatch(/do not stall/)
+  expect(BRIEF_NOTE).not.toMatch(/CEO/)
+})
+
+test('a choice is kept whole up to its limit, and cut at a word past it', () => {
+  // A choice is saved, so it is kept whole: only a runaway one is cut, at a word, with no mark.
+  const whole = `Use Drizzle ${'because it is typed '.repeat(20)}`.trim()
+  expect(parseChoices(`DECIDED: ${whole}`)[0]).toBe(whole)
+  const long = 'Use the shared scoring table '.repeat(40)
+  const [choice] = parseChoices(`DECIDED: ${long}`)
+  expect(choice!.length).toBeLessThanOrEqual(600)
+  expect(choice!.endsWith('…')).toBe(false)
 })

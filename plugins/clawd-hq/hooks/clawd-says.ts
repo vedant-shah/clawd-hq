@@ -7,13 +7,12 @@ import type { ClawdMood } from './office'
 export const NAP_MS = 120_000
 const BLINK_EVERY = 11
 
-export function clawdMood(b: Boss, active: number, waiting: number, t: number, now: number): ClawdMood {
+export function clawdMood(b: Boss, active: number, t: number, now: number): ClawdMood {
   if (t < b.oopsUntil) return 'oops'
   if (t < b.proudUntil) return 'proud'
   if (active >= 4) return 'stressed'
   if (t < b.waveUntil) return 'delegating'
   if (b.isBusy) return 'focused'
-  if (waiting > 0) return 'waiting'
   if (active === 0 && b.idleSince > 0 && now - b.idleSince > NAP_MS) return 'sleepy'
   return active > 0 ? 'delegating' : 'chill'
 }

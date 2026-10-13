@@ -6,12 +6,14 @@ import { fit } from './desk'
 export const RECAP_AFTER_MS = 3 * 60_000
 /** A session shorter than this has nothing to recap. */
 export const RECAP_MIN_TURNS = 3
-export const RECAP_CHARS = 400
+/** The model is asked for 200 characters; a reply that runs a little over is still shown whole, a runaway one is cut here. */
+export const RECAP_CHARS = 280
 
 /** Asked over the session's own transcript, so the model answers from everything said so far. */
 export const RECAP_PROMPT =
-  'The user stepped away and is coming back. Write a recap of this session so far as one line of plain text, at most 400 characters: ' +
-  'what was being worked on, what is done, and the one next step. Everyday words. No preamble, no markdown, no line breaks.'
+  'The user stepped away and is coming back. Write a recap of this session as plain text, in at most two short sentences and 200 characters: ' +
+  'first what we are working on, in a few words, then the next step. Leave out what is already done, and every detail the next step does not need. ' +
+  'Everyday words. No preamble, no markdown, no line breaks.'
 
 export type RecapState = {
   /** The setting is on and someone can see the panel. */

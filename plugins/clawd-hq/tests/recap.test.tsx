@@ -109,7 +109,7 @@ test('a recap that could not be made shows nothing and is not asked for again in
   expect(await cardText($)).not.toMatch(/WHERE WE LEFT OFF/)
 })
 
-test('a long reply over several lines is shown as one line of at most 400 characters', async ($, on) => {
+test('a long reply over several lines is shown as one line of at most 280 characters', async ($, on) => {
   const { clock } = hostWithModel(on, () => ({ isAnswered: true, text: `Line one.\n\n${'More detail here. '.repeat(60)}`, usage: {} }))
   await $.session.start(START)
   await turns($, 3)
@@ -117,7 +117,7 @@ test('a long reply over several lines is shown as one line of at most 400 charac
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
   const line = (await ui.findAll({ type: 'Text' })).map(t => String(t.text)).find(t => t.startsWith('Line one.'))!
   await ui.unmount()
-  expect(line.length).toBeLessThanOrEqual(400)
+  expect(line.length).toBeLessThanOrEqual(280)
   expect(line).not.toMatch(/\n/)
 })
 

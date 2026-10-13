@@ -16,7 +16,6 @@ export type PanelData = {
 
 export type PanelActions = {
   setFind: (tab: 'decisions' | 'people', text: string) => unknown
-  resume: (task: string) => unknown
   forget: (id: string) => unknown
   layOff: (type: string) => unknown
   hire: (type: string) => unknown

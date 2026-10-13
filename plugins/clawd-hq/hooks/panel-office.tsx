@@ -15,15 +15,14 @@ const TONE = { clear: { mark: '✓ ', color: GREEN }, busy: { mark: '● ', colo
 
 type Ctx = { kit: Kit; data: PanelData; actions: PanelActions; cw: number }
 
-function clawdCard({ kit, data, actions, cw }: Ctx) {
-  const { Box, Text, Button, sprite } = kit
+function clawdCard({ kit, data, cw }: Ctx) {
+  const { Box, Text, sprite } = kit
   const { staff, boss, tick, now } = data
   const working = atWork(staff)
   const failed = recentFailures(staff, now, SICK_MS).map(one => titled(one, data))
   const status = statusOf(boss.isBusy, working.length, failed)
   const mood = clawdMood(boss, working.length, tick, now)
   const said = quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length })
-  const canResume = !boss.isBusy && working.length === 0 && boss.task !== undefined
   const isStacked = cw < 50
   // On the terminal, which cannot scale a picture, Clawd gets his small drawing: still the largest in the pane.
   const { full, compact } = clawdAvatar(isBlinking(tick))
@@ -36,10 +35,11 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
         <Box marginTop={1} borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>
         </Box>
-        {canResume && (
-          <Box marginTop={1}>
-            <Button key="resume" label={boss.outcome === 'stopped' ? 'retry last task' : 'pick up where we left off'}
-              onPress={() => actions.resume(boss.task ?? '')} />
+        {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
+        {!boss.isBusy && boss.recap !== undefined && (
+          <Box key="recap" marginTop={1} flexDirection="column">
+            <Text bold dimColor>WHERE WE LEFT OFF</Text>
+            <Text wrap="wrap">{boss.recap}</Text>
           </Box>
         )}
       </Box>

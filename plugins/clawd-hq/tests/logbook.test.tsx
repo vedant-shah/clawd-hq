@@ -182,20 +182,3 @@ test('a very long question never pushes its answer out of the saved decision', a
   await remember($, 'Another one')
   expect(files.get(FILE)).toMatch(/ → Yes\n- M2 /)
 })
-
-test('the "pick up where we left off" button sends your whole last request back, not a cut one', async ($, on) => {
-  const { clock } = host(on, [])
-  const fills: string[] = []
-  on('prompt.fill', (_$, e) => (fills.push((e as { text: string }).text), { isFilled: true }) as never)
-  on('turn.start', () => ({ turnId: 't1' }))
-  const request = `Refactor the auth module so that ${'every route checks the session first and '.repeat(4)}nothing else changes`
-  expect(request.length).toBeGreaterThan(120)
-  await $.turn.start({ text: request, turnId: 't1' } as never)
-  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', isAborted: false } as never)
-  await clock.advance(2 * 3_600_000)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  await ui.press({ key: 'resume' })
-  await ui.unmount()
-  expect(fills[0]).toContain(request)
-  expect(fills[0]).not.toMatch(/…/)
-})

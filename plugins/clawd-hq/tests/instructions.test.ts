@@ -14,10 +14,10 @@ function io(files: Record<string, string>) {
 const SHIPPED = { [`/plugin/${RULES_FILE}`]: '# Rules\n\nHand work over.\n', [`/plugin/${VOICE_FILE}`]: '# Voice\n\nPlain words.\n' }
 
 test('the options are on by default, with no voice file of the person\'s own', () => {
-  expect(optionsOf({})).toEqual({ isOn: true, voiceFile: '' })
-  expect(optionsOf({ chiefOfStaff: false, voiceFile: '  /me/voice.md ' })).toEqual({ isOn: false, voiceFile: '/me/voice.md' })
+  expect(optionsOf({})).toEqual({ isOn: true, voiceFile: '', isRecapOn: true })
+  expect(optionsOf({ chiefOfStaff: false, voiceFile: '  /me/voice.md ', recap: false })).toEqual({ isOn: false, voiceFile: '/me/voice.md', isRecapOn: false })
   // A value of the wrong kind counts as unset.
-  expect(optionsOf({ chiefOfStaff: 'no', voiceFile: 7 })).toEqual({ isOn: true, voiceFile: '' })
+  expect(optionsOf({ chiefOfStaff: 'no', voiceFile: 7, recap: 0 })).toEqual({ isOn: true, voiceFile: '', isRecapOn: true })
 })
 
 test('a bare session and a teammate are not briefed; every other session is', () => {

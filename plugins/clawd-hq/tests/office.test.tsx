@@ -95,7 +95,7 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   }
 })
 
-test("Clawd's card says All clear with nothing waiting, offers to pick up the last task, and shows the empty floor", async ($, on) => {
+test("Clawd's card says All clear with no one at work, has no button of its own, and shows the empty floor", async ($, on) => {
   const { clock } = host(on)
   on('turn.start', () => ({ turnId: 't1' }))
 
@@ -118,8 +118,10 @@ test("Clawd's card says All clear with nothing waiting, offers to pick up the la
   await clock.advance(2 * HOUR)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ key: 'resume' })).toBeDefined()
+    // The old shortcuts are gone: no button to a desk, none to refill the last request.
+    expect(await ui.find({ key: 'resume' })).toBeUndefined()
     expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
+    expect(await ui.find({ type: 'Button' })).toBeUndefined()
     await ui.unmount()
   }
 })
@@ -217,7 +219,6 @@ test('Clawd\'s card says what he is doing and how many are at work, and never co
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect((await ui.find({ type: 'Text', text: /^✓ Free to talk · 1 at work$/ }))?.props.color).toBe(GREEN)
     expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
-    // A specialist is still at work, so there is nothing to pick up yet.
     expect(await ui.find({ key: 'resume' })).toBeUndefined()
     expect(JSON.stringify(await ui.drawn())).not.toMatch(/needs? you|Waiting on you/)
     await ui.unmount()

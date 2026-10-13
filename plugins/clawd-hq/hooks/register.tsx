@@ -13,6 +13,7 @@ import { DEMO, isActive } from './panel-model'
 import { tourSteps } from './demo'
 import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
 import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
+import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
@@ -27,8 +28,6 @@ const CHEER_TICKS = 5
 const NAME_CHARS = 40
 /** How much of a question is kept in front of its answer in a saved decision. */
 const TITLE_CHARS = 600
-/** The last request, kept for the resume button. */
-const TASK_CHARS = 4000
 const BLURB_CHARS = 200
 // Agent-written text is cut to one line where it is stored.
 const DESCRIPTION_CHARS = 160
@@ -60,6 +59,10 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 // The project the session runs in: payroll is kept per project.
 let cwd = ''
 let isPayrollFiled = false
+// The recap on Clawd's card: whether it may be made here, Clawd's turns this session, and the turn count the last one was asked at.
+let isRecapOn = true
+let turnsSeen = 0
+let recapFor = 0
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
@@ -293,6 +296,30 @@ async function applyPayroll($: EngineInterface, isLayoff: boolean) {
   $.ui.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from the People tab.` : '👥 Everyone stays on the payroll.')
 }
 
+// ---- The recap: one line on where things stand, after a few quiet minutes ----
+
+/**
+ * Asks the model over the session's own transcript, which the API serves from the main thread's cache, as Claude
+ * Code's own session recap does. Once per pause: the turn count is noted before the question goes out.
+ */
+async function maybeRecap($: EngineInterface) {
+  const [b, f, now] = [await getBoss($), await getFx($), await $.clock.now()]
+  if (!isRecapDue({ isOn: isRecapOn, isBusy: b.isBusy || f.demo !== undefined, idleSince: b.idleSince, now, turns: turnsSeen, lastFor: recapFor })) return
+  const asked = turnsSeen
+  recapFor = asked
+  const reply = await $.model.fork({ prompt: RECAP_PROMPT })
+  const text = reply.isAnswered ? recapLine(reply.text) : undefined
+  // A turn that began while the model was answering has made the line stale: it is dropped.
+  if (text !== undefined && asked === turnsSeen) await setBoss($, boss => (boss.isBusy ? boss : { ...boss, recap: text }))
+}
+
+/** A new session, or a /clear: the turns are counted afresh and an old recap goes. */
+async function resetRecap($: EngineInterface) {
+  turnsSeen = 0
+  recapFor = 0
+  if ((await getBoss($)).recap !== undefined) await setBoss($, b => ({ ...b, recap: undefined }))
+}
+
 // ---- The frame clock ----
 
 async function onFrame($: EngineInterface, frames: number) {
@@ -300,7 +327,11 @@ async function onFrame($: EngineInterface, frames: number) {
   const isLively = list.some(one => isAtDesk(one, t0)) || b.isBusy || f.demo !== undefined ||
     (b.quip !== undefined && t0 < b.quip.until) || t0 < b.waveUntil
   if (frames % 8 === 0) await reconcile($)
-  if (frames % 25 === 0) await reviewPayroll($)
+  if (frames % 25 === 0) {
+    await reviewPayroll($)
+    // The model takes its time: the frames go on meanwhile, and a recap that fails is simply not shown.
+    void maybeRecap($).catch(() => undefined)
+  }
   // A quiet office only needs a frame now and then, for blinking and snoring; nothing is written in between.
   if (!isLively && frames % 3 !== 0) return
   const t = await update($, tick, n => n + 1)
@@ -329,7 +360,6 @@ async function setLaidOff($: EngineInterface, type: string, isOff: boolean) {
 function panelActions($: EngineInterface): PanelActions {
   return {
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
-    resume: task => $.prompt.fill({ text: `Pick up where we left off: ${task}` }),
     forget: id => saveMemory($, list => list.filter(x => x.id !== id)),
     layOff: type => setLaidOff($, type, true),
     hire: type => setLaidOff($, type, false),
@@ -395,7 +425,7 @@ async function startDemo($: EngineInterface) {
     void (async () => {
       await update($, staff, l => l.filter(e => !e.id.startsWith(DEMO)))
       await setFx($, f => ({ ...f, demo: undefined }))
-      await setBoss($, b => ({ ...saved, turns: b.turns, quip: undefined }))
+      await setBoss($, b => ({ ...saved, turns: b.turns, recap: b.recap, quip: undefined }))
       await showStatus($)
     })()
   }))
@@ -420,6 +450,9 @@ export const register: Register = (on, options) => {
     cwd = e.cwd
     isPayrollFiled = false
     isLogbookWarned = false
+    // A recap is for someone looking at the panel: none where nothing is drawn.
+    isRecapOn = brief.isRecapOn && e.surface !== null
+    await resetRecap($)
     // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
     if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined }))
     await $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })
@@ -477,6 +510,8 @@ export const register: Register = (on, options) => {
       const now = await $.clock.now()
       await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined }))
     }
+    // Another conversation takes over this process without a session.start: its recap and its turns are its own.
+    if (e.reason === 'clear' || e.reason === 'resume') await resetRecap($)
     return next(e)
   })
 
@@ -606,9 +641,9 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
-    // Kept whole: the resume button puts it back in the prompt box.
-    const task = e.text ? fit(e.text, TASK_CHARS) : undefined
-    await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, task: task ?? b.task, activity: task ? READING_BRIEF : 'Back at it' }))
+    // Work goes on, so a recap of the pause before it is out of date.
+    turnsSeen += 1
+    await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, recap: undefined, activity: e.text ? READING_BRIEF : 'Back at it' }))
     return next(e)
   })
 
@@ -625,7 +660,7 @@ export const register: Register = (on, options) => {
     } else {
       const now = await $.clock.now()
       await setBoss($, b => ({
-        ...b, isBusy: false, idleSince: now, doneAt: now, outcome: e.reason === 'answer' ? 'done' : 'stopped',
+        ...b, isBusy: false, idleSince: now, doneAt: now,
         activity: e.reason === 'answer' ? 'All done, boss.' : 'Hmm, that turn stopped early.',
       }))
     }

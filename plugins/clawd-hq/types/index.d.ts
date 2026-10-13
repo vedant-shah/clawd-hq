@@ -61,10 +61,9 @@ export type Boss = {
   oopsUntil: number
   lastTitle: string
   quip?: { text: string; until: number }
-  /** The last thing the user asked for, and how that turn ended. */
-  task?: string
   doneAt?: number
-  outcome?: 'done' | 'stopped'
+  /** One line on where things stand, made after a few quiet minutes; gone when the next turn starts. */
+  recap?: string
   idleSince: number
   hires: number
   wins: number

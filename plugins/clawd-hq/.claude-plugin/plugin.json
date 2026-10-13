@@ -19,6 +19,13 @@
       "description": "The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. Leave empty for the built-in voice. Read when a session starts, up to 8000 characters.",
       "required": false,
       "default": ""
+    },
+    "recap": {
+      "type": "boolean",
+      "title": "Recap on Clawd's card",
+      "description": "On (default): after at least three turns and three quiet minutes, Clawd's card shows one line on where things stand, the way Claude Code's own session recap does. It asks the model one short question about the session, which uses a little of your plan. Off: no recap is made.",
+      "required": false,
+      "default": true
     }
   }
 }

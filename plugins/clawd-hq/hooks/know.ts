@@ -200,3 +200,12 @@ export type KnowLogEntry = {
 }
 
 export const withLog = (log: readonly KnowLogEntry[], entry: KnowLogEntry): KnowLogEntry[] => [...log, entry].slice(-LOG_KEEP)
+
+// ---- Keeping Claude Code's own "You should know" quiet while ours is on ----
+
+/** Claude Code's own side agent for notes, as the host names who asked: built in, under its own name. */
+export const isBuiltinKnow = (origin: { plugin: string; tier: string }) =>
+  origin.tier === 'builtin' && /^cc-plugin-you-should-know(@|$)/.test(origin.plugin)
+
+/** Its side question's answer: nothing to ask about yet, which it already handles by showing nothing. */
+export const QUIET_FORK = { isAnswered: false, reason: 'nothing-to-fork' } as const

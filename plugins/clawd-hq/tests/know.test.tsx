@@ -394,3 +394,50 @@ test('the person\'s second prompt after a note takes it off; a /clear empties th
   expect(await ui.find({ type: 'Text', text: /HEADS UP/ })).toBeUndefined()
   await ui.unmount()
 })
+
+// ---- Claude Code's own "You should know" stays quiet while ours is on ----
+
+/** A stand-in for the built-in: at the end of a turn it forks a side question and keeps what came back. */
+const ysk = (tier: 'builtin' | 'user') => ({
+  name: 'cc-plugin-you-should-know',
+  tier,
+  register(on: (event: string, hook: (...args: never[]) => unknown) => void) {
+    on('turn.complete', async ($: { model: { fork: (r: unknown) => Promise<unknown> }; store: { set: (k: string, v: unknown) => Promise<unknown> } }, e: unknown, next: (e: unknown) => unknown) => {
+      if ((e as { agentId?: string }).agentId === undefined) await $.store.set('ysk-reply', await $.model.fork({ prompt: 'anything to know?' }))
+      return next(e)
+    })
+  },
+}) as never
+
+/** The main thread's fork as the engine would answer it, and every fork that got that far. */
+function forks(on: On) {
+  const h = host(on, [])
+  const asked: string[] = []
+  on('model.fork', (_$, e) => (asked.push((e as { prompt: string }).prompt), { value: answered('learn: none') }) as never)
+  on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
+  return { ...h, asked }
+}
+const turnEnds = ($: Engine) => $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 'm1', isAborted: false } as never)
+
+test('the built-in\'s side question is answered with nothing to fork, and never reaches the model', { plugins: [ysk('builtin')] }, async ($, on) => {
+  const { asked, saved } = forks(on)
+  await $.session.start(START)
+  await turnEnds($)
+  expect(asked).toEqual([])
+  expect(saved.get('ysk-reply')).toEqual({ isAnswered: false, reason: 'nothing-to-fork' })
+})
+
+test('a plugin a person installed under the same name is left alone', { plugins: [ysk('user')] }, async ($, on) => {
+  const { asked, saved } = forks(on)
+  await $.session.start(START)
+  await turnEnds($)
+  expect(asked).toEqual(['anything to know?'])
+  expect(saved.get('ysk-reply')).toMatchObject({ isAnswered: true })
+})
+
+test('with our setting off, the built-in asks as usual', { plugins: [ysk('builtin')], options: { youShouldKnow: false } }, async ($, on) => {
+  const { asked } = forks(on)
+  await $.session.start(START)
+  await turnEnds($)
+  expect(asked).toEqual(['anything to know?'])
+})

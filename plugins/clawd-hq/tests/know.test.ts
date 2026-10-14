@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  BACKOFF0, CARD_NOTES, CHECK_PROMPT, KNOW0, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat, keepLast, listFrom,
+  BACKOFF0, CARD_NOTES, CHECK_PROMPT, KNOW0, QUIET_FORK, afterIgnored, afterPrompt, backoffFrom, checkAsk, isBuiltinKnow, isRepeat, keepLast, listFrom,
   looksSecret, nextCheck, parseNote, plainText, skipsAfter, withLog, withNote, withoutFront,
 } from '../hooks/know'
 import type { KnowNote } from '../types'
@@ -180,4 +180,15 @@ test('an explanation with no bold title keeps its text and has no title; a title
   expect(parseNote('learn: A.\nexplain: The run stopped early.')).toEqual({ kind: 'note', line: 'A.', tag: 'You should know', explain: 'The run stopped early.' })
   expect(parseNote(`learn: A.\nexplain: **${'Long title '.repeat(10)}**\nBody.`)).toEqual({ kind: 'note', line: 'A.', tag: 'You should know' })
   expect(parseNote('learn: A.\nexplain: **Only a title**')).toEqual({ kind: 'note', line: 'A.', tag: 'You should know' })
+})
+
+// ---- Keeping Claude Code's own note quiet ----
+
+test('only the built-in "You should know" is matched: by its name, from the built-in tier', () => {
+  expect(isBuiltinKnow({ plugin: 'cc-plugin-you-should-know', tier: 'builtin' })).toBe(true)
+  expect(isBuiltinKnow({ plugin: 'cc-plugin-you-should-know@builtin', tier: 'builtin' })).toBe(true)
+  expect(isBuiltinKnow({ plugin: 'cc-plugin-you-should-know', tier: 'user' })).toBe(false)
+  expect(isBuiltinKnow({ plugin: 'cc-plugin-you-should-know-extra', tier: 'builtin' })).toBe(false)
+  expect(isBuiltinKnow({ plugin: 'clawd-hq', tier: 'user' })).toBe(false)
+  expect(QUIET_FORK).toEqual({ isAnswered: false, reason: 'nothing-to-fork' })
 })

@@ -8,7 +8,8 @@ import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './a
 import type { ArtifactAnswer } from './artifacts'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
-import { BRAND, ago, clip, hash, labelOf, roleOf } from './office'
+import { BLURB_CHARS, CHEER_TICKS, DEMO_TOOL, DESCRIPTION_CHARS, FRAME_MS, MAX_BLURBS, MAX_MEMORY, MEM_TOOL, NAME_CHARS, RECALL, TITLE_CHARS } from './constants'
+import { BRAND, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { contextOf, withRequest } from './usage'
@@ -27,25 +28,8 @@ import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import { REMEMBER_SPEC } from './tool-specs'
-import { QUIET_MS, endOfStatus, endRun, hire, markEngine, quietFor, restart, touch, verdict, withSaid, withStep, withTool } from './staff-model'
+import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withSaid, withStep, withTool } from './staff-model'
 import { BOSS0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
-
-const FRAME_MS = 400
-const CHEER_TICKS = 5
-/** A given name is a word or two; anything longer is cut. */
-const NAME_CHARS = 40
-/** How much of a question is kept in front of its answer in a saved decision. */
-const TITLE_CHARS = 600
-const BLURB_CHARS = 200
-// Agent-written text is cut to one line where it is stored.
-const DESCRIPTION_CHARS = 160
-const MAX_BLURBS = 120
-const DEMO_TOOL = 'mcp__clawd-hq__demo'
-const MEM_TOOL = 'mcp__clawd-hq__remember'
-// The memory keeps this many entries per project; Clawd and each brief get the newest RECALL.
-/** The newest this many decisions are kept: in the file and in the pane. */
-const MAX_MEMORY = 1000
-const RECALL = 25
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
 const boss = atom({ plugin: 'clawd-hq', key: 'boss' } as const, BOSS0)
@@ -133,12 +117,8 @@ async function clockOut($: EngineInterface, id: string, mood: Mood, how: EndedBy
   if (!e || mood === 'lost') return
   const blurb = (await read($, blurbs))[e.type] ?? ''
   const [role, label] = [roleOf(e.type, blurb), labelOf(e, blurb)]
-  await setBoss($, b => (mood === 'done'
-    ? { ...b, proudUntil: t + 10, oopsUntil: 0, lastTitle: label, wins: b.wins + 1 }
-    : { ...b, oopsUntil: t + 10, proudUntil: 0, lastTitle: label, fails: b.fails + 1 }))
-  $.ui.toast(mood === 'done'
-    ? `${role.prop} ${label} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
-    : `🤕 ${label} could not finish: ${e.description || e.type}`)
+  await setBoss($, b => finishedBoss(b, mood, t, label))
+  $.ui.toast(finishedText(mood, role.prop, label, e, now))
 }
 
 /** Any sign of life from a specialist (a tool call, a model step): it is heard from now, and a finished one is back at work. */

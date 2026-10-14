@@ -1,6 +1,7 @@
 // How a specialist's run starts, spends and ends, as pure functions over one employee.
 import type { AgentStatus } from 'claude-code'
-import type { EndedBy, Employee, Mood } from '../types'
+import type { Boss, EndedBy, Employee, Mood } from '../types'
+import { ago } from './office'
 import { DEMO, isActive } from './panel-model'
 
 export type StepUsage = {
@@ -55,6 +56,16 @@ export function endRun(one: Employee, mood: Mood, how: EndedBy, now: number, tic
   const cheer = mood === 'lost' ? {} : { doneTick: tick }
   return { ...one, ...cheer, mood, activity: undefined, said: undefined, endedAt: now, endedBy: how }
 }
+
+/** Clawd's card after a run ended with a win or a failure: proud or sorry for a while, with who it was and the new count. */
+export const finishedBoss = (b: Boss, mood: Mood, t: number, label: string): Boss => (mood === 'done'
+  ? { ...b, proudUntil: t + 10, oopsUntil: 0, lastTitle: label, wins: b.wins + 1 }
+  : { ...b, oopsUntil: t + 10, proudUntil: 0, lastTitle: label, fails: b.fails + 1 })
+
+/** The toast for a run that ended with a win or a failure. */
+export const finishedText = (mood: Mood, prop: string, label: string, e: Employee, now: number): string => (mood === 'done'
+  ? `${prop} ${label} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
+  : `🤕 ${label} could not finish: ${e.description || e.type}`)
 
 /** A tool call: the specialist is at work, one tool more, and the sentence says on what. One still arriving stays arriving. */
 export const withTool = (one: Employee, activity: string): Employee =>

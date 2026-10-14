@@ -512,7 +512,36 @@ test('five tool uses, or six spread over two turns, or a specialist\'s tools, ar
   expect(asked).toEqual([])
 })
 
-test('with the setting off, Clawd\'s long turns are not checked either', { options: { youShouldKnow: false } }, async ($, on) => {
+test('Clawd\'s own calls of the step tool are not tool uses of his: eight of them are not a long turn', async ($, on) => {
+  const { asked, rows } = office(on)
+  rows.set('main', mainRows(0))
+  await $.session.start(START)
+  await $.turn.start({ text: 'Tidy the docs', turnId: 'm1' } as never)
+  for (let i = 0; i < 8; i += 1) await $.tool.call({ tool: 'mcp__clawd-hq__step', done: i, total: 8 } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 'm1', isAborted: false, durationMs: 30_000 } as never)
+  await idle()
+  expect(asked).toEqual([])
+})
+
+test('a specialist run whose only tool uses are its step reports counts as using no tools: skipped, with no back-off used up', async ($, on) => {
+  const { asked, rows, saved } = office(on)
+  saved.set('know:backoff:/repo', { ignored: 2, skipLeft: 1 })
+  await $.session.start(START)
+  await hire($)
+  const report = (n: number) => ({ tool_use_id: `s${n}`, tool: 'mcp__clawd-hq__step', input: { done: n, total: 2 }, text: 'Noted.' })
+  rows.set('a1', [
+    { role: 'user', text: 'What do you think of the plan?', toolUses: [] },
+    { role: 'assistant', text: 'Step 1 of 2: reading.', toolUses: [report(0)] },
+    { role: 'assistant', text: 'It looks sound.', toolUses: [report(2)] },
+  ])
+  await handBack($, 'a1', 'answer', 'It looks sound.')
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toEqual([])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools' }])
+  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
+})
+
+test('with the setting off, Clawd\'s long turns are not checked either',{ options: { youShouldKnow: false } }, async ($, on) => {
   const { asked, rows } = office(on)
   rows.set('main', mainRows(8))
   await $.session.start(START)

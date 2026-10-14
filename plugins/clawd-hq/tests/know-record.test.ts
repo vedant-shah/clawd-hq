@@ -14,6 +14,24 @@ const use = (n: number, tool: string, input: Record<string, unknown>, text?: str
 const record = (rows: Row[], over: Partial<RecordInput> = {}) =>
   buildRecord({ who: 'Tester', ended: 'answer', rows, report: 'Fixed the bug. All tests pass.', prompts: [], ...over })
 
+test('the specialist\'s step reports are not steps of the record: they are left out and the numbering goes on without them', () => {
+  const report = (n: number) => use(n, 'mcp__clawd-hq__step', { done: n, total: 2, note: 'Reading' }, 'Noted: 1 of 2 steps done.')
+  const rows = [
+    brief(),
+    said('Step 1 of 2: reading.', [report(1), use(2, 'Read', { file_path: '/repo/src/login.ts' }, 'export function login() {}')]),
+    said('Step 2 of 2: running the tests.', [report(3), use(4, 'Bash', { command: 'npm test' }, 'ok')]),
+    said('Fixed the bug. All tests pass.'),
+  ]
+  const { text, steps } = record(rows)
+  expect(steps).toBe(2)
+  expect(text).not.toContain('mcp__clawd-hq__step')
+  expect(text).not.toContain('Noted: 1 of 2')
+  expect(text).toMatch(/STEP 1 · Read · \/repo\/src\/login\.ts/)
+  expect(text).toMatch(/STEP 2 · Bash · npm test/)
+  // What it said stays, including its step lines.
+  expect(text).toContain('Step 1 of 2: reading.')
+})
+
 test('every step is kept in order with its tool, target and outcome, beside the brief, the specialist\'s words and the report', () => {
   const rows = [
     brief(),

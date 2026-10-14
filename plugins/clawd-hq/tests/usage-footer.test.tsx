@@ -82,7 +82,7 @@ test('a request of the main chat names the model and effort; a specialist\'s req
   await request($, 'claude-sonnet-5-1', 'xhigh')
   expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Extra high$/ })).toBeDefined()
-  // A thinking budget in tokens is not an effort word: the last effort stays.
+  // A thinking budget in tokens is not an effort word: the last effort of the same model stays.
   await request($, 'claude-sonnet-5-1', 8000)
   expect(await ui.find({ type: 'Text', text: /^Extra high$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
@@ -317,13 +317,17 @@ test('a request that changes neither the model nor the effort makes no write', a
   expect(writes).toHaveLength(2)
 })
 
-test('a request with no effort keeps the effort shown', async ($, on) => {
+test('a request with no effort keeps the effort shown for the same model, and drops it for another', async ($, on) => {
   host(on)
   answerSteps(on)
   await request($, 'claude-opus-5-5', 'high')
+  await request($, 'claude-opus-5-5', undefined)
+  const same = await mount($, 'terminal')
+  expect(await same.find({ type: 'Text', text: /^High$/ })).toBeDefined()
+  await same.unmount()
   await request($, 'claude-sonnet-5-1', undefined)
-  const ui = await mount($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^High$/ })).toBeDefined()
-  await ui.unmount()
+  const other = await mount($, 'terminal')
+  expect(await other.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
+  expect(await other.find({ type: 'Text', text: /^High$/ })).toBeUndefined()
+  await other.unmount()
 })

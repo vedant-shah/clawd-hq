@@ -1,5 +1,7 @@
 // The progress a specialist reports with the step tool, pure: what a call may say, and how it lands on the specialist's record.
 import type { Employee } from '../types'
+import { STEP_TOOL } from './constants'
+import { HIDDEN_MARKS } from './plain'
 
 /** A plan has between 1 and this many steps. */
 export const MAX_PLAN = 12
@@ -12,8 +14,11 @@ export type StepParsed = { report: StepReport } | { error: string }
 
 const isWhole = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n)
 
-/** Untrusted display text as one plain line: control characters and invisible direction marks become spaces, runs of space one. */
-const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿]+/g, ' ').replace(/\s+/g, ' ').trim()
+/** Untrusted display text as one plain line: control characters and hidden marks become spaces, runs of space one. */
+const plain = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(HIDDEN_MARKS, ' ').replace(/\s+/g, ' ').trim()
+
+/** Whether a tool is the step tool: its calls are reports, not work, so the check on finished work does not count them as steps. */
+export const isStepTool = (tool: string) => tool === STEP_TOOL
 
 export function parseStep(input: Record<string, unknown>): StepParsed {
   const { done, total, note } = input

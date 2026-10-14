@@ -65,11 +65,13 @@ export const contextOf = (c: { tokens?: number; window: number; percent?: number
 
 /**
  * The gauge after a request from the main chat: its model, and its effort when it names one in words. A request that
- * names none (or a number) keeps the last known effort. The very same gauge when nothing moved.
+ * names none (or a number) keeps the last known effort while the model is the same, and has none once the model changes.
+ * The very same gauge when nothing moved.
  */
 export function withRequest(g: Gauge, model: string, effort: string | number | undefined): Gauge {
   const nextModel = model === '' ? g.model : model
-  const nextEffort = effortLabel(effort) === undefined ? g.effort : (effort as Gauge['effort'])
+  const kept = nextModel === g.model ? g.effort : undefined
+  const nextEffort = effortLabel(effort) === undefined ? kept : (effort as Gauge['effort'])
   return nextModel === g.model && nextEffort === g.effort ? g : { ...g, model: nextModel, effort: nextEffort }
 }
 

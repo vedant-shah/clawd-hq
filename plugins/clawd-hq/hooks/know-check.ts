@@ -13,6 +13,7 @@ import type { LeftOut, RecordInput } from './know-record'
 import { PANES } from './panes'
 import { side } from './side-ask'
 import { inLine } from './state'
+import { isStepTool } from './steps'
 
 const MODEL = 'haiku'
 const MAX_TOKENS = 700
@@ -130,7 +131,7 @@ export async function checkHandback(io: KnowIo, h: Handback, who: string) {
     const taken = await takeRows(io, h)
     if (!taken.rows) return await addLog(io, { at, who, outcome: 'refused', reason: taken.why })
     // A specialist that only talked has no steps to set its report against; Clawd's own turns get here with six or more.
-    if (!taken.rows.some(r => r.toolUses.length > 0)) return await addLog(io, { at, who, outcome: 'skipped', reason: 'the run used no tools' })
+    if (!taken.rows.some(r => r.toolUses.some(use => !isStepTool(use.tool)))) return await addLog(io, { at, who, outcome: 'skipped', reason: 'the run used no tools' })
     let isSkipped = false
     await change(io, 'backoff', b => {
       const turn = nextCheck(b)

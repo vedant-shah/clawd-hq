@@ -3,7 +3,8 @@ import type { AgentStatus } from 'claude-code'
 import type { Boss, EndedBy, Employee, Mood } from '../types'
 import { ago } from './office'
 import { DEMO, isActive } from './panel-model'
-import { withWords } from './steps'
+import { withProgress, withWords } from './steps'
+import type { StepReport } from './steps'
 
 export type StepUsage = {
   input_tokens: number
@@ -70,6 +71,9 @@ export const finishedBoss = (b: Boss, mood: Mood, t: number, label: string): Bos
 export const finishedText = (mood: Mood, prop: string, label: string, e: Employee, now: number): string => (mood === 'done'
   ? `${prop} ${label} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
   : `🤕 ${label} could not finish: ${e.description || e.type}`)
+
+/** A progress report (the step tool's) reaches a specialist only while its run is going; one that ended meanwhile is left as it was. A report is a sign of life. */
+export const withReport = (one: Employee, r: StepReport, now: number): Employee => (isActive(one) ? touch(withProgress(one, r), now) : one)
 
 /** A tool call: the specialist is at work, one tool more, and the sentence says on what. One still arriving stays arriving. */
 export const withTool = (one: Employee, activity: string): Employee =>

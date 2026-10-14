@@ -1,6 +1,7 @@
 // The check on finished work, pure: the question asked, how its reply is read, and the notes, lists and back-off it keeps.
 // hooks/know-hooks.ts asks the model and keeps the state; hooks/know-record.ts writes up the work being checked.
 import type { KnowNote, KnowState, KnowTag } from '../types'
+import { HIDDEN_MARKS } from './plain'
 
 /** The fixed question, our own words: compare what the report says with what the steps did, and default to silence. */
 export const CHECK_PROMPT = `You check one finished piece of work for a busy person. A specialist, or Clawd (the chief of staff), was given a brief, took the steps listed, and wrote a report. The person reads the report, not the steps. Is there one thing they really should know that the report leaves out, gets wrong or plays down?
@@ -72,7 +73,7 @@ export function checkAsk(record: string, shown: readonly string[], knew: readonl
 
 /** Model text made safe to draw: control characters and hidden marks go, a tab becomes a space. */
 export function plainText(text: string): string {
-  return text.replace(/\t/g, ' ').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
+  return text.replace(/\t/g, ' ').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '').replace(HIDDEN_MARKS, '')
 }
 
 /** A key or token by its shape: common prefixes, or a long run of letters and digits in both cases. */

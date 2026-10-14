@@ -231,4 +231,6 @@ test('a long run of hex digits counts as a key or token', () => {
 
 test('hidden marks are written as escapes in the source, so a reader can see them', () => {
   expect(plainText('a\u200bb\u2066c\ufeffd')).toBe('abcd')
+  // The same hidden marks the step note drops: soft hyphen, Arabic letter mark, Mongolian vowel separator, tag characters.
+  expect(plainText('a\u00adb\u061cc\u180ed\u{e0041}e')).toBe('abcde')
 })

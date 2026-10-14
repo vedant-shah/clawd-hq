@@ -27,9 +27,9 @@ import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
-import { parseStep, withProgress } from './steps'
+import { parseStep } from './steps'
 import { REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
-import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withSaid, withStep, withTool } from './staff-model'
+import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withReport, withSaid, withStep, withTool } from './staff-model'
 import { BOSS0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
@@ -133,6 +133,16 @@ async function signOfLife($: EngineInterface, id: string, activity?: string) {
 
 /** An agent the engine lists that no spawn announced (it started before this mod loaded) joins the books. */
 const hireFromList = ($: EngineInterface) => (a: { id: string; type: string; description: string; name?: string }) => newHire($, a.id, a.type, a.description, a.name)
+
+/** The specialist of this id on the books. One the engine lists that no spawn has announced yet (its first call can beat the hire) joins first. */
+async function specialistOf($: EngineInterface, id: string): Promise<Employee | undefined> {
+  const known = (await read($, staff)).find(one => one.id === id)
+  if (known) return known
+  const listed = (await $.agent.list()).find(one => one.id === id)
+  if (!listed) return undefined
+  await hireFromList($)(listed)
+  return (await read($, staff)).find(one => one.id === id)
+}
 
 /**
  * The engine's own list catches agents spawned before this mod loaded and stops nobody saw; the clock catches
@@ -638,8 +648,8 @@ export const register: Register = (on, options) => {
     const tool = String(e.tool)
     const input = e as unknown as Record<string, unknown>
     const id = e.agentId
-    // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts).
-    if (id === undefined) knowToolUsed()
+    // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
+    if (id === undefined && tool !== STEP_TOOL) knowToolUsed()
 
     if (tool === DEMO_TOOL) {
       await openPanes(paneIo($), false)
@@ -661,12 +671,13 @@ export const register: Register = (on, options) => {
 
     // A specialist's own report of how far along it is (hooks/steps.ts). Only one at work here counts; any other call is ignored.
     if (tool === STEP_TOOL) {
-      const mine = id ? (await read($, staff)).find(one => one.id === id) : undefined
+      const mine = id ? await specialistOf($, id) : undefined
       if (!mine || !isActive(mine)) return { result: 'Ignored: only a specialist at work here reports steps.' } as never
       const parsed = parseStep(input)
       if ('error' in parsed) return { deny: parsed.error } as never
       const now = await $.clock.now()
-      await update($, staff, l => edit(l, mine.id, one => touch(withProgress(one, parsed.report), now)))
+      // The run is checked again inside the write: it may have ended since it was read.
+      await update($, staff, l => edit(l, mine.id, one => withReport(one, parsed.report, now)))
       return { result: `Noted: ${parsed.report.done} of ${parsed.report.total} steps done.` } as never
     }
 

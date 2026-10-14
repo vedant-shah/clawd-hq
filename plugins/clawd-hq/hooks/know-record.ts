@@ -3,6 +3,7 @@
 // trim leaves a mark in words. hooks/know-hooks.ts reads the rows from the session and hands them in.
 import type { SessionMessage } from 'claude-code'
 import { BRIEF_NOTE } from './desk'
+import { isStepTool } from './steps'
 import { ago } from './office'
 
 /** The whole record's limit: about 60K tokens, at about four characters a token. */
@@ -113,7 +114,8 @@ function itemsOf(rows: readonly SessionMessage[], input: RecordInput): Item[] {
     }
     const isReport = i === lastSaid && isSame(row.text, input.report)
     const words: Item[] = row.text.trim() === '' || isReport ? [] : [{ kind: 'words', text: `${speaker}: ${row.text}` }]
-    return [...words, ...row.toolUses.map(use => stepOf((n += 1), use))]
+    // A report of progress (the step tool) is not work: it is no step of the record.
+    return [...words, ...row.toolUses.filter(use => !isStepTool(use.tool)).map(use => stepOf((n += 1), use))]
   })
 }
 

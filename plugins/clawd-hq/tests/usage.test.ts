@@ -84,14 +84,18 @@ test('a request from the main chat sets the model and effort; the same request c
   expect(withRequest(next, 'claude-sonnet-5-1', 'high')).toMatchObject({ model: 'claude-sonnet-5-1', effort: 'high' })
 })
 
-test('a request that reports no effort, a number or an unknown word keeps the last known effort; only a new word changes it', () => {
+test('a request that reports no effort, a number or an unknown word keeps the last known effort of the same model; only a new word changes it', () => {
   const g = { startedAt: 0, limits: [], model: 'm', effort: 'high' as const }
   expect(withRequest(g, 'm', 8000)).toBe(g)
   expect(withRequest(g, 'm', undefined)).toBe(g)
   expect(withRequest(g, 'm', 'turbo')).toBe(g)
   expect(withRequest(g, 'm', 'low').effort).toBe('low')
-  // The model still moves when the effort is not reported, and the effort stays.
-  expect(withRequest(g, 'other', undefined)).toEqual({ startedAt: 0, limits: [], model: 'other', effort: 'high' })
+  // The effort is kept only for the model it was reported for: another model with none reported has none shown.
+  expect(withRequest(g, 'other', undefined)).toEqual({ startedAt: 0, limits: [], model: 'other', effort: undefined })
+  expect(withRequest(g, 'other', 8000)).toEqual({ startedAt: 0, limits: [], model: 'other', effort: undefined })
+  expect(withRequest(g, 'other', 'max')).toEqual({ startedAt: 0, limits: [], model: 'other', effort: 'max' })
+  // A request with no model named is not a change of model.
+  expect(withRequest(g, '', undefined)).toBe(g)
   // Nothing known and nothing reported: no change.
   const empty = { startedAt: 0, limits: [] }
   expect(withRequest(empty, '', undefined)).toBe(empty)

@@ -73,6 +73,30 @@ test('a report from a specialist that already finished is ignored, so an old bar
   expect((await rowOf($, 'terminal')).texts.some(t => /^\d+\/\d+$/.test(t))).toBe(false)
 })
 
+test('a first report that comes before the hire is recorded still counts: the engine lists the agent, so it joins the books first', async ($, on) => {
+  host(on, [specialist])
+  let early: { result?: string; deny?: string } | undefined
+  // The specialist runs inside the spawn call: its first step call lands before the spawn has answered.
+  on('agent.spawn', async () => {
+    early = await report($, { done: 0, total: 4, note: 'Making a plan' }, 't1')
+    return { model: 'claude-opus-5-5', agentId: 't1' }
+  })
+  on('tool.call', () => ({ result: 'ok' }) as never)
+  await $.agent.spawn(BUILD)
+  expect(early?.result).toMatch(/^Noted/)
+  for (const surface of SURFACES) {
+    const { texts, row } = await rowOf($, surface)
+    expect(row).toBeDefined()
+    expect(texts).toContain('0/4')
+    expect(texts).toContain('Making a plan')
+  }
+})
+
+test('a first report from an agent that is neither on the books nor listed is still ignored', async ($, on) => {
+  host(on, [])
+  expect((await report($, { done: 0, total: 4 }, 'ghost')).result).toMatch(/^Ignored/)
+})
+
 test('a bad report is refused with a clear error, and nothing changes', async ($, on) => {
   hostWithSpecialist(on)
   await $.agent.spawn(BUILD)

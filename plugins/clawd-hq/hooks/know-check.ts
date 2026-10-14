@@ -4,11 +4,11 @@
 import type { ModelCompleteResult, SessionMessage } from 'claude-code'
 import type { KnowNote, KnowState } from '../types'
 import {
-  BACKOFF0, CARD_NOTES, KNEW_KEEP, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
+  BACKOFF0, CARD_NOTES, KNEW_KEEP, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
   keepLast, listFrom, nextCheck, parseNote, withLog, withNote, withoutFront,
 } from './know'
 import type { Backoff, KnowLogEntry } from './know'
-import { CAP_CHARS, buildRecord } from './know-record'
+import { CAP_CHARS, buildRecord, turnRows } from './know-record'
 import type { RecordInput } from './know-record'
 import { paneOf } from './panes'
 import { side } from './side-ask'
@@ -26,16 +26,17 @@ export type KnowIo = {
   get: (key: string) => Promise<unknown>
   set: (key: string, value: unknown) => Promise<unknown>
   panes: () => Promise<ReadonlyArray<{ id: string; isShown: boolean; isPlaced: boolean }>>
-  /** One agent's rows, or why the session will not say. */
-  messages: (agentId: string) => Promise<readonly SessionMessage[] | { deny: string }>
+  /** One agent's rows, or why the session will not say; with no id, the main chat's. */
+  messages: (agentId?: string) => Promise<readonly SessionMessage[] | { deny: string }>
   complete: (ask: { model: string; system: string; prompt: string; maxTokens: number; timeoutMs: number }) => Promise<ModelCompleteResult>
   card: () => Promise<KnowState>
   setCard: (fn: (s: KnowState) => KnowState) => Promise<unknown>
 }
 
-/** What a hand-back carries that the check reads. */
+/** What a hand-back carries that the check reads: a specialist's (`agentId`), or a turn of Clawd's own (`turnText`, its request). */
 export type Handback = {
-  agentId: string
+  agentId?: string
+  turnText?: string
   reason: RecordInput['ended']
   answer: string
   durationMs?: number
@@ -54,6 +55,8 @@ let lists: { shown: readonly string[]; knew: readonly string[]; backoff: Backoff
 const briefs = new Map<string, string>()
 const checkedRows = new Map<string, number>()
 let notes = 0
+/** Clawd's own turn under way: its request, and the tools he has used in it. */
+let turn = { text: '', tools: 0 }
 
 /** The brief a specialist was hired with, for a resumed run, whose rows open with the message that started it. */
 export function keepBrief(id: string, brief: string) {
@@ -113,10 +116,15 @@ export async function checkHandback(io: KnowIo, h: Handback, who: string) {
   } catch { /* a check is a nicety: it never stops a hand-back */ }
 }
 
-/** The rows of this run: for a resumed specialist, those since its last check. None, with why, when the session will not say. */
-async function rowsOf(io: KnowIo, id: string): Promise<{ rows?: RecordInput['rows']; isResumed?: boolean; why?: string }> {
+/**
+ * The rows of this run: for a resumed specialist, those since its last check; for a turn of Clawd's own, the main chat's
+ * from the message that opened it. None, with why, when the session will not say.
+ */
+async function rowsOf(io: KnowIo, h: Handback): Promise<{ rows?: RecordInput['rows']; isResumed?: boolean; why?: string }> {
+  const id = h.agentId
   const all = await io.messages(id)
   if (!Array.isArray(all)) return { why: (all as { deny: string }).deny }
+  if (id === undefined) return { rows: turnRows(all, h.turnText ?? '') }
   const from = checkedRows.get(id) ?? 0
   checkedRows.set(id, all.length)
   return { rows: all.slice(from), isResumed: from > 0 }
@@ -125,11 +133,12 @@ async function rowsOf(io: KnowIo, id: string): Promise<{ rows?: RecordInput['row
 async function runCheck(io: KnowIo, h: Handback, who: string, asked: number) {
   const at = await io.now()
   try {
-    const { rows, isResumed, why } = await rowsOf(io, h.agentId)
+    const { rows, isResumed, why } = await rowsOf(io, h)
     if (!rows) return await addLog(io, { at, who, outcome: 'refused', reason: why })
     const u = h.usage
     const tokens = u ? { input: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), output: u.output_tokens } : undefined
-    const record = buildRecord({ who, ended: h.reason, rows, brief: briefs.get(h.agentId), isResumed, report: h.answer, prompts, durationMs: h.durationMs, tokens })
+    const brief = h.agentId === undefined ? undefined : briefs.get(h.agentId)
+    const record = buildRecord({ who, isClawd: h.agentId === undefined, ended: h.reason, rows, brief, isResumed, report: h.answer, prompts, durationMs: h.durationMs, tokens })
     if (record.chars > 2 * CAP_CHARS) return await addLog(io, { at, who, outcome: 'skipped', recordChars: record.chars, reason: 'the record was too long' })
     await askModel(io, record, who, at, asked)
   } catch {
@@ -221,4 +230,23 @@ const withoutAll = (s: KnowState): KnowState => ({ ...s, notes: [], isOpen: fals
 export async function startKnow(io: KnowIo, isSeen: boolean) {
   isDrawn = isSeen
   await forgetKnow(io)
+}
+
+// ---- Clawd's own long turns: counted as they go, checked like a specialist's run at their end ----
+
+/** A turn of Clawd's own starts: its request is kept and its tools are counted afresh. */
+export function knowTurnStart(text: string) {
+  turn = { text, tools: 0 }
+}
+
+/** Clawd used a tool in his own turn. */
+export function knowToolUsed() {
+  turn = { ...turn, tools: turn.tools + 1 }
+}
+
+/** Clawd's own turn ended: one that used six tools or more is checked. Never waited on and never throws. */
+export async function checkOwnTurn(io: KnowIo, e: Omit<Handback, 'agentId' | 'turnText'>) {
+  const done = turn
+  turn = { text: '', tools: 0 }
+  if (done.tools >= OWN_TURN_TOOLS) await checkHandback(io, { ...e, turnText: done.text }, 'Clawd')
 }

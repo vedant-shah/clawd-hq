@@ -44,6 +44,8 @@ export const LINE_CHARS = 240
 /** About 100 words asked; an explanation past this is dropped whole, and Learn more is hidden. */
 export const EXPLAIN_CHARS = 1200
 const TITLE_CHARS = 80
+/** A turn of Clawd's own with this many tool uses or more is checked like a specialist's run. */
+export const OWN_TURN_TOOLS = 6
 /** How many notes wait on the card at once. */
 export const CARD_NOTES = 3
 export const SHOWN_KEEP = 10

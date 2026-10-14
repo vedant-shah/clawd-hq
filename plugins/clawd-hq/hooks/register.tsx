@@ -18,7 +18,7 @@ import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
 import { side } from './side-ask'
-import { checkHandback, forgetKnow, keepBrief, knowActions, knowPrompt, startKnow } from './know-check'
+import { checkHandback, checkOwnTurn, forgetKnow, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
@@ -357,7 +357,7 @@ const knowIo = ($: EngineInterface): KnowIo => ({
   get: key => $.store.get(key),
   set: (key, value) => $.store.set(key, value as never),
   panes: () => $.ui.panes(),
-  messages: agentId => $.session.messages({ agentId }),
+  messages: agentId => (agentId === undefined ? $.session.messages() : $.session.messages({ agentId })),
   complete: ask => $.model.complete(ask),
   card: async (): Promise<KnowState> => ({ ...KNOW0, ...(await read($, know)) }),
   setCard: fn => update($, know, s => fn({ ...KNOW0, ...s })),
@@ -640,6 +640,8 @@ export const register: Register = (on, options) => {
     const tool = String(e.tool)
     const input = e as unknown as Record<string, unknown>
     const id = e.agentId
+    // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts).
+    if (id === undefined) knowToolUsed()
 
     if (tool === DEMO_TOOL) {
       await openPanes(paneIo($), false)
@@ -700,6 +702,7 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     // Work goes on, so a recap of the pause before it is out of date.
     turnsSeen += 1
+    if ((e as { agentId?: string }).agentId === undefined) knowTurnStart(e.text ?? '')
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, recap: undefined, activity: e.text ? READING_BRIEF : 'Back at it' }))
     return next(e)
   })
@@ -717,6 +720,7 @@ export const register: Register = (on, options) => {
       await clockOut($, e.agentId, e.reason === 'answer' ? 'done' : 'failed')
       await showStatus($)
     } else {
+      if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)
       const now = await $.clock.now()
       await setBoss($, b => ({
         ...b, isBusy: false, idleSince: now, doneAt: now,

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
-import { CAP_CHARS, buildRecord } from '../hooks/know-record'
+import { CAP_CHARS, buildRecord, turnRows } from '../hooks/know-record'
 import type { RecordInput } from '../hooks/know-record'
 
 type Row = RecordInput['rows'][number]
@@ -151,4 +151,15 @@ test('a message to the specialist mid-run is kept, and the rows handed in are ne
   ]) as unknown as Row[]
   const { text } = record(rows)
   expect(text).toMatch(/MESSAGE TO THE SPECIALIST: Stop and report\./)
+})
+
+test('a turn of the main chat starts at the person\'s message that opened it, else after the last message they typed', () => {
+  const rows: Row[] = [
+    { role: 'user', text: 'Old ask', toolUses: [] }, said('Old answer.'),
+    { role: 'user', text: 'Tidy the docs\n\n(pasted notes)', toolUses: [] }, said('', [use(1, 'Edit', { file_path: 'a.md' }, 'ok')]),
+    { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'u1', text: 'ok', isError: false }] }, said('Done.'),
+  ]
+  expect(turnRows(rows, 'Tidy the docs').map(r => r.text)).toEqual(['Tidy the docs\n\n(pasted notes)', '', '', 'Done.'])
+  expect(turnRows(rows, 'something else').map(r => r.text)).toEqual(['Tidy the docs\n\n(pasted notes)', '', '', 'Done.'])
+  expect(turnRows(rows.slice(3), 'x')).toHaveLength(3)
 })

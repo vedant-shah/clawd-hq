@@ -177,3 +177,16 @@ export function buildRecord(input: RecordInput): { text: string; steps: number; 
   const text = [before, ...items.map(render), after].join('\n\n')
   return { text, steps, chars: text.length, isOverCap: text.length > CAP_CHARS }
 }
+
+const isTyped = (r: SessionMessage) => r.role === 'user' && r.text.trim() !== '' && (r.toolResults?.length ?? 0) === 0
+
+/**
+ * The rows of one turn of the main chat: from the person's message that opened it (found by the turn's text), else from
+ * the last message they typed; all of them when there is none.
+ */
+export function turnRows(rows: readonly SessionMessage[], text: string): readonly SessionMessage[] {
+  const head = text.trim().slice(0, 200)
+  const typed = rows.map((r, i) => ({ r, i })).filter(({ r }) => isTyped(r))
+  const opened = [...typed].reverse().find(({ r }) => head !== '' && r.text.includes(head)) ?? typed[typed.length - 1]
+  return opened ? rows.slice(opened.i) : rows
+}

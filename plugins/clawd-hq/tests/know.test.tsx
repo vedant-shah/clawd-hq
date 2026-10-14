@@ -37,7 +37,7 @@ function office(on: On, replies: Array<() => unknown> = [() => answered(NOTE)]) 
     return { value: reply() } as never
   })
   on('session.messages', (_$, e) => {
-    const id = (e as { agentId: string }).agentId
+    const id = (e as { agentId?: string } | undefined)?.agentId ?? 'main'
     reads.push(id)
     return { value: rows.get(id) ?? { deny: `no agent ${id}` } } as never
   })
@@ -440,4 +440,61 @@ test('with our setting off, the built-in asks as usual', { plugins: [ysk('builti
   await $.session.start(START)
   await turnEnds($)
   expect(asked).toEqual(['anything to know?'])
+})
+
+// ---- Clawd's own long turns ----
+
+const step = (n: number) => ({ tool_use_id: `m${n}`, tool: 'Edit', input: { file_path: `docs/page${n}.md` }, text: 'ok' })
+/** The main chat as the session reads it back: an older exchange, then this turn's request and its steps. */
+const mainRows = (tools: number) => [
+  { role: 'user', text: 'An older request', toolUses: [] },
+  { role: 'assistant', text: 'Old answer.', toolUses: [] },
+  { role: 'user', text: 'Tidy the docs', toolUses: [] },
+  { role: 'assistant', text: 'Step 1: tidying.', toolUses: Array.from({ length: tools }, (_, i) => step(i + 1)) },
+  { role: 'assistant', text: 'Done, all pages tidy.', toolUses: [] },
+]
+async function ownTurn($: Engine, tools: number, id = 'm1', agentTools = 0) {
+  await $.turn.start({ text: 'Tidy the docs', turnId: id } as never)
+  for (let i = 0; i < tools; i += 1) await $.tool.call({ tool: 'Edit', file_path: `docs/page${i}.md` } as never)
+  for (let i = 0; i < agentTools; i += 1) await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'Done, all pages tidy.', turnId: id, isAborted: false, durationMs: 30_000 } as never)
+}
+
+test('a turn of Clawd\'s own with six or more tool uses is checked the same way, as his', async ($, on) => {
+  const { asked, rows, saved } = office(on, [() => answered('learn: Clawd edited six pages but the request named only one.\ntag: Heads up')])
+  rows.set('main', mainRows(6))
+  await $.session.start(START)
+  await ownTurn($, 6)
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toHaveLength(1)
+  const prompt = asked[0]!.prompt
+  expect(prompt).toMatch(/WHO DID THE WORK: Clawd, the chief of staff, in the main chat/)
+  expect(prompt).toMatch(/THE PERSON'S REQUEST:\nTidy the docs/)
+  expect(prompt).not.toMatch(/An older request|Old answer/)
+  expect(prompt).toMatch(/STEP 6 · Edit · docs\/page6\.md · done/)
+  expect(prompt).toMatch(/FINAL ANSWER:\nDone, all pages tidy\./)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /^HEADS UP · Clawd$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('five tool uses, or six spread over two turns, or a specialist\'s tools, are not a long turn of Clawd\'s', async ($, on) => {
+  const { asked, rows } = office(on)
+  rows.set('main', mainRows(5))
+  await $.session.start(START)
+  await hire($)
+  await ownTurn($, 5, 'm1')
+  await ownTurn($, 3, 'm2')
+  await ownTurn($, 3, 'm3', 6)
+  await idle()
+  expect(asked).toEqual([])
+})
+
+test('with the setting off, Clawd\'s long turns are not checked either', { options: { youShouldKnow: false } }, async ($, on) => {
+  const { asked, rows } = office(on)
+  rows.set('main', mainRows(8))
+  await $.session.start(START)
+  await ownTurn($, 8)
+  await idle()
+  expect(asked).toEqual([])
 })

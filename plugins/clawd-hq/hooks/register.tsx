@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, Memory, Mood, Payroll } from '../types'
+import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, Mood, Payroll } from '../types'
 import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, fit, memoryBlock, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
 import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './artifacts'
@@ -18,6 +18,9 @@ import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
 import { side } from './side-ask'
+import { checkHandback, forgetKnow, keepBrief, knowPrompt, startKnow } from './know-check'
+import type { KnowIo } from './know-check'
+import { KNOW0 } from './know'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
@@ -53,6 +56,7 @@ const payroll = atom({ plugin: 'clawd-hq', key: 'payroll' } as const, PAYROLL0)
 const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory[])
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
+const know = atom({ plugin: 'clawd-hq', key: 'know' } as const, KNOW0)
 
 // Values written by an older version of the mod lack the newer fields: fill them in.
 async function getBoss($: EngineInterface): Promise<Boss> { return { ...BOSS0, ...(await read($, boss)) } }
@@ -354,6 +358,19 @@ async function resetRecap($: EngineInterface) {
   if ((await getBoss($)).recap !== undefined) await setBoss($, b => ({ ...b, recap: undefined }))
 }
 
+// ---- The check on finished work (hooks/know-check.ts): what it may do, each a `$` call spelled here ----
+
+const knowIo = ($: EngineInterface): KnowIo => ({
+  now: () => $.clock.now(),
+  get: key => $.store.get(key),
+  set: (key, value) => $.store.set(key, value as never),
+  panes: () => $.ui.panes(),
+  messages: agentId => $.session.messages({ agentId }),
+  complete: ask => $.model.complete(ask),
+  card: async (): Promise<KnowState> => ({ ...KNOW0, ...(await read($, know)) }),
+  setCard: fn => update($, know, s => fn({ ...KNOW0, ...s })),
+})
+
 // ---- The frame clock ----
 
 async function onFrame($: EngineInterface, frames: number) {
@@ -488,6 +505,7 @@ export const register: Register = (on, options) => {
     // A recap is for someone looking at the panel: none where nothing is drawn.
     isRecapOn = brief.isRecapOn && e.surface !== null
     await resetRecap($)
+    await startKnow(knowIo($), e.surface !== null)
     // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
     if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined }))
     await $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })
@@ -550,6 +568,7 @@ export const register: Register = (on, options) => {
     }
     // Another conversation takes over this process without a session.start: its recap and its turns are its own.
     if (e.reason === 'clear' || e.reason === 'resume') await resetRecap($)
+    await forgetKnow(knowIo($))
     return next(e)
   })
 
@@ -585,8 +604,10 @@ export const register: Register = (on, options) => {
   on('agent.spawn', async ($, e, next) => {
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     const { effort, prompt } = parseEffort(e.prompt)
-    const r = await next({ ...e, prompt: prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE })
+    const sent = prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE
+    const r = await next({ ...e, prompt: sent })
     if (r.agentId) {
+      keepBrief(r.agentId, sent)
       if (effort) efforts.set(r.agentId, effort)
       await newHire($, r.agentId, e.subagentType, e.description, e.name)
       await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), model: one.model || r.model })))
@@ -680,6 +701,9 @@ export const register: Register = (on, options) => {
     }
   })
 
+  // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
+  if (brief.isKnowOn) on('prompt.submit', async ($, e, next) => (await knowPrompt(knowIo($), e as { text: string }), next(e)))
+
   // Clawd's standing orders and the project's memory ride at the top of every conversation.
   on('prompt.context', async ($, e, next) => {
     const r = await next(e)
@@ -701,6 +725,8 @@ export const register: Register = (on, options) => {
       if (asker && !asker.id.startsWith(DEMO)) {
         const by = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
         for (const text of parseChoices(e.answer ?? '')) await remember($, { kind: 'choice', text, by, source: 'report' })
+        // After each hand-back, a check of the work against its report; a note may join Clawd's card.
+        if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
       }
       await clockOut($, e.agentId, e.reason === 'answer' ? 'done' : 'failed')
       await showStatus($)

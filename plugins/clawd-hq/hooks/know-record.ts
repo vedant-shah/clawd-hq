@@ -30,8 +30,10 @@ export type RecordInput = {
   ended: 'answer' | 'aborted' | 'refusal' | 'error'
   /** The rows of this run: for a resumed specialist, only those since its last check. */
   rows: readonly SessionMessage[]
-  /** The brief the specialist was hired with, for when the rows do not open with it. */
+  /** The brief the specialist was hired with: used when the rows do not open with it, and beside a resumed run's opening message. */
   brief?: string
+  /** A run after the first: its rows open with the message that started it, not the brief. */
+  isResumed?: boolean
   report: string
   /** The person's latest prompts in the main chat, oldest first. */
   prompts: readonly string[]
@@ -153,7 +155,7 @@ function briefOf(input: RecordInput): { sections: string[]; rest: readonly Sessi
   const opening = isOpening ? withoutOurNote(first.text) : undefined
   const rest = isOpening ? input.rows.slice(1) : input.rows
   if (input.isClawd) return { sections: [`THE PERSON'S REQUEST:\n${opening ?? 'Not available.'}`], rest }
-  const hired = input.brief === undefined ? undefined : withoutOurNote(input.brief)
+  const hired = input.brief === undefined || (!input.isResumed && opening !== undefined) ? undefined : withoutOurNote(input.brief)
   const brief = hired ?? opening ?? 'Not available.'
   const started = opening !== undefined && hired !== undefined && !isSame(opening, hired) ? [`MESSAGE THAT STARTED THIS RUN:\n${opening}`] : []
   return { sections: [`BRIEF:\n${brief}`, ...started], rest }

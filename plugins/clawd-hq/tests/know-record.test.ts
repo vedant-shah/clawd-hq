@@ -103,9 +103,15 @@ test('a fake 108-step record ends under 60K tokens and keeps every step line, wi
 
 test('a resumed run reads from the message that started it, with the first brief from the hire beside it', () => {
   const rows = [{ role: 'user' as const, text: 'Now also fix the signup page.', toolUses: [] }, said('On it.', [use(1, 'Read', { file_path: 'signup.ts' }, 'x')])]
-  const { text } = record(rows, { brief: BRIEF + BRIEF_NOTE })
+  const { text } = record(rows, { brief: BRIEF + BRIEF_NOTE, isResumed: true })
   expect(text).toMatch(/BRIEF:\nFix the login bug/)
   expect(text).toMatch(/MESSAGE THAT STARTED THIS RUN:\nNow also fix the signup page\./)
+  // A first run opens with its brief: the copy kept at the hire is not needed beside it.
+  const firstRun = record([brief('Fix the login bug, as sent.'), said('', [use(1, 'Read', { file_path: 'a' }, 'x')])], { brief: 'Fix the login bug.' }).text
+  expect(firstRun).toMatch(/BRIEF:\nFix the login bug, as sent\./)
+  expect(firstRun).not.toMatch(/MESSAGE THAT STARTED/)
+  // Rows that do not open with a message use the kept brief.
+  expect(record([said('', [use(1, 'Read', { file_path: 'a' }, 'x')])], { brief: 'Kept brief.' }).text).toMatch(/BRIEF:\nKept brief\./)
   const none = record([said('', [use(1, 'Read', { file_path: 'a' }, 'x')])]).text
   expect(none).toMatch(/BRIEF:\nNot available\./)
 })

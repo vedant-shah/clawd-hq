@@ -83,7 +83,19 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('turn.complete', () => ({ text: '' }))
   on('prompt.context', ($, e) => ({ blocks: (e as { blocks: never[] }).blocks }))
   on('session.measure', (_$, e) => ({ changed: e.changed }))
-  on('session.start', (_$, e) => ({ cwd: (e as { cwd: string }).cwd }))
+  // The surfaces the session draws on, as the engine keeps them: the one it started with, then each client that attaches.
+  const roster: string[] = []
+  on('session.start', (_$, e) => {
+    const { cwd, surface } = e as { cwd: string; surface: string | null }
+    roster.splice(0, roster.length, ...(surface === null ? [] : [surface]))
+    return { cwd }
+  })
+  on('session.attach', (_$, e) => {
+    const { surface, clientId } = e as { surface: string; clientId: string }
+    roster.push(surface)
+    return { clientId }
+  })
+  on('session.surfaces', () => ({ value: [...roster] }) as never)
   on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
   on('classic.SubagentStop', () => ({}))
   /** The names of the commands and tools the plugin registered. */

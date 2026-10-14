@@ -186,6 +186,45 @@ test('nothing is checked where nobody can see the panel', async ($, on) => {
   expect(asked).toEqual([])
 })
 
+// The desktop app runs the session as the SDK does: it starts drawing nowhere, and the app attaches a moment later.
+const DESKTOP_START = { cwd: '/repo', surface: null, isInteractive: false } as never
+const DESKTOP = { surface: 'desktop', clientId: 'desktop:default' } as never
+
+test('in the desktop app, which attaches after the session starts, a hand-back is checked', async ($, on) => {
+  const { asked, rows, saved } = office(on)
+  await $.session.start(DESKTOP_START)
+  await $.session.attach(DESKTOP)
+  await hire($)
+  rows.set('a1', run('Fix it.'))
+  await handBack($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toHaveLength(1)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown'])
+})
+
+test('a hand-back where nothing is drawn is not checked, and the log says why', async ($, on) => {
+  const { asked, rows, saved } = office(on)
+  await $.session.start(DESKTOP_START)
+  await hire($)
+  rows.set('a1', run('Fix it.'))
+  await handBack($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toEqual([])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'nothing is drawn' }])
+})
+
+test('a hand-back with no office tab open is not checked, and the log says why', async ($, on) => {
+  const { asked, rows, saved, closePane } = office(on)
+  await $.session.start(START)
+  await hire($)
+  rows.set('a1', run('Fix it.'))
+  for (const id of ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log']) closePane(id)
+  await handBack($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toEqual([])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'no office tab is open' }])
+})
+
 test('a check is made while another office tab is in front, and its note waits on Clawd\'s card', async ($, on) => {
   const { asked, rows, saved, front } = office(on)
   await $.session.start(START)
@@ -595,6 +634,14 @@ test('where nothing is drawn, the built-in asks as usual', { plugins: [ysk('buil
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
   await turnEnds($)
   expect(asked).toEqual(['anything to know?'])
+})
+
+test('in the desktop app, Claude Code\'s own "You should know" stays quiet once the app has attached', { plugins: [ysk('builtin')] }, async ($, on) => {
+  const { asked } = forks(on)
+  await $.session.start(DESKTOP_START)
+  await $.session.attach(DESKTOP)
+  await turnEnds($)
+  expect(asked).toEqual([])
 })
 
 test('a specialist run that used no tools is not checked, the log says why, and it uses up no back-off skip', async ($, on) => {

@@ -29,6 +29,8 @@ export type KnowIo = {
   now: () => Promise<number>
   get: (key: string) => Promise<unknown>
   set: (key: string, value: unknown) => Promise<unknown>
+  /** Where the session draws now: the desktop app and phones attach after the session starts. */
+  surfaces: () => Promise<readonly string[]>
   panes: () => Promise<ReadonlyArray<{ id: string; isPlaced: boolean }>>
   /** One agent's rows, or why the session will not say; with no id, the main chat's. */
   messages: (agentId?: string) => Promise<readonly SessionMessage[] | { deny: string }>
@@ -49,8 +51,6 @@ export type Handback = {
 
 export type KnowActions = { knowMore: () => unknown; knowGotIt: () => unknown; knowKnew: () => unknown; knowDismiss: () => unknown }
 
-/** Someone can see the panel: a session with a surface. */
-let isDrawn = false
 /** The project folder the session runs in: the lists and the log are its own. */
 let folder = ''
 const keyOf = (key: Key) => `${key}:${folder}`
@@ -106,27 +106,29 @@ const setBackoff = (io: KnowIo, backoff: Backoff) => change(io, 'backoff', () =>
 const addLog = (io: KnowIo, entry: KnowLogEntry) => change(io, 'log', log => withLog(log, entry))
 
 /**
- * Someone can see the office: something is drawn and one of its tabs is open (any of the four; a note waits on Clawd's
- * card until the Office tab is in front). A listing that fails counts as none open. Where this is false no check is made,
- * and Claude Code's own "You should know" is let through.
+ * Why nobody can see the office, or nothing when someone can: something is drawn now (read at each ask, since the
+ * desktop app attaches after the session starts) and one of its tabs is open (any of the four; a note waits on Clawd's
+ * card until the Office tab is in front). A reading that fails counts as nothing drawn or no tab open.
  */
-export async function isWatching(io: KnowIo): Promise<boolean> {
-  if (!isDrawn) return false
-  try {
-    return (await io.panes()).some(p => p.isPlaced && PANES.some(one => one.id === p.id))
-  } catch {
-    return false
-  }
+async function whyUnseen(io: KnowIo): Promise<string | undefined> {
+  const surfaces = await io.surfaces().catch(() => [])
+  if (surfaces.length === 0) return 'nothing is drawn'
+  const panes = await io.panes().catch(() => [])
+  return panes.some(p => p.isPlaced && PANES.some(one => one.id === p.id)) ? undefined : 'no office tab is open'
 }
+
+/** Someone can see the office. Where nobody can, no check is made and Claude Code's own "You should know" is let through. */
+export const isWatching = async (io: KnowIo): Promise<boolean> => (await whyUnseen(io)) === undefined
 
 /**
  * A specialist handed its work back: unless the back-off says skip, a check joins the line of side questions. Never
  * waited on by the hand-back and never throws.
  */
 export async function checkHandback(io: KnowIo, h: Handback, who: string) {
+  const at = await io.now().catch(() => 0)
   try {
-    if (!(await isWatching(io))) return
-    const at = await io.now()
+    const unseen = await whyUnseen(io)
+    if (unseen) return await addLog(io, { at, who, outcome: 'skipped', reason: unseen })
     // The rows are taken now: work done after this hand-back belongs to a later check, however long this one waits.
     const taken = await takeRows(io, h)
     if (!taken.rows) return await addLog(io, { at, who, outcome: 'refused', reason: taken.why })
@@ -142,7 +144,10 @@ export async function checkHandback(io: KnowIo, h: Handback, who: string) {
     const asked = epoch
     const job: Taken = { ...(taken as Taken), asked: prompts }
     side.queue(() => runCheck(io, h, who, asked, job), () => void addLog(io, { at, who, outcome: 'dropped', reason: 'too many checks waiting' }))
-  } catch { /* a check is a nicety: it never stops a hand-back */ }
+  } catch {
+    // A check is a nicety: it never stops a hand-back, but the log still says it did not get far.
+    await addLog(io, { at, who, outcome: 'failed', reason: 'the check stopped on an error before it started' }).catch(() => undefined)
+  }
 }
 
 /** The rows a check reads, as they stood at the hand-back, and what was left out before them. */
@@ -250,9 +255,8 @@ export async function forgetKnow(io: KnowIo) {
 
 const withoutAll = (s: KnowState): KnowState => ({ ...s, notes: [], isOpen: false, promptsSince: 0 })
 
-/** A session starts: checks are made only where someone can see the panel, and the project's own lists are read afresh. */
-export async function startKnow(io: KnowIo, isSeen: boolean, projectFolder: string) {
-  isDrawn = isSeen
+/** A session starts: the project's own lists are read afresh. */
+export async function startKnow(io: KnowIo, projectFolder: string) {
   folder = projectFolder
   lists = undefined
   await forgetKnow(io)

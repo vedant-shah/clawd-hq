@@ -12,6 +12,7 @@ import { CAP_CHARS, buildRecord, turnRows } from './know-record'
 import type { LeftOut, RecordInput } from './know-record'
 import { PANES } from './panes'
 import { side } from './side-ask'
+import { inLine } from './state'
 
 const MODEL = 'haiku'
 const MAX_TOKENS = 700
@@ -55,7 +56,8 @@ const keyOf = (key: Key) => `${key}:${folder}`
 /** Goes up on /clear, resume and session end: a reply asked for before then is dropped. */
 let epoch = 0
 let prompts: readonly string[] = []
-let lists: { shown: readonly string[]; knew: readonly string[]; backoff: Backoff; log: readonly KnowLogEntry[] } | undefined
+type Lists = { shown: readonly string[]; knew: readonly string[]; backoff: Backoff; log: readonly KnowLogEntry[] }
+let lists: Lists | undefined
 /** Each specialist's brief as it was sent, and how many of its rows were already checked. */
 const briefs = new Map<string, string>()
 const checkedRows = new Map<string, number>()
@@ -83,16 +85,24 @@ async function loadLists(io: KnowIo) {
   return lists
 }
 
-async function setBackoff(io: KnowIo, backoff: Backoff) {
-  lists = { ...(await loadLists(io)), backoff }
-  await save(io, KEYS.backoff, backoff)
+/**
+ * One change to one list, made on the lists as they stand when its turn comes and saved before the next starts, so
+ * changes made at the same moment (several checks ending at once) never overwrite each other.
+ */
+function change<K extends keyof Lists>(io: KnowIo, field: K, fn: (value: Lists[K]) => Lists[K]) {
+  return inLine(async () => {
+    const before = (await loadLists(io))[field]
+    const value = fn(before)
+    // Left as it was: nothing to save.
+    if (value === before) return
+    lists = { ...(await loadLists(io)), [field]: value }
+    await save(io, KEYS[field], value)
+  })
 }
 
-async function addLog(io: KnowIo, entry: KnowLogEntry) {
-  const log = withLog((await loadLists(io)).log, entry)
-  lists = { ...(await loadLists(io)), log }
-  await save(io, KEYS.log, log)
-}
+/** A press always writes its reset, even when this session already holds it: another session may have stored more. */
+const setBackoff = (io: KnowIo, backoff: Backoff) => change(io, 'backoff', () => ({ ...backoff }))
+const addLog = (io: KnowIo, entry: KnowLogEntry) => change(io, 'log', log => withLog(log, entry))
 
 /**
  * Someone can see the office: something is drawn and one of its tabs is open (any of the four; a note waits on Clawd's
@@ -121,11 +131,13 @@ export async function checkHandback(io: KnowIo, h: Handback, who: string) {
     if (!taken.rows) return await addLog(io, { at, who, outcome: 'refused', reason: taken.why })
     // A specialist that only talked has no steps to set its report against; Clawd's own turns get here with six or more.
     if (!taken.rows.some(r => r.toolUses.length > 0)) return await addLog(io, { at, who, outcome: 'skipped', reason: 'the run used no tools' })
-    const turn = nextCheck((await loadLists(io)).backoff)
-    if (turn.isSkipped) {
-      await setBackoff(io, turn.backoff)
-      return await addLog(io, { at, who, outcome: 'skipped', reason: 'notes were passed over' })
-    }
+    let isSkipped = false
+    await change(io, 'backoff', b => {
+      const turn = nextCheck(b)
+      isSkipped = turn.isSkipped
+      return turn.backoff
+    })
+    if (isSkipped) return await addLog(io, { at, who, outcome: 'skipped', reason: 'notes were passed over' })
     const asked = epoch
     const job: Taken = { ...(taken as Taken), asked: prompts }
     side.queue(() => runCheck(io, h, who, asked, job), () => void addLog(io, { at, who, outcome: 'dropped', reason: 'too many checks waiting' }))
@@ -183,9 +195,7 @@ async function askModel(io: KnowIo, record: { text: string; chars: number }, who
 async function showNote(io: KnowIo, note: KnowNote): Promise<string> {
   if ((await io.card()).notes.length >= CARD_NOTES) return 'dropped'
   await io.setCard(s => withNote(s, note))
-  const shown = keepLast((await loadLists(io)).shown, note.line, SHOWN_KEEP)
-  lists = { ...(await loadLists(io)), shown }
-  await save(io, KEYS.shown, shown)
+  await change(io, 'shown', shown => keepLast(shown, note.line, SHOWN_KEEP))
   return 'shown'
 }
 
@@ -199,11 +209,7 @@ async function pressed(io: KnowIo, fn: (s: KnowState) => KnowState) {
 
 async function knewIt(io: KnowIo) {
   const front = (await io.card()).notes[0]
-  if (front) {
-    const knew = keepLast((await loadLists(io)).knew, front.line, KNEW_KEEP)
-    lists = { ...(await loadLists(io)), knew }
-    await save(io, KEYS.knew, knew)
-  }
+  if (front) await change(io, 'knew', knew => keepLast(knew, front.line, KNEW_KEEP))
   await pressed(io, withoutFront)
 }
 
@@ -227,7 +233,7 @@ export async function knowPrompt(io: KnowIo, e: { text: string; isMeta?: true; c
     const before = await io.card()
     const { state, isIgnored } = afterPrompt(before)
     if (state !== before) await io.setCard(() => state)
-    if (isIgnored) await setBackoff(io, afterIgnored((await loadLists(io)).backoff))
+    if (isIgnored) await change(io, 'backoff', afterIgnored)
   } catch { /* the card stays as it was */ }
 }
 

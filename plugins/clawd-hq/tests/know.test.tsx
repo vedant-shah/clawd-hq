@@ -597,3 +597,20 @@ test('the lists and the log are kept per project folder; the old shared keys are
   expect(saved.get('know:shown:/repo')).toBeUndefined()
   expect(saved.has('know:log')).toBe(false)
 })
+
+test('log entries written at the same moment are all kept', async ($, on) => {
+  const { rows, saved } = office(on)
+  await $.session.start(START)
+  const talk = [{ role: 'user', text: 'Thoughts?', toolUses: [] }, { role: 'assistant', text: 'Fine.', toolUses: [] }]
+  for (const id of ['a1', 'a2', 'a3', 'a4']) {
+    await hire($)
+    rows.set(id, talk)
+  }
+  // An entry already there, so the lists are loaded and every write starts from them at once.
+  await handBack($, 'a1', 'answer', 'Fine.')
+  await until($, () => logOf(saved).length === 1)
+  await Promise.all(['a2', 'a3', 'a4'].map(id => handBack($, id, 'answer', 'Fine.')))
+  await until($, () => logOf(saved).length === 4)
+  await idle()
+  expect(logOf(saved)).toHaveLength(4)
+})

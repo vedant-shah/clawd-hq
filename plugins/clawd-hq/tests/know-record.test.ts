@@ -176,3 +176,16 @@ test('rows left out before the run are marked in words, by why', () => {
   expect(record(steps, { leftOut: 'earlier-turns-guess' }).text).toMatch(/\[trimmed: earlier turns of the main chat, not shown; where this turn began is a best guess\]/)
   expect(record(steps).text).not.toMatch(/earlier/)
 })
+
+test('the cap never swaps a short output for a longer mark', () => {
+  const log = Array.from({ length: 2000 }, (_, i) => `test ${i} passed`).join('\n')
+  const rows: Row[] = [brief()]
+  for (let i = 1; i <= 120; i += 1) {
+    const isRead = i % 2 === 1
+    rows.push(said('', [use(i, isRead ? 'Read' : 'Bash', isRead ? { file_path: `f${i}` } : { command: `c${i}` }, isRead ? `tiny ${i}` : log)]))
+  }
+  const { text, chars } = record(rows)
+  expect(chars).toBeLessThanOrEqual(CAP_CHARS)
+  for (let i = 1; i <= 120; i += 2) expect(text).toContain(`STEP ${i} · Read · f${i} · done\noutput:\ntiny ${i}`)
+  expect(text).not.toMatch(/characters of file text not shown/)
+})

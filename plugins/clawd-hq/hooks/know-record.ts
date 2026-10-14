@@ -125,7 +125,10 @@ function fitted(items: Item[], fixed: number): { items: Item[]; size: number } {
     const it = list[i]!
     if (size <= CAP_CHARS || it.kind !== 'step' || !it.out) return
     const next: Item = { ...it, out: { ...it.out, cut, isShort: true } }
-    size += render(next).length - render(it).length
+    const saved = render(it).length - render(next).length
+    // An output shorter than the mark that would replace it stays whole.
+    if (saved <= 0) return
+    size -= saved
     list[i] = next
   }
   const outs = list.map((it, i) => ({ it, i })).filter(({ it }) => it.kind === 'step' && it.out && !it.out.isError)

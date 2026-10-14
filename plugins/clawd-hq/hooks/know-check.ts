@@ -110,15 +110,17 @@ export async function isWatching(io: KnowIo): Promise<boolean> {
 export async function checkHandback(io: KnowIo, h: Handback, who: string) {
   try {
     if (!(await isWatching(io))) return
-    const turn = nextCheck((await loadLists(io)).backoff)
     const at = await io.now()
+    // The rows are taken now: work done after this hand-back belongs to a later check, however long this one waits.
+    const taken = await takeRows(io, h)
+    if (!taken.rows) return await addLog(io, { at, who, outcome: 'refused', reason: taken.why })
+    // A specialist that only talked has no steps to set its report against; Clawd's own turns get here with six or more.
+    if (!taken.rows.some(r => r.toolUses.length > 0)) return await addLog(io, { at, who, outcome: 'skipped', reason: 'the run used no tools' })
+    const turn = nextCheck((await loadLists(io)).backoff)
     if (turn.isSkipped) {
       await setBackoff(io, turn.backoff)
       return await addLog(io, { at, who, outcome: 'skipped', reason: 'notes were passed over' })
     }
-    // The rows are taken now: work done after this hand-back belongs to a later check, however long this one waits.
-    const taken = await takeRows(io, h)
-    if (!taken.rows) return await addLog(io, { at, who, outcome: 'refused', reason: taken.why })
     const asked = epoch
     const job: Taken = { ...(taken as Taken), asked: prompts }
     side.queue(() => runCheck(io, h, who, asked, job), () => void addLog(io, { at, who, outcome: 'dropped', reason: 'too many checks waiting' }))

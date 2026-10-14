@@ -567,3 +567,16 @@ test('where nothing is drawn, the built-in asks as usual', { plugins: [ysk('buil
   await turnEnds($)
   expect(asked).toEqual(['anything to know?'])
 })
+
+test('a specialist run that used no tools is not checked, the log says why, and it uses up no back-off skip', async ($, on) => {
+  const { asked, rows, saved } = office(on)
+  saved.set('know:backoff', { ignored: 2, skipLeft: 1 })
+  await $.session.start(START)
+  await hire($)
+  rows.set('a1', [{ role: 'user', text: 'What do you think of the plan?', toolUses: [] }, { role: 'assistant', text: 'It looks sound.', toolUses: [] }])
+  await handBack($, 'a1', 'answer', 'It looks sound.')
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toEqual([])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools' }])
+  expect(saved.get('know:backoff')).toEqual({ ignored: 2, skipLeft: 1 })
+})

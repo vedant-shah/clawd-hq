@@ -29,11 +29,12 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 - `/office` opens the office.
 - `/office-demo` plays a one-minute tour.
 
-`/office` opens four tabs: Office (who is at work and what each specialist is doing right now), Decisions (the project memory), People (hire and lay off) and Log (work finished this session). The bottom row of each tab shows how full the context is and, on a Claude subscription, how much of your session and weekly limits you have used.
+`/office` opens five tabs: Office (who is at work and what each specialist is doing right now), Decisions (the project memory), People (hire and lay off), Log (work finished this session) and Clawd (his instructions and voice notes, which you can ask Claude to edit). The bottom row of each tab shows how full the context is and, on a Claude subscription, how much of your session and weekly limits you have used.
 
 ## What this plugin changes
 
 - It adds Clawd's instructions to the main chat. With them, Claude works as a chief of staff: it does small jobs itself, hands real work to specialists in the background, asks you only what needs you (in one batch, not one by one), and reports in plain words. The two texts are in [`plugins/clawd-hq/prompts`](plugins/clawd-hq/prompts): the rules and the voice. Subagents and teammates do not get them. See [Settings](#settings) to turn this off or to use your own voice.
+- It lets you change those instructions from the Clawd tab. The tab shows the rules and the voice notes as Clawd gets them, one folded section per heading. "Ask Claude to edit" (for a whole part, or "edit" beside one section) puts a short line such as `Edit Clawd's instructions: ` in your prompt box when the box is empty; you finish the sentence and send it yourself. Nothing is ever sent for you. Claude then edits your own copy, one for all your projects, at `~/.clawd-hq/chief-of-staff.md` or `~/.clawd-hq/soul.md`; the plugin's built-in files are never changed, and while that request runs, writes to them are refused. The "Always" rules are fixed in the plugin and cannot be edited. Changes apply from your next session or after `/clear`. Reset puts your copy aside as a `.bak` file and goes back to the built-in text. A copy you never edited keeps following the built-in text when the plugin updates.
 - It adds a short note to every subagent brief. The note asks agents not to stop for a question: they make their best call, list their questions at the end of their report for Clawd, and report the choices they made. It also asks them to start each step with one plain sentence about what they are doing, which is what a specialist's row in the Office tab shows, along with its model.
 - It adds a note to the description of the agent tool, so Clawd picks a model and effort for each hire. While Clawd runs the chat, the note also says that handing work to agents is your standing wish, so he does not wait to be asked each time.
 - It adds your project's recorded decisions to the conversation and to subagent briefs. Choices that agents report are marked as notes for reference, not instructions.
@@ -61,7 +62,7 @@ Clawd's instructions also reach scripted runs (`claude -p` and the Agent SDK), b
 | Quiet chat (`quietChat`) | On | Off: the main chat shows every row as Claude Code draws it, and Clawd is not asked to write the `[no update]` line. It only applies while "Clawd runs the chat" is on. |
 | Recap on Clawd's card (`recap`) | On | Off: no recap is made, and the model is never asked for one. |
 | You should know (`youShouldKnow`) | On | Off: finished work is not checked, no notes appear in the Office tab, and Claude Code's own "You should know" works as usual. |
-| Your own voice file (`voiceFile`) | Empty | The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. It is read when a session starts, and a file over 8000 characters is not used. |
+| Your own voice file (`voiceFile`) | Empty | The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. It is read when a session starts, and a file over 8000 characters is not used. When it is set, it wins over your own copy from the Clawd tab, and the tab shows and edits this file instead. |
 
 ## Development
 

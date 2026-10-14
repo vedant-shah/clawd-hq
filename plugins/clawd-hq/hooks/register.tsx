@@ -625,7 +625,8 @@ export const register: Register = (on, options) => {
 
   // Each model request of an agent: what it has spent, and how full its context is.
   on('turn.step', async function* ($, e, next) {
-    if (!e.agentId) await noteRequest($, e.model, e.effort)
+    // Not waited for: the store's answer never holds a request back (noteRequest keeps its own errors).
+    if (!e.agentId) void noteRequest($, e.model, e.effort)
     const me = e.agentId ? (await read($, staff)).find(one => one.id === e.agentId) : undefined
     // A request is a sign of life, and a resumed specialist's first can come before any tool call.
     if (me) await signOfLife($, me.id, THINKING)

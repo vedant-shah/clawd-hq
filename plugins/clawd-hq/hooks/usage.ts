@@ -63,9 +63,13 @@ export function localOffset(at: number): number | undefined {
 export const contextOf = (c: { tokens?: number; window: number; percent?: number }) =>
   ({ contextTokens: c.tokens, contextWindow: c.window, contextPercent: c.percent })
 
-/** The gauge after a request from the main chat: its model and effort; the very same gauge when neither moved. */
+/**
+ * The gauge after a request from the main chat: its model, and its effort when it names one in words. A request that
+ * names none (or a number) keeps the last known effort. The very same gauge when nothing moved.
+ */
 export function withRequest(g: Gauge, model: string, effort: string | number | undefined): Gauge {
-  const [nextModel, nextEffort] = [model === '' ? g.model : model, effortLabel(effort) === undefined ? undefined : (effort as Gauge['effort'])]
+  const nextModel = model === '' ? g.model : model
+  const nextEffort = effortLabel(effort) === undefined ? g.effort : (effort as Gauge['effort'])
   return nextModel === g.model && nextEffort === g.effort ? g : { ...g, model: nextModel, effort: nextEffort }
 }
 
@@ -101,9 +105,18 @@ function limitRows(g: Gauge, now: number, offsetAt: (at: number) => number | und
   })
 }
 
+/**
+ * The button's readings in fixed places, context then session then weekly, so a number is never taken for another: a
+ * dash holds the place of one that is missing or hidden. With no limit shown (no subscription) there is the context alone.
+ */
+function slots(g: Gauge, limits: UsageRow[]): string[] {
+  const context = g.contextPercent === undefined ? '–' : percentLabel(g.contextPercent)
+  if (limits.length === 0) return [context]
+  return [context, ...LIMITS.map(({ key }) => limits.find(r => r.key === key)?.percent ?? '–')]
+}
+
 export function usageView(g: Gauge, now: number, offsetAt: (at: number) => number | undefined): UsageView {
   const [context, ...limits] = [contextRow(g), ...limitRows(g, now, offsetAt)]
-  const readings = [g.contextPercent === undefined ? '–' : percentLabel(g.contextPercent), ...limits.map(r => r.percent ?? '–')]
   const rows = [context!, ...limits]
-  return { model: modelLabel(g.model), effort: effortLabel(g.effort), button: `Usage ${readings.join(' · ')}`, rows }
+  return { model: modelLabel(g.model), effort: effortLabel(g.effort), button: `Usage ${slots(g, limits).join(' · ')}`, rows }
 }

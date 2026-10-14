@@ -84,13 +84,18 @@ test('a request from the main chat sets the model and effort; the same request c
   expect(withRequest(next, 'claude-sonnet-5-1', 'high')).toMatchObject({ model: 'claude-sonnet-5-1', effort: 'high' })
 })
 
-test('an effort that is a number, or absent, is not kept', () => {
+test('a request that reports no effort, a number or an unknown word keeps the last known effort; only a new word changes it', () => {
   const g = { startedAt: 0, limits: [], model: 'm', effort: 'high' as const }
-  expect(withRequest(g, 'm', 8000).effort).toBeUndefined()
-  expect(withRequest(g, 'm', undefined).effort).toBeUndefined()
+  expect(withRequest(g, 'm', 8000)).toBe(g)
+  expect(withRequest(g, 'm', undefined)).toBe(g)
+  expect(withRequest(g, 'm', 'turbo')).toBe(g)
+  expect(withRequest(g, 'm', 'low').effort).toBe('low')
+  // The model still moves when the effort is not reported, and the effort stays.
+  expect(withRequest(g, 'other', undefined)).toEqual({ startedAt: 0, limits: [], model: 'other', effort: 'high' })
   // Nothing known and nothing reported: no change.
   const empty = { startedAt: 0, limits: [] }
   expect(withRequest(empty, '', undefined)).toBe(empty)
+  expect(withRequest(empty, '', 8000)).toBe(empty)
 })
 
 test('with no reading at all the button has a dash and the context row says so', () => {
@@ -129,6 +134,14 @@ test('the limits add a session row and a weekly row, with the button listing all
   expect(view.rows[2]).toMatchObject({ detail: 'Resets Fri 7:30 AM', percent: '76%', value: 75.6 })
 })
 
+test('a known zone gives the weekday and time on the weekly row, in each zone', () => {
+  const limits = [{ kind: 'seven_day', percentUsed: 76, resetsAt: '2026-10-16T07:30:00Z' }]
+  const at = (offset: number) => usageView({ startedAt: 0, limits }, NOW, () => offset).rows[1]!.detail
+  expect(at(330)).toBe('Resets Fri 1:00 PM')
+  expect(at(-420)).toBe('Resets Fri 12:30 AM')
+  expect(at(0)).toBe('Resets Fri 7:30 AM')
+})
+
 test('where the zone is unknown the weekly reset reads as time left', () => {
   const limits = [{ kind: 'seven_day', percentUsed: 10, resetsAt: inMs(2 * DAY + 3 * HOUR) }]
   const view = usageView({ startedAt: 0, limits }, NOW, () => undefined)
@@ -145,7 +158,20 @@ test('a window already past is hidden; one with no reset time shows without one;
   }, NOW, utc)
   expect(view.rows.map(r => r.key)).toEqual(['context', 'week'])
   expect(view.rows[1]).toMatchObject({ detail: undefined, percent: '9%' })
-  expect(view.button).toBe('Usage 5% · 9%')
+  expect(view.button).toBe('Usage 5% · – · 9%')
+})
+
+test('the button keeps fixed slots, context then session then weekly, with a dash for one that is missing or hidden', () => {
+  const session = { kind: 'five_hour', percentUsed: 44, resetsAt: inMs(HOUR) }
+  const week = { kind: 'seven_day', percentUsed: 76, resetsAt: inMs(DAY) }
+  expect(usageView({ startedAt: 0, contextPercent: 17, limits: [week] }, NOW, utc).button).toBe('Usage 17% · – · 76%')
+  expect(usageView({ startedAt: 0, contextPercent: 17, limits: [session] }, NOW, utc).button).toBe('Usage 17% · 44% · –')
+  expect(usageView({ startedAt: 0, limits: [session, week] }, NOW, utc).button).toBe('Usage – · 44% · 76%')
+  // No subscription: no limits, and one reading.
+  expect(usageView({ startedAt: 0, contextPercent: 17, limits: [] }, NOW, utc).button).toBe('Usage 17%')
+  // Every window already past: nothing to show but the context.
+  const past = { ...session, resetsAt: inMs(-MIN) }
+  expect(usageView({ startedAt: 0, contextPercent: 17, limits: [past, { ...week, resetsAt: inMs(-MIN) }] }, NOW, utc).button).toBe('Usage 17%')
 })
 
 test('the button and the rows always agree, and a percent past 100 reads 100; above zero reads at least 1', () => {

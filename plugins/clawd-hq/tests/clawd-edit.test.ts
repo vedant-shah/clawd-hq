@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  BOX_BUSY, DIALOG_OPEN, SHIPPED_DENY, blocksOf, clawdActions, editContext, editPartOf, editPath, isShippedWrite, partView, promptOf,
+  BOX_BUSY, DIALOG_OPEN, SHIPPED_DENY, blocksOf, clawdActions, editContext, editNote, editPartOf, editPath, isShippedWrite, partView, promptOf,
   readyText, refreshClawd, sectionsOf, toggled,
 } from '../hooks/clawd-edit'
 import type { ClawdIo } from '../hooks/clawd-edit'
@@ -90,6 +90,18 @@ test('the note Claude gets with an edit request names the file, the guard rules,
   expect(voice).toMatch(/tone only/)
   const nowhere = editContext('rules', '', '/plugin/prompts/chief-of-staff.md')
   expect(nowhere).toMatch(/no home folder/)
+})
+
+test('a sent prompt gets the note for its part, built-in file and file to edit; any other prompt gets none and the home folder is not looked up', async () => {
+  let lookups = 0
+  const home = async () => { lookups += 1; return '/home/me' }
+  const rules = await editNote('Edit Clawd\'s instructions: shorter', '', '/plugin', home)
+  expect(rules).toBe(editContext('rules', '/home/me/.clawd-hq/chief-of-staff.md', '/plugin/prompts/chief-of-staff.md'))
+  const voice = await editNote('Edit Clawd\'s voice notes: warmer', '/me/voice.md', '/plugin', home)
+  expect(voice).toBe(editContext('voice', '/me/voice.md', '/plugin/prompts/soul.md'))
+  expect(lookups).toBe(2)
+  expect(await editNote('Fix the bug', '', '/plugin', home)).toBeUndefined()
+  expect(lookups).toBe(2)
 })
 
 test('writes to the plugin\'s shipped instruction files are spotted, by any file tool or a shell command naming them', () => {

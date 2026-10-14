@@ -1,7 +1,7 @@
 // The Clawd tab's edit button, pure: the ready-made prompts, the note Claude gets with them, the guard on the plugin's own
 // files, how a text splits into sections, and the steps behind the buttons. register.tsx hands in every call as `io`.
 import type { ClawdBrief, ClawdPartView } from '../types'
-import { RULES_CHARS, VOICE_CHARS, ownPath, readBriefing } from './instructions'
+import { RULES_CHARS, RULES_FILE, VOICE_CHARS, VOICE_FILE, ownPath, readBriefing } from './instructions'
 import type { BriefPart, Briefing, BriefingIo, PartRead } from './instructions'
 
 // ---- Sections, and their text as blocks to draw ----
@@ -86,7 +86,14 @@ export function editContext(part: BriefPart, path: string, builtinPath: string):
   ].join(' ')
 }
 
-const FILE_KEYS: Record<string, string> = { Write: 'file_path', Edit: 'file_path', MultiEdit: 'file_path', NotebookEdit: 'notebook_path' }
+/** The note a sent prompt carries: none unless it is an edit request, and only then is the home folder looked up. */
+export async function editNote(text: string, voiceFile: string, root: string, home: () => Promise<string>): Promise<string | undefined> {
+  const part = editPartOf(text)
+  if (part === undefined) return undefined
+  return editContext(part, editPath(part, await home(), voiceFile), `${root}/${part === 'rules' ? RULES_FILE : VOICE_FILE}`)
+}
+
+const FILE_KEYS: Record<string, string> ={ Write: 'file_path', Edit: 'file_path', MultiEdit: 'file_path', NotebookEdit: 'notebook_path' }
 const SHIPPED_PATH = /(^|[\\/])prompts[\\/]+(chief-of-staff|soul)\.md$/i
 const SHIPPED_NAMED = /prompts[\\/]+(chief-of-staff|soul)\.md\b/i
 

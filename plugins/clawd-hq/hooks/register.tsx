@@ -20,7 +20,7 @@ import { LOGBOOK_FILE, loadLogbook, saveLogbook } from './logbook'
 import type { LogbookIo } from './logbook'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
-import { clawdActions, refreshClawd, toggled } from './clawd-edit'
+import { SHIPPED_DENY, clawdActions, editNote, editPartOf, isShippedWrite, refreshClawd, toggled } from './clawd-edit'
 import type { ClawdIo } from './clawd-edit'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
@@ -185,6 +185,8 @@ const briefIo = ($: EngineInterface, home: string, warn: (text: string) => void)
 
 /** What this session's chat was given: read at its first request, again after a session start or /clear. */
 let briefing: Promise<Briefing> | undefined
+/** The main chat's turn began with an edit request from the Clawd tab: the plugin's own instruction files are off limits until it ends. */
+let isEditTurn = false
 
 /** The Clawd tab's calls (hooks/clawd-edit.ts). The prompt box is filled after what is there, never sent. */
 const clawdIo = async ($: EngineInterface, opts: BriefingOptions): Promise<ClawdIo> => ({
@@ -490,6 +492,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
     briefing = undefined
+    isEditTurn = false
     isPayrollFiled = false
     isLogbookWarned = false
     isArtifactsWarned = false
@@ -643,6 +646,7 @@ export const register: Register = (on, options) => {
     const tool = String(e.tool)
     const input = e as unknown as Record<string, unknown>
     const id = e.agentId
+    if (isEditTurn && isShippedWrite(tool, input)) return { deny: SHIPPED_DENY } as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
     if (id === undefined && tool !== STEP_TOOL) knowToolUsed()
 
@@ -703,7 +707,12 @@ export const register: Register = (on, options) => {
   })
 
   // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
-  if (brief.isKnowOn) on('prompt.submit', async ($, e, next) => (await knowPrompt(knowIo($), e as { text: string }), next(e)))
+  // An edit request from the Clawd tab carries a note of its own: the file to edit, and what must not be touched.
+  on('prompt.submit', async ($, e, next) => {
+    if (brief.isKnowOn) await knowPrompt(knowIo($), e as { text: string })
+    const note = await editNote(e.text, brief.voiceFile, $.plugin.root, () => homeOf($))
+    return next(note === undefined ? e : { ...e, context: [...(e.context ?? []), note] })
+  })
   // While ours is on and an office tab is open, Claude Code's own "You should know" stays quiet; every other side question passes.
   if (brief.isKnowOn) on('model.fork', async ($, e, next) => (isBuiltinKnow(next.origin) && (await isWatching(knowIo($))) ? { value: QUIET_FORK } : next(e)))
 
@@ -717,7 +726,10 @@ export const register: Register = (on, options) => {
   on('turn.start', async ($, e, next) => {
     // Work goes on, so a recap of the pause before it is out of date.
     turnsSeen += 1
-    if ((e as { agentId?: string }).agentId === undefined) knowTurnStart(e.text ?? '')
+    if ((e as { agentId?: string }).agentId === undefined) {
+      knowTurnStart(e.text ?? '')
+      isEditTurn = editPartOf(e.text ?? '') !== undefined
+    }
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, recap: undefined, activity: e.text ? READING_BRIEF : 'Back at it' }))
     return next(e)
   })
@@ -736,6 +748,7 @@ export const register: Register = (on, options) => {
       await showStatus($)
     } else {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)
+      isEditTurn = false
       const now = await $.clock.now()
       await setBoss($, b => ({
         ...b, isBusy: false, idleSince: now, doneAt: now,

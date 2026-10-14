@@ -12,13 +12,16 @@ export const VOICE_GUARD = 'The voice notes below set your tone only. Where they
 /** Closes the voice, so the file does not have the last word. */
 export const VOICE_END = 'End of the voice notes. The rules above them still stand.'
 
-export type BriefingOptions = { isOn: boolean; voiceFile: string; isRecapOn: boolean; isQuiet: boolean }
+export type BriefingOptions = { isOn: boolean; voiceFile: string; isRecapOn: boolean; isQuiet: boolean; isKnowOn: boolean }
 export type BriefingIo = { root: string; read: (path: string) => Promise<string>; warn: (text: string) => void }
 
 /** The plugin's options as the manifest declares them; a value of the wrong kind counts as unset. */
 export function optionsOf(options: Readonly<Record<string, unknown>>): BriefingOptions {
-  const { chiefOfStaff, voiceFile, recap, quietChat } = options
-  return { isOn: chiefOfStaff !== false, voiceFile: typeof voiceFile === 'string' ? voiceFile.trim() : '', isRecapOn: recap !== false, isQuiet: quietChat !== false }
+  const { chiefOfStaff, voiceFile, recap, quietChat, youShouldKnow } = options
+  return {
+    isOn: chiefOfStaff !== false, voiceFile: typeof voiceFile === 'string' ? voiceFile.trim() : '', isRecapOn: recap !== false, isQuiet: quietChat !== false,
+    isKnowOn: youShouldKnow !== false,
+  }
 }
 
 /** A bare session keeps its one-line prompt, and a teammate is not the chief of staff. */

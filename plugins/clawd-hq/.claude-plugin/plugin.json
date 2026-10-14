@@ -33,6 +33,13 @@
       "description": "On (default): while Clawd runs the chat, it hides the 'finished' notices of specialists he hired, the messages of teammates he hired by name, and his own no-update lines. He reports once the job is done, and the Log tab lists what finished. A failure or a request (a question, permission, approval) always shows, and the full view (ctrl+o) shows everything. Off: the chat shows every row as Claude Code draws it.",
       "required": false,
       "default": true
+    },
+    "youShouldKnow": {
+      "type": "boolean",
+      "title": "You should know",
+      "description": "On (default): after each specialist hands its work back, a small model reads its steps and its report and may leave one short note on Clawd's card when something matters, such as a claim no step backs up or a test that failed. It uses a little of your plan. While it is on, Claude Code's own \"You should know\" note above the prompt box stays quiet. Off: no checks are made, and Claude Code's own note works as usual.",
+      "required": false,
+      "default": true
     }
   }
 }

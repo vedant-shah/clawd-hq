@@ -6,7 +6,7 @@ import { AMBER, GREEN, RED, givenName, hash } from './office'
 import { atWork, deskWords, recentFailures, statusOf, titled, workLine } from './panel-model'
 import { stepCount } from './steps'
 import { overlay } from './pixels'
-import { knowBlock } from './panel-know'
+import { knowSection } from './panel-know'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import type { Employee } from '../types'
@@ -47,7 +47,6 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
           <Text color={TONE[status.tone]}>●</Text>
           <Text bold wrap="wrap">{status.text}</Text>
         </Box>
-        {knowBlock(kit, data, actions)}
         {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
         {!boss.isBusy && boss.recap !== undefined && (
           <Box key="recap" marginTop={kit.isTerminal ? 1 : 0} flexDirection="column">
@@ -154,6 +153,7 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
   return (
     <kit.Box flexDirection="column" gap={1}>
       {clawdCard(ctx)}
+      {knowSection(kit, data, actions)}
       {floor(ctx)}
       {artifactDesk(ctx)}
     </kit.Box>

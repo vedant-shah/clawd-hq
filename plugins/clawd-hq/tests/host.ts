@@ -90,7 +90,14 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const commands: string[] = []
   const tools: string[] = []
   on('command.register', (_$, e) => (commands.push((e as { name: string }).name), { value: undefined }) as never)
-  on('tool.register', (_$, e) => (tools.push((e as { name: string }).name), { value: undefined }) as never)
+  /** The same registrations with the placement each asked for. */
+  const toolSpecs: Array<{ name: string; isDeferred?: boolean }> = []
+  on('tool.register', (_$, e) => {
+    const spec = e as { name: string; isDeferred?: boolean }
+    tools.push(spec.name)
+    toolSpecs.push({ name: spec.name, isDeferred: spec.isDeferred })
+    return { value: undefined } as never
+  })
   // What the engine answers for the session's start; a test moves it as a new session would.
   const session = { startedAt: 0 }
   on('session.usage', () => ({ value: { startedAt: session.startedAt, context: { window: 1_000_000 }, rateLimits: [] } }) as never)
@@ -98,5 +105,5 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('session.model', () => ({ value: 'claude-sonnet-5-1' }) as never)
   /** The person closing a pane by hand. */
   const closePane = (id: string) => { const at = panes.findIndex(p => p.id === id); if (at >= 0) panes.splice(at, 1) }
-  return { clock, opened, toasts, session, panes, closePane, fail, front, files, disk, saved, kv, commands, tools }
+  return { clock, opened, toasts, session, panes, closePane, fail, front, files, disk, saved, kv, commands, tools, toolSpecs }
 }

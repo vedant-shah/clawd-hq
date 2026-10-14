@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Employee } from '../types'
-import { MAX_PLAN, NOTE_CHARS, parseStep, withProgress } from '../hooks/steps'
+import { MAX_PLAN, NOTE_CHARS, parseStep, stepLine, withProgress, withWords } from '../hooks/steps'
+import { STEP_SPEC } from '../hooks/tool-specs'
 import { endRun, restart, withSaid } from '../hooks/staff-model'
 import { barGlyphs, barOf, barSvg } from '../hooks/meters'
 
@@ -87,4 +88,56 @@ test('the small bar is 10 cells and 100 wide, the same shapes as the wide one', 
   expect(half).toContain('<rect width="50" height="4" rx="2"')
   expect(barSvg(1, 'small')).toContain('<rect width="4" height="4" rx="2"')
   expect(barSvg(50)).toContain('width="200" height="4"')
+})
+
+test('the step tool is kept in the prompt\'s own list, not behind a search the specialist must make first', () => {
+  expect(STEP_SPEC.isDeferred).toBe(false)
+})
+
+test('"Step N of M" and "step N/M" in a specialist\'s words give the step it is on and the plan, case-insensitively', () => {
+  expect(stepLine('Step 1 of 4: looking at what the three commits changed.')).toEqual({ done: 1, total: 4 })
+  expect(stepLine('step 2/5 - running the tests')).toEqual({ done: 2, total: 5 })
+  expect(stepLine('STEP 3 OF 12')).toEqual({ done: 3, total: 12 })
+  expect(stepLine('Now on Step 2 of 6: writing.')).toEqual({ done: 2, total: 6 })
+  // The latest mention is the one that counts.
+  expect(stepLine('Step 1 of 4 is done. Step 2 of 4: checking the rules.')).toEqual({ done: 2, total: 4 })
+  // A step number past the plan is brought down to it.
+  expect(stepLine('Step 9 of 4: wrapping up')).toEqual({ done: 4, total: 4 })
+})
+
+test('anything else in a specialist\'s words is no progress: other shapes, a plan outside 1 to 12, step 0, longer numbers, a word that only ends in step', () => {
+  for (const text of [
+    '', 'Working on it.', 'Step one of four', 'Step 2', 'Step of 4', 'Step 0 of 4', 'Step 1 of 0', 'Step 1 of 13', 'Step 100 of 4',
+    'Step 1 of 100', 'Misstep 2 of 4', 'Step -1 of 4', 'Step 1.5 of 4', 'Steps 2 of 4', 'Step 2 out of 4', 'Step 2 of four',
+  ]) expect(stepLine(text)).toBeUndefined()
+})
+
+test('a specialist\'s words set its progress when it has not reported with the tool, and the count and bar follow the step it is on', () => {
+  const said = withWords(emp(), 'Step 1 of 4: looking at the commits.')
+  expect(said).toMatchObject({ stepDone: 1, stepTotal: 4, stepBy: 'words' })
+  expect(withWords(said, 'Step 2 of 4: checking the rules.')).toMatchObject({ stepDone: 2, stepTotal: 4, stepBy: 'words' })
+  // A new plan in words replaces the old one.
+  expect(withWords(said, 'Step 2 of 6: more than I thought.')).toMatchObject({ stepDone: 2, stepTotal: 6 })
+  // Words with no step in them change nothing, and give no bar to one that has none.
+  expect(withWords(said, 'Checking the rules.')).toBe(said)
+  const none = emp()
+  expect(withWords(none, 'Checking the rules.')).toBe(none)
+  expect(none.stepTotal).toBeUndefined()
+})
+
+test('once the specialist has reported with the tool, its words no longer move the bar', () => {
+  const reported = withProgress(emp(), { done: 2, total: 5, note: 'Writing' })
+  expect(reported.stepBy).toBe('tool')
+  expect(withWords(reported, 'Step 4 of 8: far along.')).toBe(reported)
+  expect(withProgress(withWords(emp(), 'Step 1 of 4: starting.'), { done: 0, total: 6 })).toMatchObject({ stepDone: 0, stepTotal: 6, stepBy: 'tool' })
+})
+
+test('what a specialist says is what sets progress from words, through withSaid', () => {
+  expect(withSaid(emp(), 'Step 1 of 4: looking at the commits.')).toMatchObject({ said: 'Step 1 of 4: looking at the commits.', stepDone: 1, stepTotal: 4 })
+  expect(withSaid(emp(), 'Looking at the commits.').stepTotal).toBeUndefined()
+})
+
+test('progress from words ends with the run, like the tool\'s', () => {
+  const going = withWords(emp(), 'Step 1 of 4: starting.')
+  expect(endRun(going, 'done', 'signal', 10, 1)).toMatchObject({ stepDone: undefined, stepTotal: undefined, stepBy: undefined })
 })

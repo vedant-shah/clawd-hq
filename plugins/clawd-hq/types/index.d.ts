@@ -39,6 +39,8 @@ export type Employee = {
   stepDone?: number
   stepTotal?: number
   stepNote?: string
+  /** Where the progress came from: the step tool's report, which stands, or a "Step N of M" in the specialist's own words. */
+  stepBy?: 'tool' | 'words'
 }
 
 /** One thing Clawd remembers for this project: a decision the user made, or a key choice an agent came back with. */

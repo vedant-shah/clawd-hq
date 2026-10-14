@@ -103,6 +103,65 @@ test('until the specialist reports there is no bar and no count, on every surfac
   }
 })
 
+/** One model request of the specialist `t1`, which answers with `words`. */
+async function says($: Engine, on: Parameters<typeof host>[0], words: { text: string }) {
+  const usage = { model: 'claude-opus-5-5', input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: words.text, toolUses: [], stopReason: 'end_turn', usage } as never
+  })
+  return async (index: number) => {
+    const run = $.turn.step({ turnId: 'r1', index, model: 'm', messageCount: 3, agentId: 't1' } as never)
+    let part = await run.next()
+    while (!part.done) part = await run.next()
+  }
+}
+
+test('a specialist that writes "Step 1 of 4" in its own words gets a bar from it, on every surface, and not before', async ($, on) => {
+  hostWithSpecialist(on)
+  const words = { text: 'Working out where to start.' }
+  const ask = await says($, on, words)
+  await $.agent.spawn(BUILD)
+  await ask(0)
+  for (const surface of SURFACES) expect((await rowOf($, surface)).texts.some(t => /^\d+\/\d+$/.test(t))).toBe(false)
+
+  words.text = 'Step 1 of 4: looking at what the three commits changed.'
+  await ask(1)
+  const terminal = await rowOf($, 'terminal')
+  expect(terminal.texts).toContain('1/4')
+  expect(terminal.glyphs).toEqual(['━'.repeat(3), '─'.repeat(7)])
+  const desktop = await rowOf($, 'desktop')
+  expect(desktop.texts).toContain('1/4')
+  expect(desktop.bars).toHaveLength(1)
+  expect(desktop.bars[0]!.props.width).toBe(100)
+
+  words.text = 'Step 2 of 4: checking the rules.'
+  await ask(2)
+  expect((await rowOf($, 'terminal')).texts).toContain('2/4')
+})
+
+test('the tool\'s report wins over the specialist\'s words, before and after it', async ($, on) => {
+  hostWithSpecialist(on)
+  const words = { text: 'Step 1 of 4: starting.' }
+  const ask = await says($, on, words)
+  await $.agent.spawn(BUILD)
+  await ask(0)
+  expect((await rowOf($, 'terminal')).texts).toContain('1/4')
+  await report($, { done: 2, total: 5 }, 't1')
+  expect((await rowOf($, 'terminal')).texts).toContain('2/5')
+  words.text = 'Step 3 of 6: more.'
+  await ask(1)
+  const { texts } = await rowOf($, 'terminal')
+  expect(texts).toContain('2/5')
+  expect(texts).not.toContain('3/6')
+})
+
+test('the step tool is registered in front, not behind a search', async ($, on) => {
+  const { toolSpecs } = host(on)
+  await $.session.start(START)
+  expect(toolSpecs.find(t => t.name === 'step')?.isDeferred).toBe(false)
+  expect(toolSpecs.filter(t => t.name !== 'step').every(t => t.isDeferred === undefined)).toBe(true)
+})
+
 test('after a report the row shows a small bar and the count: line glyphs on the terminal, a thin image elsewhere', async ($, on) => {
   hostWithSpecialist(on)
   await $.agent.spawn(BUILD)

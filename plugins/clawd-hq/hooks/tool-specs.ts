@@ -5,6 +5,8 @@ type ToolSpec = Parameters<EngineInterface['tool']['register']>[0]
 
 export const STEP_SPEC: ToolSpec = {
   name: 'step',
+  // In the prompt's own list: a specialist would not otherwise search for it, and its brief names it as one it has.
+  isDeferred: false,
   description:
     'For a specialist (a subagent): report how far along your work is, so the person watching sees a progress bar. ' +
     'Call it first with your plan as `total` (3 to 8 steps) and `done: 0`, then after each step with `done` and a note of a few plain words. ' +

@@ -3,6 +3,7 @@ import type { AgentStatus } from 'claude-code'
 import type { Boss, EndedBy, Employee, Mood } from '../types'
 import { ago } from './office'
 import { DEMO, isActive } from './panel-model'
+import { withWords } from './steps'
 
 export type StepUsage = {
   input_tokens: number
@@ -26,7 +27,7 @@ export function hire(list: Employee[], fresh: Employee): Employee[] {
 }
 
 /** A run's own progress report (hooks/steps.ts): none at its start, none once it ends. */
-const NO_PROGRESS = { stepDone: undefined, stepTotal: undefined, stepNote: undefined }
+const NO_PROGRESS = { stepDone: undefined, stepTotal: undefined, stepNote: undefined, stepBy: undefined }
 
 /** An engine status counts as an end only after this long without a sign of life. */
 export const QUIET_MS = 15_000
@@ -74,8 +75,8 @@ export const finishedText = (mood: Mood, prop: string, label: string, e: Employe
 export const withTool = (one: Employee, activity: string): Employee =>
   ({ ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', activity, tools: one.tools + 1 })
 
-/** What the specialist said in its last step. Its words are newer than any note it reported before, so the note goes; the count stays. */
-export const withSaid = (one: Employee, said: string): Employee => ({ ...one, said, stepNote: undefined })
+/** What the specialist said in its last step. Its words are newer than any note it reported before, so the note goes; the count stays, or follows a "Step N of M" in the words. */
+export const withSaid = (one: Employee, said: string): Employee => withWords({ ...one, said, stepNote: undefined }, said)
 
 /**
  * One model request's cost. A request re-reads the whole prompt, so adding every request's context up counts

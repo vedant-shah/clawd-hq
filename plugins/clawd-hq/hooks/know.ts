@@ -62,7 +62,8 @@ export type Parsed =
 /** The question as `model.complete` takes it: the rules as the system prompt, the lists and the fenced record as the message. */
 export function checkAsk(record: string, shown: readonly string[], knew: readonly string[]): { system: string; prompt: string } {
   const list = (title: string, items: readonly string[]) => (items.length ? `${title}\n${items.map(x => `- ${x}`).join('\n')}\n\n` : '')
-  const fenced = record.replace(/<\/?record>/gi, '[record tag removed]')
+  // Any spelling of the tag (spaces, case, attributes) is taken out, so the record cannot close its own fence.
+  const fenced = record.replace(/<\s*\/?\s*record\b[^>]*>/gi, '[record tag removed]')
   return {
     system: CHECK_PROMPT,
     prompt: `${list('Already shown to the person, do not repeat:', shown)}${list('The person already knew, do not repeat:', knew)}<record>\n${fenced}\n</record>`,
@@ -71,13 +72,25 @@ export function checkAsk(record: string, shown: readonly string[], knew: readonl
 
 /** Model text made safe to draw: control characters and hidden marks go, a tab becomes a space. */
 export function plainText(text: string): string {
-  return text.replace(/\t/g, ' ').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f​-‏‪-‮⁠-⁤⁦-⁩﻿]/g, '')
+  return text.replace(/\t/g, ' ').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
 }
 
 /** A key or token by its shape: common prefixes, or a long run of letters and digits in both cases. */
 export function looksSecret(text: string): boolean {
   if (/\b(sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,})/.test(text)) return true
+  if (/\b[0-9a-f]{32,}\b/i.test(text)) return true
   return (text.match(/[A-Za-z0-9_+=-]{32,}/g) ?? []).some(run => /[a-z]/.test(run) && /[A-Z]/.test(run) && /\d/.test(run))
+}
+
+/**
+ * Text that could send the person somewhere or run something: a web address, a pipe into a shell, or backtick-quoted
+ * code. The record is untrusted, so a note that carries any of these is refused whole.
+ */
+export function looksUnsafe(text: string): boolean {
+  return /https?:\/\/|\bwww\./i.test(text) ||
+    /\b[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\/[^\s/]/i.test(text) ||
+    /\|\s*(sudo\s+)?(ba|z|da|k)?sh\b/i.test(text) ||
+    text.includes('`')
 }
 
 const LABEL = /^\s*(learn|tag|explain)\s*:/i
@@ -101,11 +114,18 @@ function tagOf(lines: string[]): KnowTag {
   return KNOW_TAGS.find(t => t.toLowerCase() === plain) ?? 'You should know'
 }
 
+/** The lines of the explanation, as written; none when there is no explain label. */
+function explainLines(lines: string[]): string[] {
+  const at = lines.findIndex(l => /^\s*explain\s*:/i.test(l))
+  return at < 0 ? [] : [lines[at]!.replace(/^\s*explain\s*:/i, ''), ...lines.slice(at + 1)]
+}
+
+const explainBlock = (lines: string[]) => explainLines(lines).join('\n')
+
 /** The bold title and the explanation under it, plain; nothing when there is none, it runs far too long, or the title does. */
 function explainOf(lines: string[]): { title?: string; explain?: string } {
-  const at = lines.findIndex(l => /^\s*explain\s*:/i.test(l))
-  if (at < 0) return {}
-  const kept = [lines[at]!.replace(/^\s*explain\s*:/i, ''), ...lines.slice(at + 1)].filter(l => !looksSecret(l)).join('\n').trim()
+  const kept = explainLines(lines).filter(l => !looksSecret(l)).join('\n').trim()
+  if (kept === '') return {}
   const bold = /^\*\*(.+?)\*\*/.exec(kept)
   const title = bold ? squash(bold[1]!) : undefined
   const explain = squash(unbold(bold ? kept.slice(bold[0].length) : kept))
@@ -123,6 +143,7 @@ export function parseNote(reply: string): Parsed {
   if (learn === '' || /^none\b/i.test(learn)) return { kind: 'none' }
   if (learn.length > LINE_CHARS) return { kind: 'failed', why: `the line was over ${LINE_CHARS} characters` }
   if (looksSecret(learn)) return { kind: 'failed', why: 'the line looked like a key or token' }
+  if (looksUnsafe(learn) || looksUnsafe(explainBlock(lines))) return { kind: 'failed', why: 'the note held a web address, a command or quoted code' }
   const line = unbold(/[.!?]$/.test(learn) ? learn : `${learn}.`)
   return { kind: 'note', line, tag: tagOf(lines), ...explainOf(lines) }
 }

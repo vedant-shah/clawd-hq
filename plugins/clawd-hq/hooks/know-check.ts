@@ -5,7 +5,7 @@ import type { ModelCompleteResult, SessionMessage } from 'claude-code'
 import type { KnowNote, KnowState } from '../types'
 import {
   BACKOFF0, KNEW_KEEP, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
-  keepLast, listFrom, nextCheck, parseNote, withLog, withNote, withoutNote,
+  keepLast, listFrom, nextCheck, parseNote, withLog, withNote, withOpened, withoutNote,
 } from './know'
 import type { Backoff, KnowLogEntry } from './know'
 import { CAP_CHARS, buildRecord, turnRows } from './know-record'
@@ -239,7 +239,7 @@ async function knewIt(io: KnowIo) {
 
 export function knowActions(io: KnowIo): KnowActions {
   return {
-    knowMore: () => pressed(io, s => (s.note ? { ...s, isOpen: true } : s)),
+    knowMore: () => pressed(io, withOpened),
     knowGotIt: () => pressed(io, withoutNote),
     knowKnew: () => knewIt(io),
     knowDismiss: () => pressed(io, withoutNote),

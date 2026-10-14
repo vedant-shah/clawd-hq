@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import {
   BACKOFF0, CHECK_PROMPT, KNOW0, QUIET_FORK, afterIgnored, afterPrompt, backoffFrom, checkAsk, isBuiltinKnow, isRepeat, keepLast, listFrom,
-  looksSecret, nextCheck, parseNote, plainText, skipsAfter, withLog, withNote, withoutNote,
+  looksSecret, nextCheck, parseNote, plainText, skipsAfter, withLog, withNote, withOpened, withoutNote,
 } from '../hooks/know'
 import type { KnowNote } from '../types'
 
@@ -201,9 +201,27 @@ test('the person\'s second prompt after a note appeared takes it off and counts 
   expect(once).toEqual({ state: { ...one, promptsSince: 1 }, isIgnored: false })
   const twice = afterPrompt(once.state)
   expect(twice).toEqual({ state: KNOW0, isIgnored: true })
-  const opened = { ...one, isOpen: true }
-  expect(afterPrompt(afterPrompt(opened).state)).toEqual({ state: opened, isIgnored: false })
   expect(afterPrompt(KNOW0)).toEqual({ state: KNOW0, isIgnored: false })
+})
+
+test('opening a note starts its count over, and pressing again does not', () => {
+  const one = withNote(KNOW0, note(1))
+  const opened = withOpened(afterPrompt(one).state)
+  expect(opened).toEqual({ note: note(1), isOpen: true, promptsSince: 0 })
+  const later = afterPrompt(opened).state
+  expect(withOpened(later)).toBe(later)
+  expect(withOpened(KNOW0)).toBe(KNOW0)
+})
+
+test('an opened note clears by itself on the fourth message after it was opened, and that is not counted as passed over', () => {
+  let state = withOpened(withNote(KNOW0, note(1)))
+  for (let i = 1; i <= 3; i++) {
+    const step = afterPrompt(state)
+    expect(step.state.note).toEqual(note(1))
+    expect(step.isIgnored).toBe(false)
+    state = step.state
+  }
+  expect(afterPrompt(state)).toEqual({ state: KNOW0, isIgnored: false })
 })
 
 test('the trial log keeps the newest 20 checks', () => {

@@ -64,6 +64,8 @@ export const KNEW_KEEP = 25
 export const LOG_KEEP = 20
 /** The person's second prompt after a note appeared takes it off the card. */
 const CLEAR_AFTER_PROMPTS = 2
+/** The fourth prompt after the person opened a note (Learn more) takes it off. */
+const CLEAR_OPENED_AFTER_PROMPTS = 4
 
 export type Parsed =
   | { kind: 'none' }
@@ -212,11 +214,20 @@ export function withoutNote(s: KnowState): KnowState {
   return s.note ? KNOW0 : s
 }
 
-/** One prompt of the person's: the second since the note appeared takes it off, passed over. An opened note stays. */
+/** The note is opened (Learn more): its count of prompts starts over, so it is read for four more. Opening again changes nothing. */
+export function withOpened(s: KnowState): KnowState {
+  return !s.note || s.isOpen ? s : { ...s, isOpen: true, promptsSince: 0 }
+}
+
+/**
+ * One prompt of the person's: the second since the note appeared takes it off, passed over. An opened note goes on the
+ * fourth since it was opened, and that is not passing it over, since it was read.
+ */
 export function afterPrompt(s: KnowState): { state: KnowState; isIgnored: boolean } {
-  if (!s.note || s.isOpen) return { state: s, isIgnored: false }
+  if (!s.note) return { state: s, isIgnored: false }
   const seen = s.promptsSince + 1
-  return seen >= CLEAR_AFTER_PROMPTS ? { state: withoutNote(s), isIgnored: true } : { state: { ...s, promptsSince: seen }, isIgnored: false }
+  if (seen < (s.isOpen ? CLEAR_OPENED_AFTER_PROMPTS : CLEAR_AFTER_PROMPTS)) return { state: { ...s, promptsSince: seen }, isIgnored: false }
+  return { state: withoutNote(s), isIgnored: !s.isOpen }
 }
 
 // ---- The trial log: what the checks cost, kept to measure it ----

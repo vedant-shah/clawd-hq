@@ -584,6 +584,23 @@ test('the person\'s second prompt after a note takes it off; a /clear empties th
   await ui.unmount()
 })
 
+test('a note the person opened with Learn more stays through three messages and goes on the fourth', async ($, on) => {
+  await withNotes($, on, [() => answered(NOTE)], 1)
+  let ui = await office$($, 'terminal')
+  await ui.press({ key: 'know-more' })
+  await ui.unmount()
+  for (const text of ['one', 'two', 'three']) {
+    await $.prompt.submit({ text } as never)
+    ui = await office$($, 'terminal')
+    expect(await ui.find({ type: 'Text', text: /^The tests did not pass$/ })).toBeDefined()
+    await ui.unmount()
+  }
+  await $.prompt.submit({ text: 'four' } as never)
+  ui = await office$($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
+  await ui.unmount()
+})
+
 // ---- Claude Code's own "You should know" stays quiet while ours is on ----
 
 /** A stand-in for the built-in: at the end of a turn it forks a side question and keeps what came back. */

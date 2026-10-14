@@ -92,3 +92,46 @@ export function mergeMarkdown(existing: string, after: readonly Memory[], now: n
   while (out.length > 0 && out[out.length - 1] === '') out.pop()
   return `${[...out, ...after.filter(m => !seen.has(m.id)).map(line)].join('\n')}\n`
 }
+
+// ---- The file itself, through plain calls register.tsx hands in (`$` never leaves that file) ----
+
+export type LogbookIo = {
+  /** The project folder; empty when the session has none. */
+  cwd: string
+  exists: (path: string) => Promise<boolean>
+  read: (path: string) => Promise<string>
+  write: (path: string, text: string) => Promise<void>
+  now: () => Promise<number>
+  /** What this session holds, for when the file cannot give the list. */
+  held: () => Promise<Memory[]>
+}
+
+export type Logbook = { text: string; list: Memory[]; isWritable: boolean }
+
+/**
+ * The file's text and entries; where there is no file, what this session holds. When the file's state cannot be
+ * known (the check or the read failed), it is not safe to write over.
+ */
+export async function loadLogbook(io: LogbookIo): Promise<Logbook> {
+  if (!io.cwd) return { text: '', list: await io.held(), isWritable: false }
+  const path = `${io.cwd}/${LOGBOOK_FILE}`
+  try {
+    if (!(await io.exists(path))) return { text: '', list: await io.held(), isWritable: true }
+    const text = await io.read(path)
+    return { text, list: fromMarkdown(text, await io.now()), isWritable: true }
+  } catch {
+    return { text: '', list: await io.held(), isWritable: false }
+  }
+}
+
+/** Writes `list` into the file as it was loaded. False when it did not land; with no project folder there is nothing to write. */
+export async function saveLogbook(io: LogbookIo, book: Logbook, list: readonly Memory[]): Promise<boolean> {
+  if (!io.cwd) return true
+  if (!book.isWritable) return false
+  try {
+    await io.write(`${io.cwd}/${LOGBOOK_FILE}`, mergeMarkdown(book.text, list, await io.now()))
+    return true
+  } catch {
+    return false
+  }
+}

@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown, toMarkdown } from '../hooks/logbook'
+import { LOGBOOK_FILE, fromMarkdown, loadLogbook, mergeMarkdown, saveLogbook, toMarkdown } from '../hooks/logbook'
+import type { LogbookIo } from '../hooks/logbook'
 import type { Memory } from '../types'
 
 const AT = Date.UTC(2026, 9, 10, 14, 3)
@@ -120,4 +121,57 @@ test('a "who" with the separator in it cannot break its line apart', () => {
   const text = toMarkdown([mem({ by: 'A · B', source: 'report', text: 'T' })])
   const [back] = fromMarkdown(text, AT)
   expect(back).toMatchObject({ by: 'A - B', source: 'report', text: 'T' })
+})
+
+// ---- Reading and writing the file through plain calls (register.tsx spells each one) ----
+
+function bookIo(files: Map<string, string>, over: Partial<LogbookIo> = {}) {
+  const io: LogbookIo = {
+    cwd: '/repo',
+    exists: async path => files.has(path),
+    read: async path => { const text = files.get(path); if (text === undefined) throw new Error('ENOENT'); return text },
+    write: async (path, text) => { files.set(path, text) },
+    now: async () => AT,
+    held: async () => [mem({ id: 'M9', text: 'Held in this session' })],
+    ...over,
+  }
+  return io
+}
+const PATH = `/repo/${LOGBOOK_FILE}`
+
+test('with no file yet, the session\'s own list stands and the file may be written', async () => {
+  expect(await loadLogbook(bookIo(new Map()))).toEqual({ text: '', list: [mem({ id: 'M9', text: 'Held in this session' })], isWritable: true })
+})
+
+test('a file there is read, and its entries are the list', async () => {
+  const text = toMarkdown([mem()])
+  expect(await loadLogbook(bookIo(new Map([[PATH, text]])))).toEqual({ text, list: [mem()], isWritable: true })
+})
+
+test('with no project folder, or a file that cannot be read, the session\'s list stands and nothing is written over', async () => {
+  const held = [mem({ id: 'M9', text: 'Held in this session' })]
+  expect(await loadLogbook(bookIo(new Map(), { cwd: '' }))).toEqual({ text: '', list: held, isWritable: false })
+  const failing = bookIo(new Map([[PATH, 'x']]), { read: async () => { throw new Error('EACCES') } })
+  expect(await loadLogbook(failing)).toEqual({ text: '', list: held, isWritable: false })
+  const unsure = bookIo(new Map(), { exists: async () => { throw new Error('the check failed') } })
+  expect((await loadLogbook(unsure)).isWritable).toBe(false)
+})
+
+test('a save merges the list into the text as loaded, and says whether it landed', async () => {
+  const files = new Map([[PATH, toMarkdown([mem()])]])
+  const io = bookIo(files)
+  const list = [mem(), mem({ id: 'M2', text: 'Ship Friday' })]
+  expect(await saveLogbook(io, await loadLogbook(io), list)).toBe(true)
+  expect(fromMarkdown(files.get(PATH)!, AT)).toEqual(list)
+})
+
+test('a save over a file that could not be read, or a write that fails, does not land; with no folder there is nothing to save', async () => {
+  const files = new Map<string, string>()
+  const io = bookIo(files)
+  expect(await saveLogbook(io, { text: '', list: [], isWritable: false }, [mem()])).toBe(false)
+  expect(files.size).toBe(0)
+  const refusing = bookIo(files, { write: async () => { throw new Error('EACCES') } })
+  expect(await saveLogbook(refusing, await loadLogbook(refusing), [mem()])).toBe(false)
+  expect(await saveLogbook(bookIo(files, { cwd: '' }), { text: '', list: [], isWritable: false }, [mem()])).toBe(true)
+  expect(files.size).toBe(0)
 })

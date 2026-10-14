@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { BRIEF_NOTE, boxAnswers, fit, memoryBlock, whoOf, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from '../hooks/desk'
+import { BRIEF_NOTE, boxAnswers, fit, memoryBlock, whoOf, oneLine, parseChoices, parseEffort, projectFiles, proposeLayoffs, recallNote } from '../hooks/desk'
 
 test('a TypeScript project lays off other stacks and niche domains, never built-ins', () => {
   const types = ['Explore', 'general-purpose', 'ecc:go-reviewer', 'ecc:typescript-reviewer', 'ecc:react-reviewer', 'ecc:rust-build-resolver', 'ecc:healthcare-reviewer', 'ecc:architect', 'acme-ops:Robin']
@@ -109,4 +109,25 @@ test('the answers in Clawd\'s question box are read by question, a typed reply s
   ])
   expect(boxAnswers({ questions: 'nope' }, { result: { response: 'x' } })).toEqual([])
   expect(boxAnswers(input, {})).toEqual([])
+})
+
+test('the project\'s files are its top names and one level below, skipping hidden folders and node_modules', async () => {
+  const tree: Record<string, Array<{ name: string; kind: string }>> = {
+    '/repo': [{ name: 'package.json', kind: 'file' }, { name: 'src', kind: 'dir' }, { name: '.git', kind: 'dir' }, { name: 'node_modules', kind: 'dir' }],
+    '/repo/src': [{ name: 'index.ts', kind: 'file' }],
+    '/repo/.git': [{ name: 'HEAD', kind: 'file' }],
+    '/repo/node_modules': [{ name: 'react', kind: 'dir' }],
+  }
+  const list = async (path: string) => { const found = tree[path]; if (!found) throw new Error('ENOENT'); return found }
+  expect(await projectFiles('/repo', list)).toEqual(['package.json', 'src', 'index.ts', '.git', 'node_modules'])
+})
+
+test('no project folder, or one that cannot be listed, gives no names; an unreadable folder inside is skipped', async () => {
+  expect(await projectFiles('', async () => [{ name: 'x', kind: 'file' }])).toEqual([])
+  expect(await projectFiles('/repo', async () => { throw new Error('ENOENT') })).toEqual([])
+  const list = async (path: string) => {
+    if (path === '/repo') return [{ name: 'src', kind: 'dir' }, { name: 'README.md', kind: 'file' }]
+    throw new Error('EACCES')
+  }
+  expect(await projectFiles('/repo', list)).toEqual(['src', 'README.md'])
 })

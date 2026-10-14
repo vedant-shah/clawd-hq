@@ -1,5 +1,7 @@
 import { expect, test } from 'claude-code/testing'
-import { contextOf, effortLabel, localOffset, resetAt, resetIn, tokensShort, usageView, withRequest } from '../hooks/usage'
+import { contextOf, effortLabel, localOffset, noteRequest, resetAt, resetIn, startGauge, tokensShort, usageView, withRequest } from '../hooks/usage'
+import type { GaugeIo } from '../hooks/usage'
+import type { Gauge } from '../types'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -194,4 +196,43 @@ test('the model and effort are worded for a person; an effort that is not known 
   expect([view.model, view.effort]).toEqual(['Opus 5.5', 'High'])
   expect(usageView({ startedAt: 0, limits: [], model: 'claude-opus-5-5' }, NOW, utc).effort).toBeUndefined()
   expect(usageView({ startedAt: 0, limits: [], effort: 'xhigh' }, NOW, utc).effort).toBe('Extra high')
+})
+
+// ---- Reading the meters through plain calls (register.tsx spells each one) ----
+
+function gaugeIo(over: Partial<GaugeIo> = {}) {
+  let held: Gauge = { startedAt: 0, limits: [] }
+  const io: GaugeIo = {
+    now: async () => NOW,
+    usage: async () => ({ startedAt: NOW - HOUR, context: { window: 1_000_000, tokens: 5_000, percent: 1 }, rateLimits: [{ kind: 'five_hour', percentUsed: 12 }] }),
+    model: async () => 'claude-opus-5-5',
+    get: async () => held,
+    set: async fn => { held = fn(held) },
+    ...over,
+  }
+  return { io, gauge: () => held }
+}
+
+test('at session start the meters are read once: when it began, the context, the limits and the model', async () => {
+  const { io, gauge } = gaugeIo()
+  await startGauge(io)
+  expect(gauge()).toMatchObject({ startedAt: NOW - HOUR, contextTokens: 5_000, contextWindow: 1_000_000, contextPercent: 1, model: 'claude-opus-5-5' })
+  expect(gauge().limits).toHaveLength(1)
+})
+
+test('where the engine cannot say, the session began now and the model waits for the first request', async () => {
+  const { io, gauge } = gaugeIo({ usage: async () => { throw new Error('no usage') }, model: async () => { throw new Error('no model') } })
+  await startGauge(io)
+  expect(gauge()).toEqual({ startedAt: NOW, limits: [] })
+})
+
+test('a request is kept only when its model or effort moved, and a failing store never throws', async () => {
+  let writes = 0
+  const { io, gauge } = gaugeIo()
+  const counted: GaugeIo = { ...io, set: async fn => { writes += 1; await io.set(fn) } }
+  await noteRequest(counted, 'claude-opus-5-5', 'high')
+  await noteRequest(counted, 'claude-opus-5-5', 'high')
+  expect(writes).toBe(1)
+  expect(gauge()).toMatchObject({ model: 'claude-opus-5-5', effort: 'high' })
+  await expect(noteRequest({ ...io, get: async () => { throw new Error('gone') } }, 'm', 'low')).resolves.toBeUndefined()
 })

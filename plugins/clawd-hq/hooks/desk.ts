@@ -92,6 +92,21 @@ export function proposeLayoffs(types: string[], files: string[]): { laidOff: str
   return { laidOff: laidOff.sort(), stacks: present.map(s => s.stack), why: [...why] }
 }
 
+/** The names at the top of the project and one level below (hidden folders and node_modules not opened): what marks its stack. `list` is the host's folder listing. */
+export async function projectFiles(cwd: string, list: (path: string) => Promise<ReadonlyArray<{ name: string; kind: string }>>): Promise<string[]> {
+  if (!cwd) return []
+  const names: string[] = []
+  try {
+    for (const one of await list(cwd)) {
+      names.push(one.name)
+      if (one.kind === 'dir' && !one.name.startsWith('.') && one.name !== 'node_modules') {
+        try { for (const sub of await list(`${cwd}/${one.name}`)) names.push(sub.name) } catch { /* unreadable folder */ }
+      }
+    }
+  } catch { /* no project folder */ }
+  return names
+}
+
 // ---- Staffing: Clawd picks each agent's model and effort ----
 
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const

@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, boxAnswers, fit, memoryBlock, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from './desk'
+import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, boxAnswers, fit, memoryBlock, oneLine, parseChoices, parseEffort, projectFiles, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
 import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './artifacts'
 import type { ArtifactAnswer } from './artifacts'
@@ -12,10 +12,12 @@ import { BLURB_CHARS, CHEER_TICKS, DEMO_TOOL, DESCRIPTION_CHARS, FRAME_MS, MAX_B
 import { BRAND, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
-import { contextOf, withRequest } from './usage'
+import { contextOf, noteRequest, startGauge } from './usage'
+import type { GaugeIo } from './usage'
 import { DEMO, isActive } from './panel-model'
 import { tourSteps } from './demo'
-import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
+import { LOGBOOK_FILE, loadLogbook, saveLogbook } from './logbook'
+import type { LogbookIo } from './logbook'
 import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
@@ -182,37 +184,22 @@ let isLogbookWarned = false
 /** The same for the artifact list. */
 let isArtifactsWarned = false
 
-/**
- * The file's text and entries; where there is no file, what this session holds. When the file's state cannot be
- * known (the check or the read failed), it is not safe to write over.
- */
-async function loadLogbook($: EngineInterface): Promise<{ text: string; list: Memory[]; isWritable: boolean }> {
-  if (!cwd) return { text: '', list: await read($, memory), isWritable: false }
-  const path = `${cwd}/${LOGBOOK_FILE}`
-  try {
-    if (!(await $.fs.exists(path))) return { text: '', list: await read($, memory), isWritable: true }
-    const text = await $.fs.read(path)
-    return { text, list: fromMarkdown(text, await $.clock.now()), isWritable: true }
-  } catch {
-    return { text: '', list: await read($, memory), isWritable: false }
-  }
-}
+const logbookIo = ($: EngineInterface): LogbookIo => ({
+  cwd, exists: path => $.fs.exists(path), read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text),
+  now: () => $.clock.now(), held: () => read($, memory),
+})
 
-const loadMemory = async ($: EngineInterface): Promise<Memory[]> => (await loadLogbook($)).list
+const loadMemory = async ($: EngineInterface): Promise<Memory[]> => (await loadLogbook(logbookIo($))).list
 
 async function saveMemory($: EngineInterface, fn: (list: Memory[]) => Memory[]) {
-  const { text, list: before, isWritable } = await loadLogbook($)
-  const list = fn(before).slice(-MAX_MEMORY)
+  const io = logbookIo($)
+  const book = await loadLogbook(io)
+  const list = fn(book.list).slice(-MAX_MEMORY)
   await update($, memory, () => list)
-  if (cwd) {
-    try {
-      if (!isWritable) throw new Error('the file cannot be read, so it is not written over')
-      await $.fs.write(`${cwd}/${LOGBOOK_FILE}`, mergeMarkdown(text, list, await $.clock.now()))
-    } catch {
-      // The decision stays in this session; the person hears of it once.
-      if (!isLogbookWarned) $.ui.toast(`Could not save decisions to ${LOGBOOK_FILE}. They are kept for this session only.`)
-      isLogbookWarned = true
-    }
+  if (!(await saveLogbook(io, book, list))) {
+    // The decision stays in this session; the person hears of it once.
+    if (!isLogbookWarned) $.ui.toast(`Could not save decisions to ${LOGBOOK_FILE}. They are kept for this session only.`)
+    isLogbookWarned = true
   }
   await retitleDecisions(paneIo($))
 }
@@ -238,20 +225,7 @@ async function saveBoxAnswer($: EngineInterface, question: string, said: string)
 
 // ---- Payroll: which agent types Clawd is offered ----
 
-async function projectFiles($: EngineInterface): Promise<string[]> {
-  if (!cwd) return []
-  const names: string[] = []
-  try {
-    const top = await $.fs.list(cwd)
-    for (const one of top) {
-      names.push(one.name)
-      if (one.kind === 'dir' && !one.name.startsWith('.') && one.name !== 'node_modules') {
-        try { for (const sub of await $.fs.list(`${cwd}/${one.name}`)) names.push(sub.name) } catch { /* unreadable folder */ }
-      }
-    }
-  } catch { /* no project folder */ }
-  return names
-}
+const filesHere = ($: EngineInterface) => projectFiles(cwd, path => $.fs.list(path))
 
 async function knownTypes($: EngineInterface): Promise<string[]> {
   return [...new Set([...Object.keys(await read($, blurbs)), ...Object.keys(await read($, roster))])]
@@ -272,7 +246,7 @@ async function reviewPayroll($: EngineInterface) {
   const types = await knownTypes($)
   if (types.length < 15) return
   isPayrollFiled = true
-  const plan = proposeLayoffs(types, await projectFiles($))
+  const plan = proposeLayoffs(types, await filesHere($))
   if (plan.laidOff.length === 0) {
     await savePayroll($, { ...(await getPayroll($)), isReviewed: true, stacks: plan.stacks })
     return
@@ -286,7 +260,7 @@ async function reviewPayroll($: EngineInterface) {
 
 async function applyPayroll($: EngineInterface, isLayoff: boolean) {
   const types = await knownTypes($)
-  const plan = proposeLayoffs(types, await projectFiles($))
+  const plan = proposeLayoffs(types, await filesHere($))
   await savePayroll($, { laidOff: isLayoff ? plan.laidOff : [], isReviewed: true, stacks: plan.stacks })
   $.ui.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from the People tab.` : '👥 Everyone stays on the payroll.')
 }
@@ -409,28 +383,10 @@ function panelActions($: EngineInterface): PanelActions {
 
 // ---- The header meters: context and rate limits, kept as the engine reports them ----
 
-/** Reads the meters once at session start; where the engine cannot say, the session began now. */
-async function startGauge($: EngineInterface) {
-  const now = await $.clock.now()
-  try {
-    const u = await $.session.usage()
-    await update($, gauge, g => ({ ...g, startedAt: u.startedAt, ...contextOf(u.context), limits: limitsOf(u.rateLimits) }))
-  } catch {
-    await update($, gauge, g => ({ ...g, startedAt: now }))
-  }
-  try {
-    const model = await $.session.model()
-    await update($, gauge, g => withRequest(g, model, g.effort))
-  } catch { /* the footer names the model from the first request instead */ }
-}
-
-/** A request of the main chat names the model and effort in use: kept only when either moved, and never in the request's way. */
-async function noteRequest($: EngineInterface, model: string, effort: string | number | undefined) {
-  try {
-    const g = await read($, gauge)
-    if (withRequest(g, model, effort) !== g) await update($, gauge, one => withRequest(one, model, effort))
-  } catch { /* a label missed in the footer; the request goes on */ }
-}
+const gaugeIo = ($: EngineInterface): GaugeIo => ({
+  now: () => $.clock.now(), usage: () => $.session.usage(), model: () => $.session.model(),
+  get: () => read($, gauge), set: fn => update($, gauge, fn),
+})
 
 // ---- The demo: a scripted tour with stand-in employees, cleaned up at the end ----
 
@@ -527,7 +483,7 @@ export const register: Register = (on, options) => {
     await $.tool.register(REMEMBER_SPEC)
     await $.tool.register(STEP_SPEC)
     await enroll($, 'general-purpose', 0)
-    await startGauge($)
+    await startGauge(gaugeIo($))
 
     let frames = 0
     timer?.cancel()
@@ -621,7 +577,7 @@ export const register: Register = (on, options) => {
   // Each model request of an agent: what it has spent, and how full its context is.
   on('turn.step', async function* ($, e, next) {
     // Not waited for: the store's answer never holds a request back (noteRequest keeps its own errors).
-    if (!e.agentId) void noteRequest($, e.model, e.effort)
+    if (!e.agentId) void noteRequest(gaugeIo($), e.model, e.effort)
     const me = e.agentId ? (await read($, staff)).find(one => one.id === e.agentId) : undefined
     // A request is a sign of life, and a resumed specialist's first can come before any tool call.
     if (me) await signOfLife($, me.id, THINKING)

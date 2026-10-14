@@ -1,6 +1,6 @@
 // The usage footer, pure: the model and effort, the one button, and the three rows it opens (context, session, week).
 import type { Gauge } from '../types'
-import { percentLabel } from './meters'
+import { limitsOf, percentLabel } from './meters'
 import { modelLabel } from './panel-model'
 
 const MINUTE = 60_000
@@ -121,4 +121,37 @@ export function usageView(g: Gauge, now: number, offsetAt: (at: number) => numbe
   const [context, ...limits] = [contextRow(g), ...limitRows(g, now, offsetAt)]
   const rows = [context!, ...limits]
   return { model: modelLabel(g.model), effort: effortLabel(g.effort), button: `Usage ${slots(g, limits).join(' · ')}`, rows }
+}
+
+// ---- Keeping the gauge, through plain calls register.tsx hands in (`$` never leaves that file) ----
+
+export type GaugeIo = {
+  now: () => Promise<number>
+  usage: () => Promise<{ startedAt: number; context: { tokens?: number; window: number; percent?: number }; rateLimits: Array<{ kind: string; percentUsed: number; resetsAt?: string }> }>
+  model: () => Promise<string>
+  get: () => Promise<Gauge>
+  set: (fn: (g: Gauge) => Gauge) => Promise<unknown>
+}
+
+/** Reads the meters once at session start; where the engine cannot say, the session began now. */
+export async function startGauge(io: GaugeIo) {
+  const now = await io.now()
+  try {
+    const u = await io.usage()
+    await io.set(g => ({ ...g, startedAt: u.startedAt, ...contextOf(u.context), limits: limitsOf(u.rateLimits) }))
+  } catch {
+    await io.set(g => ({ ...g, startedAt: now }))
+  }
+  try {
+    const model = await io.model()
+    await io.set(g => withRequest(g, model, g.effort))
+  } catch { /* the footer names the model from the first request instead */ }
+}
+
+/** A request of the main chat names the model and effort in use: kept only when either moved, and never in the request's way. */
+export async function noteRequest(io: GaugeIo, model: string, effort: string | number | undefined) {
+  try {
+    const g = await io.get()
+    if (withRequest(g, model, effort) !== g) await io.set(one => withRequest(one, model, effort))
+  } catch { /* a label missed in the footer; the request goes on */ }
 }

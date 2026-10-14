@@ -120,6 +120,20 @@ test('writes to the plugin\'s shipped instruction files are spotted, by any file
   expect(SHIPPED_DENY).toMatch(/own copy/)
 })
 
+test('the voice file the person set is let through the guard, and only that exact path; the setting is read at each prompt', async () => {
+  const home = async () => '/home/me'
+  const mine = '/me/prompts/soul.md'
+  await editNote('Edit Clawd\'s voice notes: warmer', mine, '/plugin', home)
+  expect(isShippedWrite('Write', { file_path: mine })).toBe(false)
+  expect(isShippedWrite('Edit', { file_path: ` ${mine} ` })).toBe(false)
+  expect(isShippedWrite('Bash', { command: `echo hi >> "${mine}"` })).toBe(false)
+  expect(isShippedWrite('Write', { file_path: '/me/other/prompts/soul.md' })).toBe(true)
+  expect(isShippedWrite('Write', { file_path: '/plugin/prompts/chief-of-staff.md' })).toBe(true)
+  expect(isShippedWrite('Bash', { command: `cat "${mine}" > /plugin/prompts/soul.md` })).toBe(true)
+  await editNote('Fix the bug', '', '/plugin', home)
+  expect(isShippedWrite('Write', { file_path: mine })).toBe(true)
+})
+
 // ---- The view the tab draws ----
 
 const part = (over: Partial<PartRead> = {}): PartRead => ({ text: 'Rules', source: 'builtin', path: '/h/.clawd-hq/chief-of-staff.md', builtin: 'Rules', ...over })
@@ -227,11 +241,25 @@ test('an own copy that cannot be written, or no home folder, stops before the bo
   await clawdActions(failing.io).editClawd({ part: 'rules' }, true)
   expect(failing.box.filled).toEqual([])
   expect(failing.state().notice?.text).toContain(OWN_RULES)
+  // The seed is saved only after the copy is written, so a failed write leaves no seed behind.
+  expect(failing.seeds.has('rules')).toBe(false)
 
   const homeless = fake({ home: '' })
   await clawdActions(homeless.io).editClawd({ part: 'rules' }, true)
   expect(homeless.box.filled).toEqual([])
   expect(homeless.state().notice?.text).toMatch(/home folder/)
+})
+
+test('the own copy is written first and its seed saved after', async () => {
+  const { io } = fake()
+  const calls: string[] = []
+  const ordered: ClawdIo = {
+    ...io,
+    write: async (path, text) => { calls.push('write'); await io.write(path, text) },
+    setSeed: async (part, text) => { calls.push('seed'); await io.setSeed(part, text) },
+  }
+  await clawdActions(ordered).editClawd({ part: 'rules' }, true)
+  expect(calls).toEqual(['write', 'seed'])
 })
 
 test('a copy that is there but cannot be read is left alone, and nothing is filled', async () => {

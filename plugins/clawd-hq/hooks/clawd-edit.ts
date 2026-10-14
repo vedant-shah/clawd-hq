@@ -88,6 +88,7 @@ export function editContext(part: BriefPart, path: string, builtinPath: string):
 
 /** The note a sent prompt carries: none unless it is an edit request, and only then is the home folder looked up. */
 export async function editNote(text: string, voiceFile: string, root: string, home: () => Promise<string>): Promise<string | undefined> {
+  ownVoiceFile = voiceFile.trim()
   const part = editPartOf(text)
   if (part === undefined) return undefined
   return editContext(part, editPath(part, await home(), voiceFile), `${root}/${part === 'rules' ? RULES_FILE : VOICE_FILE}`)
@@ -97,14 +98,21 @@ const FILE_KEYS: Record<string, string> ={ Write: 'file_path', Edit: 'file_path'
 const SHIPPED_PATH = /(^|[\\/])prompts[\\/]+(chief-of-staff|soul)\.md$/i
 const SHIPPED_NAMED = /prompts[\\/]+(chief-of-staff|soul)\.md\b/i
 
+/** The voice file setting as of the person's latest prompt: it is theirs to edit from the tab, whatever it is called. */
+let ownVoiceFile = ''
+
 /**
  * A call that writes the plugin's shipped instruction files: a file tool aimed at one, or a shell command that names one
  * (best effort: a command can reach a file without naming it). Any folder counts, so another spelling of the plugin's own does too.
+ * The person's own voice file setting is let through, as that exact path.
  */
 export function isShippedWrite(tool: string, input: Record<string, unknown>): boolean {
-  if (tool === 'Bash') return typeof input.command === 'string' && SHIPPED_NAMED.test(input.command)
+  if (tool === 'Bash') {
+    const command = typeof input.command === 'string' ? input.command : undefined
+    return command !== undefined && SHIPPED_NAMED.test(ownVoiceFile === '' ? command : command.split(ownVoiceFile).join(' '))
+  }
   const path = FILE_KEYS[tool] === undefined ? undefined : input[FILE_KEYS[tool]!]
-  return typeof path === 'string' && SHIPPED_PATH.test(path.trim())
+  return typeof path === 'string' && path.trim() !== ownVoiceFile && SHIPPED_PATH.test(path.trim())
 }
 
 export const SHIPPED_DENY = 'Refused by Clawd HQ: during a request to edit Clawd\'s instructions, the plugin\'s built-in files stay as they are. Edit the person\'s own copy named in the request instead.'
@@ -168,8 +176,8 @@ async function ensureCopy(io: ClawdIo, part: BriefPart, p: PartRead): Promise<st
   if (current === undefined && isThere) return `Your own copy at ${p.path} could not be read, so nothing was put in your prompt box.`
   if (current !== undefined && current !== '' && !(current === p.seed && p.seed !== p.builtin)) return undefined
   try {
-    await io.setSeed(part, p.builtin)
     await io.write(p.path, `${p.builtin}\n`)
+    await io.setSeed(part, p.builtin)
     return undefined
   } catch {
     return `Could not make your own copy at ${p.path}, so nothing was put in your prompt box.`

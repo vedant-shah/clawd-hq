@@ -107,7 +107,7 @@ const addLog = (io: KnowIo, entry: KnowLogEntry) => change(io, 'log', log => wit
 
 /**
  * Why nobody can see the office, or nothing when someone can: something is drawn now (read at each ask, since the
- * desktop app attaches after the session starts) and one of its tabs is open (any of the four; a note waits on Clawd's
+ * desktop app attaches after the session starts) and one of its tabs is open (any of the five; a note waits on Clawd's
  * card until the Office tab is in front). A reading that fails counts as nothing drawn or no tab open.
  */
 async function whyUnseen(io: KnowIo): Promise<string | undefined> {

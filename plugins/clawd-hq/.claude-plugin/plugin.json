@@ -16,7 +16,7 @@
     "voiceFile": {
       "type": "string",
       "title": "Your own voice file",
-      "description": "The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. Leave empty for the built-in voice. Read when a session starts, up to 8000 characters.",
+      "description": "The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. Leave empty for the built-in voice. Read when a session starts, up to 8000 characters. When set, it wins over your own copy from the Clawd tab, and the tab shows and edits this file instead.",
       "required": false,
       "default": ""
     },

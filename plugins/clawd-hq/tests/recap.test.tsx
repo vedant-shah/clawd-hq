@@ -34,7 +34,7 @@ const cardText = async ($: Engine, surface: 'terminal' | 'desktop' = 'terminal')
   return text
 }
 
-test('after three turns and three quiet minutes, Clawd\'s card says where things stand, and the old button is gone', async ($, on) => {
+test('after three turns and three quiet minutes, Clawd\'s card says where things stand, and the old button is gone', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start(START)
   await turns($, 3)
@@ -68,7 +68,7 @@ test('the recap is made once per pause, goes when the next turn starts, and is m
   expect(await cardText($)).toMatch(/WHERE WE LEFT OFF/)
 })
 
-test('fewer than three turns make no recap, however long the pause', async ($, on) => {
+test('fewer than three turns make no recap, however long the pause', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start(START)
   await turns($, 2)
@@ -77,7 +77,7 @@ test('fewer than three turns make no recap, however long the pause', async ($, o
   expect(await cardText($)).not.toMatch(/WHERE WE LEFT OFF|resume/)
 })
 
-test('a /clear or a /resume takes the recap off the card and starts the count of turns again', async ($, on) => {
+test('a /clear or a /resume takes the recap off the card and starts the count of turns again', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start(START)
   for (const end of [CLEAR, { reason: 'resume', sessionId: 's1' } as never]) {

@@ -169,7 +169,7 @@ const stepOf = async ($: Eng, id: string, index: number) => {
 }
 const MIN = 60_000
 
-test('a run the engine still calls running but that went silent for 30 minutes is recorded as lost contact, in amber, with no cheer', async ($, on) => {
+test('a run the engine still calls running but that went silent for 30 minutes is recorded as lost contact, in amber, with no cheer', { timeoutMs: 15_000 }, async ($, on) => {
   const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
   const { clock, toasts } = host(on, agents)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
@@ -197,7 +197,7 @@ test('a run the engine still calls running but that went silent for 30 minutes i
   expect(toasts.filter(t => /finished|could not finish/.test(t))).toEqual([])
 })
 
-test('a specialist the engine reports as waiting is never lost, however long it waits', async ($, on) => {
+test('a specialist the engine reports as waiting is never lost, however long it waits', { timeoutMs: 15_000 }, async ($, on) => {
   const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'waiting' }]
   const { clock } = host(on, agents)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))

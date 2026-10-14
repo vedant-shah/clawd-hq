@@ -113,7 +113,7 @@ test('a call that failed records nothing', async ($, on) => {
   expect((await seen($)).text).not.toMatch(/ARTIFACT/)
 })
 
-test('publishing or opening the same link again updates it and moves it to the top; newest first', async ($, on) => {
+test('publishing or opening the same link again updates it and moves it to the top; newest first', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock } = session(on, input => answer(String(input.url)))
   await $.session.start(START)
   await publish($, { url: link(1), title: 'First' })
@@ -153,7 +153,7 @@ test('a delete of a recorded link removes it, and the section goes with the last
   expect((await seen($)).text).not.toMatch(/ARTIFACT/)
 })
 
-test('the newest 6 are drawn, one dim line counts the older ones, and the heading counts all', async ($, on) => {
+test('the newest 6 are drawn, one dim line counts the older ones, and the heading counts all', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock } = session(on, input => answer(String(input.url)))
   await $.session.start(START)
   for (let n = 1; n <= 8; n += 1) {

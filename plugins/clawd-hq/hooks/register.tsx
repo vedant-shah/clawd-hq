@@ -17,6 +17,7 @@ import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
 import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
+import { side } from './side-ask'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
@@ -328,11 +329,16 @@ async function keepArtifact($: EngineInterface, folder: string, input: Record<st
 
 /**
  * Asks the model over the session's own transcript, which the API serves from the main thread's cache, as Claude
- * Code's own session recap does. Once per pause: the turn count is noted before the question goes out.
+ * Code's own session recap does. Once per pause: the turn count is noted before the question goes out. Only while no
+ * other side question runs or waits (hooks/side-ask.ts); a later frame tries again.
  */
 async function maybeRecap($: EngineInterface) {
   const [b, f, now] = [await getBoss($), await getFx($), await $.clock.now()]
   if (!isRecapDue({ isOn: isRecapOn, isBusy: b.isBusy || f.demo !== undefined, idleSince: b.idleSince, now, turns: turnsSeen, lastFor: recapFor })) return
+  side.tryNow(() => askRecap($))
+}
+
+async function askRecap($: EngineInterface) {
   const asked = turnsSeen
   recapFor = asked
   const reply = await $.model.fork({ prompt: RECAP_PROMPT })

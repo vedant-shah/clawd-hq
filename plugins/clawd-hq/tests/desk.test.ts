@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { BRIEF_NOTE, fit, memoryBlock, whoOf, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from '../hooks/desk'
+import { BRIEF_NOTE, boxAnswers, fit, memoryBlock, whoOf, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from '../hooks/desk'
 
 test('a TypeScript project lays off other stacks and niche domains, never built-ins', () => {
   const types = ['Explore', 'general-purpose', 'ecc:go-reviewer', 'ecc:typescript-reviewer', 'ecc:react-reviewer', 'ecc:rust-build-resolver', 'ecc:healthcare-reviewer', 'ecc:architect', 'acme-ops:Robin']
@@ -90,4 +90,14 @@ test('a choice is kept whole up to its limit, and cut at a word past it', () => 
   const [choice] = parseChoices(`DECIDED: ${long}`)
   expect(choice!.length).toBeLessThanOrEqual(600)
   expect(choice!.endsWith('…')).toBe(false)
+})
+
+test('the answers in Clawd\'s question box are read by question, a typed reply stands for a question with no pick, and an empty one saves nothing', () => {
+  const input = { questions: [{ question: 'Ship Friday?' }, { question: 'Which colour?' }, {}] }
+  expect(boxAnswers(input, { result: { answers: { 'Ship Friday?': 'Yes' } } })).toEqual([{ question: 'Ship Friday?', said: 'Yes' }])
+  expect(boxAnswers(input, { result: { response: 'Do both' } })).toEqual([
+    { question: 'Ship Friday?', said: 'Do both' }, { question: 'Which colour?', said: 'Do both' }, { question: '', said: 'Do both' },
+  ])
+  expect(boxAnswers({ questions: 'nope' }, { result: { response: 'x' } })).toEqual([])
+  expect(boxAnswers(input, {})).toEqual([])
 })

@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, fit, memoryBlock, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from './desk'
+import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, boxAnswers, fit, memoryBlock, oneLine, parseChoices, parseEffort, proposeLayoffs, recallNote } from './desk'
 import type { Effort } from './desk'
 import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './artifacts'
 import type { ArtifactAnswer } from './artifacts'
@@ -27,7 +27,7 @@ import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import { REMEMBER_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, hire, markEngine, quietFor, restart, touch, verdict, withSaid, withStep, withTool } from './staff-model'
-import { BOSS0, FX0, GAUGE0, PAYROLL0, edit } from './state'
+import { BOSS0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
 
 const FRAME_MS = 400
 const CHEER_TICKS = 5
@@ -74,14 +74,6 @@ let turnsSeen = 0
 let recapFor = 0
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
-
-/** Runs tasks one after another, in the order asked, whatever each one's outcome: for writes many hooks make at the same moment. */
-let line: Promise<unknown> = Promise.resolve()
-function inLine<T>(task: () => Promise<T>): Promise<T> {
-  const run = line.then(task, task)
-  line = run.catch(() => undefined)
-  return run
-}
 
 const isAtDesk = (e: Employee, t: number) => isActive(e) || (e.doneTick !== undefined && t - e.doneTick < CHEER_TICKS)
 
@@ -668,17 +660,8 @@ export const register: Register = (on, options) => {
 
     // What the person answers in Clawd's question box is saved as their decision, each question with its own answer.
     if (tool === 'AskUserQuestion' && id === undefined) {
-      const questions = Array.isArray(input.questions) ? (input.questions as Array<{ question?: string }>) : []
       const ran = await next(e)
-      // The box hands the answers back keyed by the question's text. A reply typed without picking anything stands for
-      // a question that has no pick; one left unanswered saves nothing.
-      const box = (ran as { result?: { answers?: Record<string, unknown>; response?: unknown } }).result
-      for (const q of questions) {
-        const question = String(q.question ?? '')
-        const picked = box?.answers?.[question] ?? box?.response
-        const said = typeof picked === 'string' ? fit(picked, SAVED_CHARS) : ''
-        if (said) await saveBoxAnswer($, question, said)
-      }
+      for (const { question, said } of boxAnswers(input, ran)) await saveBoxAnswer($, question, said)
       return ran
     }
 

@@ -13,3 +13,11 @@ export const GAUGE0: Gauge = { startedAt: 0, limits: [] }
 export function edit(list: Employee[], id: string, fn: (e: Employee) => Employee): Employee[] {
   return list.map(e => (e.id === id ? fn(e) : e))
 }
+
+/** Runs tasks one after another, in the order asked, whatever each one's outcome: for writes many hooks make at the same moment. */
+let line: Promise<unknown> = Promise.resolve()
+export function inLine<T>(task: () => Promise<T>): Promise<T> {
+  const run = line.then(task, task)
+  line = run.catch(() => undefined)
+  return run
+}

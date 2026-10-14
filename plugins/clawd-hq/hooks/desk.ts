@@ -35,6 +35,22 @@ export function fit(text: string, max: number): string {
   return (space > max / 2 ? cut.slice(0, space) : cut).trimEnd()
 }
 
+/**
+ * The answers the person gave in Clawd's question box, each with its question. The box hands them back keyed by the
+ * question's text. A reply typed without picking anything stands for a question that has no pick; one left unanswered
+ * saves nothing.
+ */
+export function boxAnswers(input: Record<string, unknown>, ran: unknown): Array<{ question: string; said: string }> {
+  const questions = Array.isArray(input.questions) ? (input.questions as Array<{ question?: string }>) : []
+  const box = (ran as { result?: { answers?: Record<string, unknown>; response?: unknown } }).result
+  return questions.flatMap(q => {
+    const question = String(q.question ?? '')
+    const picked = box?.answers?.[question] ?? box?.response
+    const said = typeof picked === 'string' ? fit(picked, SAVED_CHARS) : ''
+    return said ? [{ question, said }] : []
+  })
+}
+
 /** Who something is from: "Guard", or "Guard" from an older "Sage the Guard"; "CEO" and "Clawd" stay as they are. */
 export const whoOf = (from: string) => from.split(' the ').pop() ?? from
 

@@ -111,6 +111,30 @@ export type Fx = {
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
   /** The usage footer's three rows are open above its button; shared by every pane. */
   isUsageOpen?: boolean
+  /** The Clawd tab's sections the person opened, as `rules:<heading>` or `voice:<heading>`; all are folded shut by default. */
+  clawdOpen?: string[]
+}
+
+/** One part of Clawd's briefing as the Clawd tab shows it: the text now, where it comes from, and the file an edit goes to. */
+export type ClawdPartView = {
+  text: string
+  /** The shipped text, the person's own copy, or the file the voice file setting names. */
+  source: 'builtin' | 'own' | 'setting'
+  /** The file an edit goes to; '' when there is no home folder. */
+  path: string
+  /** The text now differs from what this session's chat was given: it applies from the next session or /clear. */
+  isChanged: boolean
+  /** The own copy was made from an older built-in text than the plugin ships now. */
+  isNewer: boolean
+}
+
+/** What the Clawd tab draws: whether Clawd runs the chat, both parts, and the word left by the last button pressed. */
+export type ClawdBrief = {
+  isOn: boolean
+  rules?: ClawdPartView
+  voice?: ClawdPartView
+  /** `line`: the prompt to type by hand, where the prompt box could not take it. */
+  notice?: { text: string; line?: string }
 }
 
 /** How a note on Clawd's card is headed: a fact worth knowing, or a risk that may need action. */
@@ -154,6 +178,7 @@ declare module 'claude-code' {
       gauge: Gauge
       artifacts: Artifact[]
       know: KnowState
+      brief: ClawdBrief
     }
   }
 }

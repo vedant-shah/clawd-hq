@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { FOUR, PANE, START, SURFACES, host } from './host'
+import { ALL_PANES, PANE, START, SURFACES, host } from './host'
 
 const MIN = 60_000
 const BUILD = { prompt: 'Build the panel', description: 'Build redesigned panel', subagentType: 'ecc:tdd-guide' } as never
@@ -233,7 +233,7 @@ test('a raw shell command is stored nowhere: not in the boss state, not in the s
   expect(stored).not.toContain('SECRET')
   expect(stored).not.toContain('curl')
   for (const surface of SURFACES) {
-    for (const pane of FOUR) {
+    for (const pane of ALL_PANES) {
       const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
       expect(JSON.stringify(await ui.drawn())).not.toContain('SECRET')
       await ui.unmount()

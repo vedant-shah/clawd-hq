@@ -1,5 +1,6 @@
 // What the side panel is handed to draw, and the things it may ask for; register.tsx fills both.
-import type { Artifact, Badge, Boss, Employee, Fx, Gauge, KnowState, Memory, Payroll } from '../types'
+import type { Artifact, Badge, Boss, ClawdBrief, Employee, Fx, Gauge, KnowState, Memory, Payroll } from '../types'
+import type { ClawdActions } from './clawd-edit'
 import type { KnowActions } from './know-check'
 
 export type PanelData = {
@@ -17,9 +18,13 @@ export type PanelData = {
   now: number
   /** The notes from the check on finished work waiting on Clawd's card. */
   know: KnowState
+  /** What the Clawd tab shows: Clawd's instructions and voice notes, and the word left by its last button. */
+  brief: ClawdBrief
 }
 
-export type PanelActions = KnowActions & {
+export type PanelActions = KnowActions & ClawdActions & {
+  /** Opens one of the Clawd tab's sections, or folds it shut. */
+  toggleClawd: (key: string) => unknown
   setFind: (tab: 'decisions' | 'people', text: string) => unknown
   forget: (id: string) => unknown
   layOff: (type: string) => unknown

@@ -19,7 +19,9 @@ import { tourSteps } from './demo'
 import { LOGBOOK_FILE, loadLogbook, saveLogbook } from './logbook'
 import type { LogbookIo } from './logbook'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
-import type { Briefing, BriefingIo } from './instructions'
+import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
+import { clawdActions, refreshClawd, toggled } from './clawd-edit'
+import type { ClawdIo } from './clawd-edit'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
 import { side } from './side-ask'
@@ -33,7 +35,7 @@ import type { PanelActions, PanelData } from './panel-types'
 import { parseStep } from './steps'
 import { REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withReport, withSaid, withStep, withTool } from './staff-model'
-import { BOSS0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
+import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
 const boss = atom({ plugin: 'clawd-hq', key: 'boss' } as const, BOSS0)
@@ -46,6 +48,7 @@ const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
 const know = atom({ plugin: 'clawd-hq', key: 'know' } as const, KNOW0)
+const clawdBrief = atom({ plugin: 'clawd-hq', key: 'brief' } as const, BRIEF0)
 
 // Values written by an older version of the mod lack the newer fields: fill them in.
 async function getBoss($: EngineInterface): Promise<Boss> { return { ...BOSS0, ...(await read($, boss)) } }
@@ -179,6 +182,21 @@ const briefIo = ($: EngineInterface, home: string, warn: (text: string) => void)
   root: $.plugin.root, home, warn, read: path => $.fs.read(path), exists: path => $.fs.exists(path),
   seed: async part => { const v = await $.store.get(SEED_KEYS[part]); return typeof v === 'string' ? v : undefined },
 })
+
+/** What this session's chat was given: read at its first request, again after a session start or /clear. */
+let briefing: Promise<Briefing> | undefined
+
+/** The Clawd tab's calls (hooks/clawd-edit.ts). The prompt box is filled after what is there, never sent. */
+const clawdIo = async ($: EngineInterface, opts: BriefingOptions): Promise<ClawdIo> => ({
+  isOn: opts.isOn, voiceFile: opts.voiceFile, briefing: briefIo($, await homeOf($), () => undefined),
+  loaded: () => (briefing ?? Promise.resolve(undefined)).catch(() => undefined),
+  write: (path, text) => $.fs.write(path, text), setSeed: (part, text) => $.store.set(SEED_KEYS[part], text),
+  promptRead: () => $.prompt.read(), fill: text => $.prompt.fill({ text, mode: 'append' }),
+  get: async () => ({ ...BRIEF0, ...(await read($, clawdBrief)) }), set: fn => update($, clawdBrief, b => fn({ ...BRIEF0, ...b })),
+})
+
+/** The tab follows the files; a read that fails leaves it as it was and never stops the hook that asked. */
+const refreshTab = ($: EngineInterface, opts: BriefingOptions, isFresh: boolean) => clawdIo($, opts).then(io => refreshClawd(io, isFresh)).catch(() => undefined)
 
 // ---- The panes: one per view, so the host's own tab strip switches between them (hooks/panes.ts) ----
 
@@ -371,6 +389,7 @@ async function panelData($: EngineInterface): Promise<PanelData> {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
     artifacts: await read($, artifacts), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
+    brief: { ...BRIEF0, ...(await read($, clawdBrief)) },
   }
 }
 
@@ -380,8 +399,11 @@ async function setLaidOff($: EngineInterface, type: string, isOff: boolean) {
   await savePayroll($, { ...p, laidOff: isOff ? [...rest, type] : rest, isReviewed: true })
 }
 
-function panelActions($: EngineInterface): PanelActions {
+function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
   return {
+    toggleClawd: key => setFx($, f => ({ ...f, clawdOpen: toggled(f.clawdOpen, key) })),
+    editClawd: async (target, isTerminal) => clawdActions(await clawdIo($, opts)).editClawd(target, isTerminal),
+    resetClawd: async part => clawdActions(await clawdIo($, opts)).resetClawd(part),
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
     forget: id => saveMemory($, list => list.filter(x => x.id !== id)),
     layOff: type => setLaidOff($, type, true),
@@ -454,7 +476,6 @@ export const register: Register = (on, options) => {
   let timer: Timer | undefined
   let isFraming = false
   const brief = optionsOf(options)
-  let briefing: Promise<Briefing> | undefined
 
   // Clawd's rules and voice join the main chat's instructions: read once a session (and again after /clear), then the same text on every request, so the prompt cache holds.
   on('prompt.compose', async ($, e, next) => {
@@ -497,6 +518,7 @@ export const register: Register = (on, options) => {
     await $.tool.register(STEP_SPEC)
     await enroll($, 'general-purpose', 0)
     await startGauge(gaugeIo($))
+    await refreshTab($, brief, true)
 
     let frames = 0
     timer?.cancel()
@@ -522,7 +544,7 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'office' }, async $ => {
     await openPanes(paneIo($), true)
-    return { text: `${BRAND} is open: Office · Decisions · People · Log are the tabs at the top.` }
+    return { text: `${BRAND} is open: Office · Decisions · People · Log · Clawd are the tabs at the top.` }
   })
 
   // The header's context bar and limit countdowns follow the engine's own readings.
@@ -719,6 +741,8 @@ export const register: Register = (on, options) => {
         ...b, isBusy: false, idleSince: now, doneAt: now,
         activity: e.reason === 'answer' ? 'All done, boss.' : 'Hmm, that turn stopped early.',
       }))
+      // An edit Claude just made shows on the Clawd tab, marked as waiting for the next session.
+      await refreshTab($, brief, true)
     }
     return next(e)
   })
@@ -742,7 +766,7 @@ export const register: Register = (on, options) => {
     })
   }
 
-  // ---- The four office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----
+  // ---- The five office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----
   for (const pane of PANES) {
     on('ui.render', { component: 'Pane', requestId: pane.id }, async ($, e) => {
       const ui = $.ui.resolve(e)
@@ -754,7 +778,7 @@ export const register: Register = (on, options) => {
         Svg: e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg,
       }
       const layout = { columns: e.props.bodyColumns, minHeight: pinHeight(e.surface, e.props.placement, e.props.scroll.bodyRows) }
-      return renderPanel(tools, layout, await panelData($), panelActions($), pane.view)
+      return renderPanel(tools, layout, await panelData($), panelActions($, brief), pane.view)
     })
   }
 }

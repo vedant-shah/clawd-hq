@@ -1,49 +1,51 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { DECISIONS, FOUR, LOG, START, SURFACES, host, paneProps } from './host'
+import { ALL_PANES, DECISIONS, LOG, START, SURFACES, host, paneProps } from './host'
 
 type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const elementsOf = (node: Tree) => (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null)
 const remember = ($: Engine, decision: string) => $.tool.call({ tool: 'mcp__clawd-hq__remember', decision } as never)
-const IDS = ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log']
+const IDS = ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log', 'clawd-hq-clawd']
 
-// ---- Opening the four panes ----
+// ---- Opening the five panes ----
 
-test('/office opens Office, Decisions, People and Log in that order, then brings Office forward', async ($, on) => {
+test('/office opens Office, Decisions, People, Log and Clawd in that order, then brings Office forward', async ($, on) => {
   const { opened, panes } = host(on)
   const result = (await $.command.run({ command: 'office', args: '' } as never)) as { text: string }
 
-  expect(opened.slice(0, 4).map(o => [o.id, o.title])).toEqual([
-    ['clawd-hq', 'Office'], ['clawd-hq-decisions', 'Decisions'], ['clawd-hq-people', 'People'], ['clawd-hq-log', 'Log'],
+  expect(opened.slice(0, 5).map(o => [o.id, o.title])).toEqual([
+    ['clawd-hq', 'Office'], ['clawd-hq-decisions', 'Decisions'], ['clawd-hq-people', 'People'], ['clawd-hq-log', 'Log'], ['clawd-hq-clawd', 'Clawd'],
   ])
   // Only the last open asks for the keyboard: Office, so the later opens cannot leave another tab in front.
-  expect(opened.slice(0, 4).every(o => o.focus === undefined)).toBe(true)
-  expect(opened[4]).toMatchObject({ id: 'clawd-hq', title: 'Office', focus: true })
-  expect(opened).toHaveLength(5)
+  expect(opened.slice(0, 5).every(o => o.focus === undefined)).toBe(true)
+  expect(opened[5]).toMatchObject({ id: 'clawd-hq', title: 'Office', focus: true })
+  expect(opened).toHaveLength(6)
   // The host's tab strip reads in open order.
   expect(panes.map(p => p.id)).toEqual(IDS)
-  expect(result.text).toContain('Office · Decisions · People · Log')
+  expect(result.text).toContain('Office · Decisions · People · Log · Clawd')
   expect(result.text).not.toMatch(/\bo Office|\bd Decisions|\bp People|\bl Log/)
 })
 
-test('a session start opens the four panes the same way, without taking focus, and the Decisions title carries the count', async ($, on) => {
+test('a session start opens the five panes the same way, without taking focus, and the Decisions title carries the count', async ($, on) => {
   const { opened, panes } = host(on)
   await remember($, 'Scores live in Postgres')
   await remember($, 'Use Drizzle for migrations')
   await $.session.start(START)
-  // The opens are not awaited by the start: let them finish.
-  await $.session.measure({ context: { window: 1, tokens: 0, percent: 0 }, rateLimits: [], changed: ['context'] } as never)
-  expect(opened.map(o => o.id)).toEqual(IDS)
-  expect(opened.map(o => o.title)).toEqual(['Office', 'Decisions 2', 'People', 'Log'])
+  // The opens are not awaited by the start: let them finish (Office is opened once more, last).
+  for (let i = 0; i < 20 && opened.length < IDS.length + 1; i++) {
+    await $.session.measure({ context: { window: 1, tokens: 0, percent: 0 }, rateLimits: [], changed: ['context'] } as never)
+  }
+  expect(opened.map(o => o.id)).toEqual([...IDS, 'clawd-hq'])
+  expect(opened.map(o => o.title)).toEqual(['Office', 'Decisions 2', 'People', 'Log', 'Clawd', 'Office'])
   expect(opened.every(o => o.focus === undefined)).toBe(true)
   expect(panes.map(p => p.id)).toEqual(IDS)
 })
 
-test('the office-demo command and the demo tool open the four panes without focus', async ($, on) => {
+test('the office-demo command and the demo tool open the five panes without focus', async ($, on) => {
   const { opened } = host(on)
   await $.command.run({ command: 'office-demo', args: '' } as never)
-  expect(opened.slice(0, 4).map(o => o.id)).toEqual(IDS)
-  expect(opened.slice(0, 4).every(o => o.focus === undefined)).toBe(true)
+  expect(opened.slice(0, 5).map(o => o.id)).toEqual(IDS)
+  expect(opened.slice(0, 5).every(o => o.focus === undefined)).toBe(true)
 })
 
 // ---- The Decisions title ----
@@ -65,7 +67,7 @@ test('the Decisions title follows the count of what the project remembers', asyn
   expect(titleOf()).toBe('Decisions')
   await ui.unmount()
   // The other tabs keep their titles, and the order of the strip is unchanged.
-  expect(panes.map(p => p.title)).toEqual(['Office', 'Decisions', 'People', 'Log'])
+  expect(panes.map(p => p.title)).toEqual(['Office', 'Decisions', 'People', 'Log', 'Clawd'])
 })
 
 test('a retitle only changes a pane that is open: a Decisions pane the person closed is not opened again', async ($, on) => {
@@ -79,7 +81,7 @@ test('a retitle only changes a pane that is open: a Decisions pane the person cl
   closePane('clawd-hq-decisions')
   await remember($, 'Use Drizzle for migrations')
   expect(opened).toHaveLength(before)
-  expect(panes.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-log'])
+  expect(panes.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-log', 'clawd-hq-clawd'])
 })
 
 test('an unchanged count does not reopen the pane', async ($, on) => {
@@ -99,9 +101,9 @@ test('no pane draws its own tab strip or the o, d, p, l keys', async ($, on) => 
   host(on)
   await remember($, 'Use Postgres')
   for (const surface of SURFACES) {
-    for (const pane of FOUR) {
+    for (const pane of ALL_PANES) {
       const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
-      for (const view of ['office', 'decisions', 'people', 'log']) {
+      for (const view of ['office', 'decisions', 'people', 'log', 'clawd']) {
         expect(await ui.find({ key: `tab-${view}` })).toBeUndefined()
         expect(await ui.find({ key: `tabbox-${view}` })).toBeUndefined()
       }
@@ -116,7 +118,7 @@ test('on every pane the gauges are the last thing, and nothing above them is a g
   host(on)
   await $.session.measure({ context: { window: 1_000_000, tokens: 210_000, percent: 21 }, rateLimits: [], changed: ['context'] } as never)
   for (const surface of SURFACES) {
-    for (const pane of FOUR) {
+    for (const pane of ALL_PANES) {
       const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
       const rows = elementsOf((await ui.drawn()) as unknown as Tree)
       expect(rows[rows.length - 1]?.props.key).toBe('gauges')
@@ -132,7 +134,7 @@ test('the demo caption stays at the top of every pane, above everything else', a
   const { clock } = host(on)
   await $.command.run({ command: 'office-demo', args: '' } as never)
   await clock.advance(100)
-  for (const pane of FOUR) {
+  for (const pane of ALL_PANES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...pane })
     expect(await ui.find({ type: 'Text', text: /🎬 1\/12/ })).toBeDefined()
     const rows = elementsOf((await ui.drawn()) as unknown as Tree)
@@ -213,7 +215,7 @@ test('one pane the host refuses does not stop the others from opening', async ($
   fail.ids.add('clawd-hq-decisions')
   const result = (await $.command.run({ command: 'office', args: '' } as never)) as { text: string }
   expect(result.text).toContain('Office')
-  expect(panes.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-log'])
+  expect(panes.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-log', 'clawd-hq-clawd'])
   expect(opened[opened.length - 1]).toMatchObject({ id: 'clawd-hq', focus: true })
 })
 

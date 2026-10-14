@@ -1,14 +1,14 @@
 import { expect, test } from 'claude-code/testing'
 import { PANES, openPanes, paneOf, pinHeight, type PaneIo } from '../hooks/panes'
 
-test('the four panes, in the order the host shows them as tabs, with the office keeping its old id', () => {
-  expect(PANES.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log'])
-  expect(PANES.map(p => p.view)).toEqual(['office', 'decisions', 'people', 'log'])
-  expect(PANES.map(p => p.title(0))).toEqual(['Office', 'Decisions', 'People', 'Log'])
+test('the five panes, in the order the host shows them as tabs, with the office keeping its old id and Clawd last', () => {
+  expect(PANES.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log', 'clawd-hq-clawd'])
+  expect(PANES.map(p => p.view)).toEqual(['office', 'decisions', 'people', 'log', 'clawd'])
+  expect(PANES.map(p => p.title(0))).toEqual(['Office', 'Decisions', 'People', 'Log', 'Clawd'])
 })
 
 test('the Decisions title carries the count of what the project remembers, and only that one', () => {
-  expect(PANES.map(p => p.title(44))).toEqual(['Office', 'Decisions 44', 'People', 'Log'])
+  expect(PANES.map(p => p.title(44))).toEqual(['Office', 'Decisions 44', 'People', 'Log', 'Clawd'])
   expect(PANES[1]!.title(1)).toBe('Decisions 1')
 })
 
@@ -42,7 +42,7 @@ function fakeIo() {
 test('at session start the tabs are opened in order and Office is opened last, so it is the one in front', async () => {
   const { io, opened } = fakeIo()
   await openPanes(io, false)
-  expect(opened.slice(0, 4).map(o => o.title)).toEqual(['Office', 'Decisions 3', 'People', 'Log'])
+  expect(opened.slice(0, 5).map(o => o.title)).toEqual(['Office', 'Decisions 3', 'People', 'Log', 'Clawd'])
   expect(opened[opened.length - 1]!.id).toBe('clawd-hq')
 })
 

@@ -1,5 +1,5 @@
-// The office's panes: the host draws one tab per pane, so each of the four views is a pane of its own.
-export type PaneView = 'office' | 'decisions' | 'people' | 'log'
+// The office's panes: the host draws one tab per pane, so each of the five views is a pane of its own.
+export type PaneView = 'office' | 'decisions' | 'people' | 'log' | 'clawd'
 
 export type PaneSpec = {
   id: string
@@ -13,10 +13,11 @@ const BY_VIEW: Record<PaneView, PaneSpec> = {
   decisions: { id: 'clawd-hq-decisions', view: 'decisions', title: n => (n > 0 ? `Decisions ${n}` : 'Decisions') },
   people: { id: 'clawd-hq-people', view: 'people', title: () => 'People' },
   log: { id: 'clawd-hq-log', view: 'log', title: () => 'Log' },
+  clawd: { id: 'clawd-hq-clawd', view: 'clawd', title: () => 'Clawd' },
 }
 
 /** In the order the tabs read. The office keeps the id it always had. */
-export const PANES: readonly PaneSpec[] = [BY_VIEW.office, BY_VIEW.decisions, BY_VIEW.people, BY_VIEW.log]
+export const PANES: readonly PaneSpec[] = [BY_VIEW.office, BY_VIEW.decisions, BY_VIEW.people, BY_VIEW.log, BY_VIEW.clawd]
 
 export const paneOf = (view: PaneView): PaneSpec => BY_VIEW[view]
 
@@ -49,7 +50,7 @@ const openPane = (io: PaneIo, p: PaneSpec, decisions: number, isFocused: boolean
   io.open({ id: p.id, title: p.title(decisions), columns: COLUMNS, ...(isFocused ? { focus: true as const } : {}) })
 
 /**
- * Opens the four in tab order, each on its own so one failure leaves the rest. Office is opened once more last, because the
+ * Opens the five in tab order, each on its own so one failure leaves the rest. Office is opened once more last, because the
  * later opens must not leave another one in front: the host shows the latest open. Only when asked for does that last open
  * take the keyboard (`focus` takes it from the prompt box); otherwise the person can type straight away.
  */

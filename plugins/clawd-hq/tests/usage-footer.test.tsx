@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { ACCENT } from '../hooks/office'
 import { localOffset, resetAt } from '../hooks/usage'
-import { CLEAR, FOUR, HOUR, PANE, START, SURFACES, host } from './host'
+import { ALL_PANES, CLEAR, HOUR, PANE, START, SURFACES, host } from './host'
 
 type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const elementsOf = (node: Tree) => (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null && 'props' in c)
@@ -167,23 +167,23 @@ test('a session window whose reset has passed is hidden', async ($, on) => {
   await ui.unmount()
 })
 
-test('open stays open on all four panes, on every surface, and closing on one closes it on all', async ($, on) => {
+test('open stays open on every pane, on every surface, and closing on one closes it on all', async ($, on) => {
   const { clock } = host(on)
   await measure($, clock.now())
   for (const surface of SURFACES) {
-    const first = await mount($, surface, FOUR[0])
+    const first = await mount($, surface, ALL_PANES[0])
     await first.press({ key: 'usage-toggle' })
     await first.unmount()
-    for (const pane of FOUR) {
+    for (const pane of ALL_PANES) {
       const ui = await mount($, surface, pane)
       expect(await ui.find({ key: 'usage-details' })).toBeDefined()
       expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toMatch(/▴$/)
       await ui.unmount()
     }
-    const last = await mount($, surface, FOUR[3])
+    const last = await mount($, surface, ALL_PANES[ALL_PANES.length - 1])
     await last.press({ key: 'usage-toggle' })
     await last.unmount()
-    const again = await mount($, surface, FOUR[1])
+    const again = await mount($, surface, ALL_PANES[1])
     expect(await again.find({ key: 'usage-details' })).toBeUndefined()
     await again.unmount()
   }
@@ -193,7 +193,7 @@ test('the footer is the last row of every pane, open or closed, and nothing in i
   const { clock } = host(on)
   await measure($, clock.now())
   for (const surface of SURFACES) {
-    for (const pane of FOUR) {
+    for (const pane of ALL_PANES) {
       const ui = await mount($, surface, pane)
       for (const isOpen of [false, true]) {
         if (isOpen) await ui.press({ key: 'usage-toggle' })

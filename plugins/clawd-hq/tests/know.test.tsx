@@ -3,6 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
 import { CHECK_PROMPT } from '../hooks/know'
 import { AMBER } from '../hooks/office'
+import { PANES } from '../hooks/panes'
 import { CLEAR, PANE, START, SURFACES, host } from './host'
 
 type On = Parameters<typeof host>[0]
@@ -219,11 +220,22 @@ test('a hand-back with no office tab open is not checked, and the log says why',
   await $.session.start(START)
   await hire($)
   rows.set('a1', run('Fix it.'))
-  for (const id of ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log']) closePane(id)
+  for (const { id } of PANES) closePane(id)
   await handBack($, 'a1')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toEqual([])
   expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'no office tab is open' }])
+})
+
+test('the Clawd tab alone is an office tab open: a hand-back is checked', async ($, on) => {
+  const { asked, rows, saved, closePane } = office(on)
+  await $.session.start(START)
+  await hire($)
+  rows.set('a1', run('Fix it.'))
+  for (const { id } of PANES) if (id !== 'clawd-hq-clawd') closePane(id)
+  await handBack($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toHaveLength(1)
 })
 
 test('a check is made while another office tab is in front, and its note waits on Clawd\'s card', async ($, on) => {
@@ -249,7 +261,7 @@ test('nothing is checked while no office tab is open, or the host cannot say', a
   await hire($)
   rows.set('a1', run('Fix it.'))
   rows.set('a2', run('Fix it too.'))
-  for (const id of ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log']) closePane(id)
+  for (const { id } of PANES) closePane(id)
   await handBack($, 'a1')
   await idle()
   fail.list = true
@@ -633,7 +645,7 @@ test('with no office tab open, the built-in asks as usual; with one open behind 
   front.id = 'clawd-hq-people'
   await turnEnds($)
   expect(asked).toEqual([])
-  for (const id of ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log']) closePane(id)
+  for (const { id } of PANES) closePane(id)
   await turnEnds($)
   expect(asked).toEqual(['anything to know?'])
 })

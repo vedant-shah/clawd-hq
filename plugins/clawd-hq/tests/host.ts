@@ -14,7 +14,9 @@ export const PANE = paneProps('clawd-hq', 'Office')
 export const DECISIONS = paneProps('clawd-hq-decisions', 'Decisions')
 export const PEOPLE = paneProps('clawd-hq-people', 'People')
 export const LOG = paneProps('clawd-hq-log', 'Log')
-export const FOUR = [PANE, DECISIONS, PEOPLE, LOG] as const
+export const CLAWD = paneProps('clawd-hq-clawd', 'Clawd')
+/** Every office pane, in tab order. */
+export const ALL_PANES = [PANE, DECISIONS, PEOPLE, LOG, CLAWD] as const
 export const SURFACES = ['terminal', 'desktop'] as const
 export const HOUR = 3_600_000
 

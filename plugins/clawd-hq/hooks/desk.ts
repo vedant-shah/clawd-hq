@@ -9,7 +9,9 @@ export const BRIEF_NOTE =
   'Clawd, the chief of staff, reads these and asks the user only what needs the user. ' +
   'For each key choice you made yourself that later work should follow (a library, a schema, an interface, a convention), add `DECIDED: <choice> — <why>`. ' +
   'The user watches your progress live. As you work, start each step with one short sentence in everyday words that says what you are doing now, ' +
-  'for example "Step 2 of 4: checking that the tests pass." Use no tool names, file paths or jargon in that sentence.)'
+  'for example "Step 2 of 4: checking that the tests pass." Use no tool names, file paths or jargon in that sentence.)\n' +
+  '(Progress: before other work, call the `mcp__clawd-hq__step` tool with your plan as `total` (3 to 8 steps) and `done: 0`; ' +
+  'then call it again after each step with `done` and a note of a few plain words.)'
 
 /** Agent-written text as one short line: whitespace collapsed, cut to `max` characters with an ellipsis. */
 export function oneLine(text: string, max: number): string {

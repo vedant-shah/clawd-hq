@@ -75,6 +75,15 @@ test('the note on every brief asks a specialist to say, in plain words, what ste
   expect(BRIEF_NOTE).toContain('DECIDED:')
 })
 
+test('the note on every brief asks a specialist to report its plan and each step with the step tool, in a line of its own', () => {
+  expect(BRIEF_NOTE).toContain('mcp__clawd-hq__step')
+  expect(BRIEF_NOTE).toMatch(/before (any )?other work/i)
+  expect(BRIEF_NOTE).toMatch(/`total`.*3 to 8/)
+  expect(BRIEF_NOTE).toContain('`done: 0`')
+  expect(BRIEF_NOTE).toMatch(/after each step/i)
+  expect(BRIEF_NOTE.split('\n').filter(l => l.includes('mcp__clawd-hq__step'))).toHaveLength(1)
+})
+
 test('the note on every brief sends a specialist\'s questions to Clawd in its report, and names no CEO desk', () => {
   expect(BRIEF_NOTE).toContain('`QUESTION: <question> | <option> / <option> | recommend: <option>`')
   expect(BRIEF_NOTE).toMatch(/Clawd, the chief of staff, reads these and asks the user only what needs the user/)

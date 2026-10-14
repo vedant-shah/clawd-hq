@@ -35,6 +35,10 @@ export type Employee = {
   /** The largest request input of this run; the input half of `tokens`, so a compaction cannot lower it. */
   peakInput?: number
   context?: number
+  /** What the specialist itself reports with the step tool: steps done, the plan's size (1 to 12), and a few plain words on the step. None until it reports. */
+  stepDone?: number
+  stepTotal?: number
+  stepNote?: string
 }
 
 /** One thing Clawd remembers for this project: a decision the user made, or a key choice an agent came back with. */

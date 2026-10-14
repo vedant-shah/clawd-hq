@@ -8,7 +8,7 @@ import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './a
 import type { ArtifactAnswer } from './artifacts'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
-import { BLURB_CHARS, CHEER_TICKS, DEMO_TOOL, DESCRIPTION_CHARS, FRAME_MS, MAX_BLURBS, MAX_MEMORY, MEM_TOOL, NAME_CHARS, RECALL, TITLE_CHARS } from './constants'
+import { BLURB_CHARS, CHEER_TICKS, DEMO_TOOL, DESCRIPTION_CHARS, FRAME_MS, MAX_BLURBS, MAX_MEMORY, MEM_TOOL, NAME_CHARS, RECALL, STEP_TOOL, TITLE_CHARS } from './constants'
 import { BRAND, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
@@ -27,7 +27,8 @@ import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
-import { REMEMBER_SPEC } from './tool-specs'
+import { parseStep, withProgress } from './steps'
+import { REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withSaid, withStep, withTool } from './staff-model'
 import { BOSS0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
 
@@ -511,6 +512,7 @@ export const register: Register = (on, options) => {
     const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`))
     await update($, artifacts, () => pages)
     await $.tool.register(REMEMBER_SPEC)
+    await $.tool.register(STEP_SPEC)
     await enroll($, 'general-purpose', 0)
     await startGauge($)
 
@@ -655,6 +657,17 @@ export const register: Register = (on, options) => {
       const t = await read($, tick)
       await setBoss($, b => ({ ...b, quip: { text: `Noted for the record: “${clip(decision, 40)}”`, until: t + 10 } }))
       return { result: `Recorded in the project memory: ${decision}` } as never
+    }
+
+    // A specialist's own report of how far along it is (hooks/steps.ts). Only one at work here counts; any other call is ignored.
+    if (tool === STEP_TOOL) {
+      const mine = id ? (await read($, staff)).find(one => one.id === id) : undefined
+      if (!mine || !isActive(mine)) return { result: 'Ignored: only a specialist at work here reports steps.' } as never
+      const parsed = parseStep(input)
+      if ('error' in parsed) return { deny: parsed.error } as never
+      const now = await $.clock.now()
+      await update($, staff, l => edit(l, mine.id, one => touch(withProgress(one, parsed.report), now)))
+      return { result: `Noted: ${parsed.report.done} of ${parsed.report.total} steps done.` } as never
     }
 
     // What the person answers in Clawd's question box is saved as their decision, each question with its own answer.

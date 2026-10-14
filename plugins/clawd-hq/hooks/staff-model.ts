@@ -25,6 +25,9 @@ export function hire(list: Employee[], fresh: Employee): Employee[] {
   return extra <= 0 ? all : all.filter(e => (extra > 0 && !isActive(e) ? (extra--, false) : true))
 }
 
+/** A run's own progress report (hooks/steps.ts): none at its start, none once it ends. */
+const NO_PROGRESS = { stepDone: undefined, stepTotal: undefined, stepNote: undefined }
+
 /** An engine status counts as an end only after this long without a sign of life. */
 export const QUIET_MS = 15_000
 /** A specialist the engine calls running, silent this long, has lost contact (unless the engine says it waits). */
@@ -46,7 +49,7 @@ export function restart(one: Employee, now: number, tick: number): Employee {
     return { ...one, mood: 'working', endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: now }
   }
   return {
-    ...one, mood: 'working', activity: undefined, said: undefined, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    ...one, mood: 'working', activity: undefined, said: undefined, ...NO_PROGRESS, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
     startedAt: now, endedAt: undefined, doneTick: undefined, endedBy: undefined, joinedTick: tick, lastSeen: now,
   }
 }
@@ -54,7 +57,7 @@ export function restart(one: Employee, now: number, tick: number): Employee {
 /** Ends the run. Lost contact is no cheer and no win, so it leaves no tick for the cheering. */
 export function endRun(one: Employee, mood: Mood, how: EndedBy, now: number, tick: number): Employee {
   const cheer = mood === 'lost' ? {} : { doneTick: tick }
-  return { ...one, ...cheer, mood, activity: undefined, said: undefined, endedAt: now, endedBy: how }
+  return { ...one, ...cheer, mood, activity: undefined, said: undefined, ...NO_PROGRESS, endedAt: now, endedBy: how }
 }
 
 /** Clawd's card after a run ended with a win or a failure: proud or sorry for a while, with who it was and the new count. */
@@ -71,8 +74,8 @@ export const finishedText = (mood: Mood, prop: string, label: string, e: Employe
 export const withTool = (one: Employee, activity: string): Employee =>
   ({ ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', activity, tools: one.tools + 1 })
 
-/** What the specialist said in its last step. */
-export const withSaid = (one: Employee, said: string): Employee => ({ ...one, said })
+/** What the specialist said in its last step. Its words are newer than any note it reported before, so the note goes; the count stays. */
+export const withSaid = (one: Employee, said: string): Employee => ({ ...one, said, stepNote: undefined })
 
 /**
  * One model request's cost. A request re-reads the whole prompt, so adding every request's context up counts

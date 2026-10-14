@@ -56,10 +56,25 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   )
 }
 
+/** How far along a specialist says it is: a small bar and "2/5", drawn only once it has reported a plan; never a guess before. */
+function progress(kit: Kit, one: Employee) {
+  if (one.stepTotal === undefined) return null
+  const { Box, Text, bar } = kit
+  const [done, total] = [one.stepDone ?? 0, one.stepTotal]
+  return (
+    <Box key={`steps-${one.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
+      {bar((done / total) * 100, `${done} of ${total} steps done`, 'small')}
+      <Text dimColor wrap="wrap">{`${done}/${total}`}</Text>
+    </Box>
+  )
+}
+
 /** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics) with only its model, time and tokens under it, or, until it has said anything, the step it is on. Every line wraps. */
 function deskRow(one: Employee, { kit, data }: Ctx) {
   const { Box, Text, sprite } = kit
   const line = workLine(one, data.now)
+  // A note it reported with the step tool is newer than any words before it (words of its own that follow clear it), so it stands in for them and for the tool's sentence.
+  const [said, sentence] = [one.stepNote === undefined ? line.said : undefined, one.stepNote ?? line.sentence]
   // The terminal cannot scale a picture, so a row there gets the tiny 8 by 8 one and its words get the room.
   const look = avatarFor(givenName(one) ?? one.type)
   // At work it blinks now and then and moves what it holds, on a beat of its own.
@@ -72,16 +87,17 @@ function deskRow(one: Employee, { kit, data }: Ctx) {
       <Box flexShrink={0}>{picture}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text wrap="wrap"><Text bold>{titled(one, data)}</Text><Text dimColor>{` ${one.description || one.type}`}</Text></Text>
-        {line.said !== undefined
+        {said !== undefined
           ? [
-            <Text key={`said-${one.id}`} italic wrap="wrap">{line.said}</Text>,
+            <Text key={`said-${one.id}`} italic wrap="wrap">{said}</Text>,
             // The specialist has said what it does, so the tool is not repeated: only the model, time and tokens, muted.
             <Text key={`stats-${one.id}`} dimColor wrap="wrap">{line.stats.replace(/^· /, '')}</Text>,
           ]
           : (
             // Nothing said yet: the step it is on stands in, labelled and muted.
-            <Text wrap="wrap"><Text dimColor>Now: </Text><Text dimColor>{line.sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
+            <Text wrap="wrap"><Text dimColor>Now: </Text><Text dimColor>{sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
           )}
+        {progress(kit, one)}
       </Box>
     </Box>
   )

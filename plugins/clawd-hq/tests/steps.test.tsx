@@ -61,7 +61,7 @@ test('a call from the main chat, or from an agent that is not a specialist here,
   expect(stranger.result).toMatch(/^Ignored/)
   const ui = await rowOf($, 'terminal')
   expect(ui.glyphs).toEqual([])
-  expect(ui.texts.some(t => /^\d+\/\d+$/.test(t))).toBe(false)
+  expect(ui.texts.some(t => /^Step \d+ of \d+$/.test(t))).toBe(false)
 })
 
 test('a report from a specialist that already finished is ignored, so an old bar never comes back', async ($, on) => {
@@ -70,7 +70,7 @@ test('a report from a specialist that already finished is ignored, so an old bar
   await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 't1', agentId: 't1', isAborted: false } as never)
   expect((await report($, { done: 1, total: 3 }, 't1')).result).toMatch(/^Ignored/)
   await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts', agentId: 't1' } as never)
-  expect((await rowOf($, 'terminal')).texts.some(t => /^\d+\/\d+$/.test(t))).toBe(false)
+  expect((await rowOf($, 'terminal')).texts.some(t => /^Step \d+ of \d+$/.test(t))).toBe(false)
 })
 
 test('a first report that comes before the hire is recorded still counts: the engine lists the agent, so it joins the books first', async ($, on) => {
@@ -87,7 +87,7 @@ test('a first report that comes before the hire is recorded still counts: the en
   for (const surface of SURFACES) {
     const { texts, row } = await rowOf($, surface)
     expect(row).toBeDefined()
-    expect(texts).toContain('0/4')
+    expect(texts).toContain('Step 0 of 4')
     expect(texts).toContain('Making a plan')
   }
 })
@@ -112,7 +112,7 @@ test('a bad report is refused with a clear error, and nothing changes', async ($
   expect(refusals[2]!.deny).toMatch(/done must be a whole number/)
   expect(refusals[3]!.deny).toMatch(/note is 81 characters; the most is 80/)
   const { texts } = await rowOf($, 'terminal')
-  expect(texts).toContain('1/4')
+  expect(texts).toContain('Step 1 of 4')
 })
 
 test('until the specialist reports there is no bar and no count, on every surface', async ($, on) => {
@@ -123,7 +123,7 @@ test('until the specialist reports there is no bar and no count, on every surfac
     expect(row).toBeDefined()
     expect(bars).toHaveLength(0)
     expect(glyphs).toEqual([])
-    expect(texts.some(t => /^\d+\/\d+$/.test(t))).toBe(false)
+    expect(texts.some(t => /^Step \d+ of \d+$/.test(t))).toBe(false)
   }
 })
 
@@ -146,21 +146,21 @@ test('a specialist that writes "Step 1 of 4" in its own words gets a bar from it
   const ask = await says($, on, words)
   await $.agent.spawn(BUILD)
   await ask(0)
-  for (const surface of SURFACES) expect((await rowOf($, surface)).texts.some(t => /^\d+\/\d+$/.test(t))).toBe(false)
+  for (const surface of SURFACES) expect((await rowOf($, surface)).texts.some(t => /^Step \d+ of \d+$/.test(t))).toBe(false)
 
   words.text = 'Step 1 of 4: looking at what the three commits changed.'
   await ask(1)
   const terminal = await rowOf($, 'terminal')
-  expect(terminal.texts).toContain('1/4')
+  expect(terminal.texts).toContain('Step 1 of 4')
   expect(terminal.glyphs).toEqual(['━'.repeat(3), '─'.repeat(7)])
   const desktop = await rowOf($, 'desktop')
-  expect(desktop.texts).toContain('1/4')
+  expect(desktop.texts).toContain('Step 1 of 4')
   expect(desktop.bars).toHaveLength(1)
   expect(desktop.bars[0]!.props.width).toBe(100)
 
   words.text = 'Step 2 of 4: checking the rules.'
   await ask(2)
-  expect((await rowOf($, 'terminal')).texts).toContain('2/4')
+  expect((await rowOf($, 'terminal')).texts).toContain('Step 2 of 4')
 })
 
 test('the tool\'s report wins over the specialist\'s words, before and after it', async ($, on) => {
@@ -169,14 +169,14 @@ test('the tool\'s report wins over the specialist\'s words, before and after it'
   const ask = await says($, on, words)
   await $.agent.spawn(BUILD)
   await ask(0)
-  expect((await rowOf($, 'terminal')).texts).toContain('1/4')
+  expect((await rowOf($, 'terminal')).texts).toContain('Step 1 of 4')
   await report($, { done: 2, total: 5 }, 't1')
-  expect((await rowOf($, 'terminal')).texts).toContain('2/5')
+  expect((await rowOf($, 'terminal')).texts).toContain('Step 2 of 5')
   words.text = 'Step 3 of 6: more.'
   await ask(1)
   const { texts } = await rowOf($, 'terminal')
-  expect(texts).toContain('2/5')
-  expect(texts).not.toContain('3/6')
+  expect(texts).toContain('Step 2 of 5')
+  expect(texts).not.toContain('Step 3 of 6')
 })
 
 test('the step tool is registered in front, not behind a search', async ($, on) => {
@@ -194,13 +194,13 @@ test('after a report the row shows a small bar and the count: line glyphs on the
   expect(answer.result).toMatch(/2 of 5/)
 
   const terminal = await rowOf($, 'terminal')
-  expect(terminal.texts).toContain('2/5')
+  expect(terminal.texts).toContain('Step 2 of 5')
   // Ten cells in all: four heavy for two of five, six light.
   expect(terminal.glyphs).toEqual(['━'.repeat(4), '─'.repeat(6)])
   expect(terminal.bars).toHaveLength(0)
 
   const desktop = await rowOf($, 'desktop')
-  expect(desktop.texts).toContain('2/5')
+  expect(desktop.texts).toContain('Step 2 of 5')
   expect(desktop.bars).toHaveLength(1)
   expect(desktop.bars[0]!.props.width).toBe(100)
   expect(String(desktop.bars[0]!.props.source)).toContain('rx="2"')
@@ -212,11 +212,11 @@ test('done is brought down to the total, and a new total replaces the old one', 
   hostWithSpecialist(on)
   await $.agent.spawn(BUILD)
   await report($, { done: 9, total: 5 }, 't1')
-  expect((await rowOf($, 'terminal')).texts).toContain('5/5')
+  expect((await rowOf($, 'terminal')).texts).toContain('Step 5 of 5')
   await report($, { done: 2, total: 8 }, 't1')
   const { texts, glyphs } = await rowOf($, 'terminal')
-  expect(texts).toContain('2/8')
-  expect(texts).not.toContain('5/5')
+  expect(texts).toContain('Step 2 of 8')
+  expect(texts).not.toContain('Step 5 of 5')
   expect(glyphs).toEqual(['━'.repeat(3), '─'.repeat(7)])
 })
 
@@ -225,7 +225,7 @@ test('a zero count shows an empty bar and 0/5: the plan is known, nothing is don
   await $.agent.spawn(BUILD)
   await report($, { done: 0, total: 5 }, 't1')
   const { texts, glyphs } = await rowOf($, 'terminal')
-  expect(texts).toContain('0/5')
+  expect(texts).toContain('Step 0 of 5')
   // Only the light run: no heavy glyph at all.
   expect(glyphs.length).toBeGreaterThan(0)
   expect(glyphs.every(g => g === '─'.repeat(10))).toBe(true)
@@ -258,7 +258,7 @@ test('the note stands in for the sentence of what it is doing, once, and a later
   expect(after.texts).toContain('Now writing the footer tests.')
   expect(after.texts).not.toContain('Reading the old footer')
   // The count stays.
-  expect(after.texts).toContain('1/4')
+  expect(after.texts).toContain('Step 1 of 4')
 })
 
 test('a note is cleaned before it is kept: control characters never reach the pane or the state', async ($, on) => {
@@ -291,7 +291,7 @@ test('a specialist that finishes leaves the at-work list, bar and all, as before
     expect(texts).toContain('No one at a desk yet.')
     expect(glyphs).toEqual([])
     expect(bars).toHaveLength(0)
-    expect(texts).not.toContain('3/5')
+    expect(texts).not.toContain('Step 3 of 5')
   }
 })
 
@@ -305,5 +305,43 @@ test('a finished specialist that is hired again for a new run starts with no bar
   const { row, texts, glyphs } = await rowOf($, 'terminal')
   expect(row).toBeDefined()
   expect(glyphs).toEqual([])
-  expect(texts.some(t => /^\d+\/\d+$/.test(t))).toBe(false)
+  expect(texts.some(t => /^Step \d+ of \d+$/.test(t))).toBe(false)
+})
+
+test('the step count sits beside the bar, not in the specialist\'s words, on every surface', async ($, on) => {
+  hostWithSpecialist(on)
+  const words = { text: 'Step 1 of 4: looking at what the three commits changed.' }
+  const ask = await says($, on, words)
+  await $.agent.spawn(BUILD)
+  await ask(0)
+  for (const surface of SURFACES) {
+    const { texts } = await rowOf($, surface)
+    expect(texts).toContain('Looking at what the three commits changed.')
+    expect(texts.filter(t => t === 'Step 1 of 4')).toHaveLength(1)
+    expect(texts.some(t => /Step 1 of 4:/.test(t))).toBe(false)
+  }
+})
+
+test('words that are only a step give way to the existing sentence, so nothing is said twice', async ($, on) => {
+  hostWithSpecialist(on)
+  const words = { text: 'Step 1 of 4' }
+  const ask = await says($, on, words)
+  await $.agent.spawn(BUILD)
+  await ask(0)
+  for (const surface of SURFACES) {
+    const { texts } = await rowOf($, surface)
+    expect(texts).toContain('Now: ')
+    expect(texts.filter(t => t === 'Step 1 of 4')).toHaveLength(1)
+  }
+})
+
+test('a tool note that begins with a step is cleaned the same way', async ($, on) => {
+  hostWithSpecialist(on)
+  await $.agent.spawn(BUILD)
+  await report($, { done: 2, total: 5, note: 'Step 2 of 5: reading the footer' }, 't1')
+  for (const surface of SURFACES) {
+    const { texts } = await rowOf($, surface)
+    expect(texts).toContain('Reading the footer')
+    expect(texts).toContain('Step 2 of 5')
+  }
 })

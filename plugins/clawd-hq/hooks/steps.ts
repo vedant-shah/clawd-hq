@@ -47,6 +47,18 @@ export function stepLine(text: string): { done: number; total: number } | undefi
   return last && { done: Math.min(last.step, last.total), total: last.total }
 }
 
+/** The count drawn beside the bar: the step it is on, in words. */
+export const stepCount = (done: number, total: number) => `Step ${done} of ${total}`
+
+// A step count at the very start of the words, and the mark (or none) that follows it: ":", "-", an em dash or ",".
+const STEP_PREFIX = /^\s*step\s+\d{1,2}\s*(?:of|\/)\s*\d{1,2}(?!\d)\s*[:\-—,]?\s*/i
+
+/** The words with a leading "Step N of M" taken off (its count is drawn beside the bar), the first letter capitalised; nothing may be left. Only a leading count goes. */
+export function withoutStepPrefix(text: string): string {
+  const rest = STEP_PREFIX.test(text) ? text.replace(STEP_PREFIX, '').trim() : text
+  return rest === text ? text : `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`
+}
+
 /**
  * The specialist after it says something: a "Step N of M" in its words is the step it is on (the count reads N/M and the bar
  * fills to it). The tool's report, once made, stands; words with no step in them change nothing. Nothing is drawn until

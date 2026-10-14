@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { Employee } from '../types'
-import { MAX_PLAN, NOTE_CHARS, parseStep, stepLine, withProgress, withWords } from '../hooks/steps'
+import { MAX_PLAN, NOTE_CHARS, parseStep, stepCount, stepLine, withoutStepPrefix, withProgress, withWords } from '../hooks/steps'
 import { STEP_SPEC } from '../hooks/tool-specs'
 import { endRun, restart, withReport, withSaid } from '../hooks/staff-model'
 import { barGlyphs, barOf, barSvg } from '../hooks/meters'
@@ -122,6 +122,30 @@ test('"Step N of M" and "step N/M" in a specialist\'s words give the step it is 
   expect(stepLine('Step 1 of 4 is done. Step 2 of 4: checking the rules.')).toEqual({ done: 2, total: 4 })
   // A step number past the plan is brought down to it.
   expect(stepLine('Step 9 of 4: wrapping up')).toEqual({ done: 4, total: 4 })
+})
+
+test('a leading "Step N of M" is taken off a specialist\'s words, with the mark after it, and the first letter is capitalised', () => {
+  expect(withoutStepPrefix('Step 1 of 4: looking at what the three commits changed.')).toBe('Looking at what the three commits changed.')
+  expect(withoutStepPrefix('step 2/5 - running the tests')).toBe('Running the tests')
+  expect(withoutStepPrefix('STEP 3 OF 12 — writing')).toBe('Writing')
+  expect(withoutStepPrefix('Step 3 of 4, checking the rules')).toBe('Checking the rules')
+  expect(withoutStepPrefix('Step 3 of 4 checking the rules')).toBe('Checking the rules')
+  expect(withoutStepPrefix('  Step 1 of 4:   x')).toBe('X')
+})
+
+test('only a leading step prefix is taken off, and what is left over may be nothing', () => {
+  expect(withoutStepPrefix('Now on Step 2 of 6: writing.')).toBe('Now on Step 2 of 6: writing.')
+  expect(withoutStepPrefix('Looking at step 1 of 4')).toBe('Looking at step 1 of 4')
+  expect(withoutStepPrefix('Step 1 of 4')).toBe('')
+  expect(withoutStepPrefix('Step 1 of 4:')).toBe('')
+  expect(withoutStepPrefix('')).toBe('')
+  expect(withoutStepPrefix('Step 1 of 100 files')).toBe('Step 1 of 100 files')
+  expect(withoutStepPrefix('Stepping through it')).toBe('Stepping through it')
+})
+
+test('the count beside the bar reads "Step N of M"', () => {
+  expect(stepCount(1, 4)).toBe('Step 1 of 4')
+  expect(stepCount(0, 5)).toBe('Step 0 of 5')
 })
 
 test('anything else in a specialist\'s words is no progress: other shapes, a plan outside 1 to 12, step 0, longer numbers, a word that only ends in step', () => {

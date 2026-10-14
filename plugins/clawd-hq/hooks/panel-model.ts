@@ -4,6 +4,7 @@ import { READING_BRIEF } from './activity'
 import { whoOf } from './desk'
 import { ago, bareType, labelOf, roleOf } from './office'
 import type { PanelData } from './panel-types'
+import { withoutStepPrefix } from './steps'
 
 /** Stand-in employees of the tour have ids that start with this. */
 export const DEMO = 'demo-'
@@ -62,6 +63,18 @@ export function workLine(one: Employee, now: number): { said?: string; sentence:
   const tokens = one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''
   const model = modelLabel(one.model)
   return { said: one.said, sentence: one.activity ?? READING_BRIEF, stats: `· ${model ? `${model} · ` : ''}${ago(now - one.startedAt)}${tokens}` }
+}
+
+/**
+ * What a row at work says about itself: its last words in italics, or else the sentence that stands in. A note from the step tool is newer
+ * than any words before it and replaces them. Once a bar is drawn its count is beside the bar, so a leading "Step N of M" is taken off the
+ * words; where nothing is left, the existing sentence stands in.
+ */
+export function deskWords(one: Employee, line: { said?: string; sentence: string }): { said?: string; sentence: string } {
+  const tidy = (text: string): string | undefined => (one.stepTotal === undefined ? text : withoutStepPrefix(text)) || undefined
+  if (one.stepNote !== undefined) return { sentence: tidy(one.stepNote) ?? line.sentence }
+  const said = line.said === undefined ? undefined : tidy(line.said)
+  return said === undefined ? { sentence: line.sentence } : { said, sentence: line.sentence }
 }
 
 /** The right-hand lines of a finished row. Lost contact reads how long it was silent, not how long the run lasted. */

@@ -3,7 +3,8 @@ import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
 import { artifactsShown, since } from './artifacts'
 import { clawdMood, poseOf, quipOf } from './clawd-says'
 import { ACCENT, AMBER, GREEN, givenName, hash } from './office'
-import { atWork, recentFailures, statusOf, titled, workLine } from './panel-model'
+import { atWork, deskWords, recentFailures, statusOf, titled, workLine } from './panel-model'
+import { stepCount } from './steps'
 import { overlay } from './pixels'
 import { knowBlock } from './panel-know'
 import type { Kit } from './panel-kit'
@@ -56,7 +57,7 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   )
 }
 
-/** How far along a specialist says it is: a small bar and "2/5", drawn only once it has reported a plan; never a guess before. */
+/** How far along a specialist says it is: a small bar and "Step 2 of 5", drawn only once it has reported a plan; never a guess before. */
 function progress(kit: Kit, one: Employee) {
   if (one.stepTotal === undefined) return null
   const { Box, Text, bar } = kit
@@ -64,7 +65,7 @@ function progress(kit: Kit, one: Employee) {
   return (
     <Box key={`steps-${one.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
       {bar((done / total) * 100, `${done} of ${total} steps done`, 'small')}
-      <Text dimColor wrap="wrap">{`${done}/${total}`}</Text>
+      <Text dimColor wrap="wrap">{stepCount(done, total)}</Text>
     </Box>
   )
 }
@@ -73,8 +74,8 @@ function progress(kit: Kit, one: Employee) {
 function deskRow(one: Employee, { kit, data }: Ctx) {
   const { Box, Text, sprite } = kit
   const line = workLine(one, data.now)
-  // A note it reported with the step tool is newer than any words before it (words of its own that follow clear it), so it stands in for them and for the tool's sentence.
-  const [said, sentence] = [one.stepNote === undefined ? line.said : undefined, one.stepNote ?? line.sentence]
+  // A step note stands in for the words before it; a leading "Step N of M" is left to the count beside the bar.
+  const { said, sentence } = deskWords(one, line)
   // The terminal cannot scale a picture, so a row there gets the tiny 8 by 8 one and its words get the room.
   const look = avatarFor(givenName(one) ?? one.type)
   // At work it blinks now and then and moves what it holds, on a beat of its own.

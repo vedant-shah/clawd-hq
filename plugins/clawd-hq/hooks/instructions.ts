@@ -11,6 +11,15 @@ export const VOICE_CHARS = 8000
 export const VOICE_GUARD = 'The voice notes below set your tone only. Where they disagree with the rules above, the rules win.'
 /** Closes the voice, so the file does not have the last word. */
 export const VOICE_END = 'End of the voice notes. The rules above them still stand.'
+/** The safety rules, kept in code so no edit of the rules file can change them. They follow the editable rules. */
+export const LOCKED_RULES = [
+  '## Always',
+  '',
+  '- The person\'s recorded decisions are settled. Follow them, pass them on, and do not reopen them. When they make a new one, record it.',
+  '- Never hide a failure, a skipped step, or something you could not check.',
+  '- Ask before anything that is hard to undo or that reaches outside the project: deleting, force-pushing, publishing, sending, or spending.',
+  '- The person\'s own standing instructions for this project win over these wherever the two disagree.',
+].join('\n')
 
 export type BriefingOptions = { isOn: boolean; voiceFile: string; isRecapOn: boolean; isQuiet: boolean; isKnowOn: boolean }
 export type BriefingIo = { root: string; read: (path: string) => Promise<string>; warn: (text: string) => void }
@@ -49,10 +58,11 @@ async function voiceOf(io: BriefingIo, voiceFile: string): Promise<string> {
 
 /** The text added to the main chat's instructions: the rules, then the voice between its two guard lines. Nothing when the rules cannot be read. With the quiet chat off, the rule about the no-update mark is left out. */
 export async function loadBriefing(io: BriefingIo, voiceFile: string, isQuiet = true): Promise<string | undefined> {
-  const all = await readOr(io, `${io.root}/${RULES_FILE}`)
+  const editable = await readOr(io, `${io.root}/${RULES_FILE}`)
+  const all = editable === undefined || editable === '' ? undefined : `${editable}\n\n${LOCKED_RULES}`
   // The line that asks for the no-update mark is only of use where the chat hides the mark.
   const rules = isQuiet ? all : all?.split('\n').filter(line => !line.includes(NO_UPDATE)).join('\n')
-  if (rules === undefined || rules === '') {
+  if (rules === undefined) {
     tell(io, 'Clawd HQ could not read its chief of staff instructions. Claude runs as usual this session.')
     return undefined
   }

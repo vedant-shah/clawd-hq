@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { RULES_FILE, SECTION_ID, VOICE_END, VOICE_FILE, VOICE_GUARD } from '../hooks/instructions'
+import { LOCKED_RULES, RULES_FILE, SECTION_ID, VOICE_END, VOICE_FILE, VOICE_GUARD } from '../hooks/instructions'
 import { host } from './host'
 
 type Engine = Parameters<Parameters<typeof test>[1]>[0]
@@ -26,7 +26,7 @@ test('the main chat\'s instructions end with Clawd\'s rules and voice, as a sess
   const { sections } = await compose($)
   expect(sections.map(s => s.id)).toEqual(['intro', SECTION_ID])
   expect(sections[1]!.scope).toBe('session')
-  expect(sections[1]!.text).toBe(`# Clawd, chief of staff\n\nHand real work over.\n\n${VOICE_GUARD}\n\n# Clawd's voice\n\nPlain words.\n\n${VOICE_END}`)
+  expect(sections[1]!.text).toBe(`# Clawd, chief of staff\n\nHand real work over.\n\n${LOCKED_RULES}\n\n${VOICE_GUARD}\n\n# Clawd's voice\n\nPlain words.\n\n${VOICE_END}`)
   expect(toasts).toEqual([])
 })
 

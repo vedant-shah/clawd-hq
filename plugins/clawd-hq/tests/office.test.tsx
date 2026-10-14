@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { assemble, avatarFor, clawdAvatar, tinyIcon } from '../hooks/avatars'
 import type { Pose } from '../hooks/avatars'
-import { ACCENT, AMBER, GREEN } from '../hooks/office'
+import { AMBER, GREEN, RED } from '../hooks/office'
 import { fade, overlay, rasterCells, svgOf, trim, trimLike } from '../hooks/pixels'
 import { CLEAR, DECISIONS, HOUR, LOG, PANE, PEOPLE, START, SURFACES, host, planner } from './host'
 
@@ -107,11 +107,15 @@ test("Clawd's card says All clear in an empty office, has no button of its own, 
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    const status = await ui.find({ type: 'Text', text: /^✓ All clear$/ })
-    expect(status?.props.color).toBe(GREEN)
+    const status = await ui.find({ type: 'Text', text: /^All clear$/ })
+    expect(status).toBeDefined()
+    // A filled dot before the words, in the colour of the state.
+    const dot = await ui.find({ type: 'Text', text: /^●$/ })
+    expect(dot?.text).toBe('●')
+    expect(dot?.props.color).toBe(GREEN)
     // What Clawd says comes first, right under his name; the status line sits below it.
     const lines = await ui.findAll({ type: 'Text' })
-    const [saidAt, statusAt] = [lines.findIndex(t => t.props.italic === true), lines.findIndex(t => /^✓ All clear$/.test(String(t.text)))]
+    const [saidAt, statusAt] = [lines.findIndex(t => t.props.italic === true), lines.findIndex(t => /^All clear$/.test(String(t.text)))]
     expect(saidAt).toBeGreaterThan(-1)
     expect(saidAt).toBeLessThan(statusAt)
     // Room between his name, his words and the status where there is room to give; a terminal line is too dear.
@@ -155,7 +159,7 @@ test('a reading above zero never reads 0%: the label agrees with the sliver of b
   }
 })
 
-test('Clawd\'s card says what he is doing and how many are at work, and never counts questions or points at a desk', async ($, on) => {
+test('Clawd\'s card says what he is doing with a coloured dot and no at-work count, and never counts questions or points at a desk', async ($, on) => {
   host(on, [planner])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
   on('turn.start', () => ({ turnId: 't1' }))
@@ -164,7 +168,9 @@ test('Clawd\'s card says what he is doing and how many are at work, and never co
   // Clawd is between turns with one specialist at work: he is free to talk.
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect((await ui.find({ type: 'Text', text: /^✓ Free to talk · 1 at work$/ }))?.props.color).toBe(GREEN)
+    expect(await ui.find({ type: 'Text', text: /^Free to talk$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe(GREEN)
+    expect(await ui.find({ type: 'Text', text: /at work$/ })).toBeUndefined()
     expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
     expect(await ui.find({ key: 'resume' })).toBeUndefined()
     expect(JSON.stringify(await ui.drawn())).not.toMatch(/needs? you|Waiting on you/)
@@ -175,7 +181,8 @@ test('Clawd\'s card says what he is doing and how many are at work, and never co
   await $.turn.start({ text: 'Plan the scoring API', turnId: 't1' } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect((await ui.find({ type: 'Text', text: /^● Working on your request · 1 at work$/ }))?.props.color).toBe(ACCENT)
+    expect(await ui.find({ type: 'Text', text: /^Working on your request$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe(AMBER)
     await ui.unmount()
   }
 })
@@ -267,7 +274,8 @@ test('a specialist that failed shows as Failed in amber in the Log, and Clawd sa
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect((await ui.find({ type: 'Text', text: /^! .+ failed$/ }))?.props.color).toBe(AMBER)
+    expect(await ui.find({ type: 'Text', text: /^.+ failed$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe(RED)
     expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeUndefined()
     await ui.unmount()
     const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
@@ -540,7 +548,7 @@ test('the toasts and Clawd say the role, never a made-up name', async ($, on) =>
   expect(toasts.find(t => t.includes('could not finish'))).toBe('🤕 Fixer could not finish: Fix the build')
     for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /^! Fixer failed$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Fixer failed$/ })).toBeDefined()
     await ui.unmount()
   }
 })

@@ -88,15 +88,14 @@ export function doneLine(one: Employee, now: number): { when: string; took: stri
 }
 
 /**
- * Clawd's one status line: who failed, else what he is doing, and how many specialists are at work when any are. Questions for the
+ * Clawd's one status line: who failed, else what he is doing. The count at work is not repeated here. Questions for the
  * person are not counted here: they reach the person in Clawd's question box.
  */
 export function statusOf(isBusy: boolean, working: number, failed: string[]): { tone: 'clear' | 'busy' | 'alert'; text: string } {
-  // An empty office is not news: the count shows only when someone is at work.
-  const team = working > 0 ? ` · ${working} at work` : ''
-  if (failed[0] !== undefined) return { tone: 'alert', text: `${failed[0]} failed${failed.length > 1 ? ` +${failed.length - 1}` : ''}${team}` }
-  if (isBusy) return { tone: 'busy', text: `Working on your request${team}` }
-  return { tone: 'clear', text: `${working > 0 ? 'Free to talk' : 'All clear'}${team}` }
+  // How many are at work is told by the section below, not here: working only decides between "Free to talk" and "All clear".
+  if (failed[0] !== undefined) return { tone: 'alert', text: `${failed[0]} failed${failed.length > 1 ? ` +${failed.length - 1}` : ''}` }
+  if (isBusy) return { tone: 'busy', text: 'Working on your request' }
+  return { tone: 'clear', text: working > 0 ? 'Free to talk' : 'All clear' }
 }
 
 // ---- Decisions ----

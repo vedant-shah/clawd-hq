@@ -2,7 +2,7 @@
 import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
 import { artifactsShown, since } from './artifacts'
 import { clawdMood, poseOf, quipOf } from './clawd-says'
-import { ACCENT, AMBER, GREEN, givenName, hash } from './office'
+import { AMBER, GREEN, RED, givenName, hash } from './office'
 import { atWork, deskWords, recentFailures, statusOf, titled, workLine } from './panel-model'
 import { stepCount } from './steps'
 import { overlay } from './pixels'
@@ -16,8 +16,8 @@ const SICK_MS = 10 * 60_000
 const BORDER = '#454542'
 /** How many different beats the pictures at work are spread over. */
 const BEATS = 11
-/** How the status line opens and what colour it takes: all clear, Clawd at work, or a failure. */
-const TONE = { clear: { mark: '✓ ', color: GREEN }, busy: { mark: '● ', color: ACCENT }, alert: { mark: '! ', color: AMBER } } as const
+/** The colour of the dot before the status line: green when Clawd is free, amber while a turn of his runs, red on a failure. */
+const TONE = { clear: GREEN, busy: AMBER, alert: RED } as const
 
 type Ctx = { kit: Kit; data: PanelData; actions: PanelActions; cw: number }
 
@@ -43,7 +43,10 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
         <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>
         </Box>
-        <Text bold color={TONE[status.tone].color} wrap="wrap">{TONE[status.tone].mark}{status.text}</Text>
+        <Box flexDirection="row" columnGap={1}>
+          <Text color={TONE[status.tone]}>●</Text>
+          <Text bold wrap="wrap">{status.text}</Text>
+        </Box>
         {knowBlock(kit, data, actions)}
         {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
         {!boss.isBusy && boss.recap !== undefined && (

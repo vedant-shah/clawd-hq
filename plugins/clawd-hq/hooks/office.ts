@@ -112,6 +112,8 @@ export const BRAND = 'Clawd HQ'
 export const ACCENT = '#7C9FD1'
 /** A failure, or lost contact. */
 export const AMBER = '#e0a83a'
+/** Something needs the person: a failure on Clawd's status line. */
+export const RED = '#e05d5d'
 /** Done, all clear. */
 export const GREEN = '#6bbf7a'
 

@@ -5,6 +5,7 @@ import { clawdMood, poseOf, quipOf } from './clawd-says'
 import { ACCENT, AMBER, GREEN, givenName, hash } from './office'
 import { atWork, recentFailures, statusOf, titled, workLine } from './panel-model'
 import { overlay } from './pixels'
+import { knowBlock } from './panel-know'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import type { Employee } from '../types'
@@ -19,7 +20,7 @@ const TONE = { clear: { mark: '✓ ', color: GREEN }, busy: { mark: '● ', colo
 
 type Ctx = { kit: Kit; data: PanelData; actions: PanelActions; cw: number }
 
-function clawdCard({ kit, data, cw }: Ctx) {
+function clawdCard({ kit, data, actions, cw }: Ctx) {
   const { Box, Text, sprite } = kit
   const { staff, boss, tick, now } = data
   const working = atWork(staff)
@@ -42,6 +43,7 @@ function clawdCard({ kit, data, cw }: Ctx) {
           <Text italic wrap="wrap">{said}</Text>
         </Box>
         <Text bold color={TONE[status.tone].color} wrap="wrap">{TONE[status.tone].mark}{status.text}</Text>
+        {knowBlock(kit, data, actions)}
         {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
         {!boss.isBusy && boss.recap !== undefined && (
           <Box key="recap" marginTop={kit.isTerminal ? 1 : 0} flexDirection="column">

@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
 import { CHECK_PROMPT } from '../hooks/know'
-import { CLEAR, START, host } from './host'
+import { CLEAR, PANE, START, SURFACES, host } from './host'
 
 type On = Parameters<typeof host>[0]
 type Ask = { model: string; system?: string; prompt: string; maxTokens?: number; timeoutMs?: number }
@@ -291,4 +291,106 @@ test('a note passed over by two prompts leaves; after two such notes the next ch
   expect(asked).toHaveLength(2)
   expect(logOf(saved)[2]).toMatchObject({ outcome: 'skipped', reason: 'notes were passed over' })
   expect(saved.get('know:backoff')).toEqual({ ignored: 2, skipLeft: 0 })
+})
+
+// ---- The note on Clawd's card ----
+
+type Surface = (typeof SURFACES)[number]
+/** A session with notes from `replies` on Clawd's card, one per finished specialist. */
+async function withNotes($: Engine, on: On, replies: Array<() => unknown>) {
+  const h = office(on, replies)
+  await $.session.start(START)
+  for (let n = 1; n <= replies.length; n += 1) {
+    await hire($)
+    h.rows.set(`a${n}`, run(`Job ${n}`))
+    await handBack($, `a${n}`)
+    await until($, () => logOf(h.saved).length === n)
+  }
+  return h
+}
+const office$ = ($: Engine, surface: Surface) => $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+const texts = async (ui: Awaited<ReturnType<typeof office$>>) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
+const reply = (n: number, extra = '\nexplain: **Tests did not pass**\nThe last run had 3 failures.') => () => answered(`learn: Note ${n} matters.\ntag: Heads up${extra}`)
+
+test('a note shows on Clawd\'s card, below his status and above the floor, headed by its tag and who did the work', async ($, on) => {
+  await withNotes($, on, [() => answered(NOTE)])
+  for (const surface of SURFACES) {
+    const ui = await office$($, surface)
+    const all = await texts(ui)
+    const [head, line] = [all.indexOf('HEADS UP · Tester'), all.indexOf('The Tester says all tests pass, but the last test run failed.')]
+    expect(head).toBeGreaterThan(all.findIndex(t => /Chief of Staff/.test(t)))
+    expect(line).toBe(head + 1)
+    expect(all.findIndex(t => /THE FLOOR|AT WORK/.test(t))).toBeGreaterThan(line)
+    for (const key of ['know-more', 'know-knew', 'know-dismiss']) expect(await ui.find({ key })).toBeDefined()
+    expect(await ui.find({ key: 'know-got-it' })).toBeUndefined()
+    expect(all.some(t => /more notes? waiting/.test(t))).toBe(false)
+    // The title and the explanation wait behind Learn more.
+    expect(all.some(t => /The tests did not pass|3 failures/.test(t))).toBe(false)
+    await ui.unmount()
+  }
+})
+
+test('Learn more opens the title and explanation with Got it; Got it takes the note off and starts the back-off over', async ($, on) => {
+  const { saved } = await withNotes($, on, [() => answered(NOTE)])
+  saved.set('know:backoff', { ignored: 1, skipLeft: 0 })
+  const ui = await office$($, 'terminal')
+  await ui.press({ key: 'know-more' })
+  expect(await ui.find({ type: 'Text', text: /^The tests did not pass$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^The last run ended with 3 failures\. Ask for a new run\.$/ })).toBeDefined()
+  expect(await ui.find({ key: 'know-more' })).toBeUndefined()
+  await ui.press({ key: 'know-got-it' })
+  expect(await ui.find({ type: 'Text', text: /HEADS UP/ })).toBeUndefined()
+  expect(saved.get('know:backoff')).toEqual({ ignored: 0, skipLeft: 0 })
+  await ui.unmount()
+})
+
+test('Knew this already saves the note as known and takes it off; Dismiss only takes it off', async ($, on) => {
+  const { saved } = await withNotes($, on, [reply(1), reply(2)])
+  const ui = await office$($, 'desktop')
+  await ui.press({ key: 'know-knew' })
+  expect(saved.get('know:knew')).toEqual(['Note 1 matters.'])
+  expect(await ui.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
+  await ui.press({ key: 'know-dismiss' })
+  expect(await ui.find({ type: 'Text', text: /HEADS UP/ })).toBeUndefined()
+  expect(saved.get('know:knew')).toEqual(['Note 1 matters.'])
+  await ui.unmount()
+})
+
+test('a note with no explanation has no Learn more', async ($, on) => {
+  await withNotes($, on, [reply(1, '')])
+  for (const surface of SURFACES) {
+    const ui = await office$($, surface)
+    expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
+    expect(await ui.find({ key: 'know-more' })).toBeUndefined()
+    expect(await ui.find({ key: 'know-dismiss' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('notes queue up to three, oldest first, with a dim count of those waiting; a fourth is not kept', async ($, on) => {
+  const { saved } = await withNotes($, on, [reply(1), reply(2), reply(3), reply(4)])
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'shown', 'shown', 'dropped'])
+  const ui = await office$($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^2 more notes waiting$/ })).toBeDefined()
+  await ui.press({ key: 'know-dismiss' })
+  expect(await ui.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^1 more note waiting$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the person\'s second prompt after a note takes it off; a /clear empties the card', async ($, on) => {
+  await withNotes($, on, [reply(1), reply(2)])
+  await $.prompt.submit({ text: 'next thing' } as never)
+  let ui = await office$($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
+  await ui.unmount()
+  await $.prompt.submit({ text: 'and another' } as never)
+  ui = await office$($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
+  await ui.unmount()
+  await $.session.end(CLEAR)
+  ui = await office$($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /HEADS UP/ })).toBeUndefined()
+  await ui.unmount()
 })

@@ -18,7 +18,7 @@ import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
 import { side } from './side-ask'
-import { checkHandback, forgetKnow, keepBrief, knowPrompt, startKnow } from './know-check'
+import { checkHandback, forgetKnow, keepBrief, knowActions, knowPrompt, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0 } from './know'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
@@ -390,7 +390,7 @@ async function panelData($: EngineInterface): Promise<PanelData> {
   return {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
-    artifacts: await read($, artifacts), gauge: await read($, gauge), now: await $.clock.now(),
+    artifacts: await read($, artifacts), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
   }
 }
 
@@ -407,6 +407,7 @@ function panelActions($: EngineInterface): PanelActions {
     layOff: type => setLaidOff($, type, true),
     hire: type => setLaidOff($, type, false),
     settlePayroll: isLayoff => applyPayroll($, isLayoff),
+    ...knowActions(knowIo($)),
   }
 }
 

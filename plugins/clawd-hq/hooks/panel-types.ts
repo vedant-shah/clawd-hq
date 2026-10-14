@@ -1,5 +1,6 @@
 // What the side panel is handed to draw, and the things it may ask for; register.tsx fills both.
-import type { Artifact, Badge, Boss, Employee, Fx, Gauge, Memory, Payroll } from '../types'
+import type { Artifact, Badge, Boss, Employee, Fx, Gauge, KnowState, Memory, Payroll } from '../types'
+import type { KnowActions } from './know-check'
 
 export type PanelData = {
   staff: Employee[]
@@ -14,9 +15,11 @@ export type PanelData = {
   artifacts: Artifact[]
   gauge: Gauge
   now: number
+  /** The notes from the check on finished work waiting on Clawd's card. */
+  know: KnowState
 }
 
-export type PanelActions = {
+export type PanelActions = KnowActions & {
   setFind: (tab: 'decisions' | 'people', text: string) => unknown
   forget: (id: string) => unknown
   layOff: (type: string) => unknown

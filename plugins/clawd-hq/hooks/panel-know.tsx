@@ -5,17 +5,14 @@ import { ACCENT, AMBER } from './office'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 
-/** The heading, with how many more notes wait in the line behind the one shown. */
-const headingOf = (waiting: number) => `YOU SHOULD KNOW${waiting > 0 ? ` · ${waiting} more waiting` : ''}`
-
 export function knowSection(kit: Kit, data: PanelData, actions: PanelActions) {
   const { Box, Text, Button } = kit
-  const [note, ...waiting] = data.know.notes
+  const { note } = data.know
   if (!note) return null
   const isOpen = data.know.isOpen && note.explain !== undefined
   return (
     <Box key="know" flexDirection="column">
-      <Text bold dimColor>{headingOf(waiting.length)}</Text>
+      <Text bold dimColor>YOU SHOULD KNOW</Text>
       <Box borderStyle="round" borderDimColor paddingX={1} flexDirection="column" gap={kit.isTerminal ? 0 : 1}>
         <Box key="know-who" flexDirection="row" flexWrap="wrap" columnGap={1}>
           <Text bold color={note.tag === 'Heads up' ? AMBER : ACCENT}>{note.tag.toUpperCase()}</Text>

@@ -155,12 +155,12 @@ export type KnowNote = {
   at: number
 }
 
-/** The notes waiting on Clawd's card, shown one at a time, oldest first. */
+/** The note on Clawd's card: at most one, and none waiting behind it. */
 export type KnowState = {
-  notes: KnowNote[]
-  /** The front note's explanation is open. */
+  note?: KnowNote
+  /** The note's explanation is open. */
   isOpen: boolean
-  /** The person's prompts since the front note appeared: the second takes it off. */
+  /** The person's prompts since the note appeared: the second takes it off. */
   promptsSince: number
 }
 

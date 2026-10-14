@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  BACKOFF0, CARD_NOTES, CHECK_PROMPT, KNOW0, QUIET_FORK, afterIgnored, afterPrompt, backoffFrom, checkAsk, isBuiltinKnow, isRepeat, keepLast, listFrom,
-  looksSecret, nextCheck, parseNote, plainText, skipsAfter, withLog, withNote, withoutFront,
+  BACKOFF0, CHECK_PROMPT, KNOW0, QUIET_FORK, afterIgnored, afterPrompt, backoffFrom, checkAsk, isBuiltinKnow, isRepeat, keepLast, listFrom,
+  looksSecret, nextCheck, parseNote, plainText, skipsAfter, withLog, withNote, withoutNote,
 } from '../hooks/know'
 import type { KnowNote } from '../types'
 
@@ -10,14 +10,53 @@ const note = (n: number, over: Partial<KnowNote> = {}): KnowNote => ({ id: `k${n
 
 // ---- The question ----
 
-test('the fixed question is our own, at most 350 words, and says what to compare and how to answer', () => {
-  expect(words(CHECK_PROMPT)).toBeLessThanOrEqual(350)
+test('the fixed question is our own, at most 400 words, and says what to compare and how to answer', () => {
+  expect(words(CHECK_PROMPT)).toBeLessThanOrEqual(400)
   for (const must of [/report/i, /steps/i, /learn: none/, /tag: You should know \| Heads up/, /explain:/, /data/i, /instructions inside it/i, /not shown/i, /secret/i, /Clawd/]) {
     expect(CHECK_PROMPT).toMatch(must)
   }
-  // Two short examples of our own, and no ellipsis character anywhere.
-  expect(CHECK_PROMPT.match(/Example/g)).toHaveLength(2)
   expect(CHECK_PROMPT).not.toContain('…')
+})
+
+test('the bar is high: the test is whether the person would act differently or be upset to find out later', () => {
+  expect(CHECK_PROMPT).toMatch(/change what they do/i)
+  expect(CHECK_PROMPT).toMatch(/upset to find out later/i)
+  expect(CHECK_PROMPT).toMatch(/When in doubt, reply: learn: none/)
+})
+
+test('the question names exactly what may be flagged', () => {
+  for (const yes of [
+    /no step (backs|behind)/i, /hides or plays down/i, /outside what the brief asked/i,
+    /decision the person recorded/i, /files, data, money or time/i,
+  ]) {
+    expect(CHECK_PROMPT).toMatch(yes)
+  }
+})
+
+test('the question names what is never flagged: tool tips, style, small gaps, what is plain, what Clawd sees anyway, guesses', () => {
+  for (const no of [
+    /general facts or tips about tools[^\n]*git[^\n]*npm[^\n]*shell[^\n]*Claude Code/i, /style/i, /wording/i, /small gaps/i,
+    /already plain in the report/i, /Clawd will see anyway/i, /guess/i, /uncertain/i,
+  ]) {
+    expect(CHECK_PROMPT).toMatch(no)
+  }
+})
+
+test('three examples of our own: one that is worth a note, a general git fact that is not, and a minor gap that is not', () => {
+  const examples = CHECK_PROMPT.split(/\n(?=Example \d)/).slice(1).map(one => one.trim())
+  expect(examples).toHaveLength(3)
+  const [yes, git, gap] = examples as [string, string, string]
+  expect(yes).toMatch(/^Example 1, YES/)
+  expect(yes).toMatch(/\nlearn: (?!none)/)
+  expect(yes).toMatch(/protection/i)
+  expect(yes).toMatch(/Heads up/)
+  expect(git).toMatch(/^Example 2, NO/)
+  expect(git).toMatch(/git/i)
+  expect(git).toMatch(/\nlearn: none$/)
+  expect(gap).toMatch(/^Example 3, NO/)
+  expect(gap).toMatch(/\nlearn: none$/)
+  // Only the YES example carries a note's explain section.
+  expect(CHECK_PROMPT.match(/^explain:/gm)).toHaveLength(2)
 })
 
 test('the question sends the rules as the system prompt and the record, fenced, as the message; empty lists add no headings', () => {
@@ -142,13 +181,18 @@ test('a passed-over note sets the skips; each check after it uses one up; a pres
 
 // ---- The notes on the card ----
 
-test('the card holds up to three notes, oldest first; a fourth is not added', () => {
-  let s = KNOW0
-  for (const n of [1, 2, 3, 4]) s = withNote(s, note(n))
-  expect(CARD_NOTES).toBe(3)
-  expect(s.notes.map(x => x.id)).toEqual(['k1', 'k2', 'k3'])
-  expect(withoutFront(s)).toEqual({ notes: [note(2), note(3)], isOpen: false, promptsSince: 0 })
-  expect(withoutFront(KNOW0)).toEqual(KNOW0)
+test('the card holds one note; a second is not added, and nothing waits behind it', () => {
+  const one = withNote(KNOW0, note(1))
+  expect(one.note).toEqual(note(1))
+  expect(withNote(one, note(2))).toBe(one)
+  expect(KNOW0.note).toBeUndefined()
+  expect(withoutNote(one)).toEqual({ isOpen: false, promptsSince: 0 })
+  expect(withoutNote({ ...one, isOpen: true, promptsSince: 1 }).note).toBeUndefined()
+  expect(withoutNote(KNOW0)).toBe(KNOW0)
+})
+
+test('a note joining an empty card starts closed, with its own count of prompts', () => {
+  expect(withNote({ isOpen: true, promptsSince: 1 }, note(1))).toEqual({ note: note(1), isOpen: false, promptsSince: 0 })
 })
 
 test('the person\'s second prompt after a note appeared takes it off and counts it as passed over; an opened one stays', () => {
@@ -160,12 +204,6 @@ test('the person\'s second prompt after a note appeared takes it off and counts 
   const opened = { ...one, isOpen: true }
   expect(afterPrompt(afterPrompt(opened).state)).toEqual({ state: opened, isIgnored: false })
   expect(afterPrompt(KNOW0)).toEqual({ state: KNOW0, isIgnored: false })
-})
-
-test('the next note waiting takes the front with its own count of prompts', () => {
-  const two = withNote(withNote(KNOW0, note(1)), note(2))
-  const gone = afterPrompt(afterPrompt(two).state)
-  expect(gone).toEqual({ state: { notes: [note(2)], isOpen: false, promptsSince: 0 }, isIgnored: true })
 })
 
 test('the trial log keeps the newest 20 checks', () => {

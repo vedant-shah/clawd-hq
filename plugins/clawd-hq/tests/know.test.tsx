@@ -369,11 +369,11 @@ test('a note passed over by two prompts leaves; after two such notes the next ch
 // ---- The note on Clawd's card ----
 
 type Surface = (typeof SURFACES)[number]
-/** A session with notes from `replies` on Clawd's card, one per finished specialist. */
-async function withNotes($: Engine, on: On, replies: Array<() => unknown>) {
+/** A session whose model answers from `replies`, after `backs` finished specialists (default: one per reply) have been checked. */
+async function withNotes($: Engine, on: On, replies: Array<() => unknown>, backs = replies.length) {
   const h = office(on, replies)
   await $.session.start(START)
-  for (let n = 1; n <= replies.length; n += 1) {
+  for (let n = 1; n <= backs; n += 1) {
     await hire($)
     h.rows.set(`a${n}`, run(`Job ${n}`))
     await handBack($, `a${n}`)
@@ -425,15 +425,21 @@ test('Learn more opens the title and explanation with Got it; Got it takes the n
   await ui.unmount()
 })
 
-test('Knew this already saves the note as known and takes it off; Dismiss only takes it off', async ($, on) => {
-  const { saved } = await withNotes($, on, [reply(1), reply(2)])
+test('Knew this already saves the note as known and takes it off', async ($, on) => {
+  const { saved } = await withNotes($, on, [reply(1)])
   const ui = await office$($, 'desktop')
   await ui.press({ key: 'know-knew' })
   expect(saved.get('know:knew:/repo')).toEqual(['Note 1 matters.'])
-  expect(await ui.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('Dismiss takes the note off without saving it as known', async ($, on) => {
+  const { saved } = await withNotes($, on, [reply(1)])
+  const ui = await office$($, 'desktop')
   await ui.press({ key: 'know-dismiss' })
   expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
-  expect(saved.get('know:knew:/repo')).toEqual(['Note 1 matters.'])
+  expect(saved.get('know:knew:/repo')).toBeUndefined()
   await ui.unmount()
 })
 
@@ -448,25 +454,127 @@ test('a note with no explanation has no Learn more', async ($, on) => {
   }
 })
 
-test('notes queue up to three, oldest first, with the count of those waiting in the heading; a fourth is not kept', async ($, on) => {
-  const { saved } = await withNotes($, on, [reply(1), reply(2), reply(3), reply(4)])
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'shown', 'shown', 'dropped'])
+test('the card shows one note under a plain heading, with no count of notes waiting', async ($, on) => {
+  await withNotes($, on, [reply(1)])
+  for (const surface of SURFACES) {
+    const ui = await office$($, surface)
+    const all = await texts(ui)
+    expect(all.filter(t => /YOU SHOULD KNOW/.test(t))).toEqual(['YOU SHOULD KNOW'])
+    expect(all.filter(t => /^Note \d matters\.$/.test(t))).toEqual(['Note 1 matters.'])
+    expect(all.some(t => /waiting/.test(t))).toBe(false)
+    await ui.unmount()
+  }
+})
+
+test('while a note is showing no check is made, even after the person sends another message; the log says why', async ($, on) => {
+  const { asked, rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
+  await $.prompt.submit({ text: 'a new message' } as never)
+  await hire($)
+  rows.set('a2', run('Job 2'))
+  await handBack($, 'a2')
+  await until($, () => logOf(saved).length === 2)
+  expect(asked).toHaveLength(1)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'skipped'])
+  expect(logOf(saved)[1]).toMatchObject({ who: 'Tester', reason: 'a note is already showing' })
   const ui = await office$($, 'terminal')
   expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^YOU SHOULD KNOW · 2 more waiting$/ })).toBeDefined()
-  await ui.press({ key: 'know-dismiss' })
-  expect(await ui.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^YOU SHOULD KNOW · 1 more waiting$/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('the person\'s second prompt after a note takes it off; a /clear empties the card', async ($, on) => {
-  await withNotes($, on, [reply(1), reply(2)])
+test('one note per message: once a note was shown, even one the person has dismissed, a second hand-back is skipped until the next message', async ($, on) => {
+  const { asked, rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
+  const ui = await office$($, 'terminal')
+  await ui.press({ key: 'know-dismiss' })
+  await ui.unmount()
+  await hire($)
+  rows.set('a2', run('Job 2'))
+  await handBack($, 'a2')
+  await until($, () => logOf(saved).length === 2)
+  expect(asked).toHaveLength(1)
+  expect(logOf(saved)[1]).toMatchObject({ who: 'Tester', outcome: 'skipped', reason: 'a note was already shown for this message' })
+  // The person's next message allows the next note.
+  await $.prompt.submit({ text: 'the next message' } as never)
+  await hire($)
+  rows.set('a3', run('Job 3'))
+  await handBack($, 'a3')
+  await until($, () => logOf(saved).length === 3)
+  expect(asked).toHaveLength(2)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'skipped', 'shown'])
+  const next = await office$($, 'terminal')
+  expect(await next.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
+  await next.unmount()
+})
+
+test('a command or a message the person did not type does not count as the next message', async ($, on) => {
+  const { asked, rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
+  const ui = await office$($, 'terminal')
+  await ui.press({ key: 'know-dismiss' })
+  await ui.unmount()
+  await $.prompt.submit({ text: '/office', command: { name: 'office', kind: 'local' } } as never)
+  await $.prompt.submit({ text: 'a hook message', isMeta: true } as never)
+  await hire($)
+  rows.set('a2', run('Job 2'))
+  await handBack($, 'a2')
+  await until($, () => logOf(saved).length === 2)
+  expect(asked).toHaveLength(1)
+  expect(logOf(saved)[1]).toMatchObject({ outcome: 'skipped', reason: 'a note was already shown for this message' })
+})
+
+test('a check that finds nothing does not use up the message: the next hand-back is still checked', async ($, on) => {
+  const { asked, rows, saved } = office(on, [() => answered('learn: none'), reply(1)])
+  await $.session.start(START)
+  for (const id of ['a1', 'a2']) {
+    await hire($)
+    rows.set(id, run(`Job ${id}`))
+    await handBack($, id)
+    await until($, () => logOf(saved).length === Number(id.slice(1)))
+  }
+  expect(asked).toHaveLength(2)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['none', 'shown'])
+})
+
+test('hand-backs waiting behind a running check are skipped without asking when it leaves a note', async ($, on) => {
+  const { asked, rows, saved, hold, gate } = office(on, [reply(1), reply(2), reply(3)])
+  await $.session.start(START)
+  for (const id of ['a1', 'a2', 'a3']) {
+    await hire($)
+    rows.set(id, run(`Job ${id}`))
+  }
+  hold()
+  for (const id of ['a1', 'a2', 'a3']) await handBack($, id)
+  await until($, () => asked.length > 0)
+  gate.release()
+  await until($, () => logOf(saved).length === 3)
+  expect(asked).toHaveLength(1)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'skipped', 'skipped'])
+  expect(logOf(saved).slice(1).map(l => l.reason)).toEqual(['a note is already showing', 'a note is already showing'])
+  expect(saved.get('know:shown:/repo')).toEqual(['Note 1 matters.'])
+})
+
+test('a skipped hand-back uses up no back-off skip and leaves the back-off alone', async ($, on) => {
+  const { rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
+  saved.set('know:backoff:/repo', { ignored: 2, skipLeft: 1 })
+  await hire($)
+  rows.set('a2', run('Job 2'))
+  await handBack($, 'a2')
+  await until($, () => logOf(saved).length === 2)
+  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
+})
+
+test('the person\'s second prompt after a note takes it off; a /clear empties the card and allows a note again', async ($, on) => {
+  const { rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
   await $.prompt.submit({ text: 'next thing' } as never)
   let ui = await office$($, 'terminal')
   expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
   await ui.unmount()
   await $.prompt.submit({ text: 'and another' } as never)
+  ui = await office$($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
+  await ui.unmount()
+  await hire($)
+  rows.set('a2', run('Job 2'))
+  await handBack($, 'a2')
+  await until($, () => logOf(saved).length === 2)
   ui = await office$($, 'terminal')
   expect(await ui.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
   await ui.unmount()

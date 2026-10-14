@@ -4,8 +4,8 @@
 import type { ModelCompleteResult, SessionMessage } from 'claude-code'
 import type { KnowNote, KnowState } from '../types'
 import {
-  BACKOFF0, CARD_NOTES, KNEW_KEEP, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
-  keepLast, listFrom, nextCheck, parseNote, withLog, withNote, withoutFront,
+  BACKOFF0, KNEW_KEEP, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
+  keepLast, listFrom, nextCheck, parseNote, withLog, withNote, withoutNote,
 } from './know'
 import type { Backoff, KnowLogEntry } from './know'
 import { CAP_CHARS, buildRecord, turnRows } from './know-record'
@@ -63,6 +63,8 @@ let lists: Lists | undefined
 const briefs = new Map<string, string>()
 const checkedRows = new Map<string, number>()
 let notes = 0
+/** A note was shown since the person's last message: no other until the next one, even if that note is gone. */
+let isNoteSent = false
 /** Clawd's own turn under way: its request, and the tools he has used in it. */
 let turn = { text: '', tools: 0 }
 
@@ -121,14 +123,25 @@ async function whyUnseen(io: KnowIo): Promise<string | undefined> {
 export const isWatching = async (io: KnowIo): Promise<boolean> => (await whyUnseen(io)) === undefined
 
 /**
- * A specialist handed its work back: unless the back-off says skip, a check joins the line of side questions. Never
- * waited on by the hand-back and never throws.
+ * Why no note may be left now, or nothing when one may: one is on the card, or one was already shown for the person's
+ * latest message (a card the person has cleared does not free it; their next message does).
+ */
+async function whyHeld(io: KnowIo): Promise<string | undefined> {
+  if ((await io.card()).note) return 'a note is already showing'
+  return isNoteSent ? 'a note was already shown for this message' : undefined
+}
+
+/**
+ * A specialist handed its work back: unless a note is held or the back-off says skip, a check joins the line of side
+ * questions. Never waited on by the hand-back and never throws.
  */
 export async function checkHandback(io: KnowIo, h: Handback, who: string) {
   const at = await io.now().catch(() => 0)
   try {
     const unseen = await whyUnseen(io)
     if (unseen) return await addLog(io, { at, who, outcome: 'skipped', reason: unseen })
+    const held = await whyHeld(io)
+    if (held) return await addLog(io, { at, who, outcome: 'skipped', reason: held })
     // The rows are taken now: work done after this hand-back belongs to a later check, however long this one waits.
     const taken = await takeRows(io, h)
     if (!taken.rows) return await addLog(io, { at, who, outcome: 'refused', reason: taken.why })
@@ -170,6 +183,9 @@ async function takeRows(io: KnowIo, h: Handback): Promise<Partial<Taken> & { why
 async function runCheck(io: KnowIo, h: Handback, who: string, asked: number, { rows, isResumed, leftOut, asked: said }: Taken) {
   const at = await io.now()
   try {
+    // A check that waited in the line may start after an earlier one left a note: it is skipped before it is paid for.
+    const held = await whyHeld(io)
+    if (held) return await addLog(io, { at, who, outcome: 'skipped', reason: held })
     const u = h.usage
     const tokens = u ? { input: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), output: u.output_tokens } : undefined
     const brief = h.agentId === undefined ? undefined : briefs.get(h.agentId)
@@ -194,15 +210,17 @@ async function askModel(io: KnowIo, record: { text: string; chars: number }, who
   const now = await loadLists(io)
   if (isRepeat(parsed.line, now.shown, now.knew)) return addLog(io, { ...base, outcome: 'repeat' })
   const { kind: _, ...said } = parsed
-  return addLog(io, { ...base, outcome: await showNote(io, { ...said, id: `k${(notes += 1)}`, who, at }) })
+  return addLog(io, { ...base, ...(await showNote(io, { ...said, id: `k${(notes += 1)}`, who, at })) })
 }
 
-/** The note joins Clawd's card and the shown list; a card already holding three takes no more. */
-async function showNote(io: KnowIo, note: KnowNote): Promise<string> {
-  if ((await io.card()).notes.length >= CARD_NOTES) return 'dropped'
+/** The note takes Clawd's card and joins the shown list, unless one is held (checked once more, as the reply was paid for). */
+async function showNote(io: KnowIo, note: KnowNote): Promise<{ outcome: string; reason?: string }> {
+  const held = await whyHeld(io)
+  if (held) return { outcome: 'skipped', reason: held }
+  isNoteSent = true
   await io.setCard(s => withNote(s, note))
   await change(io, 'shown', shown => keepLast(shown, note.line, SHOWN_KEEP))
-  return 'shown'
+  return { outcome: 'shown' }
 }
 
 // ---- The person's side: the buttons on the card, and prompts that pass a note over ----
@@ -214,27 +232,28 @@ async function pressed(io: KnowIo, fn: (s: KnowState) => KnowState) {
 }
 
 async function knewIt(io: KnowIo) {
-  const front = (await io.card()).notes[0]
-  if (front) await change(io, 'knew', knew => keepLast(knew, front.line, KNEW_KEEP))
-  await pressed(io, withoutFront)
+  const { note } = await io.card()
+  if (note) await change(io, 'knew', knew => keepLast(knew, note.line, KNEW_KEEP))
+  await pressed(io, withoutNote)
 }
 
 export function knowActions(io: KnowIo): KnowActions {
   return {
-    knowMore: () => pressed(io, s => (s.notes.length > 0 ? { ...s, isOpen: true } : s)),
-    knowGotIt: () => pressed(io, withoutFront),
+    knowMore: () => pressed(io, s => (s.note ? { ...s, isOpen: true } : s)),
+    knowGotIt: () => pressed(io, withoutNote),
     knowKnew: () => knewIt(io),
-    knowDismiss: () => pressed(io, withoutFront),
+    knowDismiss: () => pressed(io, withoutNote),
   }
 }
 
 /**
- * One prompt of the person's (not a command, not one they did not type): kept to ride along with the next checks,
- * and the second since a note appeared passes it over. Never throws.
+ * One prompt of the person's (not a command, not one they did not type): kept to ride along with the next checks, it
+ * allows a note again, and the second since a note appeared passes it over. Never throws.
  */
 export async function knowPrompt(io: KnowIo, e: { text: string; isMeta?: true; command?: unknown }) {
   if (e.isMeta || e.command) return
   prompts = [...prompts, e.text].slice(-PROMPTS_KEPT)
+  isNoteSent = false
   try {
     const before = await io.card()
     const { state, isIgnored } = afterPrompt(before)
@@ -247,13 +266,12 @@ export async function knowPrompt(io: KnowIo, e: { text: string; isMeta?: true; c
 export async function forgetKnow(io: KnowIo) {
   epoch += 1
   prompts = []
+  isNoteSent = false
   briefs.clear()
   checkedRows.clear()
   side.clear()
-  if ((await io.card()).notes.length > 0) await io.setCard(withoutAll)
+  if ((await io.card()).note) await io.setCard(withoutNote)
 }
-
-const withoutAll = (s: KnowState): KnowState => ({ ...s, notes: [], isOpen: false, promptsSince: 0 })
 
 /** A session starts: the project's own lists are read afresh. */
 export async function startKnow(io: KnowIo, projectFolder: string) {

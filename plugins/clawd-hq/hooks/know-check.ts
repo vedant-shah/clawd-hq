@@ -9,7 +9,7 @@ import {
 } from './know'
 import type { Backoff, KnowLogEntry } from './know'
 import { CAP_CHARS, buildRecord, turnRows } from './know-record'
-import type { RecordInput } from './know-record'
+import type { LeftOut, RecordInput } from './know-record'
 import { paneOf } from './panes'
 import { side } from './side-ask'
 
@@ -111,34 +111,39 @@ export async function checkHandback(io: KnowIo, h: Handback, who: string) {
       await setBackoff(io, turn.backoff)
       return await addLog(io, { at, who, outcome: 'skipped', reason: 'notes were passed over' })
     }
+    // The rows are taken now: work done after this hand-back belongs to a later check, however long this one waits.
+    const taken = await takeRows(io, h)
+    if (!taken.rows) return await addLog(io, { at, who, outcome: 'refused', reason: taken.why })
     const asked = epoch
-    side.queue(() => runCheck(io, h, who, asked), () => void addLog(io, { at, who, outcome: 'dropped', reason: 'too many checks waiting' }))
+    const job: Taken = { ...(taken as Taken), asked: prompts }
+    side.queue(() => runCheck(io, h, who, asked, job), () => void addLog(io, { at, who, outcome: 'dropped', reason: 'too many checks waiting' }))
   } catch { /* a check is a nicety: it never stops a hand-back */ }
 }
+
+/** The rows a check reads, as they stood at the hand-back, and what was left out before them. */
+type Taken = { rows: RecordInput['rows']; isResumed?: boolean; leftOut?: LeftOut; asked: readonly string[] }
 
 /**
  * The rows of this run: for a resumed specialist, those since its last check; for a turn of Clawd's own, the main chat's
  * from the message that opened it. None, with why, when the session will not say.
  */
-async function rowsOf(io: KnowIo, h: Handback): Promise<{ rows?: RecordInput['rows']; isResumed?: boolean; why?: string }> {
+async function takeRows(io: KnowIo, h: Handback): Promise<Partial<Taken> & { why?: string }> {
   const id = h.agentId
   const all = await io.messages(id)
   if (!Array.isArray(all)) return { why: (all as { deny: string }).deny }
-  if (id === undefined) return { rows: turnRows(all, h.turnText ?? '') }
+  if (id === undefined) return turnRows(all, h.turnText ?? '')
   const from = checkedRows.get(id) ?? 0
   checkedRows.set(id, all.length)
-  return { rows: all.slice(from), isResumed: from > 0 }
+  return { rows: all.slice(from), isResumed: from > 0, leftOut: from > 0 ? 'earlier-runs' : undefined }
 }
 
-async function runCheck(io: KnowIo, h: Handback, who: string, asked: number) {
+async function runCheck(io: KnowIo, h: Handback, who: string, asked: number, { rows, isResumed, leftOut, asked: said }: Taken) {
   const at = await io.now()
   try {
-    const { rows, isResumed, why } = await rowsOf(io, h)
-    if (!rows) return await addLog(io, { at, who, outcome: 'refused', reason: why })
     const u = h.usage
     const tokens = u ? { input: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), output: u.output_tokens } : undefined
     const brief = h.agentId === undefined ? undefined : briefs.get(h.agentId)
-    const record = buildRecord({ who, isClawd: h.agentId === undefined, ended: h.reason, rows, brief, isResumed, report: h.answer, prompts, durationMs: h.durationMs, tokens })
+    const record = buildRecord({ who, isClawd: h.agentId === undefined, ended: h.reason, rows, brief, isResumed, leftOut, report: h.answer, prompts: said, durationMs: h.durationMs, tokens })
     if (record.chars > 2 * CAP_CHARS) return await addLog(io, { at, who, outcome: 'skipped', recordChars: record.chars, reason: 'the record was too long' })
     await askModel(io, record, who, at, asked)
   } catch {

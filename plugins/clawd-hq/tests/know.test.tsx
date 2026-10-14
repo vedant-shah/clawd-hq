@@ -471,6 +471,7 @@ test('a turn of Clawd\'s own with six or more tool uses is checked the same way,
   expect(prompt).toMatch(/WHO DID THE WORK: Clawd, the chief of staff, in the main chat/)
   expect(prompt).toMatch(/THE PERSON'S REQUEST:\nTidy the docs/)
   expect(prompt).not.toMatch(/An older request|Old answer/)
+  expect(prompt).toMatch(/\[trimmed: earlier turns of the main chat, not shown\]/)
   expect(prompt).toMatch(/STEP 6 · Edit · docs\/page6\.md · done/)
   expect(prompt).toMatch(/FINAL ANSWER:\nDone, all pages tidy\./)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
@@ -497,4 +498,33 @@ test('with the setting off, Clawd\'s long turns are not checked either', { optio
   await ownTurn($, 8)
   await idle()
   expect(asked).toEqual([])
+})
+
+// ---- The record is what was there at the hand-back ----
+
+test('a check waiting in line reads only what was done up to its own hand-back, and marks the earlier runs it leaves out', async ($, on) => {
+  const { asked, rows, saved, hold, gate } = office(on, [() => answered('learn: none')])
+  await $.session.start(START)
+  await hire($)
+  const edit = (n: number) => ({ role: 'assistant', text: `Run ${n}.`, toolUses: [{ tool_use_id: `e${n}`, tool: 'Edit', input: { file_path: `src/run${n}.ts` }, text: 'ok' }] })
+  const first = run('Fix it.')
+  rows.set('a1', first)
+  hold()
+  await handBack($, 'a1')
+  await until($, () => asked.length === 1)
+  // While the first check waits on the model, the specialist is sent back, finishes again, and is sent back once more.
+  const second = [...first, { role: 'user', text: 'Also fix signup.', toolUses: [] }, edit(2)]
+  rows.set('a1', second)
+  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
+  await handBack($, 'a1', 'answer', 'Run 2.')
+  rows.set('a1', [...second, { role: 'user', text: 'And the logout page.', toolUses: [] }, edit(3)])
+  await $.prompt.submit({ text: 'typed after the hand-back' } as never)
+  gate.release()
+  await until($, () => logOf(saved).length === 2)
+  expect(asked).toHaveLength(2)
+  expect(asked[1]!.prompt).not.toMatch(/typed after the hand-back/)
+  expect(asked[1]!.prompt).toMatch(/STEP 1 · Edit · src\/run2\.ts · done/)
+  expect(asked[1]!.prompt).not.toMatch(/run3|logout/)
+  expect(asked[1]!.prompt).toMatch(/\[trimmed: the steps of earlier runs, already checked, not shown\]/)
+  expect(asked[0]!.prompt).not.toMatch(/earlier runs/)
 })

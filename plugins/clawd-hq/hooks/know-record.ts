@@ -21,6 +21,13 @@ const LOOKUP_TOOLS: Record<string, string> = {
 const COMMAND_TOOLS = new Set(['Bash', 'PowerShell', 'BashOutput'])
 const TARGET_KEYS = ['file_path', 'notebook_path', 'command', 'pattern', 'url', 'query', 'path', 'description', 'skill', 'subagent_type']
 const OUR_NOTE = "[trimmed: Clawd HQ's standard note on how to report, not shown]"
+/** Why rows before the record's first one are left out: what was already checked, or the main chat before this turn. */
+export type LeftOut = 'earlier-runs' | 'earlier-turns' | 'earlier-turns-guess'
+const LEFT_OUT: Record<LeftOut, string> = {
+  'earlier-runs': '[trimmed: the steps of earlier runs, already checked, not shown]',
+  'earlier-turns': '[trimmed: earlier turns of the main chat, not shown]',
+  'earlier-turns-guess': '[trimmed: earlier turns of the main chat, not shown; where this turn began is a best guess]',
+}
 
 export type RecordInput = {
   /** Who did the work: a specialist's label, or Clawd. */
@@ -34,6 +41,8 @@ export type RecordInput = {
   brief?: string
   /** A run after the first: its rows open with the message that started it, not the brief. */
   isResumed?: boolean
+  /** Rows before these were left out, and why; marked at the head of the steps. */
+  leftOut?: LeftOut
   report: string
   /** The person's latest prompts in the main chat, oldest first. */
   prompts: readonly string[]
@@ -171,7 +180,8 @@ export function buildRecord(input: RecordInput): { text: string; steps: number; 
   const { sections, rest } = briefOf(input)
   const all = itemsOf(rest, input)
   const steps = all.filter(it => it.kind === 'step').length
-  const before = [headerOf(input, steps), ...promptsOf(input.prompts), ...sections, 'STEPS AND WORDS, IN ORDER:'].join('\n\n')
+  const leftOut = input.leftOut === undefined ? [] : [LEFT_OUT[input.leftOut]]
+  const before = [headerOf(input, steps), ...promptsOf(input.prompts), ...sections, 'STEPS AND WORDS, IN ORDER:', ...leftOut].join('\n\n')
   const after = `${input.isClawd ? 'FINAL ANSWER' : 'REPORT HANDED BACK'}:\n${input.report.trim() === '' ? 'No report text.' : input.report}`
   const { items } = fitted(all, before.length + after.length + 4)
   const text = [before, ...items.map(render), after].join('\n\n')
@@ -182,11 +192,13 @@ const isTyped = (r: SessionMessage) => r.role === 'user' && r.text.trim() !== ''
 
 /**
  * The rows of one turn of the main chat: from the person's message that opened it (found by the turn's text), else from
- * the last message they typed; all of them when there is none.
+ * the last message they typed, as a best guess; all of them when there is none. Says why rows before it are left out.
  */
-export function turnRows(rows: readonly SessionMessage[], text: string): readonly SessionMessage[] {
+export function turnRows(rows: readonly SessionMessage[], text: string): { rows: readonly SessionMessage[]; leftOut?: LeftOut } {
   const head = text.trim().slice(0, 200)
   const typed = rows.map((r, i) => ({ r, i })).filter(({ r }) => isTyped(r))
-  const opened = [...typed].reverse().find(({ r }) => head !== '' && r.text.includes(head)) ?? typed[typed.length - 1]
-  return opened ? rows.slice(opened.i) : rows
+  const found = [...typed].reverse().find(({ r }) => head !== '' && r.text.includes(head))
+  const opened = found ?? typed[typed.length - 1]
+  if (!opened || opened.i === 0) return { rows, leftOut: undefined }
+  return { rows: rows.slice(opened.i), leftOut: found ? 'earlier-turns' : 'earlier-turns-guess' }
 }

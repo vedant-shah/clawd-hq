@@ -159,7 +159,20 @@ test('a turn of the main chat starts at the person\'s message that opened it, el
     { role: 'user', text: 'Tidy the docs\n\n(pasted notes)', toolUses: [] }, said('', [use(1, 'Edit', { file_path: 'a.md' }, 'ok')]),
     { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'u1', text: 'ok', isError: false }] }, said('Done.'),
   ]
-  expect(turnRows(rows, 'Tidy the docs').map(r => r.text)).toEqual(['Tidy the docs\n\n(pasted notes)', '', '', 'Done.'])
-  expect(turnRows(rows, 'something else').map(r => r.text)).toEqual(['Tidy the docs\n\n(pasted notes)', '', '', 'Done.'])
-  expect(turnRows(rows.slice(3), 'x')).toHaveLength(3)
+  const found = turnRows(rows, 'Tidy the docs')
+  expect(found.rows.map(r => r.text)).toEqual(['Tidy the docs\n\n(pasted notes)', '', '', 'Done.'])
+  expect(found.leftOut).toBe('earlier-turns')
+  const guessed = turnRows(rows, 'something else')
+  expect(guessed.rows.map(r => r.text)).toEqual(['Tidy the docs\n\n(pasted notes)', '', '', 'Done.'])
+  expect(guessed.leftOut).toBe('earlier-turns-guess')
+  expect(turnRows(rows.slice(3), 'x')).toEqual({ rows: rows.slice(3), leftOut: undefined })
+  expect(turnRows(rows.slice(2), 'Tidy the docs').leftOut).toBeUndefined()
+})
+
+test('rows left out before the run are marked in words, by why', () => {
+  const steps = [said('', [use(1, 'Read', { file_path: 'a' }, 'x')])]
+  expect(record(steps, { leftOut: 'earlier-runs' }).text).toMatch(/STEPS AND WORDS, IN ORDER:\n\n\[trimmed: the steps of earlier runs, already checked, not shown\]\n\nSTEP 1/)
+  expect(record(steps, { leftOut: 'earlier-turns' }).text).toMatch(/\[trimmed: earlier turns of the main chat, not shown\]/)
+  expect(record(steps, { leftOut: 'earlier-turns-guess' }).text).toMatch(/\[trimmed: earlier turns of the main chat, not shown; where this turn began is a best guess\]/)
+  expect(record(steps).text).not.toMatch(/earlier/)
 })

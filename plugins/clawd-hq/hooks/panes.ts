@@ -48,12 +48,16 @@ async function attempt(task: () => Promise<unknown>) {
 const openPane = (io: PaneIo, p: PaneSpec, decisions: number, isFocused: boolean) =>
   io.open({ id: p.id, title: p.title(decisions), columns: COLUMNS, ...(isFocused ? { focus: true as const } : {}) })
 
-/** Opens the four in tab order, each on its own so one failure leaves the rest. When asked for, Office is raised last: the later opens must not leave another one in front. */
+/**
+ * Opens the four in tab order, each on its own so one failure leaves the rest. Office is opened once more last, because the
+ * later opens must not leave another one in front: the host shows the latest open. Only when asked for does that last open
+ * take the keyboard (`focus` takes it from the prompt box); otherwise the person can type straight away.
+ */
 export async function openPanes(io: PaneIo, isFocusing: boolean) {
   let decisions = 0
   await attempt(async () => { decisions = await io.decisions() })
   for (const p of PANES) await attempt(() => openPane(io, p, decisions, false))
-  if (isFocusing) await attempt(() => openPane(io, paneOf('office'), decisions, true))
+  await attempt(() => openPane(io, paneOf('office'), decisions, isFocusing))
 }
 
 /** Brings a pane to the front if it is still open; one the person closed stays closed. */

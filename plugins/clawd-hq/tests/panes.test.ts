@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PANES, paneOf, pinHeight } from '../hooks/panes'
+import { PANES, openPanes, paneOf, pinHeight, type PaneIo } from '../hooks/panes'
 
 test('the four panes, in the order the host shows them as tabs, with the office keeping its old id', () => {
   expect(PANES.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log'])
@@ -25,4 +25,36 @@ test('the footer is pinned by filling the room: in rows where the surface gave t
   expect(pinHeight('terminal', 'dock', Number.NaN)).toBeUndefined()
   expect(pinHeight('desktop', 'dock', 0)).toBe('100%')
   expect(pinHeight('desktop', 'dock', Number.NaN)).toBe('100%')
+})
+
+// ---- Opening: which tab is in front, and whether it takes the keyboard. ----
+
+function fakeIo() {
+  const opened: Array<{ id: string; title: string; focus?: true }> = []
+  const io: PaneIo = {
+    open: async a => { opened.push(a) },
+    list: async () => [],
+    decisions: async () => 3,
+  }
+  return { io, opened }
+}
+
+test('at session start the tabs are opened in order and Office is opened last, so it is the one in front', async () => {
+  const { io, opened } = fakeIo()
+  await openPanes(io, false)
+  expect(opened.slice(0, 4).map(o => o.title)).toEqual(['Office', 'Decisions 3', 'People', 'Log'])
+  expect(opened[opened.length - 1]!.id).toBe('clawd-hq')
+})
+
+test('without being asked to focus, no open takes the keyboard, so the person can type straight away', async () => {
+  const { io, opened } = fakeIo()
+  await openPanes(io, false)
+  expect(opened.some(o => o.focus === true)).toBe(false)
+})
+
+test('when asked to focus (the /office command), only the final Office open takes the keyboard', async () => {
+  const { io, opened } = fakeIo()
+  await openPanes(io, true)
+  expect(opened.filter(o => o.focus === true).map(o => o.id)).toEqual(['clawd-hq'])
+  expect(opened[opened.length - 1]!.focus).toBe(true)
 })

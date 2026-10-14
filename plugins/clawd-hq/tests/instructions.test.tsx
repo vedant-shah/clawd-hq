@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { LOCKED_RULES, RULES_FILE, SECTION_ID, VOICE_END, VOICE_FILE, VOICE_GUARD } from '../hooks/instructions'
-import { host } from './host'
+import { LOCKED_RULES, LOCK_NOTE, RULES_FILE, SECTION_ID, VOICE_END, VOICE_FILE, VOICE_GUARD } from '../hooks/instructions'
+import { CLEAR, START, host } from './host'
 
 type Engine = Parameters<Parameters<typeof test>[1]>[0]
 type Files = Map<string, string>
@@ -83,4 +83,48 @@ test('with its own files unreadable the plugin leaves the instructions alone, te
   expect((await compose($)).sections).toEqual([BASE])
   expect((await compose($)).sections).toEqual([BASE])
   expect(toasts).toHaveLength(1)
+})
+
+// ---- The person's own copies, in the home folder, read afresh at a new session and at /clear ----
+
+/** The process environment: HOME and USERPROFILE as given, every other name unset. */
+const env = (on: Parameters<Parameters<typeof test>[1]>[1], vars: Record<string, string>) =>
+  on('env.get', (_$, e) => ({ value: vars[(e as { name: string }).name] }) as never)
+const OWN = '/home/me/.clawd-hq/chief-of-staff.md'
+
+test('an edited own copy of the rules in the home folder is what the main chat gets, with the fixed rules after it', async ($, on) => {
+  const { files } = host(on)
+  env(on, { HOME: '/home/me' })
+  on('prompt.compose', () => ({ sections: [BASE] }))
+  ship(files)
+  files.set(OWN, '# Mine\n\nAsk me first.\n')
+  const text = (await ours($))!.text
+  expect(text.startsWith(`# Mine\n\nAsk me first.\n\n${LOCK_NOTE}\n\n${LOCKED_RULES}\n\n${VOICE_GUARD}`)).toBe(true)
+  expect(text).not.toContain('Hand real work over.')
+})
+
+test('without HOME the own copies are found under USERPROFILE', async ($, on) => {
+  const { files } = host(on)
+  env(on, { USERPROFILE: '/profiles/me/' })
+  on('prompt.compose', () => ({ sections: [BASE] }))
+  ship(files)
+  files.set('/profiles/me/.clawd-hq/soul.md', 'Dry and short.')
+  expect((await ours($))!.text).toContain(`${VOICE_GUARD}\n\nDry and short.\n\n${VOICE_END}`)
+})
+
+test('an edit made mid-session waits for the next session or /clear, and then it is read', async ($, on) => {
+  const { files } = host(on)
+  env(on, { HOME: '/home/me' })
+  on('prompt.compose', () => ({ sections: [BASE] }))
+  ship(files)
+  await $.session.start(START)
+  expect((await ours($))!.text).toContain('Hand real work over.')
+  files.set(OWN, '# Mine')
+  expect((await ours($))!.text).toContain('Hand real work over.')
+  await $.session.end(CLEAR)
+  expect((await ours($))!.text).toContain('# Mine')
+  files.set(OWN, '# Mine, again')
+  expect((await ours($))!.text).not.toContain('again')
+  await $.session.start(START)
+  expect((await ours($))!.text).toContain('# Mine, again')
 })

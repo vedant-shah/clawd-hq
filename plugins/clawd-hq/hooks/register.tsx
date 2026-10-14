@@ -18,7 +18,8 @@ import { DEMO, isActive } from './panel-model'
 import { tourSteps } from './demo'
 import { LOGBOOK_FILE, loadLogbook, saveLogbook } from './logbook'
 import type { LogbookIo } from './logbook'
-import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
+import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
+import type { Briefing, BriefingIo } from './instructions'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
 import { side } from './side-ask'
@@ -168,6 +169,16 @@ async function showStatus($: EngineInterface) {
   const n = (await read($, staff)).filter(isActive).length
   $.ui.status(n > 0 ? `HQ · 🦀 ${n} at desk${n === 1 ? '' : 's'}` : undefined)
 }
+
+// ---- Clawd's instructions: the person's own copies live in the home folder (hooks/instructions.ts) ----
+
+/** File calls do not expand `~`: the home folder by name, '' when the process has none. */
+const homeOf = async ($: EngineInterface) => ((await $.env.get("HOME").catch(() => undefined)) || (await $.env.get("USERPROFILE").catch(() => undefined)) || '').replace(/[\\/]+$/, '')
+
+const briefIo = ($: EngineInterface, home: string, warn: (text: string) => void): BriefingIo => ({
+  root: $.plugin.root, home, warn, read: path => $.fs.read(path), exists: path => $.fs.exists(path),
+  seed: async part => { const v = await $.store.get(SEED_KEYS[part]); return typeof v === 'string' ? v : undefined },
+})
 
 // ---- The panes: one per view, so the host's own tab strip switches between them (hooks/panes.ts) ----
 
@@ -443,19 +454,21 @@ export const register: Register = (on, options) => {
   let timer: Timer | undefined
   let isFraming = false
   const brief = optionsOf(options)
-  let briefing: Promise<string | undefined> | undefined
+  let briefing: Promise<Briefing> | undefined
 
-  // Clawd's rules and voice join the main chat's instructions: read once, then the same text on every request, so the prompt cache holds.
+  // Clawd's rules and voice join the main chat's instructions: read once a session (and again after /clear), then the same text on every request, so the prompt cache holds.
   on('prompt.compose', async ($, e, next) => {
     const base = await next(e)
     if (!brief.isOn || !isBriefed(e.traits)) return base
-    briefing ??= loadBriefing({ root: $.plugin.root, read: path => $.fs.read(path), warn: text => void $.ui.toast(text) }, brief.voiceFile, brief.isQuiet)
-    const text = await briefing
+    // Set before anything is awaited, so requests made at the same moment share one read (and one warning).
+    briefing ??= homeOf($).then(home => readBriefing(briefIo($, home, text => void $.ui.toast(text)), brief))
+    const { text } = await briefing
     return text === undefined ? base : { sections: [...base.sections, { id: SECTION_ID, scope: 'session', text } as const] }
   })
 
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
+    briefing = undefined
     isPayrollFiled = false
     isLogbookWarned = false
     isArtifactsWarned = false
@@ -521,6 +534,7 @@ export const register: Register = (on, options) => {
   // A /clear ends the session without a session.start: from here the Log starts over.
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
+      briefing = undefined
       const now = await $.clock.now()
       await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined, contextTokens: undefined }))
     }

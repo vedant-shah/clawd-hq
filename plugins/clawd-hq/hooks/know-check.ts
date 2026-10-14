@@ -18,7 +18,9 @@ const MAX_TOKENS = 700
 const TIMEOUT_MS = 60_000
 /** How many of the person's latest prompts ride along. */
 const PROMPTS_KEPT = 2
+/** Store keys, kept per project folder as the payroll and the artifact list are. */
 const KEYS = { shown: 'know:shown', knew: 'know:knew', backoff: 'know:backoff', log: 'know:log' } as const
+type Key = (typeof KEYS)[keyof typeof KEYS]
 
 /** What the check may do, each one a `$` call made in register.tsx. */
 export type KnowIo = {
@@ -47,6 +49,9 @@ export type KnowActions = { knowMore: () => unknown; knowGotIt: () => unknown; k
 
 /** Someone can see the panel: a session with a surface. */
 let isDrawn = false
+/** The project folder the session runs in: the lists and the log are its own. */
+let folder = ''
+const keyOf = (key: Key) => `${key}:${folder}`
 /** Goes up on /clear, resume and session end: a reply asked for before then is dropped. */
 let epoch = 0
 let prompts: readonly string[] = []
@@ -64,15 +69,15 @@ export function keepBrief(id: string, brief: string) {
 }
 
 /** A save that fails keeps the value in memory, silently: the lists only steer later checks. */
-async function save(io: KnowIo, key: string, value: unknown) {
+async function save(io: KnowIo, key: Key, value: unknown) {
   try {
-    await io.set(key, value)
+    await io.set(keyOf(key), value)
   } catch { /* kept in memory for this session */ }
 }
 
 async function loadLists(io: KnowIo) {
   if (lists) return lists
-  const got = async (key: string) => { try { return await io.get(key) } catch { return undefined } }
+  const got = async (key: Key) => { try { return await io.get(keyOf(key)) } catch { return undefined } }
   const [shown, knew, backoff, log] = [await got(KEYS.shown), await got(KEYS.knew), await got(KEYS.backoff), await got(KEYS.log)]
   lists ??= { shown: listFrom(shown, SHOWN_KEEP), knew: listFrom(knew, KNEW_KEEP), backoff: backoffFrom(backoff), log: Array.isArray(log) ? log : [] }
   return lists
@@ -238,9 +243,11 @@ export async function forgetKnow(io: KnowIo) {
 
 const withoutAll = (s: KnowState): KnowState => ({ ...s, notes: [], isOpen: false, promptsSince: 0 })
 
-/** A session starts: checks are made only where someone can see the panel. */
-export async function startKnow(io: KnowIo, isSeen: boolean) {
+/** A session starts: checks are made only where someone can see the panel, and the project's own lists are read afresh. */
+export async function startKnow(io: KnowIo, isSeen: boolean, projectFolder: string) {
   isDrawn = isSeen
+  folder = projectFolder
+  lists = undefined
   await forgetKnow(io)
 }
 

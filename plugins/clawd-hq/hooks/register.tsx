@@ -498,7 +498,7 @@ export const register: Register = (on, options) => {
     // A recap is for someone looking at the panel: none where nothing is drawn.
     isRecapOn = brief.isRecapOn && e.surface !== null
     await resetRecap($)
-    await startKnow(knowIo($), e.surface !== null)
+    await startKnow(knowIo($), e.surface !== null, cwd)
     // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
     if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined }))
     await $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })

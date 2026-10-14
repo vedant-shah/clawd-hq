@@ -59,7 +59,7 @@ async function until(_$: Engine, isThere: () => boolean) {
 }
 const idle = async () => { for (let i = 0; i < 30; i += 1) await pause() }
 type Log = Array<{ outcome: string; who: string; reason?: string; inTokens?: number; outTokens?: number; recordChars?: number; ms?: number }>
-const logOf = (saved: Map<string, unknown>) => (saved.get('know:log') ?? []) as Log
+const logOf = (saved: Map<string, unknown>) => (saved.get('know:log:/repo') ?? []) as Log
 
 test('a hand-back asks Haiku once, with our own question and the whole record, and the note is kept as shown', async ($, on) => {
   const { asked, rows, saved, toasts } = office(on)
@@ -76,7 +76,7 @@ test('a hand-back asks Haiku once, with our own question and the whole record, a
   expect(ask.prompt).toMatch(/STEP 2 · Bash · npm test · ERROR/)
   expect(ask.prompt).toMatch(/REPORT HANDED BACK:\nAll tests pass\./)
   expect(ask.prompt).toMatch(/TIME AND TOKENS: 1m; 9,000 input tokens, 60 output tokens/)
-  expect(saved.get('know:shown')).toEqual(['The Tester says all tests pass, but the last test run failed.'])
+  expect(saved.get('know:shown:/repo')).toEqual(['The Tester says all tests pass, but the last test run failed.'])
   expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'shown', inTokens: 9_000, outTokens: 60, ms: 0, recordChars: expect.any(Number) }])
   expect(toasts.some(t => /last test run failed/.test(t))).toBe(false)
 })
@@ -89,7 +89,7 @@ test('learn: none shows nothing and is logged', async ($, on) => {
   await handBack($, 'a1')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toHaveLength(1)
-  expect(saved.get('know:shown')).toBeUndefined()
+  expect(saved.get('know:shown:/repo')).toBeUndefined()
   expect(logOf(saved).map(l => l.outcome)).toEqual(['none'])
 })
 
@@ -106,7 +106,7 @@ for (const failure of [
     await handBack($, 'a1')
     await until($, () => logOf(saved).length > 0)
     expect(logOf(saved).map(l => l.outcome)).toEqual([failure.reason])
-    expect(saved.get('know:shown')).toBeUndefined()
+    expect(saved.get('know:shown:/repo')).toBeUndefined()
     expect(toasts.filter(t => !/finished/.test(t))).toEqual([])
   })
 }
@@ -240,7 +240,7 @@ test('a reply that arrives after a /clear is dropped', async ($, on) => {
   gate.release()
   await until($, () => logOf(saved).length > 0)
   expect(logOf(saved).map(l => l.outcome)).toEqual(['stale'])
-  expect(saved.get('know:shown')).toBeUndefined()
+  expect(saved.get('know:shown:/repo')).toBeUndefined()
 })
 
 test('the person\'s last two prompts ride along; commands do not count', async ($, on) => {
@@ -258,8 +258,8 @@ test('the person\'s last two prompts ride along; commands do not count', async (
 test('a note already shown, or one the person already knew, is not shown again; both lists ride in the question', async ($, on) => {
   const line = 'The Tester says all tests pass, but the last test run failed.'
   const { asked, rows, saved } = office(on)
-  saved.set('know:knew', [line.toLowerCase()])
-  saved.set('know:shown', ['Something older.'])
+  saved.set('know:knew:/repo', [line.toLowerCase()])
+  saved.set('know:shown:/repo', ['Something older.'])
   await $.session.start(START)
   await hire($)
   rows.set('a1', run('Fix it.'))
@@ -301,17 +301,17 @@ test('a note passed over by two prompts leaves; after two such notes the next ch
     await handBack($, `a${n}`)
     await until($, () => logOf(saved).length === n)
     await $.prompt.submit({ text: 'carry on' } as never)
-    expect(saved.get('know:backoff')).toEqual(n === 1 ? undefined : { ignored: 1, skipLeft: 0 })
+    expect(saved.get('know:backoff:/repo')).toEqual(n === 1 ? undefined : { ignored: 1, skipLeft: 0 })
     await $.prompt.submit({ text: 'and on' } as never)
   }
-  expect(saved.get('know:backoff')).toEqual({ ignored: 2, skipLeft: 1 })
+  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
   await hire($)
   rows.set('a3', run('Job 3'))
   await handBack($, 'a3')
   await until($, () => logOf(saved).length === 3)
   expect(asked).toHaveLength(2)
   expect(logOf(saved)[2]).toMatchObject({ outcome: 'skipped', reason: 'notes were passed over' })
-  expect(saved.get('know:backoff')).toEqual({ ignored: 2, skipLeft: 0 })
+  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 0 })
 })
 
 // ---- The note on Clawd's card ----
@@ -353,7 +353,7 @@ test('a note shows on Clawd\'s card, below his status and above the floor, heade
 
 test('Learn more opens the title and explanation with Got it; Got it takes the note off and starts the back-off over', async ($, on) => {
   const { saved } = await withNotes($, on, [() => answered(NOTE)])
-  saved.set('know:backoff', { ignored: 1, skipLeft: 0 })
+  saved.set('know:backoff:/repo', { ignored: 1, skipLeft: 0 })
   const ui = await office$($, 'terminal')
   await ui.press({ key: 'know-more' })
   expect(await ui.find({ type: 'Text', text: /^The tests did not pass$/ })).toBeDefined()
@@ -361,7 +361,7 @@ test('Learn more opens the title and explanation with Got it; Got it takes the n
   expect(await ui.find({ key: 'know-more' })).toBeUndefined()
   await ui.press({ key: 'know-got-it' })
   expect(await ui.find({ type: 'Text', text: /HEADS UP/ })).toBeUndefined()
-  expect(saved.get('know:backoff')).toEqual({ ignored: 0, skipLeft: 0 })
+  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 0, skipLeft: 0 })
   await ui.unmount()
 })
 
@@ -369,11 +369,11 @@ test('Knew this already saves the note as known and takes it off; Dismiss only t
   const { saved } = await withNotes($, on, [reply(1), reply(2)])
   const ui = await office$($, 'desktop')
   await ui.press({ key: 'know-knew' })
-  expect(saved.get('know:knew')).toEqual(['Note 1 matters.'])
+  expect(saved.get('know:knew:/repo')).toEqual(['Note 1 matters.'])
   expect(await ui.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
   await ui.press({ key: 'know-dismiss' })
   expect(await ui.find({ type: 'Text', text: /HEADS UP/ })).toBeUndefined()
-  expect(saved.get('know:knew')).toEqual(['Note 1 matters.'])
+  expect(saved.get('know:knew:/repo')).toEqual(['Note 1 matters.'])
   await ui.unmount()
 })
 
@@ -570,7 +570,7 @@ test('where nothing is drawn, the built-in asks as usual', { plugins: [ysk('buil
 
 test('a specialist run that used no tools is not checked, the log says why, and it uses up no back-off skip', async ($, on) => {
   const { asked, rows, saved } = office(on)
-  saved.set('know:backoff', { ignored: 2, skipLeft: 1 })
+  saved.set('know:backoff:/repo', { ignored: 2, skipLeft: 1 })
   await $.session.start(START)
   await hire($)
   rows.set('a1', [{ role: 'user', text: 'What do you think of the plan?', toolUses: [] }, { role: 'assistant', text: 'It looks sound.', toolUses: [] }])
@@ -578,5 +578,22 @@ test('a specialist run that used no tools is not checked, the log says why, and 
   await until($, () => logOf(saved).length > 0)
   expect(asked).toEqual([])
   expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools' }])
-  expect(saved.get('know:backoff')).toEqual({ ignored: 2, skipLeft: 1 })
+  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
+})
+
+test('the lists and the log are kept per project folder; the old shared keys are ignored', async ($, on) => {
+  const line = 'The Tester says all tests pass, but the last test run failed.'
+  const { asked, rows, saved } = office(on)
+  saved.set('know:knew', [line])
+  saved.set('know:knew:/repo', [line])
+  await $.session.start({ cwd: '/other', surface: 'terminal', isInteractive: true } as never)
+  await hire($)
+  rows.set('a1', run('Fix it.'))
+  await handBack($, 'a1')
+  await until($, () => ((saved.get('know:log:/other') ?? []) as unknown[]).length > 0)
+  expect(asked).toHaveLength(1)
+  expect(asked[0]!.prompt).not.toMatch(/already knew/)
+  expect(saved.get('know:shown:/other')).toEqual([line])
+  expect(saved.get('know:shown:/repo')).toBeUndefined()
+  expect(saved.has('know:log')).toBe(false)
 })

@@ -94,6 +94,33 @@ export type Fx = {
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
 }
 
+/** How a note on Clawd's card is headed: a fact worth knowing, or a risk that may need action. */
+export type KnowTag = 'You should know' | 'Heads up'
+
+/** One note from the check on finished work (hooks/know.ts): untrusted model text, made plain before it is kept. */
+export type KnowNote = {
+  id: string
+  /** Who did the work it is about: a specialist's label, or Clawd. */
+  who: string
+  /** The note itself, one sentence of about 20 words. */
+  line: string
+  tag: KnowTag
+  /** A short bold title for Learn more; absent when the reply gave no explanation. */
+  title?: string
+  /** What Learn more shows, as plain text; absent when the reply gave none, and Learn more is then hidden. */
+  explain?: string
+  at: number
+}
+
+/** The notes waiting on Clawd's card, shown one at a time, oldest first. */
+export type KnowState = {
+  notes: KnowNote[]
+  /** The front note's explanation is open. */
+  isOpen: boolean
+  /** The person's prompts since the front note appeared: the second takes it off. */
+  promptsSince: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'clawd-hq': {
@@ -107,6 +134,7 @@ declare module 'claude-code' {
       memory: Memory[]
       gauge: Gauge
       artifacts: Artifact[]
+      know: KnowState
     }
   }
 }

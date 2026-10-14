@@ -26,4 +26,6 @@ export type PanelActions = KnowActions & {
   hire: (type: string) => unknown
   /** The person's answer to the payroll review: lay off what the project has no use for, or keep everyone. */
   settlePayroll: (isLayoff: boolean) => unknown
+  /** Opens the usage footer's rows, or closes them. */
+  toggleUsage: () => unknown
 }

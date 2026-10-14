@@ -134,49 +134,9 @@ test("Clawd's card says All clear in an empty office, has no button of its own, 
     // The old shortcuts are gone: no button to a desk, none to refill the last request.
     expect(await ui.find({ key: 'resume' })).toBeUndefined()
     expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
-    expect(await ui.find({ type: 'Button' })).toBeUndefined()
+    // Clawd's card has no button; the footer's Usage button is the only one in the pane.
+    expect((await ui.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['usage-toggle'])
     await ui.unmount()
-  }
-})
-
-test('the gauges are Context always, 5h and 7d with percent and time left only when the limits have a reading', async ($, on) => {
-  const { clock } = host(on)
-  const context = { window: 1_000_000, tokens: 210_000, percent: 21 }
-  for (const surface of SURFACES) {
-    await $.session.measure({ context, rateLimits: [], changed: ['context'] } as never)
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /^Context$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^21%$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^5h$/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /^7d$/ })).toBeUndefined()
-    // The old counts line is gone.
-    expect(await ui.find({ type: 'Text', text: /at desks|on break|tokens/ })).toBeUndefined()
-
-    const now = clock.now()
-    await $.session.measure({
-      context,
-      rateLimits: [
-        { kind: 'five_hour', percentUsed: 62.4, resetsAt: new Date(now + HOUR + 15 * 60_000).toISOString() },
-        { kind: 'seven_day', percentUsed: 33.6, resetsAt: new Date(now + 4 * 24 * HOUR + 22 * HOUR).toISOString() },
-      ],
-      changed: ['rateLimits'],
-    } as never)
-    expect(await ui.find({ type: 'Text', text: /^5h$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^62%$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^· 1h 15m$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^7d$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^34%$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^· 4d 22h$/ })).toBeDefined()
-    // The percent is bright; the label and the time are dim.
-    expect((await ui.find({ type: 'Text', text: /^62%$/ }))?.props.dimColor).toBeUndefined()
-    expect((await ui.find({ type: 'Text', text: /^5h$/ }))?.props.dimColor).toBe(true)
-    expect((await ui.find({ type: 'Text', text: /^· 1h 15m$/ }))?.props.dimColor).toBe(true)
-
-    // A gauge never breaks in the middle: the row wraps between gauges, each one holds its width.
-    expect((await ui.find({ key: 'gauges' }))?.props.flexWrap).toBe('wrap')
-    for (const key of ['gauge-context', 'gauge-session', 'gauge-week']) expect((await ui.find({ key }))?.props.flexShrink).toBe(0)
-    await ui.unmount()
-    await $.session.measure({ context, rateLimits: [], changed: ['rateLimits'] } as never)
   }
 })
 
@@ -185,38 +145,12 @@ test('a reading above zero never reads 0%: the label agrees with the sliver of b
   await $.session.measure({ context: { window: 1_000_000, tokens: 3_000, percent: 0.3 }, rateLimits: [], changed: ['context'] } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /^1%$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^0%$/ })).toBeUndefined()
+    expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 1% ▾')
+    await ui.press({ key: 'usage-toggle' })
+    expect(await ui.find({ type: 'Text', text: /^3k \/ 1M \(1%\)$/ })).toBeDefined()
     if (surface === 'terminal') expect(await ui.find({ type: 'Text', text: /^━$/ })).toBeDefined()
     else expect((await ui.findAll({ type: 'Svg' })).some(svg => String(svg.props.source).includes('<rect width="4"'))).toBe(true)
-    await ui.unmount()
-  }
-})
-
-test('the gauge bar is a thin line of glyphs on the terminal', async ($, on) => {
-  host(on)
-  await $.session.measure({ context: { window: 1_000_000, tokens: 500_000, percent: 50 }, rateLimits: [], changed: ['context'] } as never)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /^━━━━$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^───$/ })).toBeDefined()
-  // No block characters, no image.
-  expect(await ui.find({ type: 'Text', text: /[█░]/ })).toBeUndefined()
-  expect(await ui.findAll({ type: 'Svg' })).toHaveLength(0)
-  await ui.unmount()
-})
-
-test('the gauge bar is a small rounded image wherever there is an Svg: desktop, vscode and mobile', async ($, on) => {
-  host(on)
-  await $.session.measure({ context: { window: 1_000_000, tokens: 500_000, percent: 50 }, rateLimits: [], changed: ['context'] } as never)
-  for (const surface of ['desktop', 'vscode', 'mobile'] as const) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    const bars = (await ui.findAll({ type: 'Svg' })).filter(svg => svg.props.height === 4)
-    expect(bars).toHaveLength(1)
-    expect(bars[0]!.props.width).toBe(48)
-    expect(String(bars[0]!.props.source)).toContain('rx="2"')
-    expect(String(bars[0]!.props.source)).toContain(`fill="${ACCENT}"`)
-    expect(String(bars[0]!.props.alt)).toMatch(/Context.*50%/)
-    expect(await ui.find({ type: 'Text', text: /[━─█░]/ })).toBeUndefined()
+    await ui.press({ key: 'usage-toggle' })
     await ui.unmount()
   }
 })

@@ -83,8 +83,19 @@ export type Boss = {
 /** One rate-limit window as `$.session.usage()` reports it. */
 export type Limit = { kind: string; percentUsed: number; resetsAt?: string }
 
-/** What the header meters read: when this session began, how full the context is, and the rate-limit windows. */
-export type Gauge = { startedAt: number; contextPercent?: number; limits: Limit[] }
+/**
+ * What the footer reads: when this session began, how full the context is (tokens used, the window, and the percent),
+ * the rate-limit windows, and the main chat's model and effort as its last request named them.
+ */
+export type Gauge = {
+  startedAt: number
+  contextPercent?: number
+  contextTokens?: number
+  contextWindow?: number
+  limits: Limit[]
+  model?: string
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+}
 
 export type Fx = {
   /** What the person typed into each tab's filter. */
@@ -92,6 +103,8 @@ export type Fx = {
   demo?: { step: number; total: number; caption: string }
   /** The payroll review waiting in the People tab: how many agent types this project has no use for, and why. */
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
+  /** The usage footer's three rows are open above its button; shared by every pane. */
+  isUsageOpen?: boolean
 }
 
 /** How a note on Clawd's card is headed: a fact worth knowing, or a risk that may need action. */

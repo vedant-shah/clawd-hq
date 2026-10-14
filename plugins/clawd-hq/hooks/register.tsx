@@ -11,6 +11,7 @@ import { NAP_MS } from './clawd-says'
 import { BRAND, ago, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
+import { contextOf, withRequest } from './usage'
 import { DEMO, isActive } from './panel-model'
 import { tourSteps } from './demo'
 import { LOGBOOK_FILE, fromMarkdown, mergeMarkdown } from './logbook'
@@ -407,6 +408,7 @@ function panelActions($: EngineInterface): PanelActions {
     layOff: type => setLaidOff($, type, true),
     hire: type => setLaidOff($, type, false),
     settlePayroll: isLayoff => applyPayroll($, isLayoff),
+    toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
     ...knowActions(knowIo($)),
   }
 }
@@ -418,10 +420,22 @@ async function startGauge($: EngineInterface) {
   const now = await $.clock.now()
   try {
     const u = await $.session.usage()
-    await update($, gauge, () => ({ startedAt: u.startedAt, contextPercent: u.context.percent, limits: limitsOf(u.rateLimits) }))
+    await update($, gauge, g => ({ ...g, startedAt: u.startedAt, ...contextOf(u.context), limits: limitsOf(u.rateLimits) }))
   } catch {
     await update($, gauge, g => ({ ...g, startedAt: now }))
   }
+  try {
+    const model = await $.session.model()
+    await update($, gauge, g => withRequest(g, model, g.effort))
+  } catch { /* the footer names the model from the first request instead */ }
+}
+
+/** A request of the main chat names the model and effort in use: kept only when either moved, and never in the request's way. */
+async function noteRequest($: EngineInterface, model: string, effort: string | number | undefined) {
+  try {
+    const g = await read($, gauge)
+    if (withRequest(g, model, effort) !== g) await update($, gauge, one => withRequest(one, model, effort))
+  } catch { /* a label missed in the footer; the request goes on */ }
 }
 
 // ---- The demo: a scripted tour with stand-in employees, cleaned up at the end ----
@@ -549,7 +563,7 @@ export const register: Register = (on, options) => {
 
   // The header's context bar and limit countdowns follow the engine's own readings.
   on('session.measure', async ($, e, next) => {
-    await update($, gauge, g => ({ ...g, contextPercent: e.context.percent, limits: limitsOf(e.rateLimits) }))
+    await update($, gauge, g => ({ ...g, ...contextOf(e.context), limits: limitsOf(e.rateLimits) }))
     return next(e)
   })
 
@@ -557,7 +571,7 @@ export const register: Register = (on, options) => {
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
       const now = await $.clock.now()
-      await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined }))
+      await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined, contextTokens: undefined }))
     }
     // Another conversation takes over this process without a session.start: its recap and its turns are its own.
     if (e.reason === 'clear' || e.reason === 'resume') await resetRecap($)
@@ -611,6 +625,7 @@ export const register: Register = (on, options) => {
 
   // Each model request of an agent: what it has spent, and how full its context is.
   on('turn.step', async function* ($, e, next) {
+    if (!e.agentId) await noteRequest($, e.model, e.effort)
     const me = e.agentId ? (await read($, staff)).find(one => one.id === e.agentId) : undefined
     // A request is a sign of life, and a resumed specialist's first can come before any tool call.
     if (me) await signOfLife($, me.id, THINKING)

@@ -1,7 +1,7 @@
 // The elements a pane draws with on the surface it is drawn on, and sprites drawn the best way that surface can.
 // register.tsx resolves them (`$` never leaves that file) and hands them over as PanelTools.
 import type { Elements } from 'claude-code'
-import { barGlyphs, barSvg } from './meters'
+import { BAR_H, BAR_W, barGlyphs, barSvg } from './meters'
 import { ACCENT } from './office'
 import { fade, rasterCells, svgOf, trim, trimLike } from './pixels'
 import type { Px } from './pixels'
@@ -39,9 +39,9 @@ export function kitOf(tools: PanelTools) {
     return <Text dimColor>{o.alt}</Text>
   }
 
-  /** A thin gauge bar: a small rounded image where there is an Svg, line glyphs on the terminal. */
+  /** A thin gauge bar: a rounded image where there is an Svg, line glyphs on the terminal. */
   const bar = (percent: number, alt: string) => {
-    if (Svg) return <Svg source={barSvg(percent)} alt={alt} width={48} height={4} />
+    if (Svg) return <Svg source={barSvg(percent)} alt={alt} width={BAR_W} height={BAR_H} />
     const { on, off } = barGlyphs(percent)
     return <Text>{on !== '' && <Text color={ACCENT}>{on}</Text>}<Text dimColor>{off}</Text></Text>
   }

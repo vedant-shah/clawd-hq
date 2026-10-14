@@ -94,6 +94,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   // What the engine answers for the session's start; a test moves it as a new session would.
   const session = { startedAt: 0 }
   on('session.usage', () => ({ value: { startedAt: session.startedAt, context: { window: 1_000_000 }, rateLimits: [] } }) as never)
+  // The main chat's model, as `/model` shows it: not the one other tests name, so the footer's model cannot match their text.
+  on('session.model', () => ({ value: 'claude-sonnet-5-1' }) as never)
   /** The person closing a pane by hand. */
   const closePane = (id: string) => { const at = panes.findIndex(p => p.id === id); if (at >= 0) panes.splice(at, 1) }
   return { clock, opened, toasts, session, panes, closePane, fail, front, files, disk, saved, kv, commands, tools }

@@ -1,0 +1,232 @@
+import { expect, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
+import { ACCENT } from '../hooks/office'
+import { CLEAR, FOUR, HOUR, PANE, START, SURFACES, host } from './host'
+
+type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
+const elementsOf = (node: Tree) => (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null && 'props' in c)
+const walk = (node: Tree, hit: (t: Tree) => boolean): Tree[] => [...(hit(node) ? [node] : []), ...elementsOf(node).flatMap(c => walk(c, hit))]
+const CONTEXT = { window: 1_000_000, tokens: 169_700, percent: 17 }
+const WEEKLY = /^Resets (Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{1,2}:\d{2} (AM|PM)$|^Resets in /
+
+/** The readings of a subscriber: the context, a session window with 3 hr 52 min left, and a weekly one two days out. */
+async function measure($: Engine, now: number, withLimits = true) {
+  const rateLimits = withLimits
+    ? [
+      { kind: 'five_hour', percentUsed: 44.2, resetsAt: new Date(now + 3 * HOUR + 52 * 60_000).toISOString() },
+      { kind: 'seven_day', percentUsed: 75.6, resetsAt: new Date(now + 48 * HOUR).toISOString() },
+    ]
+    : []
+  await $.session.measure({ context: CONTEXT, rateLimits, changed: ['context', 'rateLimits'] } as never)
+}
+
+/** A request of the main chat (or of the specialist `agentId`), as the engine is about to send it. */
+async function request($: Engine, model: string, effort: string | number | undefined, agentId?: string) {
+  const run = $.turn.step({ turnId: 'r1', index: 0, model, effort, messageCount: 3, ...(agentId ? { agentId } : {}) } as never)
+  let part = await run.next()
+  while (!part.done) part = await run.next()
+}
+
+const answerSteps = (on: Parameters<typeof host>[0]) => on('turn.step', async function* (_$, e) {
+  return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
+})
+
+const mount = ($: Engine, surface: 'terminal' | 'desktop' | 'vscode' | 'mobile', pane: typeof PANE = PANE) => $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
+const texts = async (ui: Awaited<ReturnType<typeof mount>>) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
+
+test('collapsed, the footer shows the model, the effort and exactly one Usage button, with no details', async ($, on) => {
+  const { clock } = host(on)
+  answerSteps(on)
+  await measure($, clock.now())
+  await request($, 'claude-opus-5-5', 'high')
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    const root = (await ui.drawn()) as unknown as Tree
+    const footer = walk(root, t => t.props.key === 'gauges')[0]!
+    expect(walk(footer, t => t.type === 'Button')).toHaveLength(1)
+    expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% · 44% · 76% ▾')
+    expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^High$/ })).toBeDefined()
+    expect(await ui.find({ key: 'usage-details' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Context window|Session limit|Weekly/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('before the first reply there is no model and no effort, and the button has a dash', async ($, on) => {
+  host(on)
+  const ui = await mount($, 'terminal')
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage – ▾')
+  expect(await ui.find({ key: 'usage-model' })).toBeUndefined()
+  await ui.press({ key: 'usage-toggle' })
+  expect(await ui.find({ type: 'Text', text: /^Context window$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^No reading yet$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a request of the main chat names the model and effort; a specialist\'s request and a number effort change nothing', async ($, on) => {
+  host(on, [{ id: 'a1', type: 'ecc:planner', description: 'Plan', status: 'running' }])
+  answerSteps(on)
+  await request($, 'claude-opus-5-5', 'high')
+  await request($, 'claude-haiku-4-5', 'low', 'a1')
+  const ui = await mount($, 'terminal')
+  expect(await texts(ui)).toEqual(expect.arrayContaining(['Opus 5.5', 'High']))
+  expect(await ui.find({ type: 'Text', text: /^(Haiku 4\.5|Low)$/ })).toBeUndefined()
+  // A later request of the main chat moves them.
+  await request($, 'claude-sonnet-5-1', 'xhigh')
+  expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Extra high$/ })).toBeDefined()
+  // A thinking budget in tokens is not an effort word: the effort goes.
+  await request($, 'claude-sonnet-5-1', 8000)
+  expect(await ui.find({ type: 'Text', text: /^Extra high$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a session start reads the main chat\'s model', async ($, on) => {
+  host(on)
+  await $.session.start(START)
+  const ui = await mount($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('pressing the button opens three rows above it, each with a bar; pressing again closes them', async ($, on) => {
+  const { clock } = host(on)
+  await measure($, clock.now())
+  const ui = await mount($, 'terminal')
+  await ui.press({ key: 'usage-toggle' })
+
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% · 44% · 76% ▴')
+  const lines = await texts(ui)
+  expect(lines).toEqual(expect.arrayContaining(['Context window', '169.7k / 1M (17%)', 'Session limit', 'Resets in 3 hr 52 min', '44%', 'Weekly · all models', '76%']))
+  expect(lines.some(t => WEEKLY.test(t))).toBe(true)
+  // A bar under each row: heavy glyphs for the used part, light for the rest.
+  expect(await ui.findAll({ type: 'Text', text: /^─+$/ })).toHaveLength(3)
+  expect(await ui.find({ type: 'Text', text: /^━{3}$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^━{9}$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^━{15}$/ })).toBeDefined()
+
+  // The rows sit above the button, which stays on the bottom edge.
+  const footer = walk((await ui.drawn()) as unknown as Tree, t => t.props.key === 'gauges')[0]!
+  const keys = elementsOf(footer).map(c => c.props.key)
+  expect(keys.indexOf('usage-details')).toBeGreaterThan(-1)
+  expect(keys.indexOf('usage-details')).toBeLessThan(keys.indexOf('usage-bar'))
+  expect(walk(elementsOf(footer)[elementsOf(footer).length - 1]!, t => t.type === 'Button')).toHaveLength(1)
+  expect(walk(footer, t => t.props.key === 'usage-details').length).toBe(1)
+
+  await ui.press({ key: 'usage-toggle' })
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% · 44% · 76% ▾')
+  expect(await ui.find({ key: 'usage-details' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('without a subscription only the context row opens, and the button lists one reading', async ($, on) => {
+  const { clock } = host(on)
+  await measure($, clock.now(), false)
+  const ui = await mount($, 'terminal')
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% ▾')
+  await ui.press({ key: 'usage-toggle' })
+  expect(await ui.find({ type: 'Text', text: /^Context window$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Session limit|Weekly/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a session window whose reset has passed is hidden', async ($, on) => {
+  const { clock } = host(on)
+  await $.session.measure({
+    context: CONTEXT, changed: ['rateLimits'],
+    rateLimits: [{ kind: 'five_hour', percentUsed: 90, resetsAt: new Date(clock.now() - 60_000).toISOString() }],
+  } as never)
+  const ui = await mount($, 'terminal')
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% ▾')
+  await ui.unmount()
+})
+
+test('open stays open on all four panes, on every surface, and closing on one closes it on all', async ($, on) => {
+  const { clock } = host(on)
+  await measure($, clock.now())
+  for (const surface of SURFACES) {
+    const first = await mount($, surface, FOUR[0])
+    await first.press({ key: 'usage-toggle' })
+    await first.unmount()
+    for (const pane of FOUR) {
+      const ui = await mount($, surface, pane)
+      expect(await ui.find({ key: 'usage-details' })).toBeDefined()
+      expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toMatch(/▴$/)
+      await ui.unmount()
+    }
+    const last = await mount($, surface, FOUR[3])
+    await last.press({ key: 'usage-toggle' })
+    await last.unmount()
+    const again = await mount($, surface, FOUR[1])
+    expect(await again.find({ key: 'usage-details' })).toBeUndefined()
+    await again.unmount()
+  }
+})
+
+test('the footer is the last row of every pane, open or closed, and nothing in it is set to cut text', async ($, on) => {
+  const { clock } = host(on)
+  await measure($, clock.now())
+  for (const surface of SURFACES) {
+    for (const pane of FOUR) {
+      const ui = await mount($, surface, pane)
+      for (const isOpen of [false, true]) {
+        if (isOpen) await ui.press({ key: 'usage-toggle' })
+        const root = (await ui.drawn()) as unknown as Tree
+        const rows = elementsOf(root)
+        expect(rows[rows.length - 1]?.props.key).toBe('gauges')
+        const footer = walk(root, t => t.props.key === 'gauges')[0]!
+        expect(JSON.stringify(footer)).not.toMatch(/truncate/)
+        expect(walk(footer, t => t.type === 'Text').every(t => t.props.wrap === undefined || t.props.wrap === 'wrap')).toBe(true)
+      }
+      await ui.press({ key: 'usage-toggle' })
+      await ui.unmount()
+    }
+  }
+})
+
+test('the bars are images where there is an Svg: 200 by 4, rounded, one for each open row', async ($, on) => {
+  const { clock } = host(on)
+  await measure($, clock.now())
+  for (const surface of ['desktop', 'vscode', 'mobile'] as const) {
+    const ui = await mount($, surface)
+    await ui.press({ key: 'usage-toggle' })
+    const bars = (await ui.findAll({ type: 'Svg' })).filter(svg => svg.props.height === 4)
+    expect(bars).toHaveLength(3)
+    expect(bars[0]!.props.width).toBe(200)
+    expect(String(bars[0]!.props.source)).toContain('rx="2"')
+    expect(String(bars[0]!.props.source)).toContain(`fill="${ACCENT}"`)
+    expect(bars.map(b => String(b.props.alt))).toEqual(['Context window 17% used', 'Session limit 44% used', 'Weekly · all models 76% used'])
+    expect(await ui.find({ type: 'Text', text: /[━─█░]/ })).toBeUndefined()
+    await ui.press({ key: 'usage-toggle' })
+    await ui.unmount()
+  }
+})
+
+test('collapsed, no bar is drawn at all', async ($, on) => {
+  const { clock } = host(on)
+  await measure($, clock.now())
+  const ui = await mount($, 'desktop')
+  expect((await ui.findAll({ type: 'Svg' })).filter(svg => svg.props.height === 4)).toHaveLength(0)
+  await ui.unmount()
+  const term = await mount($, 'terminal')
+  expect(await term.find({ type: 'Text', text: /^[━─]+$/ })).toBeUndefined()
+  await term.unmount()
+})
+
+test('a /clear empties the context reading but keeps the model', async ($, on) => {
+  const { clock } = host(on)
+  answerSteps(on)
+  await measure($, clock.now())
+  await request($, 'claude-opus-5-5', 'high')
+  await $.session.end(CLEAR)
+  const ui = await mount($, 'terminal')
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage – · 44% · 76% ▾')
+  expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
+  await ui.press({ key: 'usage-toggle' })
+  expect(await ui.find({ type: 'Text', text: /^No reading yet$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /169\.7k/ })).toBeUndefined()
+  await ui.unmount()
+})

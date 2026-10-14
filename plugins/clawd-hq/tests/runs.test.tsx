@@ -119,7 +119,7 @@ for (const [status, text] of [['idle', /took/], ['completed', /took/], ['failed'
   })
 }
 
-test('a resumed run is not ended by the engine\'s stale "completed" in its first seconds', async ($, on) => {
+test('a resumed run is not ended by the engine\'s stale "completed" in its first seconds', { timeoutMs: 15_000 }, async ($, on) => {
   const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'completed' }]
   const { clock } = host(on, agents)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))

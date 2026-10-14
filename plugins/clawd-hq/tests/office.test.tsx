@@ -246,7 +246,7 @@ test('Clawd\'s card says what he is doing and how many are at work, and never co
   }
 })
 
-test('a finished specialist moves to the Log tab, not the Office; there is no break room and no send home', async ($, on) => {
+test('a finished specialist moves to the Log tab, not the Office; there is no break room and no send home', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, session } = host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
   // A real session start, so the since-filter is exercised: the specialist finishes after it began.

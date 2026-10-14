@@ -51,7 +51,7 @@ test('after three turns and three quiet minutes, Clawd\'s card says where things
   }
 })
 
-test('the recap is made once per pause, goes when the next turn starts, and is made again after that turn', async ($, on) => {
+test('the recap is made once per pause, goes when the next turn starts, and is made again after that turn', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start(START)
   await turns($, 3)

@@ -23,7 +23,8 @@ const drawn = async ($: Engine, component: 'UserMessage' | 'AssistantMessage', p
 }
 const notice = (over: Record<string, unknown> = {}) => ({ text: 'Agent finished', origin: { kind: 'task-notification' }, isExpanded: false, task: { id: 'a1', status: 'completed' }, ...over })
 const fromJudge = (over: Record<string, unknown> = {}) => ({ text: 'Message 5 of 6 received.', origin: { kind: 'unclassified' }, isExpanded: false, from: { name: 'judge' }, ...over })
-const isHidden = (text: string) => !text.includes('ENGINE') && !/[A-Za-z]{3}/.test(text.replace(/"type":"Text"|"props"|"children"/g, ''))
+// The kit marks each drawing with the plugin that drew it (`part`): that label is not text on the screen.
+const isHidden = (text: string) => !text.includes('ENGINE') && !/[A-Za-z]{3}/.test(text.replace(/"type":"Text"|"props"|"children"|"part":\{"plugin":"clawd-hq"\}/g, ''))
 
 test('a specialist\'s finished notice and a teammate\'s message are hidden in the main chat, on every surface', async ($, on) => {
   await office($, on)

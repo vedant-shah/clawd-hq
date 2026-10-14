@@ -323,6 +323,8 @@ async function keepArtifact($: EngineInterface, folder: string, input: Record<st
 async function maybeRecap($: EngineInterface) {
   const [b, f, now] = [await getBoss($), await getFx($), await $.clock.now()]
   if (!isRecapDue({ isOn: isRecapOn, isBusy: b.isBusy || f.demo !== undefined, idleSince: b.idleSince, now, turns: turnsSeen, lastFor: recapFor })) return
+  // A recap is for someone looking at the panel: none while nothing is drawn. Read only once one is due, to keep frames cheap.
+  if ((await $.session.surfaces().catch(() => [])).length === 0) return
   side.tryNow(() => askRecap($))
 }
 
@@ -501,8 +503,8 @@ export const register: Register = (on, options) => {
     isPayrollFiled = false
     isLogbookWarned = false
     isArtifactsWarned = false
-    // A recap is for someone looking at the panel: none where nothing is drawn.
-    isRecapOn = brief.isRecapOn && e.surface !== null
+    // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.
+    isRecapOn = brief.isRecapOn
     await resetRecap($)
     await startKnow(knowIo($), cwd)
     // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.

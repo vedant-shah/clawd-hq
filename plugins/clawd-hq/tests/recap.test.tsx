@@ -129,6 +129,17 @@ test('a session nobody is looking at makes no recap', async ($, on) => {
   expect(asked).toEqual([])
 })
 
+test('in the desktop app, which attaches after the session starts, the recap still comes when due', { timeoutMs: 15_000 }, async ($, on) => {
+  const { clock, asked } = hostWithModel(on)
+  // The desktop app runs the session as the SDK does: it starts drawing nowhere, and the app attaches a moment later.
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' } as never)
+  await turns($, 3)
+  await wait(clock, 3 * MIN + 20_000)
+  expect(asked).toEqual([RECAP_PROMPT])
+  expect(await cardText($, 'desktop')).toMatch(/WHERE WE LEFT OFF/)
+})
+
 test('with the recap setting off, the model is never asked', { options: { recap: false } }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start(START)

@@ -32,6 +32,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const toasts: string[] = []
   /** The host refusing to open or list panes: every id, or only the ids named. */
   const fail = { list: false, open: false, ids: new Set<string>() }
+  /** The tab the host shows in front; unset, every pane reads as shown, as before. */
+  const front = { id: undefined as string | undefined }
   /** The project's files, in memory: what the plugin writes lands here, and a test seeds it. `isWriteFailing` is a folder it cannot write to, `isReadFailing` a file it cannot read, `isExistsFailing` a check that itself fails. */
   const files = new Map<string, string>()
   const disk = { isWriteFailing: false, isReadFailing: false, isExistsFailing: false }
@@ -76,7 +78,7 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   })
   on('ui.panes', () => {
     if (fail.list) throw new Error('the host cannot list panes')
-    return { value: panes.map(p => ({ ...p, isShown: true, isFocused: false, isPlaced: true })) } as never
+    return { value: panes.map(p => ({ ...p, isShown: front.id === undefined || front.id === p.id, isFocused: false, isPlaced: true })) } as never
   })
   on('turn.complete', () => ({ text: '' }))
   on('prompt.context', ($, e) => ({ blocks: (e as { blocks: never[] }).blocks }))
@@ -94,5 +96,5 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('session.usage', () => ({ value: { startedAt: session.startedAt, context: { window: 1_000_000 }, rateLimits: [] } }) as never)
   /** The person closing a pane by hand. */
   const closePane = (id: string) => { const at = panes.findIndex(p => p.id === id); if (at >= 0) panes.splice(at, 1) }
-  return { clock, opened, toasts, session, panes, closePane, fail, files, disk, saved, kv, commands, tools }
+  return { clock, opened, toasts, session, panes, closePane, fail, front, files, disk, saved, kv, commands, tools }
 }

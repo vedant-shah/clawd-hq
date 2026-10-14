@@ -18,7 +18,7 @@ import { SECTION_ID, isBriefed, loadBriefing, optionsOf } from './instructions'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
 import { side } from './side-ask'
-import { checkHandback, checkOwnTurn, forgetKnow, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
+import { checkHandback, checkOwnTurn, forgetKnow, isWatching, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
 import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
@@ -689,8 +689,8 @@ export const register: Register = (on, options) => {
 
   // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
   if (brief.isKnowOn) on('prompt.submit', async ($, e, next) => (await knowPrompt(knowIo($), e as { text: string }), next(e)))
-  // While ours is on, Claude Code's own "You should know" stays quiet; every other side question passes untouched.
-  if (brief.isKnowOn) on('model.fork', async ($, e, next) => (isBuiltinKnow(next.origin) ? { value: QUIET_FORK } : next(e)))
+  // While ours is on and an office tab is open, Claude Code's own "You should know" stays quiet; every other side question passes.
+  if (brief.isKnowOn) on('model.fork', async ($, e, next) => (isBuiltinKnow(next.origin) && (await isWatching(knowIo($))) ? { value: QUIET_FORK } : next(e)))
 
   // Clawd's standing orders and the project's memory ride at the top of every conversation.
   on('prompt.context', async ($, e, next) => {

@@ -10,7 +10,7 @@ import {
 import type { Backoff, KnowLogEntry } from './know'
 import { CAP_CHARS, buildRecord, turnRows } from './know-record'
 import type { LeftOut, RecordInput } from './know-record'
-import { paneOf } from './panes'
+import { PANES } from './panes'
 import { side } from './side-ask'
 
 const MODEL = 'haiku'
@@ -25,7 +25,7 @@ export type KnowIo = {
   now: () => Promise<number>
   get: (key: string) => Promise<unknown>
   set: (key: string, value: unknown) => Promise<unknown>
-  panes: () => Promise<ReadonlyArray<{ id: string; isShown: boolean; isPlaced: boolean }>>
+  panes: () => Promise<ReadonlyArray<{ id: string; isPlaced: boolean }>>
   /** One agent's rows, or why the session will not say; with no id, the main chat's. */
   messages: (agentId?: string) => Promise<readonly SessionMessage[] | { deny: string }>
   complete: (ask: { model: string; system: string; prompt: string; maxTokens: number; timeoutMs: number }) => Promise<ModelCompleteResult>
@@ -89,10 +89,15 @@ async function addLog(io: KnowIo, entry: KnowLogEntry) {
   await save(io, KEYS.log, log)
 }
 
-/** The Office tab is the one the panel shows. A listing that fails counts as hidden: no check is paid for unseen. */
-async function isOfficeShown(io: KnowIo): Promise<boolean> {
+/**
+ * Someone can see the office: something is drawn and one of its tabs is open (any of the four; a note waits on Clawd's
+ * card until the Office tab is in front). A listing that fails counts as none open. Where this is false no check is made,
+ * and Claude Code's own "You should know" is let through.
+ */
+export async function isWatching(io: KnowIo): Promise<boolean> {
+  if (!isDrawn) return false
   try {
-    return (await io.panes()).some(p => p.id === paneOf('office').id && p.isShown && p.isPlaced)
+    return (await io.panes()).some(p => p.isPlaced && PANES.some(one => one.id === p.id))
   } catch {
     return false
   }
@@ -104,7 +109,7 @@ async function isOfficeShown(io: KnowIo): Promise<boolean> {
  */
 export async function checkHandback(io: KnowIo, h: Handback, who: string) {
   try {
-    if (!isDrawn || !(await isOfficeShown(io))) return
+    if (!(await isWatching(io))) return
     const turn = nextCheck((await loadLists(io)).backoff)
     const at = await io.now()
     if (turn.isSkipped) {

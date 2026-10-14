@@ -186,13 +186,34 @@ test('nothing is checked where nobody can see the panel', async ($, on) => {
   expect(asked).toEqual([])
 })
 
-test('nothing is checked while the Office tab cannot be seen', async ($, on) => {
-  const { asked, rows, fail } = office(on)
+test('a check is made while another office tab is in front, and its note waits on Clawd\'s card', async ($, on) => {
+  const { asked, rows, saved, front } = office(on)
   await $.session.start(START)
   await hire($)
   rows.set('a1', run('Fix it.'))
-  fail.list = true
+  front.id = 'clawd-hq-log'
   await handBack($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toHaveLength(1)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown'])
+  front.id = 'clawd-hq'
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /^HEADS UP · Tester$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('nothing is checked while no office tab is open, or the host cannot say', async ($, on) => {
+  const { asked, rows, closePane, fail } = office(on)
+  await $.session.start(START)
+  await hire($)
+  await hire($)
+  rows.set('a1', run('Fix it.'))
+  rows.set('a2', run('Fix it too.'))
+  for (const id of ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log']) closePane(id)
+  await handBack($, 'a1')
+  await idle()
+  fail.list = true
+  await handBack($, 'a2')
   await idle()
   expect(asked).toEqual([])
 })
@@ -527,4 +548,22 @@ test('a check waiting in line reads only what was done up to its own hand-back, 
   expect(asked[1]!.prompt).not.toMatch(/run3|logout/)
   expect(asked[1]!.prompt).toMatch(/\[trimmed: the steps of earlier runs, already checked, not shown\]/)
   expect(asked[0]!.prompt).not.toMatch(/earlier runs/)
+})
+
+test('with no office tab open, the built-in asks as usual; with one open behind another tab, it stays quiet', { plugins: [ysk('builtin')] }, async ($, on) => {
+  const { asked, closePane, front } = forks(on)
+  await $.session.start(START)
+  front.id = 'clawd-hq-people'
+  await turnEnds($)
+  expect(asked).toEqual([])
+  for (const id of ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log']) closePane(id)
+  await turnEnds($)
+  expect(asked).toEqual(['anything to know?'])
+})
+
+test('where nothing is drawn, the built-in asks as usual', { plugins: [ysk('builtin')] }, async ($, on) => {
+  const { asked } = forks(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
+  await turnEnds($)
+  expect(asked).toEqual(['anything to know?'])
 })

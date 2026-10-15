@@ -2,14 +2,16 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, boxAnswers, fit, memoryBlock, oneLine, parseChoices, parseEffort, projectFiles, proposeLayoffs, recallNote } from './desk'
+import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, boxAnswers, fit, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
 import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './artifacts'
 import type { ArtifactAnswer } from './artifacts'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MAX_MEMORY, MEM_TOOL, RECALL, STEP_TOOL, TITLE_CHARS } from './constants'
-import { freshHire, isLively, isSettling, quietBoss, settle, turnEndBoss, withBlurb, withJobs, withLaidOff } from './office-state'
+import { freshHire, isLively, isSettling, quietBoss, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
+import { applyPayroll, resetPayroll, reviewPayroll, setLaidOff } from './payroll'
+import type { PayrollIo } from './payroll'
 import { BRAND, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
@@ -60,7 +62,6 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 
 // The project the session runs in: payroll is kept per project.
 let cwd = ''
-let isPayrollFiled = false
 // The recap on Clawd's card: whether it may be made here, Clawd's turns this session, and the turn count the last one was asked at.
 let isRecapOn = true
 let turnsSeen = 0
@@ -257,47 +258,14 @@ async function saveBoxAnswer($: EngineInterface, question: string, said: string)
   await setBoss($, b => ({ ...b, quip: { text: `On it, boss: “${clip(said, 32)}”`, until: t + 8 } }))
 }
 
-// ---- Payroll: which agent types Clawd is offered ----
+// ---- Payroll: which agent types Clawd is offered (hooks/payroll.ts) ----
 
-const filesHere = ($: EngineInterface) => projectFiles(cwd, path => $.fs.list(path))
-
-async function knownTypes($: EngineInterface): Promise<string[]> {
-  return [...new Set([...Object.keys(await read($, blurbs)), ...Object.keys(await read($, roster))])]
-}
-
-async function savePayroll($: EngineInterface, p: Payroll) {
-  await update($, payroll, () => p)
-  if (cwd) await $.store.set(`payroll:${cwd}`, p)
-  // Once the payroll is settled, by the review or by hand, the review leaves the People tab.
-  if (p.isReviewed && (await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined }))
-  // The agent listing is drawn from the offer: ask for it again.
-  $.ui.invalidate('tool.describe')
-  $.ui.invalidate('prompt.attachment')
-}
-
-async function reviewPayroll($: EngineInterface) {
-  if (isPayrollFiled || (await getPayroll($)).isReviewed) return
-  const types = await knownTypes($)
-  if (types.length < 15) return
-  isPayrollFiled = true
-  const plan = proposeLayoffs(types, await filesHere($))
-  if (plan.laidOff.length === 0) {
-    await savePayroll($, { ...(await getPayroll($)), isReviewed: true, stacks: plan.stacks })
-    return
-  }
-  // The files took a moment to list: a payroll the person settled by hand meanwhile needs no review.
-  if ((await getPayroll($)).isReviewed) return
-  // The review waits in the People tab, where the payroll is; the person hears of it once.
-  await setFx($, f => ({ ...f, layoffs: { count: plan.laidOff.length, total: types.length, stacks: plan.stacks, why: plan.why } }))
-  $.ui.toast(`📋 Payroll review: ${plan.laidOff.length} agent types this project does not use. See the People tab.`)
-}
-
-async function applyPayroll($: EngineInterface, isLayoff: boolean) {
-  const types = await knownTypes($)
-  const plan = proposeLayoffs(types, await filesHere($))
-  await savePayroll($, { laidOff: isLayoff ? plan.laidOff : [], isReviewed: true, stacks: plan.stacks })
-  $.ui.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from the People tab.` : '👥 Everyone stays on the payroll.')
-}
+const payrollIo = ($: EngineInterface): PayrollIo => ({
+  cwd, get: () => getPayroll($), set: async p => { await update($, payroll, () => p) }, keep: (key, p) => $.store.set(key, p),
+  types: async () => [...new Set([...Object.keys(await read($, blurbs)), ...Object.keys(await read($, roster))])],
+  list: path => $.fs.list(path), fx: () => getFx($), setFx: fn => setFx($, fn), toast: text => void $.ui.toast(text),
+  invalidate: () => { $.ui.invalidate('tool.describe'); $.ui.invalidate('prompt.attachment') },
+})
 
 // ---- The Artifact Desk: the pages Claude published or opened here, kept per project folder ----
 
@@ -372,7 +340,7 @@ async function onFrame($: EngineInterface, frames: number) {
   const [list, f, b, t0] = [await read($, staff), await getFx($), await getBoss($), await read($, tick)]
   if (frames % 8 === 0) await reconcile($)
   if (frames % 25 === 0) {
-    await reviewPayroll($)
+    await reviewPayroll(payrollIo($))
     // The model takes its time: the frames go on meanwhile, and a recap that fails is simply not shown.
     void maybeRecap($).catch(() => undefined)
   }
@@ -397,7 +365,6 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
 /** Settings shows the list of finished work (true) or its switches (false); the choice is a display flag, shared by every drawing. */
 const showLog = ($: EngineInterface, isOpen: boolean) => setFx($, f => ({ ...f, isLogOpen: isOpen }))
 
-const setLaidOff = async ($: EngineInterface, type: string, isOff: boolean) => savePayroll($, withLaidOff(await getPayroll($), type, isOff))
 
 function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
   return {
@@ -405,9 +372,9 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     resetClawd: async part => clawdActions(await clawdIo($, opts)).resetClawd(part),
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
     forget: id => saveMemory($, list => list.filter(x => x.id !== id)),
-    layOff: type => setLaidOff($, type, true),
-    hire: type => setLaidOff($, type, false),
-    settlePayroll: isLayoff => applyPayroll($, isLayoff),
+    layOff: type => setLaidOff(payrollIo($), type, true),
+    hire: type => setLaidOff(payrollIo($), type, false),
+    settlePayroll: isLayoff => applyPayroll(payrollIo($), isLayoff),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
     showLog: isOpen => showLog($, isOpen),
     ...knowActions(knowIo($)),
@@ -489,7 +456,7 @@ export const register: Register = (on, options) => {
     cwd = e.cwd
     briefing = undefined
     isEditTurn = false
-    isPayrollFiled = false
+    resetPayroll()
     isLogbookWarned = false
     isArtifactsWarned = false
     // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.

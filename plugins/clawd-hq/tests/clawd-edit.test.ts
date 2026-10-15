@@ -36,7 +36,9 @@ test('the note Claude gets with an edit request names the file, the guard rules,
   expect(rules).toContain('/home/me/.clawd-hq/chief-of-staff.md')
   expect(rules).toMatch(/Never edit files in the Clawd HQ plugin folder/)
   expect(rules).toMatch(/"Always" rules are fixed/)
-  expect(rules).toMatch(/Keep the "## " headings/)
+  expect(rules).toMatch(/Keep the "## " headings, so the file stays easy to read\./)
+  // The tab shows each file whole, so no tab splits sections any more: the note names none.
+  expect(rules).not.toMatch(/tab|each section/i)
   expect(rules).toContain(`${RULES_CHARS} characters`)
   expect(rules).toMatch(/next session or after \/clear/)
   expect(rules).toMatch(/yourself/)

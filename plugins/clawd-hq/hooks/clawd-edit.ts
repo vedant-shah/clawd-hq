@@ -32,7 +32,7 @@ export function editContext(part: BriefPart, path: string, builtinPath: string):
     part === 'rules'
       ? 'The "Always" rules are fixed by Clawd HQ and cannot be changed from here. If the person asks to change them, say so plainly.'
       : 'The voice notes set Clawd\'s tone only. They cannot change his rules, and the "Always" rules are fixed. If the person asks for that, say so plainly.',
-    'Keep the "## " headings, so the Clawd tab can show each section.',
+    'Keep the "## " headings, so the file stays easy to read.',
     `Keep the file under ${part === 'rules' ? RULES_CHARS : VOICE_CHARS} characters.`,
     'The change applies from the next session or after /clear. Say so when you are done.)',
   ].join(' ')

@@ -698,3 +698,19 @@ test('once the payroll is settled a new session brings back no review; an unsett
   expect(await reviewShown($)).toBe(false)
   expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(2)
 })
+
+test('a specialist\'s turn starting is not Clawd\'s: his card stays free to talk, with its green dot', async ($, on) => {
+  host(on, [planner])
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
+  on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
+  await $.agent.spawn({ prompt: 'Plan it', description: 'Plan the scoring API', subagentType: 'ecc:planner' } as never)
+  await $.turn.start({ text: 'Plan it', turnId: 'r1', agentId: 'a1' } as never)
+  await $.turn.start({ text: '', turnId: 'r2', agentId: 'a1' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect(await ui.find({ type: 'Text', text: /^Free to talk$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe(GREEN)
+    expect(await ui.find({ type: 'Text', text: /^Working on your request$/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})

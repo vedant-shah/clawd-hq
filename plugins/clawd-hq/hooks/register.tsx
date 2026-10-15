@@ -707,12 +707,12 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
+    // Since 2.1.299 specialists' turns start here too: all of this is about Clawd's own, in the main chat.
+    if (e.agentId !== undefined) return next(e)
     // Work goes on, so a recap of the pause before it is out of date.
     turnsSeen += 1
-    if ((e as { agentId?: string }).agentId === undefined) {
-      knowTurnStart(e.text ?? '')
-      isEditTurn = editPartOf(e.text ?? '') !== undefined
-    }
+    knowTurnStart(e.text ?? '')
+    isEditTurn = editPartOf(e.text ?? '') !== undefined
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, recap: undefined, activity: e.text ? READING_BRIEF : 'Back at it' }))
     return next(e)
   })

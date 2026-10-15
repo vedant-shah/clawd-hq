@@ -685,6 +685,21 @@ test('a turn of Clawd\'s own with six or more tool uses is checked the same way,
   await ui.unmount()
 })
 
+test('a specialist\'s turn starting in the middle of Clawd\'s keeps his tool count and his request', async ($, on) => {
+  const { asked, rows, saved } = office(on, [() => answered('learn: Clawd edited six pages but the request named only one.\ntag: Heads up')])
+  rows.set('main', mainRows(6))
+  await $.session.start(START)
+  await $.turn.start({ text: 'Tidy the docs', turnId: 'm1' } as never)
+  for (let i = 0; i < 3; i += 1) await $.tool.call({ tool: 'Edit', file_path: `docs/page${i}.md` } as never)
+  await $.turn.start({ text: 'Brief for the specialist', turnId: 'r1', agentId: 'a1' } as never)
+  for (let i = 3; i < 6; i += 1) await $.tool.call({ tool: 'Edit', file_path: `docs/page${i}.md` } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'Done, all pages tidy.', turnId: 'm1', isAborted: false, durationMs: 30_000 } as never)
+  await until($, () => logOf(saved).length > 0)
+  expect(asked).toHaveLength(1)
+  expect(asked[0]!.prompt).toMatch(/THE PERSON'S REQUEST:\nTidy the docs/)
+  expect(asked[0]!.prompt).not.toMatch(/Brief for the specialist/)
+})
+
 test('five tool uses, or six spread over two turns, or a specialist\'s tools, are not a long turn of Clawd\'s', async ($, on) => {
   const { asked, rows } = office(on)
   rows.set('main', mainRows(5))

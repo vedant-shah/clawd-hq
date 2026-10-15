@@ -94,3 +94,14 @@ test('a specialist\'s turn ending does not lift the block; a new turn of the mai
   await turn($, 'Something else')
   expect(await write($, `${ROOT}/prompts/chief-of-staff.md`)).toEqual({ result: 'ran' })
 })
+
+test('a specialist\'s turn starting neither lifts the block of an edit request nor starts one', async ($, on) => {
+  office(on)
+  const specialistStarts = (text: string, turnId: string) => $.turn.start({ text, turnId, agentId: 'a1' } as never)
+  await turn($, 'Edit Clawd\'s instructions: hand over less')
+  await specialistStarts('Something else', 'r1')
+  expect(await write($, `${ROOT}/prompts/chief-of-staff.md`)).toEqual({ deny: SHIPPED_DENY })
+  await endTurn($)
+  await specialistStarts('Edit Clawd\'s voice notes: warmer', 'r2')
+  expect(await write($, `${ROOT}/prompts/soul.md`)).toEqual({ result: 'ran' })
+})

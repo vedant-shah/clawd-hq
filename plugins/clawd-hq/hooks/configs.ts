@@ -4,23 +4,22 @@ import type { BriefingOptions } from './instructions'
 
 export type ConfigField = 'chiefOfStaff' | 'quietChat' | 'recap' | 'youShouldKnow'
 
+/** A config as its row shows it: the name only (what each does is in the README). */
 export type ConfigToggle = {
   field: ConfigField
   title: string
-  /** What it does, in one short line (12 words at most). */
-  says: string
   isOn: (o: BriefingOptions) => boolean
 }
 
 export const TOGGLES: readonly ConfigToggle[] = [
-  { field: 'chiefOfStaff', title: 'Clawd runs the chat', says: 'Clawd hands work to specialists and reports in plain words.', isOn: o => o.isOn },
-  { field: 'quietChat', title: 'Quiet chat', says: 'Hides finished notices and no-update lines; ctrl+o shows everything.', isOn: o => o.isQuiet },
-  { field: 'recap', title: 'Recap', says: 'One line on where things stand, after a few quiet minutes.', isOn: o => o.isRecapOn },
-  { field: 'youShouldKnow', title: 'You should know', says: 'A small model checks finished work and may leave a note.', isOn: o => o.isKnowOn },
+  { field: 'chiefOfStaff', title: 'Clawd runs the chat', isOn: o => o.isOn },
+  { field: 'quietChat', title: 'Quiet chat', isOn: o => o.isQuiet },
+  { field: 'recap', title: 'Recap', isOn: o => o.isRecapOn },
+  { field: 'youShouldKnow', title: 'You should know', isOn: o => o.isKnowOn },
 ]
 
-/** Saving a config writes the settings, and the engine reloads the plugin with its new options (Register's contract). */
-export const WHEN_APPLIED = 'A change is saved to your settings, and the plugin reloads with it at once.'
+/** Saving a config writes the settings, and the engine reloads the plugin with its new options at once (Register's contract). */
+export const WHEN_APPLIED = 'Changes apply right away.'
 
 /** A reload in the middle of Clawd's turn would lose what the turn holds, so the toggles wait until he is free. */
 export const WAIT_FOR_FREE = 'You can change these when Clawd is free.'

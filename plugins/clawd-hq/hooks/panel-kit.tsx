@@ -49,7 +49,13 @@ export function kitOf(tools: PanelTools) {
     return <Text>{on !== '' && <Text color={ACCENT}>{on}</Text>}<Text dimColor>{off}</Text></Text>
   }
 
-  return { Box, Text, Button, Link, Markdown, Input, sprite, bar, isTerminal: Raster !== undefined }
+  /** A section heading in capitals, as the Office tab's "AT WORK · N" reads: semibold and dim. */
+  const heading = (text: string, key?: string) => <Text key={key} weight="semibold" dimColor>{text}</Text>
+
+  /** A short side line under a section: dim, and a step smaller where the surface has sizes. It wraps. */
+  const aside = (text: string, key?: string) => <Text key={key} dimColor size="footnote" wrap="wrap">{text}</Text>
+
+  return { Box, Text, Button, Link, Markdown, Input, sprite, bar, heading, aside, isTerminal: Raster !== undefined }
 }
 
 export type Kit = ReturnType<typeof kitOf>

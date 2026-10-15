@@ -71,11 +71,13 @@ const mainReplyEnds = ($: Engine) => $.turn.complete({ reason: 'answer', answer:
 const focusAsks = (opened: Array<{ id: string; focus?: true }>) => opened.filter(o => o.focus === true).map(o => o.id)
 
 test('a focus request the surface refused at session start (a reply is running) is made once more when the first main-chat reply ends, and never again', async ($, on) => {
-  const { opened, front, focus } = host(on)
+  const { opened, front, focus, panes } = host(on)
   // The surface is showing another tab and turns the request down.
   front.id = 'clawd-hq-settings'
   focus.isRefused = true
   for (const surface of ['terminal', 'desktop'] as const) {
+    // Each surface is a fresh start: no pane of an earlier run is up.
+    panes.length = 0
     opened.length = 0
     focus.isRefused = true
     await $.session.start({ cwd: '/repo', surface, isInteractive: true } as never)
@@ -97,6 +99,26 @@ test('a focus request the surface refused at session start (a reply is running) 
     expect(front.id).toBe('clawd-hq-people')
     front.id = 'clawd-hq-settings'
   }
+})
+
+test('a reload of the plugin (a config changed) finds its panes up: they open again without focus, and nothing is asked after the reply', async ($, on) => {
+  const { opened, front, focus } = host(on)
+  front.id = 'clawd-hq-settings'
+  await $.session.start(START)
+  await settle($)
+  expect(focusAsks(opened)).toEqual(['clawd-hq'])
+  // The person goes to Settings and presses a toggle: the plugin reloads and its session start runs again.
+  front.id = 'clawd-hq-settings'
+  focus.isRefused = true
+  opened.length = 0
+  await $.session.start(START)
+  await settle($)
+  expect(opened.map(o => o.id)).toEqual(IDS)
+  expect(focusAsks(opened)).toEqual([])
+  focus.isRefused = false
+  await mainReplyEnds($)
+  expect(focusAsks(opened)).toEqual([])
+  expect(front.id).toBe('clawd-hq-settings')
 })
 
 test('a granted request at session start is not made again after the first reply', async ($, on) => {

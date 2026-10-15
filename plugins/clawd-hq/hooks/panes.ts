@@ -80,11 +80,15 @@ const isBehind = async (io: PaneIo) => {
 /**
  * The session start: the panes open and Office is asked to the front, on the desktop and the terminal alike. The surface
  * may turn the request down (a reply already running, text in the prompt box); that is noted for `askAgain`.
+ * A plugin reloaded mid-session (a config changed) finds Office still up: the panes stay as the person left them, with
+ * no focus request and no second try.
  */
 export async function openAtStart(io: PaneIo) {
   isFocusOwed = false
-  await openPanes(io, true)
-  await attempt(async () => { isFocusOwed = await isBehind(io) })
+  let isUp = false
+  await attempt(async () => { isUp = (await io.list()).some(x => x.id === paneOf('office').id) })
+  await openPanes(io, !isUp)
+  if (!isUp) await attempt(async () => { isFocusOwed = await isBehind(io) })
 }
 
 /** After the first main-chat reply: the one second try at the start's refused request. Never more than that in a session. */

@@ -35,10 +35,15 @@ const LINES = [
 ]
 const labelOf = async (ui: Ui, field: string) => (await ui.find({ key: `config-${field}` }))?.props.label
 
+/** A settings row as the engine lists it: its key and the plugin that owns it. */
+type Row = { key: string; owner: string }
+const OURS: Row[] = FIELDS.map(f => ({ key: `clawd-hq.${f}`, owner: 'clawd-hq' }))
+const NO_ROW = 'This setting can\'t be changed from here while the plugin runs from a folder. Use /plugin.'
+
 /** The engine's settings rows and every change asked of them; `answer` is what a change gets back. */
-function configs(on: On, answer: (e: { key: string; value: unknown }) => unknown = e => ({ value: e.value }), keys = FIELDS.map(f => `clawd-hq.${f}`)) {
+function configs(on: On, answer: (e: { key: string; value: unknown }) => unknown = e => ({ value: e.value }), rows: Row[] = OURS) {
   const asked: Array<{ key: string; value: unknown }> = []
-  on('config.list', () => ({ value: keys.map(key => ({ key, label: key, kind: 'boolean', value: true, provider: { plugin: 'clawd-hq', tier: 'user' }, isLocked: false })) }) as never)
+  on('config.list', () => ({ value: rows.map(r => ({ key: r.key, label: r.key, kind: 'boolean', value: true, provider: { plugin: r.owner, tier: 'user' }, isLocked: false })) }) as never)
   on('config.set', (_$, e) => {
     const ev = e as { key: string; value: unknown }
     asked.push({ key: ev.key, value: ev.value })
@@ -130,13 +135,44 @@ test('pressing a toggle changes that config in the settings to the other value, 
   }
 })
 
-test('the key is the one the settings list for this plugin\'s field, whatever its plugin part', async ($, on) => {
+test('the key is the one of the row this plugin owns for that field, whatever the key looks like', async ($, on) => {
   host(on)
-  const asked = configs(on, e => ({ value: e.value }), ['other.recap', 'clawd-hq@inline.recap'])
+  // Another plugin's row carries the guessed key; ours has a key no guess would make.
+  const rows = [{ key: 'clawd-hq.recap', owner: 'other' }, { key: 'inline:7f.quietChat', owner: 'clawd-hq' }, { key: 'inline:7f.recap', owner: 'clawd-hq' }]
+  const asked = configs(on, e => ({ value: e.value }), rows)
+  await $.session.start(START)
+  for (const surface of SURFACES) {
+    asked.length = 0
+    const ui = await mount($, surface)
+    await ui.press({ key: 'config-recap' })
+    expect(asked).toEqual([{ key: 'inline:7f.recap', value: false }])
+    expect(await shows(ui, /^Could not change|can't be changed from here/)).toBe(false)
+    await ui.unmount()
+  }
+})
+
+test('with no row of this plugin for the field nothing is set, one plain line says where to change it, and the toggle keeps its value', async ($, on) => {
+  host(on)
+  const asked = configs(on, e => ({ value: e.value }), [{ key: 'clawd-hq.recap', owner: 'other' }, { key: 'theme', owner: 'engine' }])
+  await $.session.start(START)
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    await ui.press({ key: 'config-recap' })
+    expect(asked).toEqual([])
+    expect(await count(ui, NO_ROW.replace(/[.?/]/g, '\\$&'))).toBe(1)
+    expect(await shows(ui, /^Could not change/)).toBe(false)
+    expect(await labelOf(ui, 'recap')).toBe('● On')
+    await ui.unmount()
+  }
+})
+
+test('each press keeps the keys of the settings rows (never their values) in the store, for a look at their real shape', async ($, on) => {
+  const { saved } = host(on)
+  configs(on, e => ({ value: e.value }), [{ key: 'inline:7f.recap', owner: 'clawd-hq' }, { key: 'other.recap', owner: 'other' }, { key: 'theme', owner: 'engine' }])
   await $.session.start(START)
   const ui = await mount($)
   await ui.press({ key: 'config-recap' })
-  expect(asked).toEqual([{ key: 'clawd-hq@inline.recap', value: false }])
+  expect(saved.get('debug:config-rows')).toEqual({ plugin: 'clawd-hq', keys: ['inline:7f.recap'], others: ['other: other.recap'] })
   await ui.unmount()
 })
 

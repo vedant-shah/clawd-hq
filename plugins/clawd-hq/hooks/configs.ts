@@ -25,14 +25,33 @@ export const WHEN_APPLIED = 'A change is saved to your settings, and the plugin 
 /** A reload in the middle of Clawd's turn would lose what the turn holds, so the toggles wait until he is free. */
 export const WAIT_FOR_FREE = 'You can change these when Clawd is free.'
 
+/** Shown when the settings list has no row of this plugin for the field: a plugin run from a folder may have none. */
+export const NO_ROW = 'This setting can\'t be changed from here while the plugin runs from a folder. Use /plugin.'
+
+/** The store key of the last settings list's row keys (hooks/register.tsx writes it at each press). */
+export const ROWS_KEY = 'debug:config-rows'
+
+/** A settings row as `$.config.list()` gives it: its key and the plugin that owns it. */
+export type ListedRow = { key: string; provider: { plugin: string } }
+
+/** The field a row's key names: the part after its last dot. */
+const fieldOf = (key: string) => key.slice(key.lastIndexOf('.') + 1)
+
 /**
- * The settings row of this plugin's field: `<plugin>.<field>`. The plugin part may carry a suffix (a plugin loaded
- * from a folder is `<name>@inline`), so the row the settings list wins; with no list, the plain name is tried.
+ * The key of the row this plugin owns for `field`, matched on the row's owner and field and never on a guessed key
+ * (a plugin run from a folder has rows whose keys do not start with its name). None when no such row is listed.
  */
-export function configKeyOf(rows: ReadonlyArray<{ key: string }>, plugin: string, field: ConfigField): string {
-  const plain = `${plugin}.${field}`
-  const listed = rows.find(r => r.key === plain) ?? rows.find(r => r.key.startsWith(`${plugin}@`) && r.key.endsWith(`.${field}`))
-  return listed?.key ?? plain
+export function configKeyOf(rows: readonly ListedRow[], plugin: string, field: ConfigField): string | undefined {
+  return rows.find(r => r.provider.plugin === plugin && fieldOf(r.key) === field)?.key
+}
+
+/** What the store keeps of a list, to see its real shape: our rows' keys, and other plugins' keys with their owner. Never a value. */
+export function rowKeys(rows: readonly ListedRow[], plugin: string) {
+  return {
+    plugin,
+    keys: rows.filter(r => r.provider.plugin === plugin).map(r => r.key),
+    others: rows.filter(r => r.provider.plugin !== plugin && r.provider.plugin !== 'engine').map(r => `${r.provider.plugin}: ${r.key}`),
+  }
 }
 
 /** The line shown when a change did not go through: which config, and the reason as it was given. */

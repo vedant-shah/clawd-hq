@@ -12,7 +12,7 @@ import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MAX_MEMORY, MEM_TOOL, RECALL, STEP_TO
 import { freshHire, isLively, isSettling, quietBoss, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { applyPayroll, resetPayroll, reviewPayroll, setLaidOff } from './payroll'
 import type { PayrollIo } from './payroll'
-import { configKeyOf, refusalOf } from './configs'
+import { NO_ROW, ROWS_KEY, configKeyOf, refusalOf, rowKeys } from './configs'
 import type { ConfigField } from './configs'
 import { BRAND, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
@@ -367,13 +367,22 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
 /** Settings shows the list of finished work (true) or its configs (false); the choice is a display flag, shared by every drawing. */
 const showLog = ($: EngineInterface, isOpen: boolean) => setFx($, f => ({ ...f, isLogOpen: isOpen }))
 
+/** The row this plugin owns for the field is set; the list's keys are kept for a look at their real shape. The tab's note, or none. */
+async function changeConfig($: EngineInterface, field: ConfigField, value: boolean): Promise<string | undefined> {
+  const rows = await $.config.list()
+  await $.store.set(ROWS_KEY, rowKeys(rows, $.plugin.name)).catch(() => undefined) // a look-up aid only: a failed write must not stop the change
+  const key = configKeyOf(rows, $.plugin.name, field)
+  if (key === undefined) return NO_ROW
+  const r = await $.config.set({ key, value })
+  return r.deny === undefined ? undefined : refusalOf(field, r.deny)
+}
+
 /** A config's toggle pressed: its settings row is changed as in /config, and the plugin reloads with it. A refusal, or a call that fails, is shown plainly. */
 async function setConfig($: EngineInterface, field: ConfigField, value: boolean) {
   // A toggle drawn before Clawd's turn began: the reload would lose what the turn holds, so nothing changes (the tab says why).
   if ((await getBoss($)).isBusy) return
-  const key = configKeyOf(await $.config.list().catch(() => []), $.plugin.name, field)
-  const r = await $.config.set({ key, value }).catch((err: unknown) => ({ deny: err instanceof Error ? err.message : String(err) }))
-  await setFx($, f => ({ ...f, configNote: r.deny === undefined ? undefined : refusalOf(field, r.deny) }))
+  const note = await changeConfig($, field, value).catch((err: unknown) => refusalOf(field, err instanceof Error ? err.message : String(err)))
+  await setFx($, f => ({ ...f, configNote: note }))
 }
 
 

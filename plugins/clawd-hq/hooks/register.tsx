@@ -25,7 +25,7 @@ import { LOGBOOK_FILE, loadLogbook, saveLogbook, withDecision } from './logbook'
 import type { LogbookIo } from './logbook'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
-import { SHIPPED_DENY, clawdActions, editNote, editPartOf, isShippedWrite, refreshClawd } from './clawd-edit'
+import { SHIPPED_DENY, clawdActions, editNote, editPartOf, guardOnCrash, isShippedWrite, refreshClawd } from './clawd-edit'
 import type { ClawdIo } from './clawd-edit'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
@@ -677,7 +677,7 @@ export const register: Register = (on, options) => {
     } finally {
       await update($, staff, l => edit(l, id, one => (one.mood === 'working' ? { ...one, mood: 'thinking' } : one)))
     }
-  })
+  }).catch((_$, e, next) => (!next.called && guardOnCrash(isEditTurn, String(e.tool), e as unknown as Record<string, unknown>) === 'deny' ? { deny: SHIPPED_DENY } as never : next(e)))
 
   // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
   // An edit request from the Settings tab carries a note of its own: the file to edit, and what must not be touched.

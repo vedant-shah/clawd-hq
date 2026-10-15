@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  BOX_BUSY, DIALOG_OPEN, SHIPPED_DENY, clawdActions, editContext, editNote, editPartOf, editPath, isShippedWrite, partView, promptOf,
+  BOX_BUSY, DIALOG_OPEN, SHIPPED_DENY, clawdActions, editContext, editNote, editPartOf, editPath, guardOnCrash, isShippedWrite, partView, promptOf,
   readyText, refreshClawd,
 } from '../hooks/clawd-edit'
 import type { ClawdIo } from '../hooks/clawd-edit'
@@ -278,4 +278,22 @@ test('a refresh shows the parts as they are now, compared with what the session 
   expect(state().voice).toMatchObject({ source: 'builtin', isChanged: false })
   await refreshClawd(io, true)
   expect(state().notice).toBeUndefined()
+})
+
+// ---- When the hook holding the guard fails ----
+
+test('during an edit request a failed guard refuses a write to the built-in files, and one it cannot judge; other calls go on', () => {
+  const shipped = { file_path: '/plugins/clawd-hq/prompts/soul.md' }
+  expect(guardOnCrash(true, 'Write', shipped)).toBe('deny')
+  expect(guardOnCrash(true, 'Bash', { command: 'rm prompts/chief-of-staff.md' })).toBe('deny')
+  const unreadable = { get file_path(): string { throw new Error('unreadable') } }
+  expect(guardOnCrash(true, 'Write', unreadable)).toBe('deny')
+  expect(guardOnCrash(true, 'Write', { file_path: '/home/me/.clawd-hq/soul.md' })).toBe('pass')
+  expect(guardOnCrash(true, 'Read', shipped)).toBe('pass')
+})
+
+test('outside an edit request a failed guard lets every call go on, a write to the built-in files too', () => {
+  expect(guardOnCrash(false, 'Write', { file_path: '/plugins/clawd-hq/prompts/soul.md' })).toBe('pass')
+  expect(guardOnCrash(false, 'Write', { get file_path(): string { throw new Error('unreadable') } })).toBe('pass')
+  expect(guardOnCrash(false, 'Bash', { command: 'ls' })).toBe('pass')
 })

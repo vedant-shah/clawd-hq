@@ -69,6 +69,20 @@ export function isShippedWrite(tool: string, input: Record<string, unknown>): bo
 
 export const SHIPPED_DENY = 'Refused by Clawd HQ: during a request to edit Clawd\'s instructions, the plugin\'s built-in files stay as they are. Edit the person\'s own copy named in the request instead.'
 
+/**
+ * What stands in for the guard when the hook holding it fails before passing the call on. During an edit request a
+ * write to the built-in files is refused, and so is one that cannot be judged; anything else, and every call outside
+ * an edit request, goes on as it would have.
+ */
+export function guardOnCrash(isEditTurn: boolean, tool: string, input: Record<string, unknown>): 'deny' | 'pass' {
+  if (!isEditTurn) return 'pass'
+  try {
+    return isShippedWrite(tool, input) ? 'deny' : 'pass'
+  } catch {
+    return 'deny'
+  }
+}
+
 // ---- What the tab shows ----
 
 /** One part for the tab: the text now, and whether it moved since this session loaded it or since its copy was made. */

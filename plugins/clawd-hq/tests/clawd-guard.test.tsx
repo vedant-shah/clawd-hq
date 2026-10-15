@@ -95,6 +95,23 @@ test('a specialist\'s turn ending does not lift the block; a new turn of the mai
   expect(await write($, `${ROOT}/prompts/chief-of-staff.md`)).toEqual({ result: 'ran' })
 })
 
+test('when the office cannot keep its state, a call to other files still runs, in an edit request and outside one', async ($, on) => {
+  const { ran } = office(on)
+  const broken = { isOn: false, refused: 0 }
+  on('state.set', (_$, e, next) => (broken.isOn ? (broken.refused += 1, { deny: 'the state is busy' }) : next(e)) as never)
+  await turn($, 'Edit Clawd\'s instructions: hand over less')
+  broken.isOn = true
+  expect(await write($, OWN_RULES)).toEqual({ result: 'ran' })
+  expect(await write($, `${ROOT}/prompts/chief-of-staff.md`)).toEqual({ deny: SHIPPED_DENY })
+  broken.isOn = false
+  await endTurn($)
+  broken.isOn = true
+  expect(await write($, `${ROOT}/prompts/chief-of-staff.md`)).toEqual({ result: 'ran' })
+  expect(ran).toEqual(['Write', 'Write'])
+  // The hook did fail: each call that ran met a state write that was refused.
+  expect(broken.refused).toBeGreaterThanOrEqual(2)
+})
+
 test('a specialist\'s turn starting neither lifts the block of an edit request nor starts one', async ($, on) => {
   office(on)
   const specialistStarts = (text: string, turnId: string) => $.turn.start({ text, turnId, agentId: 'a1' } as never)

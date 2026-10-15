@@ -153,6 +153,31 @@ test('a change the settings refuse shows its reason plainly, and the toggle keep
   }
 })
 
+test('while Clawd is busy with a turn the configs cannot be changed: dimmed values, no toggles, and one plain line; free again after it', async ($, on) => {
+  host(on)
+  const asked = configs(on)
+  on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
+  await $.session.start(START)
+  await $.turn.start({ text: 'Fix the login bug', turnId: 'm1' } as never)
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect((await buttons(ui)).filter(k => k.startsWith('config-'))).toEqual([])
+    const values = await ui.findAll({ type: 'Text', text: /^● On$/ })
+    expect(values).toHaveLength(4)
+    expect(values.every(t => t.props.dimColor === true)).toBe(true)
+    expect(await shows(ui, 'You can change these when Clawd is free.')).toBe(true)
+    await ui.unmount()
+  }
+  // A specialist's turn is not Clawd's: it does not hold the configs.
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 'm1', isAborted: false } as never)
+  await $.turn.start({ text: 'Brief', turnId: 'r1', agentId: 'a1' } as never)
+  const ui = await mount($)
+  expect(await shows(ui, 'You can change these when Clawd is free.')).toBe(false)
+  await ui.press({ key: 'config-recap' })
+  expect(asked).toEqual([{ key: 'clawd-hq.recap', value: false }])
+  await ui.unmount()
+})
+
 test('the next change that goes through clears the note of a refused one', async ($, on) => {
   host(on)
   let isRefusing = true

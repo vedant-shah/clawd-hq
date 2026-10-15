@@ -1,6 +1,6 @@
 // The Settings tab: the plugin's configs (each on/off one a toggle; the voice file read-only), when a change applies, a
 // link that swaps the tab to the list of finished work, and Clawd's instructions and voice notes. Every text wraps; nothing here is cut.
-import { TOGGLES, WHEN_APPLIED } from './configs'
+import { TOGGLES, WAIT_FOR_FREE, WHEN_APPLIED } from './configs'
 import type { ConfigToggle } from './configs'
 import { AMBER } from './office'
 import { clawdTab } from './panel-clawd'
@@ -9,13 +9,16 @@ import { doneThisSession } from './panel-model'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 
-/** One config: its name, a toggle that reads its value and turns it the other way, and one short line on what it does. */
-function toggleRow({ Box, Text, Button }: Kit, t: ConfigToggle, isOn: boolean, actions: PanelActions) {
+/** One config: its name, a toggle that reads its value and turns it the other way (only its value, dimmed, while Clawd is busy), and one short line on what it does. */
+function toggleRow({ Box, Text, Button }: Kit, t: ConfigToggle, isOn: boolean, isBusy: boolean, actions: PanelActions) {
+  const label = isOn ? '● On' : '○ Off'
   return (
     <Box key={`config-row-${t.field}`} flexDirection="column">
       <Box flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
         <Text bold wrap="wrap">{t.title}</Text>
-        <Button key={`config-${t.field}`} label={isOn ? '● On' : '○ Off'} dimColor={!isOn} onPress={() => actions.setConfig(t.field, !isOn)} />
+        {isBusy
+          ? <Text dimColor wrap="wrap">{label}</Text>
+          : <Button key={`config-${t.field}`} label={label} dimColor={!isOn} onPress={() => actions.setConfig(t.field, !isOn)} />}
       </Box>
       <Text dimColor wrap="wrap">{t.says}</Text>
     </Box>
@@ -36,11 +39,13 @@ function voiceRow({ Box, Text }: Kit, path: string) {
 function configs(kit: Kit, data: PanelData, actions: PanelActions) {
   const { Box, Text } = kit
   const note = data.fx.configNote
+  const isBusy = data.boss.isBusy
   return (
     <Box key="settings-configs" flexDirection="column" gap={1}>
       <Text bold dimColor>CONFIGS</Text>
-      {TOGGLES.map(t => toggleRow(kit, t, t.isOn(data.options), actions))}
+      {TOGGLES.map(t => toggleRow(kit, t, t.isOn(data.options), isBusy, actions))}
       {data.options.voiceFile !== '' && voiceRow(kit, data.options.voiceFile)}
+      {isBusy && <Text dimColor wrap="wrap">{WAIT_FOR_FREE}</Text>}
       {note !== undefined && <Text color={AMBER} wrap="wrap">{note}</Text>}
     </Box>
   )

@@ -369,6 +369,8 @@ const showLog = ($: EngineInterface, isOpen: boolean) => setFx($, f => ({ ...f, 
 
 /** A config's toggle pressed: its settings row is changed as in /config, and the plugin reloads with it. A refusal, or a call that fails, is shown plainly. */
 async function setConfig($: EngineInterface, field: ConfigField, value: boolean) {
+  // A toggle drawn before Clawd's turn began: the reload would lose what the turn holds, so nothing changes (the tab says why).
+  if ((await getBoss($)).isBusy) return
   const key = configKeyOf(await $.config.list().catch(() => []), $.plugin.name, field)
   const r = await $.config.set({ key, value }).catch((err: unknown) => ({ deny: err instanceof Error ? err.message : String(err) }))
   await setFx($, f => ({ ...f, configNote: r.deny === undefined ? undefined : refusalOf(field, r.deny) }))

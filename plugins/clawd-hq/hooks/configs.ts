@@ -22,6 +22,9 @@ export const TOGGLES: readonly ConfigToggle[] = [
 /** Saving a config writes the settings, and the engine reloads the plugin with its new options (Register's contract). */
 export const WHEN_APPLIED = 'A change is saved to your settings, and the plugin reloads with it at once.'
 
+/** A reload in the middle of Clawd's turn would lose what the turn holds, so the toggles wait until he is free. */
+export const WAIT_FOR_FREE = 'You can change these when Clawd is free.'
+
 /**
  * The settings row of this plugin's field: `<plugin>.<field>`. The plugin part may carry a suffix (a plugin loaded
  * from a folder is `<name>@inline`), so the row the settings list wins; with no list, the plain name is tried.

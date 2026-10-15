@@ -18,9 +18,9 @@ function row(one: Employee, { Box, Text, sprite, isTerminal }: Kit, data: PanelD
     <Box key={`done-${one.id}`} flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
       <Box flexShrink={0}>{icon}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
-        <Text wrap="truncate">{titled(one, data)}</Text>
-        <Text dimColor wrap="truncate">{one.description || one.type}</Text>
-        {isTerminal && <Text color={tookColor} dimColor={!isAlert} wrap="truncate">{`${line.when} · ${line.took}`}</Text>}
+        <Text wrap="wrap">{titled(one, data)}</Text>
+        <Text dimColor wrap="wrap">{one.description || one.type}</Text>
+        {isTerminal && <Text color={tookColor} dimColor={!isAlert} wrap="wrap">{`${line.when} · ${line.took}`}</Text>}
       </Box>
       {!isTerminal && (
         <Box flexDirection="column" alignItems="flex-end" flexShrink={0}>

@@ -141,6 +141,17 @@ test('a link shows how many finished this session; pressing it swaps the tab to 
   }
 })
 
+test('nothing in the finished list is cut short: its rows wrap, on both surfaces', async ($, on) => {
+  await oneFinisher($, on)
+  for (const surface of SURFACES) {
+    const ui = await mountLog($, surface)
+    const texts = await ui.findAll({ type: 'Text' })
+    expect(texts.some(t => t.props.wrap === 'truncate' || /…/.test(t.text))).toBe(false)
+    for (const line of [/^Writer$/, /^Updated the setup guide$/]) expect(texts.find(t => line.test(String(t.text)))?.props.wrap).toBe('wrap')
+    await ui.unmount()
+  }
+})
+
 test('with nothing finished the link reads 0 and the list says so, with the Back link still there', async ($, on) => {
   host(on)
   await $.session.start(START)

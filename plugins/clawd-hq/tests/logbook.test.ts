@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { LOGBOOK_FILE, fromMarkdown, loadLogbook, mergeMarkdown, saveLogbook, toMarkdown } from '../hooks/logbook'
+import { LOGBOOK_FILE, fromMarkdown, loadLogbook, mergeMarkdown, saveLogbook, toMarkdown, withDecision } from '../hooks/logbook'
 import type { LogbookIo } from '../hooks/logbook'
 import type { Memory } from '../types'
 
@@ -174,4 +174,28 @@ test('a save over a file that could not be read, or a write that fails, does not
   expect(await saveLogbook(refusing, await loadLogbook(refusing), [mem()])).toBe(false)
   expect(await saveLogbook(bookIo(files, { cwd: '' }), { text: '', list: [], isWritable: false }, [mem()])).toBe(true)
   expect(files.size).toBe(0)
+})
+
+// ---- Adding a decision to the list ----
+
+const NEW = { kind: 'decision' as const, by: 'CEO', source: 'desk' as const, text: 'Use Drizzle' }
+
+test('a new decision goes last with the next free number, and the list it came from is not changed', () => {
+  const list = [mem({ id: 'M2' }), mem({ id: 'M9', text: 'Other' })]
+  const next = withDecision(list, NEW, AT + 5)
+  expect(next.map(m => m.id)).toEqual(['M2', 'M9', 'M10'])
+  expect(next[2]).toEqual({ ...NEW, id: 'M10', at: AT + 5 })
+  expect(list).toHaveLength(2)
+  expect(withDecision([], NEW, AT)[0]!.id).toBe('M1')
+})
+
+test('the same words said again (in any letter case) move to the end instead of piling up', () => {
+  const next = withDecision([mem({ text: 'use drizzle' }), mem({ id: 'M2', text: 'Other' })], NEW, AT)
+  expect(next.map(m => [m.id, m.text])).toEqual([['M2', 'Other'], ['M3', 'Use Drizzle']])
+})
+
+test('a decision that replaces another takes its place on the list, and an unknown one replaces nothing', () => {
+  const list = [mem({ id: 'M1', text: 'Use Postgres' }), mem({ id: 'M2', text: 'Other' })]
+  expect(withDecision(list, NEW, AT, 'M1').map(m => m.text)).toEqual(['Other', 'Use Drizzle'])
+  expect(withDecision(list, NEW, AT, 'M99').map(m => m.text)).toEqual(['Use Postgres', 'Other', 'Use Drizzle'])
 })

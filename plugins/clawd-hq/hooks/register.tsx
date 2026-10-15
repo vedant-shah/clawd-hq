@@ -16,7 +16,7 @@ import { contextOf, noteRequest, startGauge } from './usage'
 import type { GaugeIo } from './usage'
 import { DEMO, isActive } from './panel-model'
 import { tourSteps } from './demo'
-import { LOGBOOK_FILE, loadLogbook, saveLogbook } from './logbook'
+import { LOGBOOK_FILE, loadLogbook, saveLogbook, withDecision } from './logbook'
 import type { LogbookIo } from './logbook'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
@@ -239,12 +239,7 @@ async function remember($: EngineInterface, m: Omit<Memory, 'id' | 'at'>, supers
   const at = await $.clock.now()
   const text = m.text.replace(/\s+/g, ' ').trim()
   if (!text) return
-  await saveMemory($, list => {
-    // The same thing said again moves to the end instead of piling up.
-    const kept = list.filter(x => x.id !== supersedes && x.text.toLowerCase() !== text.toLowerCase())
-    const n = list.reduce((top, x) => Math.max(top, Number(x.id.slice(1)) || 0), 0) + 1
-    return [...kept, { ...m, text, id: `M${n}`, at }]
-  })
+  await saveMemory($, list => withDecision(list, { ...m, text }, at, supersedes))
 }
 
 /** An answer the person gave in Clawd's question box, saved as their decision. The question is cut before the answer is, so a long question never pushes the answer out of what is saved. */

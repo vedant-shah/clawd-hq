@@ -135,3 +135,13 @@ export async function saveLogbook(io: LogbookIo, book: Logbook, list: readonly M
     return false
   }
 }
+
+/**
+ * The list with one more entry at the end, under the next free number. The entry it replaces (`supersedes`) goes, and so does
+ * the same thing said again, so it moves to the end instead of piling up. The list it is given is not changed.
+ */
+export function withDecision(list: readonly Memory[], m: Omit<Memory, 'id' | 'at'>, at: number, supersedes?: string): Memory[] {
+  const kept = list.filter(x => x.id !== supersedes && x.text.toLowerCase() !== m.text.toLowerCase())
+  const n = list.reduce((top, x) => Math.max(top, Number(x.id.slice(1)) || 0), 0) + 1
+  return [...kept, { ...m, id: `M${n}`, at }]
+}

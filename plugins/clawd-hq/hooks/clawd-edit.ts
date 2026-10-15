@@ -1,63 +1,15 @@
 // The Clawd tab's edit button, pure: the ready-made prompts, the note Claude gets with them, the guard on the plugin's own
-// files, how a text splits into sections, and the steps behind the buttons. register.tsx hands in every call as `io`.
+// files, and the steps behind the buttons. register.tsx hands in every call as `io`.
 import type { ClawdBrief, ClawdPartView } from '../types'
 import { RULES_CHARS, RULES_FILE, VOICE_CHARS, VOICE_FILE, ownPath, readBriefing } from './instructions'
 import type { BriefPart, Briefing, BriefingIo, PartRead } from './instructions'
 
-// ---- Sections, and their text as blocks to draw ----
-
-export type Section = { heading: string; body: string }
-
-/** A text split at its `## ` headings; what comes before the first is the intro. */
-export function sectionsOf(text: string): { intro: string; sections: Section[] } {
-  const intro: string[] = []
-  const found: Array<{ heading: string; lines: string[] }> = []
-  for (const line of text.split(/\r?\n/)) {
-    const heading = /^## (.*)$/.exec(line)?.[1]
-    if (heading !== undefined) found.push({ heading: heading.trim(), lines: [] })
-    else (found.length === 0 ? intro : found[found.length - 1]!.lines).push(line)
-  }
-  return { intro: intro.join('\n').trim(), sections: found.map(s => ({ heading: s.heading, body: s.lines.join('\n').trim() })) }
-}
-
-/** One thing to draw. `isSpaced`: a blank line stood before it in the text. */
-export type Block = { kind: 'title' | 'para' | 'bullet'; text: string; isSpaced: boolean }
-
-/** Bold and code marks are for Claude; the tab shows the words. */
-const plain = (text: string) => text.replace(/\*\*/g, '').replace(/`/g, '')
-
-/** A section's text as titles, paragraphs and bullets. A line that starts nothing new carries on the one before. */
-export function blocksOf(body: string): Block[] {
-  const blocks: Block[] = []
-  let isGap = false
-  for (const raw of body.split(/\r?\n/)) {
-    const line = raw.trim()
-    if (line === '') { isGap = true; continue }
-    const title = /^#{1,6} (.*)$/.exec(line)?.[1]
-    const bullet = /^[-*] (.*)$/.exec(line)?.[1]
-    const last = blocks[blocks.length - 1]
-    const isSpaced = isGap && blocks.length > 0
-    isGap = false
-    if (title !== undefined) blocks.push({ kind: 'title', text: plain(title), isSpaced })
-    else if (bullet !== undefined) blocks.push({ kind: 'bullet', text: plain(bullet), isSpaced })
-    else if (last !== undefined && last.kind !== 'title' && !isSpaced) blocks[blocks.length - 1] = { ...last, text: `${last.text} ${plain(line)}` }
-    else blocks.push({ kind: 'para', text: plain(line), isSpaced })
-  }
-  return blocks
-}
-
-/** The open sections after one fold is pressed: a new list, the one given left as it was. */
-export const toggled = (open: readonly string[] | undefined, key: string): string[] =>
-  (open ?? []).includes(key) ? (open ?? []).filter(k => k !== key) : [...(open ?? []), key]
-
 // ---- The prompt, and what Claude is told with it ----
-
-export type EditTarget = { part: BriefPart; heading?: string }
 
 const OPENING: Record<BriefPart, string> = { rules: 'Edit Clawd\'s instructions', voice: 'Edit Clawd\'s voice notes' }
 
 /** The line put in the prompt box, for the person to finish. */
-export const promptOf = (t: EditTarget) => (t.heading === undefined ? `${OPENING[t.part]}: ` : `${OPENING[t.part]}, "${t.heading}" section: `)
+export const promptOf = (part: BriefPart) => `${OPENING[part]}: `
 
 /** Which part a sent prompt asks to edit: only one that starts with a fixed opening counts. */
 export function editPartOf(text: string): BriefPart | undefined {
@@ -190,15 +142,15 @@ function filledNotice(r: { isFilled: boolean; refusal?: string }, line: string, 
   return r.refusal === 'dialog' ? { text: DIALOG_OPEN } : { text: 'Type this in the chat:', line }
 }
 
-async function editClawd(io: ClawdIo, target: EditTarget, isTerminal: boolean) {
+async function editClawd(io: ClawdIo, part: BriefPart, isTerminal: boolean) {
   const box = await io.promptRead().catch(() => ({ text: '' }))
   if (box.text.trim() !== '') return say(io, { text: BOX_BUSY })
-  const p = (await readNow(io))[target.part]
+  const p = (await readNow(io))[part]
   if (p === undefined) return say(io, { text: 'Clawd HQ could not read its built-in instructions, so there is nothing to edit.' })
   if (p.path === '') return say(io, { text: NO_HOME })
-  const problem = p.source === 'setting' ? undefined : await ensureCopy(io, target.part, p)
+  const problem = p.source === 'setting' ? undefined : await ensureCopy(io, part, p)
   if (problem !== undefined) return say(io, { text: problem })
-  const line = promptOf(target)
+  const line = promptOf(part)
   const r = await io.fill(line).catch(() => ({ isFilled: false }))
   await say(io, filledNotice(r, line, isTerminal))
   await refreshClawd(io, false)
@@ -218,11 +170,11 @@ async function resetClawd(io: ClawdIo, part: BriefPart) {
 }
 
 export type ClawdActions = {
-  editClawd: (target: EditTarget, isTerminal: boolean) => Promise<unknown>
+  editClawd: (part: BriefPart, isTerminal: boolean) => Promise<unknown>
   resetClawd: (part: BriefPart) => Promise<unknown>
 }
 
 export const clawdActions = (io: ClawdIo): ClawdActions => ({
-  editClawd: (target, isTerminal) => editClawd(io, target, isTerminal),
+  editClawd: (part, isTerminal) => editClawd(io, part, isTerminal),
   resetClawd: part => resetClawd(io, part),
 })

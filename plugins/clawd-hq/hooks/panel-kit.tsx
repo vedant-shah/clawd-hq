@@ -13,6 +13,8 @@ export type PanelTools = {
   Text: Elements['terminal']['Text']
   Button: Elements['terminal']['Button']
   Link: Elements['terminal']['Link']
+  /** Every surface draws it. */
+  Markdown: Elements['terminal']['Markdown']
   Input?: Elements['terminal']['Input']
   Raster?: Elements['terminal']['Raster']
   Svg?: Elements['desktop']['Svg']
@@ -29,7 +31,7 @@ export type SpriteOptions = {
 }
 
 export function kitOf(tools: PanelTools) {
-  const { Box, Text, Button, Link, Input, Raster, Svg } = tools
+  const { Box, Text, Button, Link, Markdown, Input, Raster, Svg } = tools
 
   /** A pixel grid, margins trimmed: a Raster of half-block cells on the terminal, an SVG on the other surfaces. */
   const sprite = (key: string, grid: Px[][], o: SpriteOptions) => {
@@ -47,7 +49,7 @@ export function kitOf(tools: PanelTools) {
     return <Text>{on !== '' && <Text color={ACCENT}>{on}</Text>}<Text dimColor>{off}</Text></Text>
   }
 
-  return { Box, Text, Button, Link, Input, sprite, bar, isTerminal: Raster !== undefined }
+  return { Box, Text, Button, Link, Markdown, Input, sprite, bar, isTerminal: Raster !== undefined }
 }
 
 export type Kit = ReturnType<typeof kitOf>

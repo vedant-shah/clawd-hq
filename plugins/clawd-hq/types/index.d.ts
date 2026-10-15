@@ -111,8 +111,6 @@ export type Fx = {
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
   /** The usage footer's three rows are open above its button; shared by every pane. */
   isUsageOpen?: boolean
-  /** The Clawd tab's sections the person opened, as `rules:<heading>` or `voice:<heading>`; all are folded shut by default. */
-  clawdOpen?: string[]
 }
 
 /** One part of Clawd's briefing as the Clawd tab shows it: the text now, where it comes from, and the file an edit goes to. */

@@ -1,61 +1,18 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  BOX_BUSY, DIALOG_OPEN, SHIPPED_DENY, blocksOf, clawdActions, editContext, editNote, editPartOf, editPath, isShippedWrite, partView, promptOf,
-  readyText, refreshClawd, sectionsOf, toggled,
+  BOX_BUSY, DIALOG_OPEN, SHIPPED_DENY, clawdActions, editContext, editNote, editPartOf, editPath, isShippedWrite, partView, promptOf,
+  readyText, refreshClawd,
 } from '../hooks/clawd-edit'
 import type { ClawdIo } from '../hooks/clawd-edit'
 import type { Briefing, PartRead } from '../hooks/instructions'
 import { RULES_CHARS, VOICE_CHARS } from '../hooks/instructions'
 import type { ClawdBrief } from '../types'
 
-// ---- Sections and how their text is shown ----
-
-test('a text splits at its "## " headings; what comes before the first is kept as the intro', () => {
-  const text = '# Clawd\n\nYou are Clawd.\n\n## What you do\n\n- Talk.\n- Plan.\n\n## When to hand over\n\nOften.\n### Not a split\nStill here.'
-  expect(sectionsOf(text)).toEqual({
-    intro: '# Clawd\n\nYou are Clawd.',
-    sections: [
-      { heading: 'What you do', body: '- Talk.\n- Plan.' },
-      { heading: 'When to hand over', body: 'Often.\n### Not a split\nStill here.' },
-    ],
-  })
-})
-
-test('a text with no headings is all intro, and an empty one is nothing', () => {
-  expect(sectionsOf('Just words.\nMore words.')).toEqual({ intro: 'Just words.\nMore words.', sections: [] })
-  expect(sectionsOf('')).toEqual({ intro: '', sections: [] })
-  expect(sectionsOf('## Only\r\nBody\r\n')).toEqual({ intro: '', sections: [{ heading: 'Only', body: 'Body' }] })
-})
-
-test('a section\'s text becomes blocks to draw: bullets, paragraphs and titles, with marks for bold and code taken out', () => {
-  const body = '# Title\n\nA **bold** start and `code`,\nwrapped on two lines.\n\n- One `thing`.\n- Two.\n\n### Sub\nAfter.'
-  expect(blocksOf(body)).toEqual([
-    { kind: 'title', text: 'Title', isSpaced: false },
-    { kind: 'para', text: 'A bold start and code, wrapped on two lines.', isSpaced: true },
-    { kind: 'bullet', text: 'One thing.', isSpaced: true },
-    { kind: 'bullet', text: 'Two.', isSpaced: false },
-    { kind: 'title', text: 'Sub', isSpaced: true },
-    { kind: 'para', text: 'After.', isSpaced: false },
-  ])
-  expect(blocksOf('')).toEqual([])
-  expect(blocksOf('* Star bullet\n  continued')).toEqual([{ kind: 'bullet', text: 'Star bullet continued', isSpaced: false }])
-})
-
-test('a fold opens and closes by its key, without touching the list it was given', () => {
-  const open = ['rules:A']
-  expect(toggled(open, 'rules:B')).toEqual(['rules:A', 'rules:B'])
-  expect(toggled(open, 'rules:A')).toEqual([])
-  expect(toggled(undefined, 'voice:X')).toEqual(['voice:X'])
-  expect(open).toEqual(['rules:A'])
-})
-
 // ---- What goes in the prompt box, and what Claude is told with it ----
 
-test('the ready-made prompts start with one of two fixed openings, per part or per section', () => {
-  expect(promptOf({ part: 'rules' })).toBe('Edit Clawd\'s instructions: ')
-  expect(promptOf({ part: 'voice' })).toBe('Edit Clawd\'s voice notes: ')
-  expect(promptOf({ part: 'rules', heading: 'When to hand work over' })).toBe('Edit Clawd\'s instructions, "When to hand work over" section: ')
-  expect(promptOf({ part: 'voice', heading: 'How you speak' })).toBe('Edit Clawd\'s voice notes, "How you speak" section: ')
+test('the ready-made prompts start with one of two fixed openings, one per file', () => {
+  expect(promptOf('rules')).toBe('Edit Clawd\'s instructions: ')
+  expect(promptOf('voice')).toBe('Edit Clawd\'s voice notes: ')
 })
 
 test('a sent prompt is an edit request only when it starts with one of the openings', () => {
@@ -177,7 +134,7 @@ const OWN_VOICE = '/home/me/.clawd-hq/soul.md'
 
 test('pressing edit with an empty box makes the own copy from the built-in text, keeps its seed, and fills the line without sending', async () => {
   const { io, files, seeds, box, state } = fake()
-  await clawdActions(io).editClawd({ part: 'rules' }, true)
+  await clawdActions(io).editClawd('rules', true)
   expect(files.get(OWN_RULES)).toBe('# Rules\n\n## A\n\nDo A.\n')
   expect(seeds.get('rules')).toBe('# Rules\n\n## A\n\nDo A.')
   expect(box.filled).toEqual(['Edit Clawd\'s instructions: '])
@@ -191,14 +148,14 @@ test('pressing edit with an empty box makes the own copy from the built-in text,
 test('an edited own copy is never written over; an unedited one from an older built-in is brought up to date first', async () => {
   const edited = fake()
   edited.files.set(OWN_RULES, '# Mine\n')
-  await clawdActions(edited.io).editClawd({ part: 'rules', heading: 'A' }, false)
+  await clawdActions(edited.io).editClawd('rules', false)
   expect(edited.files.get(OWN_RULES)).toBe('# Mine\n')
-  expect(edited.box.filled).toEqual(['Edit Clawd\'s instructions, "A" section: '])
+  expect(edited.box.filled).toEqual(['Edit Clawd\'s instructions: '])
 
   const stale = fake()
   stale.files.set(OWN_RULES, '# Old rules\n')
   stale.seeds.set('rules', '# Old rules')
-  await clawdActions(stale.io).editClawd({ part: 'rules' }, false)
+  await clawdActions(stale.io).editClawd('rules', false)
   expect(stale.files.get(OWN_RULES)).toBe('# Rules\n\n## A\n\nDo A.\n')
   expect(stale.seeds.get('rules')).toBe('# Rules\n\n## A\n\nDo A.')
 })
@@ -206,7 +163,7 @@ test('an edited own copy is never written over; an unedited one from an older bu
 test('with text already in the prompt box nothing is filled or written, and the panel says why', async () => {
   const { io, files, box, state } = fake()
   box.text = 'half a thought'
-  await clawdActions(io).editClawd({ part: 'voice' }, true)
+  await clawdActions(io).editClawd('voice', true)
   expect(box.filled).toEqual([])
   expect(files.has(OWN_VOICE)).toBe(false)
   expect(state().notice).toEqual({ text: BOX_BUSY })
@@ -216,21 +173,21 @@ test('with text already in the prompt box nothing is filled or written, and the 
 test('a box the host refuses: under an open question the person is told to answer it; with no box, the line to type is shown', async () => {
   const dialog = fake()
   dialog.box.answer = { isFilled: false, refusal: 'dialog' }
-  await clawdActions(dialog.io).editClawd({ part: 'rules' }, true)
+  await clawdActions(dialog.io).editClawd('rules', true)
   expect(dialog.state().notice).toEqual({ text: DIALOG_OPEN })
   expect(DIALOG_OPEN).toBe('A question is open in the chat. Answer it, then press again.')
 
   for (const answer of [{ isFilled: false, refusal: 'no_composer' as const }, { isFilled: false }]) {
     const none = fake()
     none.box.answer = answer
-    await clawdActions(none.io).editClawd({ part: 'voice' }, false)
+    await clawdActions(none.io).editClawd('voice', false)
     expect(none.state().notice).toEqual({ text: 'Type this in the chat:', line: 'Edit Clawd\'s voice notes: ' })
   }
 })
 
 test('with the voice file setting, edit goes to that file: no own copy is made', async () => {
   const { io, files, box } = fake({ voiceFile: '/me/voice.md' })
-  await clawdActions(io).editClawd({ part: 'voice' }, true)
+  await clawdActions(io).editClawd('voice', true)
   expect(files.has(OWN_VOICE)).toBe(false)
   expect(box.filled).toEqual(['Edit Clawd\'s voice notes: '])
 })
@@ -238,14 +195,14 @@ test('with the voice file setting, edit goes to that file: no own copy is made',
 test('an own copy that cannot be written, or no home folder, stops before the box is filled, and says so', async () => {
   const failing = fake()
   failing.disk.isWriteFailing = () => true
-  await clawdActions(failing.io).editClawd({ part: 'rules' }, true)
+  await clawdActions(failing.io).editClawd('rules', true)
   expect(failing.box.filled).toEqual([])
   expect(failing.state().notice?.text).toContain(OWN_RULES)
   // The seed is saved only after the copy is written, so a failed write leaves no seed behind.
   expect(failing.seeds.has('rules')).toBe(false)
 
   const homeless = fake({ home: '' })
-  await clawdActions(homeless.io).editClawd({ part: 'rules' }, true)
+  await clawdActions(homeless.io).editClawd('rules', true)
   expect(homeless.box.filled).toEqual([])
   expect(homeless.state().notice?.text).toMatch(/home folder/)
 })
@@ -258,7 +215,7 @@ test('the own copy is written first and its seed saved after', async () => {
     write: async (path, text) => { calls.push('write'); await io.write(path, text) },
     setSeed: async (part, text) => { calls.push('seed'); await io.setSeed(part, text) },
   }
-  await clawdActions(ordered).editClawd({ part: 'rules' }, true)
+  await clawdActions(ordered).editClawd('rules', true)
   expect(calls).toEqual(['write', 'seed'])
 })
 
@@ -267,7 +224,7 @@ test('a copy that is there but cannot be read is left alone, and nothing is fill
   files.set(OWN_RULES, 'unreadable')
   const read = io.briefing.read
   const locked: ClawdIo = { ...io, briefing: { ...io.briefing, read: async p => { if (p === OWN_RULES) throw new Error('EACCES'); return read(p) } } }
-  await clawdActions(locked).editClawd({ part: 'rules' }, true)
+  await clawdActions(locked).editClawd('rules', true)
   expect(files.get(OWN_RULES)).toBe('unreadable')
   expect(box.filled).toEqual([])
   expect(state().notice?.text).toContain(OWN_RULES)

@@ -34,47 +34,37 @@ const mount = ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') => $.ui.
 const shows = async (ui: Awaited<ReturnType<typeof mount>>, text: string | RegExp) => (await ui.find({ type: 'Text', text })) !== undefined
 const compose = ($: Engine) => $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] } as never)
 
-test('the tab shows the instructions and the voice notes, each section folded shut, the fixed rules always open and not editable', async ($, on) => {
-  office(on)
-  await $.session.start(START)
-  const ui = await mount($)
-  for (const text of ['INSTRUCTIONS', 'VOICE NOTES', 'Clawd, chief of staff', 'You are Clawd.', 'What you do yourself', 'When to hand work over', 'Who you are', 'ALWAYS', 'Fixed, not editable']) {
-    expect(await shows(ui, text)).toBe(true)
-  }
-  expect(await shows(ui, `Edits go to ${OWN_RULES}`)).toBe(true)
-  expect(await shows(ui, 'Changes apply from your next session or after /clear.')).toBe(true)
-  expect((await ui.findAll({ type: 'Text', text: 'Built-in text' }))).toHaveLength(2)
-  // Folded: the section bodies are not drawn; the fixed rules are.
-  expect(await shows(ui, 'Talk with the person.')).toBe(false)
-  expect(await shows(ui, 'A colleague.')).toBe(false)
-  expect(await shows(ui, /Never hide a failure, a skipped step/)).toBe(true)
-  const keys = (await ui.findAll({ type: 'Button' })).map(b => b.key ?? '')
-  expect(keys).toEqual(expect.arrayContaining(['clawd-edit-rules', 'clawd-edit-rules-0', 'clawd-edit-rules-1', 'clawd-edit-voice', 'clawd-edit-voice-0']))
-  expect(keys.filter(k => k.startsWith('clawd-edit'))).toHaveLength(5)
-  expect(keys.some(k => k.startsWith('clawd-reset'))).toBe(false)
-  await ui.unmount()
-})
+/** The Markdown blocks the tab draws, as their text. */
+const blocks = async (ui: Awaited<ReturnType<typeof mount>>) => (await ui.findAll({ type: 'Markdown' })).map(m => m.props.text as string)
 
-test('a section opens and closes by its fold; bullets keep their own mark, and bold and code marks are not shown', async ($, on) => {
+test('the tab shows each file whole as one markdown block, the fixed rules as markdown after the instructions, with one edit button per file', async ($, on) => {
   office(on)
   await $.session.start(START)
-  const ui = await mount($)
-  await ui.press({ key: 'clawd-fold-rules-0' })
-  expect(await shows(ui, 'Talk with the person.')).toBe(true)
-  expect(await shows(ui, 'One-step jobs: a single command.')).toBe(true)
-  expect((await ui.findAll({ type: 'Text', text: '•' })).length).toBeGreaterThanOrEqual(2)
-  expect(await shows(ui, 'Hand over every job.')).toBe(false)
-  await ui.press({ key: 'clawd-fold-rules-0' })
-  expect(await shows(ui, 'Talk with the person.')).toBe(false)
-  await ui.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await mount($, surface)
+    for (const text of ['INSTRUCTIONS', 'VOICE NOTES', 'ALWAYS', 'Fixed, not editable']) expect(await shows(ui, text)).toBe(true)
+    expect(await shows(ui, `Edits go to ${OWN_RULES}`)).toBe(true)
+    expect(await shows(ui, 'Changes apply from your next session or after /clear.')).toBe(true)
+    expect((await ui.findAll({ type: 'Text', text: 'Built-in text' }))).toHaveLength(2)
+    const shown = await blocks(ui)
+    expect(shown).toHaveLength(3)
+    expect(shown[0]).toBe(RULES.trim())
+    expect(shown[1]).toMatch(/^- The person's recorded decisions are settled/)
+    expect(shown[1]).toMatch(/Never hide a failure, a skipped step/)
+    expect(shown[1]).not.toMatch(/## Always/)
+    expect(shown[2]).toBe(VOICE.trim())
+    const keys = (await ui.findAll({ type: 'Button' })).map(b => b.key ?? '')
+    expect(keys.filter(k => k.startsWith('clawd-'))).toEqual(['clawd-edit-rules', 'clawd-edit-voice'])
+    await ui.unmount()
+  }
 })
 
 test('edit with an empty prompt box makes the own copy and puts a ready-made line in the box, never sending it', async ($, on) => {
   const { files, box, saved } = office(on)
   await $.session.start(START)
   const ui = await mount($)
-  await ui.press({ key: 'clawd-edit-rules-1' })
-  expect(box.filled).toEqual([{ text: 'Edit Clawd\'s instructions, "When to hand work over" section: ', mode: 'append' }])
+  await ui.press({ key: 'clawd-edit-rules' })
+  expect(box.filled).toEqual([{ text: 'Edit Clawd\'s instructions: ', mode: 'append' }])
   expect(files.get(OWN_RULES)).toBe(RULES)
   expect(saved.get('brief:seed:rules')).toBe(RULES.trim())
   expect(await shows(ui, 'Ready in your prompt box. Press Esc, finish the sentence, then Enter.')).toBe(true)
@@ -123,13 +113,12 @@ test('an edited own copy is shown as yours, with Reset; Reset keeps a backup and
   const ui = await mount($)
   expect(await shows(ui, 'Your own copy')).toBe(true)
   expect(await shows(ui, OWN_RULES)).toBe(true)
-  expect(await shows(ui, 'Only this')).toBe(true)
-  expect(await shows(ui, 'What you do yourself')).toBe(false)
+  expect((await blocks(ui))[0]).toBe('# Mine\n\n## Only this\n\n- Ask me first.')
   await ui.press({ key: 'clawd-reset-rules' })
   expect(files.get(`${OWN_RULES}.bak`)).toBe('# Mine\n\n## Only this\n\n- Ask me first.\n')
   expect(files.get(OWN_RULES)).toBe('')
   expect(await shows(ui, /Your copy is saved as .*chief-of-staff\.md\.bak/)).toBe(true)
-  expect(await shows(ui, 'What you do yourself')).toBe(true)
+  expect((await blocks(ui))[0]).toBe(RULES.trim())
   expect(await ui.find({ key: 'clawd-reset-rules' })).toBeUndefined()
   await ui.unmount()
 })
@@ -142,7 +131,7 @@ test('an edit made during the session is marked as waiting for the next session,
   await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 't1', isAborted: false } as never)
   const ui = await mount($)
   expect(await shows(ui, 'Edited. Clawd uses this from your next session.')).toBe(true)
-  expect(await shows(ui, 'Dry and short.')).toBe(true)
+  expect(await blocks(ui)).toContain('Dry and short.')
   await ui.unmount()
 })
 
@@ -162,7 +151,7 @@ test('with the voice file setting, the voice part is that file, and Reset is rep
   const ui = await mount($)
   expect(await shows(ui, 'Your voice file setting')).toBe(true)
   expect(await shows(ui, '/me/voice.md')).toBe(true)
-  expect(await shows(ui, 'Setting voice.')).toBe(true)
+  expect(await blocks(ui)).toContain('Setting voice.')
   expect(await shows(ui, 'To go back to the built-in voice, clear the setting \'Your own voice file\'.')).toBe(true)
   expect(await ui.find({ key: 'clawd-reset-voice' })).toBeUndefined()
   await ui.unmount()
@@ -176,15 +165,14 @@ test('with Clawd not running the chat, the tab says edits apply once he is', { o
   await ui.unmount()
 })
 
-test('nothing on the tab is cut short: every text wraps, on both surfaces, even a very long heading', async ($, on) => {
+test('nothing on the tab is cut short: a long file is handed over whole, and every text wraps, on both surfaces', async ($, on) => {
   const { files } = office(on)
-  const long = 'A heading that goes on for much longer than the pane is wide, so it has to wrap onto a second line'
-  files.set(OWN_RULES, `# Mine\n\n## ${long}\n\n- ${'word '.repeat(40)}\n`)
+  const text = `# Mine\n\n## A heading that goes on for much longer than the pane is wide\n\n${Array.from({ length: 300 }, (_, i) => `- Rule ${i} with *marks*, \`code\` and **bold**.`).join('\n')}`
+  files.set(OWN_RULES, text)
   await $.session.start(START)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await mount($, surface)
-    await ui.press({ key: 'clawd-fold-rules-0' })
-    expect(await shows(ui, long)).toBe(true)
+    expect((await blocks(ui))[0]).toBe(text)
     const texts = await ui.findAll({ type: 'Text' })
     expect(texts.some(t => t.props.wrap === 'truncate' || /…/.test(t.text))).toBe(false)
     await ui.unmount()

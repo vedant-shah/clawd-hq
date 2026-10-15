@@ -20,7 +20,7 @@ import { LOGBOOK_FILE, loadLogbook, saveLogbook } from './logbook'
 import type { LogbookIo } from './logbook'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
-import { SHIPPED_DENY, clawdActions, editNote, editPartOf, isShippedWrite, refreshClawd, toggled } from './clawd-edit'
+import { SHIPPED_DENY, clawdActions, editNote, editPartOf, isShippedWrite, refreshClawd } from './clawd-edit'
 import type { ClawdIo } from './clawd-edit'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
@@ -403,7 +403,6 @@ async function setLaidOff($: EngineInterface, type: string, isOff: boolean) {
 
 function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
   return {
-    toggleClawd: key => setFx($, f => ({ ...f, clawdOpen: toggled(f.clawdOpen, key) })),
     editClawd: async (target, isTerminal) => clawdActions(await clawdIo($, opts)).editClawd(target, isTerminal),
     resetClawd: async part => clawdActions(await clawdIo($, opts)).resetClawd(part),
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
@@ -785,7 +784,7 @@ export const register: Register = (on, options) => {
       const ui = $.ui.resolve(e)
       // Picked by `e.surface`: the resolved table does not answer an `in` check. Input is missing on mobile, Raster is the terminal's, Svg the others'.
       const tools: PanelTools = {
-        Box: ui.Box, Text: ui.Text, Button: ui.Button, Link: ui.Link,
+        Box: ui.Box, Text: ui.Text, Button: ui.Button, Link: ui.Link, Markdown: ui.Markdown,
         Input: e.surface === 'mobile' ? undefined : $.ui.resolve(e).Input,
         Raster: e.surface === 'terminal' ? $.ui.resolve(e).Raster : undefined,
         Svg: e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg,

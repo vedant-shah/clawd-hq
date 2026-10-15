@@ -23,8 +23,6 @@ export type PanelData = {
 }
 
 export type PanelActions = KnowActions & ClawdActions & {
-  /** Opens one of the Clawd tab's sections, or folds it shut. */
-  toggleClawd: (key: string) => unknown
   setFind: (tab: 'decisions' | 'people', text: string) => unknown
   forget: (id: string) => unknown
   layOff: (type: string) => unknown

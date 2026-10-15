@@ -6,7 +6,7 @@ import type { Mood } from '../types'
 
 export type TourIo = {
   show: (view: PaneView) => Promise<unknown>
-  /** Settings shows the list of finished work (true) or its switches (false). */
+  /** Settings shows the list of finished work (true) or its configs (false). */
   showLog: (isOpen: boolean) => Promise<unknown>
   setBusy: () => Promise<unknown>
   say: (text: string, ticks?: number) => Promise<unknown>

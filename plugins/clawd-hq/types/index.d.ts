@@ -111,8 +111,10 @@ export type Fx = {
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
   /** The usage footer's three rows are open above its button; shared by every pane. */
   isUsageOpen?: boolean
-  /** The Settings tab shows the list of finished work instead of the switches and Clawd's instructions. */
+  /** The Settings tab shows the list of finished work instead of the configs and Clawd's instructions. */
   isLogOpen?: boolean
+  /** Why the last press of a config's toggle did not change it; gone once a change goes through. */
+  configNote?: string
 }
 
 /** One part of Clawd's briefing as the Settings tab shows it: the text now, where it comes from, and the file an edit goes to. */

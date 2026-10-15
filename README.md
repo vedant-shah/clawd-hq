@@ -29,7 +29,7 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 - `/office` opens the office.
 - `/office-demo` plays a one-minute tour.
 
-`/office` opens four tabs: Office (who is at work and what each specialist is doing right now), Decisions (the project memory), People (hire and lay off) and Settings (the plugin's switches, the work finished this session, and Clawd's instructions and voice notes, which you can ask Claude to edit). The bottom row of each tab shows how full the context is and, on a Claude subscription, how much of your session and weekly limits you have used.
+`/office` opens four tabs: Office (who is at work and what each specialist is doing right now), Decisions (the project memory), People (hire and lay off) and Settings (the plugin's configs, with toggles, the work finished this session, and Clawd's instructions and voice notes, which you can ask Claude to edit). The bottom row of each tab shows how full the context is and, on a Claude subscription, how much of your session and weekly limits you have used.
 
 The office opens on the Office tab when a session starts, in the terminal and in the desktop app alike. Showing a tab this way also gives it the keyboard, so your first keys go to the panel until you click the prompt box or press Esc. If Claude Code cannot do that at that moment (a reply is already running, or there is text in the prompt box), the request is made once more when the first reply ends, and then not again.
 
@@ -54,9 +54,7 @@ The office opens on the Office tab when a session starts, in the terminal and in
 
 ## Settings
 
-Change these in `/plugin`, on the plugin's own page, or in `/config`. A change takes effect when the plugin reloads.
-
-The Settings tab in the panel shows where each switch stands now (On or Off, and the voice file's path when one is set), with one plain line on what it does. It only shows them: you cannot change a switch from the panel. Below them, "Finished this session" swaps the tab to the list of work that finished in this session, with a Back link, and under that come Clawd's instructions and voice notes.
+The Settings tab in the panel lists them under "Configs". Each on/off setting has a toggle (`● On` or `○ Off`) and one short line on what it does: press the toggle to turn it the other way. The change is saved to your settings, and the plugin reloads with it at once. If Claude Code refuses the change (for example, when your organization manages that setting), the tab says why in plain words and the setting stays as it was. The voice file is a path, not a toggle: its row shows only when one is set, and you change it in `/plugin`, on the plugin's own page, or in `/config`, as you can every setting. Below the configs, "Finished this session" swaps the tab to the list of work that finished in this session, with a Back link, and under that come Clawd's instructions and voice notes.
 
 Clawd's instructions also reach scripted runs (`claude -p` and the Agent SDK), because the plugin's hooks run there too. If you script Claude and want its usual behaviour, turn the first setting off.
 

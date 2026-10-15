@@ -1,6 +1,7 @@
 // What the side panel is handed to draw, and the things it may ask for; register.tsx fills both.
 import type { Artifact, Badge, Boss, ClawdBrief, Employee, Fx, Gauge, KnowState, Memory, Payroll } from '../types'
 import type { ClawdActions } from './clawd-edit'
+import type { ConfigField } from './configs'
 import type { BriefingOptions } from './instructions'
 import type { KnowActions } from './know-check'
 
@@ -21,7 +22,7 @@ export type PanelData = {
   know: KnowState
   /** What the Settings tab shows of Clawd's instructions and voice notes, and the word left by its last button. */
   brief: ClawdBrief
-  /** The plugin's on/off switches and voice file path as the person set them; read-only in the panel. */
+  /** The plugin's on/off configs and voice file path as this load of the plugin got them. */
   options: BriefingOptions
 }
 
@@ -34,6 +35,8 @@ export type PanelActions = KnowActions & ClawdActions & {
   settlePayroll: (isLayoff: boolean) => unknown
   /** Opens the usage footer's rows, or closes them. */
   toggleUsage: () => unknown
-  /** Settings shows the list of finished work (true) or its switches again (false). */
+  /** Settings shows the list of finished work (true) or its configs again (false). */
   showLog: (isOpen: boolean) => unknown
+  /** A config's toggle pressed: the settings row is set to `value`; a refusal is kept as the tab's note. */
+  setConfig: (field: ConfigField, value: boolean) => unknown
 }

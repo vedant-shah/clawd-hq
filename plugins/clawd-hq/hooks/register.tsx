@@ -12,6 +12,8 @@ import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MAX_MEMORY, MEM_TOOL, RECALL, STEP_TO
 import { freshHire, isLively, isSettling, quietBoss, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { applyPayroll, resetPayroll, reviewPayroll, setLaidOff } from './payroll'
 import type { PayrollIo } from './payroll'
+import { configKeyOf, refusalOf } from './configs'
+import type { ConfigField } from './configs'
 import { BRAND, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
@@ -362,8 +364,15 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
   }
 }
 
-/** Settings shows the list of finished work (true) or its switches (false); the choice is a display flag, shared by every drawing. */
+/** Settings shows the list of finished work (true) or its configs (false); the choice is a display flag, shared by every drawing. */
 const showLog = ($: EngineInterface, isOpen: boolean) => setFx($, f => ({ ...f, isLogOpen: isOpen }))
+
+/** A config's toggle pressed: its settings row is changed as in /config, and the plugin reloads with it. A refusal, or a call that fails, is shown plainly. */
+async function setConfig($: EngineInterface, field: ConfigField, value: boolean) {
+  const key = configKeyOf(await $.config.list().catch(() => []), $.plugin.name, field)
+  const r = await $.config.set({ key, value }).catch((err: unknown) => ({ deny: err instanceof Error ? err.message : String(err) }))
+  await setFx($, f => ({ ...f, configNote: r.deny === undefined ? undefined : refusalOf(field, r.deny) }))
+}
 
 
 function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
@@ -377,6 +386,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     settlePayroll: isLayoff => applyPayroll(payrollIo($), isLayoff),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
     showLog: isOpen => showLog($, isOpen),
+    setConfig: (field, value) => setConfig($, field, value),
     ...knowActions(knowIo($)),
   }
 }

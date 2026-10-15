@@ -24,8 +24,28 @@ function inOrder(node: Tree): string[] {
   return (node.children ?? []).flatMap(c => (typeof c === 'object' && c !== null ? inOrder(c as Tree) : []))
 }
 
-const WHERE = 'Change them in /plugin, on the page of Clawd HQ, or in /config. A change takes effect when the plugin reloads.'
+const WHERE = 'A change is saved to your settings, and the plugin reloads with it at once.'
 const TITLES = ['Clawd runs the chat', 'Quiet chat', 'Recap', 'You should know']
+const FIELDS = ['chiefOfStaff', 'quietChat', 'recap', 'youShouldKnow']
+const LINES = [
+  'Clawd hands work to specialists and reports in plain words.',
+  'Hides finished notices and no-update lines; ctrl+o shows everything.',
+  'One line on where things stand, after a few quiet minutes.',
+  'A small model checks finished work and may leave a note.',
+]
+const labelOf = async (ui: Ui, field: string) => (await ui.find({ key: `config-${field}` }))?.props.label
+
+/** The engine's settings rows and every change asked of them; `answer` is what a change gets back. */
+function configs(on: On, answer: (e: { key: string; value: unknown }) => unknown = e => ({ value: e.value }), keys = FIELDS.map(f => `clawd-hq.${f}`)) {
+  const asked: Array<{ key: string; value: unknown }> = []
+  on('config.list', () => ({ value: keys.map(key => ({ key, label: key, kind: 'boolean', value: true, provider: { plugin: 'clawd-hq', tier: 'user' }, isLocked: false })) }) as never)
+  on('config.set', (_$, e) => {
+    const ev = e as { key: string; value: unknown }
+    asked.push({ key: ev.key, value: ev.value })
+    return answer(ev) as never
+  })
+  return asked
+}
 
 /** A specialist that started and finished after the session began, so the finished list has one row. */
 async function oneFinisher($: Engine, on: On) {
@@ -39,70 +59,117 @@ async function oneFinisher($: Engine, on: On) {
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'a1', isAborted: false } as never)
 }
 
-// ---- The switches ----
+// ---- The configs ----
 
-test('Settings lists the four switches with their value and a plain line each, then where to change them', async ($, on) => {
+test('Settings lists the four configs, each with a toggle and one short line, then when a change applies', async ($, on) => {
   host(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
-    expect(await shows(ui, 'SWITCHES')).toBe(true)
+    expect(await shows(ui, 'CONFIGS')).toBe(true)
+    expect(await shows(ui, /^SWITCHES$/)).toBe(false)
     for (const title of TITLES) expect(await shows(ui, title)).toBe(true)
     // All four are on by default; no voice file is set, so that one has no row.
-    expect(await count(ui, 'On')).toBe(4)
-    expect(await count(ui, 'Off')).toBe(0)
+    for (const field of FIELDS) expect(await labelOf(ui, field)).toBe('● On')
     expect(await shows(ui, 'Your own voice file')).toBe(false)
-    expect(await shows(ui, /^The main chat works as Clawd, the chief of staff/)).toBe(true)
-    expect(await shows(ui, /^Hides the "finished" notices of specialists/)).toBe(true)
-    expect(await shows(ui, /^After a few quiet minutes, one line on where things stand/)).toBe(true)
-    expect(await shows(ui, /^A small model checks finished work/)).toBe(true)
+    for (const line of LINES) {
+      expect(await shows(ui, line)).toBe(true)
+      expect(line.split(' ').length).toBeLessThanOrEqual(12)
+    }
     expect(await shows(ui, WHERE)).toBe(true)
+    expect(await shows(ui, /\/plugin|on the page of Clawd HQ/)).toBe(false)
     await ui.unmount()
   }
 })
 
-test('a switch that is off reads Off', { options: { chiefOfStaff: false, quietChat: false, recap: false, youShouldKnow: false } }, async ($, on) => {
-  host(on)
-  await $.session.start(START)
-  const ui = await mount($)
-  expect(await count(ui, 'Off')).toBe(4)
-  expect(await count(ui, 'On')).toBe(0)
-  await ui.unmount()
-})
-
-test('each switch reads on its own', { options: { recap: false } }, async ($, on) => {
-  host(on)
-  await $.session.start(START)
-  const ui = await mount($)
-  expect(await count(ui, 'On')).toBe(3)
-  expect(await count(ui, 'Off')).toBe(1)
-  await ui.unmount()
-})
-
-test('a voice file that is set gets a row with its path and a line on what it does', { options: { voiceFile: '  /me/voice.md  ' } }, async ($, on) => {
-  host(on)
-  await $.session.start(START)
-  const ui = await mount($)
-  expect(await shows(ui, 'Your own voice file')).toBe(true)
-  expect(await shows(ui, '/me/voice.md')).toBe(true)
-  expect(await shows(ui, /^Sets how Clawd sounds, in place of his built-in voice/)).toBe(true)
-  await ui.unmount()
-})
-
-test('the switches are read-only: nothing on their rows can be pressed, and the one line says where to change them', async ($, on) => {
+test('a config that is off reads Off on its toggle', { options: { chiefOfStaff: false, quietChat: false, recap: false, youShouldKnow: false } }, async ($, on) => {
   host(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
-    expect((await buttons(ui)).filter(k => k.startsWith('switch-'))).toEqual([])
-    expect(await ui.findAll({ type: 'Input' })).toEqual([])
+    for (const field of FIELDS) expect(await labelOf(ui, field)).toBe('○ Off')
     await ui.unmount()
   }
+})
+
+test('each config reads on its own', { options: { recap: false } }, async ($, on) => {
+  host(on)
+  await $.session.start(START)
+  const ui = await mount($)
+  expect(await Promise.all(FIELDS.map(f => labelOf(ui, f)))).toEqual(['● On', '● On', '○ Off', '● On'])
+  await ui.unmount()
+})
+
+test('a voice file that is set gets a read-only row with its path and one short line', { options: { voiceFile: '  /me/voice.md  ' } }, async ($, on) => {
+  host(on)
+  await $.session.start(START)
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    expect(await shows(ui, 'Your own voice file')).toBe(true)
+    expect(await shows(ui, '/me/voice.md')).toBe(true)
+    expect(await shows(ui, 'Sets how Clawd sounds; his rules stay the same.')).toBe(true)
+    expect((await buttons(ui)).filter(k => k.startsWith('config-'))).toEqual(FIELDS.map(f => `config-${f}`))
+    await ui.unmount()
+  }
+})
+
+test('pressing a toggle changes that config in the settings to the other value, under the plugin\'s own key', { options: { recap: false } }, async ($, on) => {
+  host(on)
+  const asked = configs(on)
+  await $.session.start(START)
+  for (const surface of SURFACES) {
+    asked.length = 0
+    const ui = await mount($, surface)
+    for (const field of FIELDS) await ui.press({ key: `config-${field}` })
+    expect(asked).toEqual([
+      { key: 'clawd-hq.chiefOfStaff', value: false }, { key: 'clawd-hq.quietChat', value: false },
+      { key: 'clawd-hq.recap', value: true }, { key: 'clawd-hq.youShouldKnow', value: false },
+    ])
+    expect(await shows(ui, /^Could not change/)).toBe(false)
+    await ui.unmount()
+  }
+})
+
+test('the key is the one the settings list for this plugin\'s field, whatever its plugin part', async ($, on) => {
+  host(on)
+  const asked = configs(on, e => ({ value: e.value }), ['other.recap', 'clawd-hq@inline.recap'])
+  await $.session.start(START)
+  const ui = await mount($)
+  await ui.press({ key: 'config-recap' })
+  expect(asked).toEqual([{ key: 'clawd-hq@inline.recap', value: false }])
+  await ui.unmount()
+})
+
+test('a change the settings refuse shows its reason plainly, and the toggle keeps its value', async ($, on) => {
+  host(on)
+  configs(on, () => ({ deny: 'Your organization manages this setting.' }))
+  await $.session.start(START)
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    await ui.press({ key: 'config-recap' })
+    expect(await shows(ui, 'Could not change Recap: Your organization manages this setting.')).toBe(true)
+    expect(await labelOf(ui, 'recap')).toBe('● On')
+    await ui.unmount()
+  }
+})
+
+test('the next change that goes through clears the note of a refused one', async ($, on) => {
+  host(on)
+  let isRefusing = true
+  configs(on, e => (isRefusing ? { deny: 'The value does not fit.' } : { value: e.value }))
+  await $.session.start(START)
+  const ui = await mount($)
+  await ui.press({ key: 'config-quietChat' })
+  expect(await shows(ui, 'Could not change Quiet chat: The value does not fit.')).toBe(true)
+  isRefusing = false
+  await ui.press({ key: 'config-quietChat' })
+  expect(await shows(ui, /^Could not change/)).toBe(false)
+  await ui.unmount()
 })
 
 const LONG_PATH = `/me/${'a-long-folder-name/'.repeat(8)}voice.md`
 
-test('nothing in the switches view is cut short: every text wraps, on both surfaces', { options: { voiceFile: LONG_PATH } }, async ($, on) => {
+test('nothing in the configs view is cut short: every text wraps, on both surfaces', { options: { voiceFile: LONG_PATH } }, async ($, on) => {
   host(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
@@ -122,19 +189,19 @@ test('a link shows how many finished this session; pressing it swaps the tab to 
     const ui = await mount($, surface)
     const link = await ui.find({ key: 'settings-log' })
     expect(link?.props.label).toBe('Finished this session · 1')
-    expect(await shows(ui, 'SWITCHES')).toBe(true)
+    expect(await shows(ui, 'CONFIGS')).toBe(true)
 
     await ui.press({ key: 'settings-log' })
     expect(await shows(ui, 'FINISHED THIS SESSION · 1')).toBe(true)
     expect(await shows(ui, /^Writer$/)).toBe(true)
     expect(await shows(ui, /Updated the setup guide/)).toBe(true)
-    expect(await shows(ui, 'SWITCHES')).toBe(false)
+    expect(await shows(ui, 'CONFIGS')).toBe(false)
     expect(await shows(ui, 'INSTRUCTIONS')).toBe(false)
     expect(await ui.find({ key: 'settings-log' })).toBeUndefined()
     expect((await ui.find({ key: 'settings-back' }))?.props.label).toMatch(/Back/)
 
     await ui.press({ key: 'settings-back' })
-    expect(await shows(ui, 'SWITCHES')).toBe(true)
+    expect(await shows(ui, 'CONFIGS')).toBe(true)
     expect(await shows(ui, 'FINISHED THIS SESSION · 1')).toBe(false)
     expect(await ui.find({ key: 'settings-back' })).toBeUndefined()
     await ui.unmount()
@@ -173,7 +240,7 @@ test('the view choice is kept with the panel\'s display flags: another drawing o
   await other.press({ key: 'settings-back' })
   await other.unmount()
   const again = await mount($, 'terminal')
-  expect(await shows(again, 'SWITCHES')).toBe(true)
+  expect(await shows(again, 'CONFIGS')).toBe(true)
   await again.unmount()
 })
 
@@ -195,8 +262,8 @@ test('below the switches and the link come Clawd\'s instructions and voice notes
   const ui = await mount($)
   const order = inOrder((await ui.drawn()) as unknown as Tree)
   const at = (text: string) => order.indexOf(text)
-  expect(at('SWITCHES')).toBeGreaterThanOrEqual(0)
-  expect(at('SWITCHES')).toBeLessThan(at(WHERE))
+  expect(at('CONFIGS')).toBeGreaterThanOrEqual(0)
+  expect(at('CONFIGS')).toBeLessThan(at(WHERE))
   expect(at(WHERE)).toBeLessThan(at('button:settings-log'))
   expect(at('button:settings-log')).toBeLessThan(at('INSTRUCTIONS'))
   // The fixed rules close the instructions, as they did in the old Clawd tab, before the voice notes.

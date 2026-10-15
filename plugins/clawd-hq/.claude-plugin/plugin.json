@@ -16,7 +16,7 @@
     "voiceFile": {
       "type": "string",
       "title": "Your own voice file",
-      "description": "The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. Leave empty for the built-in voice. Read when a session starts, up to 8000 characters. When set, it wins over your own copy from the Clawd tab, and the tab shows and edits this file instead.",
+      "description": "The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. Leave empty for the built-in voice. Read when a session starts, up to 8000 characters. When set, it wins over your own copy from the Settings tab, and the tab shows and edits this file instead.",
       "required": false,
       "default": ""
     },
@@ -30,7 +30,7 @@
     "quietChat": {
       "type": "boolean",
       "title": "Quiet chat",
-      "description": "On (default): while Clawd runs the chat, it hides the 'finished' notices of specialists he hired, the messages of teammates he hired by name, and his own no-update lines. He reports once the job is done, and the Log tab lists what finished. A failure or a request (a question, permission, approval) always shows, and the full view (ctrl+o) shows everything. Off: the chat shows every row as Claude Code draws it.",
+      "description": "On (default): while Clawd runs the chat, it hides the 'finished' notices of specialists he hired, the messages of teammates he hired by name, and his own no-update lines. He reports once the job is done, and the Settings tab lists what finished. A failure or a request (a question, permission, approval) always shows, and the full view (ctrl+o) shows everything. Off: the chat shows every row as Claude Code draws it.",
       "required": false,
       "default": true
     },

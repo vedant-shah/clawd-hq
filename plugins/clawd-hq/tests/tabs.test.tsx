@@ -48,13 +48,56 @@ test('a desktop session start opens the five panes in order, then asks for Offic
   expect(panes.map(p => p.id)).toEqual(IDS)
 })
 
-test('a terminal session start opens the five panes once each, without taking the keyboard from the prompt', async ($, on) => {
+test('a terminal session start opens the five panes in order and then asks for Office to be shown, as the desktop does', async ($, on) => {
   const { opened, panes } = host(on)
   await $.session.start(START)
   await settle($)
-  expect(opened.map(o => o.id)).toEqual(IDS)
-  expect(opened.every(o => o.focus === undefined)).toBe(true)
+  expect(opened.map(o => o.id)).toEqual([...IDS, 'clawd-hq'])
+  expect(opened.slice(0, 5).every(o => o.focus === undefined)).toBe(true)
+  expect(opened[5]!.focus).toBe(true)
   expect(panes.map(p => p.id)).toEqual(IDS)
+})
+
+const mainReplyEnds = ($: Engine) => $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 't1', isAborted: false } as never)
+const focusAsks = (opened: Array<{ id: string; focus?: true }>) => opened.filter(o => o.focus === true).map(o => o.id)
+
+test('a focus request the surface refused at session start (a reply is running) is made once more when the first main-chat reply ends, and never again', async ($, on) => {
+  const { opened, front, focus } = host(on)
+  // The surface is showing another tab and turns the request down.
+  front.id = 'clawd-hq-clawd'
+  focus.isRefused = true
+  for (const surface of ['terminal', 'desktop'] as const) {
+    opened.length = 0
+    focus.isRefused = true
+    await $.session.start({ cwd: '/repo', surface, isInteractive: true } as never)
+    await settle($)
+    expect(focusAsks(opened)).toEqual(['clawd-hq'])
+
+    // Specialists finishing do not count as the main chat's reply.
+    await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 'a', agentId: 'a1', isAborted: false } as never)
+    expect(focusAsks(opened)).toEqual(['clawd-hq'])
+
+    focus.isRefused = false
+    await mainReplyEnds($)
+    expect(focusAsks(opened)).toEqual(['clawd-hq', 'clawd-hq'])
+    expect(front.id).toBe('clawd-hq')
+
+    front.id = 'clawd-hq-people'
+    await mainReplyEnds($)
+    expect(focusAsks(opened)).toEqual(['clawd-hq', 'clawd-hq'])
+    expect(front.id).toBe('clawd-hq-people')
+    front.id = 'clawd-hq-clawd'
+  }
+})
+
+test('a granted request at session start is not made again after the first reply', async ($, on) => {
+  const { opened, front } = host(on)
+  front.id = 'clawd-hq-clawd'
+  await $.session.start(START)
+  await settle($)
+  expect(front.id).toBe('clawd-hq')
+  await mainReplyEnds($)
+  expect(focusAsks(opened)).toEqual(['clawd-hq'])
 })
 
 test('the office-demo command and the demo tool open the five panes without focus', async ($, on) => {

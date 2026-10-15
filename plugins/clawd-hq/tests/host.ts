@@ -36,6 +36,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const fail = { list: false, open: false, ids: new Set<string>() }
   /** The tab the host shows in front; unset, every pane reads as shown, as before. */
   const front = { id: undefined as string | undefined }
+  /** A `focus` request the surface refuses (a reply running, text in the prompt box): the pane opens, but the shown tab stays. Only once a test has set `front`. */
+  const focus = { isRefused: false }
   /** The project's files, in memory: what the plugin writes lands here, and a test seeds it. `isWriteFailing` is a folder it cannot write to, `isReadFailing` a file it cannot read, `isExistsFailing` a check that itself fails. */
   const files = new Map<string, string>()
   const disk = { isWriteFailing: false, isReadFailing: false, isExistsFailing: false }
@@ -73,6 +75,7 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
     const { id, title = id } = e as OpenArgs
     if (fail.open || fail.ids.has(id)) throw new Error('the host refused the pane')
     opened.push(e as OpenArgs)
+    if ((e as OpenArgs).focus === true && front.id !== undefined && !focus.isRefused) front.id = id
     const at = panes.findIndex(p => p.id === id)
     if (at >= 0) panes[at] = { id, title }
     else panes.push({ id, title })
@@ -119,5 +122,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('session.model', () => ({ value: 'claude-sonnet-5-1' }) as never)
   /** The person closing a pane by hand. */
   const closePane = (id: string) => { const at = panes.findIndex(p => p.id === id); if (at >= 0) panes.splice(at, 1) }
-  return { clock, opened, toasts, session, panes, closePane, fail, front, files, disk, saved, kv, commands, tools, toolSpecs }
+  /** The plugin closing a pane: the ids it asked for, then the same as the person's close. */
+  const closed: string[] = []
+  on('ui.close', (_$, e) => (closed.push((e as { id: string }).id), closePane((e as { id: string }).id), { value: undefined }) as never)
+  return { clock, opened, closed, toasts, session, panes, closePane, fail, front, focus, files, disk, saved, kv, commands, tools, toolSpecs }
 }

@@ -36,7 +36,7 @@ const COLUMNS = 60
 
 export type PaneIo = {
   open: (args: { id: string; title: string; columns: number; focus?: true }) => Promise<unknown>
-  list: () => Promise<ReadonlyArray<{ id: string; title: string }>>
+  list: () => Promise<ReadonlyArray<{ id: string; title: string; isShown: boolean; isPlaced: boolean }>>
   /** How many decisions the project remembers now. */
   decisions: () => Promise<number>
 }
@@ -61,6 +61,32 @@ export async function openPanes(io: PaneIo, isFocusing: boolean) {
   for (const p of PANES) await attempt(() => openPane(io, p, decisions, false))
   if (isFocusing) await attempt(() => openPane(io, paneOf('office'), decisions, true))
 }
+
+/** The start's focus request was turned down (the surface was busy), so Office is asked for once more, after the first main-chat reply. */
+let isFocusOwed = false
+
+/** Office is placed but not the tab in front: what a refused focus request leaves. */
+const isBehind = async (io: PaneIo) => {
+  const office = (await io.list()).find(x => x.id === paneOf('office').id)
+  return office !== undefined && office.isPlaced && !office.isShown
+}
+
+/**
+ * The session start: the panes open and Office is asked to the front, on the desktop and the terminal alike. The surface
+ * may turn the request down (a reply already running, text in the prompt box); that is noted for `askAgain`.
+ */
+export async function openAtStart(io: PaneIo) {
+  isFocusOwed = false
+  await openPanes(io, true)
+  await attempt(async () => { isFocusOwed = await isBehind(io) })
+}
+
+/** After the first main-chat reply: the one second try at the start's refused request. Never more than that in a session. */
+export const askAgain = (io: PaneIo) => attempt(async () => {
+  if (!isFocusOwed) return
+  isFocusOwed = false
+  if (await isBehind(io)) await openPane(io, paneOf('office'), await io.decisions(), true)
+})
 
 /** Brings a pane to the front if it is still open; one the person closed stays closed. */
 export const raise = (io: PaneIo, view: PaneView) => attempt(async () => {

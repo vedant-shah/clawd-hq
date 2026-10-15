@@ -28,7 +28,7 @@ import { side } from './side-ask'
 import { checkHandback, checkOwnTurn, forgetKnow, isWatching, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
-import { PANES, openPanes, pinHeight, raise, retitleDecisions } from './panes'
+import { PANES, askAgain, openAtStart, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -533,8 +533,8 @@ export const register: Register = (on, options) => {
     })
 
     await reconcile($)
-    // The desktop app (no surface at start) shows Office only through a focus request; the terminal's typing is left alone.
-    void openPanes(paneIo($), e.surface !== 'terminal')
+    // Office is asked to the front on every surface; a refusal is tried once more after the first reply (hooks/panes.ts).
+    void openAtStart(paneIo($))
 
     return next(e)
   })
@@ -749,6 +749,7 @@ export const register: Register = (on, options) => {
     } else {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)
       isEditTurn = false
+      await askAgain(paneIo($))
       const now = await $.clock.now()
       await setBoss($, b => ({
         ...b, isBusy: false, idleSince: now, doneAt: now,

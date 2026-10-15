@@ -321,3 +321,66 @@ test('the token figure does not go down when a compaction shrinks the next reque
   // 80 010 at the peak plus 800 generated; the last request alone would read 21K.
   expect((await logLines($, 'terminal'))[0]).toMatch(/81K tokens/)
 })
+
+// ---- A resumed run announced by agent.spawn (Claude Code 2.1.299 raises it with `resume`) ----
+
+/** The engine's spawn: every prompt it was handed, and the id it answers with (the resumed one on a resume). */
+function spawner(on: Parameters<typeof host>[0]) {
+  const sent: string[] = []
+  on('agent.spawn', (_$, e) => {
+    const ev = e as { prompt: string; resume?: { agentId: string } }
+    sent.push(ev.prompt)
+    return { model: 'claude-opus-5-5', agentId: ev.resume?.agentId ?? 't1' } as never
+  })
+  return sent
+}
+const RESUME = (prompt: string, agentId = 't1') => ({ prompt, description: 'Resumed run', subagentType: 'ecc:tdd-guide', resume: { agentId } }) as never
+
+test('a resumed spawn passes the message on as it is: no decisions or reporting note are added a second time', async ($, on) => {
+  host(on, [])
+  const sent = spawner(on)
+  await $.agent.spawn(BUILD)
+  await stop($, 't1', 1)
+  await $.agent.spawn(RESUME('Also add the dark theme.'))
+  expect(sent).toHaveLength(2)
+  expect(sent[0]).not.toBe('Build the panel')
+  expect(sent[1]).toBe('Also add the dark theme.')
+})
+
+test('a resumed specialist keeps its record and is at work again; the hire is not counted twice', async ($, on) => {
+  const { clock, saved } = host(on, [])
+  spawner(on)
+  await $.agent.spawn(BUILD)
+  await clock.advance(60_000)
+  await stop($, 't1', 1)
+  expect(saved.get('roster')).toMatchObject({ 'ecc:tdd-guide': { jobs: 1 } })
+  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
+
+  await clock.advance(HOUR)
+  await $.agent.spawn(RESUME(''))
+  for (const surface of SURFACES) expect(await floorOf($, surface)).toEqual({ atWork: true, empty: false, asks: false })
+  expect(saved.get('roster')).toMatchObject({ 'ecc:tdd-guide': { jobs: 1 } })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: / Build redesigned panel$/ })).toBeDefined()
+  await ui.unmount()
+  // A new run with its own clock: two minutes, not the hour since the first.
+  await clock.advance(120_000)
+  await stop($, 't1', 2)
+  expect(await logLines($, 'terminal')).toEqual([expect.stringMatching(/took 2m/)])
+})
+
+test('a resumed specialist the books do not hold (from before a reload) joins them at work, with no hire counted', async ($, on) => {
+  const { saved } = host(on, [])
+  spawner(on)
+  await $.agent.spawn(RESUME('Carry on.', 'old1'))
+  for (const surface of SURFACES) expect(await floorOf($, surface)).toEqual({ atWork: true, empty: false, asks: false })
+  expect((saved.get('roster') as Record<string, { jobs: number }> | undefined)?.['ecc:tdd-guide']?.jobs ?? 0).toBe(0)
+})
+
+test('a resume the engine refuses changes nothing on the books', async ($, on) => {
+  host(on, [])
+  on('agent.spawn', () => ({ deny: 'parked' }) as never)
+  const r = await $.agent.spawn(RESUME('Carry on.', 'old1'))
+  expect(r).toEqual({ deny: 'parked' })
+  for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
+})

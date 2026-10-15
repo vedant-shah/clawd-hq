@@ -134,6 +134,16 @@ async function signOfLife($: EngineInterface, id: string, activity?: string) {
   }))
 }
 
+/** A resumed specialist is at work again, on a new run; one the books lost (from before a reload) joins them, not counted as a hire. */
+async function rejoin<R extends { agentId?: string }>($: EngineInterface, r: R, e: { subagentType: string; description: string; name?: string }) {
+  if (!r.agentId) return r
+  const [now, t] = [await $.clock.now(), await read($, tick)]
+  if (!(await read($, staff)).some(one => one.id === r.agentId)) await update($, staff, l => hire(l, freshHire({ ...e, id: r.agentId!, type: e.subagentType }, now, t)))
+  await signOfLife($, r.agentId)
+  await showStatus($)
+  return r
+}
+
 /** An agent the engine lists that no spawn announced (it started before this mod loaded) joins the books. */
 const hireFromList = ($: EngineInterface) => (a: { id: string; type: string; description: string; name?: string }) => newHire($, a.id, a.type, a.description, a.name)
 
@@ -582,6 +592,8 @@ export const register: Register = (on, options) => {
   }
 
   on('agent.spawn', async ($, e, next) => {
+    // A resumed run keeps its first brief (the engine takes no change to it) and its place on the books: no hire is counted again.
+    if (e.resume) return rejoin($, await next(e), e)
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     const { effort, prompt } = parseEffort(e.prompt)
     const sent = prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE

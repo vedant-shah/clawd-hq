@@ -328,3 +328,24 @@ test('with the host refusing every open and every listing, /office, /office-demo
   expect(await ui.find({ type: 'Text', text: /🎬/ })).toBeUndefined()
   await ui.unmount()
 })
+
+// ---- Nothing is cut, in any tab ----
+
+const LONG_BLURB = 'Plans the work in small steps before anyone builds, and checks each step against the brief and the decisions already made.'
+
+test('no text in any tab is cut short: nothing truncates on either surface, and a long blurb on People shows whole', async ($, on) => {
+  host(on, [], { 'artifacts:/repo': [{ url: 'https://claude.ai/artifact/9WdR8H2T9Z7QScxjCbQjEM', title: 'Scoring plan', at: 500 }] })
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.session.start(START)
+  await $.agent.offer({ agent: 'ecc:planner', description: LONG_BLURB } as never)
+  for (const pane of ALL_PANES) {
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
+      const texts = await ui.findAll({ type: 'Text' })
+      expect(texts.filter(t => t.props.wrap === 'truncate').map(t => `${pane.requestId}: ${String(t.text)}`)).toEqual([])
+      if (pane.requestId === 'clawd-hq-people') expect(texts.find(t => t.text === LONG_BLURB)?.props.wrap).toBe('wrap')
+      if (pane.requestId === 'clawd-hq') expect(texts.some(t => /Scoring plan/.test(String(t.text)))).toBe(true)
+      await ui.unmount()
+    }
+  }
+})

@@ -1,6 +1,6 @@
 // The People tab: the team on the payroll and the talent pool of laid-off agents.
 import { avatarFor, compactIcon, tinyIcon } from './avatars'
-import { GREEN, clip } from './office'
+import { GREEN } from './office'
 import { buildPeople, canLayOff, splitPeople } from './panel-model'
 import type { Person } from './panel-model'
 import type { Kit } from './panel-kit'
@@ -18,9 +18,9 @@ function row(p: Person, kit: Kit, actions: PanelActions) {
     <Box key={`person-${p.type}`} flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
       <Box flexShrink={0}>{icon}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
-        <Text bold wrap="truncate">{p.name}</Text>
-        {p.blurb !== '' && <Text dimColor wrap="truncate">{clip(p.blurb, 70)}</Text>}
-        <Text dimColor wrap="truncate">{hiredLine(p)}</Text>
+        <Text bold wrap="wrap">{p.name}</Text>
+        {p.blurb !== '' && <Text dimColor wrap="wrap">{p.blurb}</Text>}
+        <Text dimColor wrap="wrap">{hiredLine(p)}</Text>
       </Box>
       {p.isOff
         ? <Button key={`hire-${p.type}`} label="Hire" onPress={() => actions.hire(p.type)} />

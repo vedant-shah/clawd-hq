@@ -140,7 +140,7 @@ function artifactDesk({ kit, data }: Ctx) {
         // A long title wraps under itself and is never cut with a mark; the time keeps its place beside it.
         <Box key={`artifact-${one.url}`} flexDirection="row" columnGap={1}>
           <Box flexShrink={1}><Text wrap="wrap"><Link href={one.url}>{one.title}</Link></Text></Box>
-          <Box flexShrink={0}><Text dimColor wrap="truncate">{since(data.now - one.at)}</Text></Box>
+          <Box flexShrink={0}><Text dimColor wrap="wrap">{since(data.now - one.at)}</Text></Box>
         </Box>
       ))}
       {older > 0 && <Text dimColor>{older === 1 ? '1 older artifact' : `${older} older artifacts`}</Text>}

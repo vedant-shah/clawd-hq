@@ -26,17 +26,33 @@ test('/office opens Office, Decisions, People, Log and Clawd in that order, then
   expect(result.text).not.toMatch(/\bo Office|\bd Decisions|\bp People|\bl Log/)
 })
 
-test('a session start opens the five panes the same way, without taking focus, and the Decisions title carries the count', async ($, on) => {
+/** The opens are not awaited by the start: give them turns to finish (more than they need, so an extra open would show). */
+async function settle($: Engine) {
+  for (let i = 0; i < 20; i++) {
+    await $.session.measure({ context: { window: 1, tokens: 0, percent: 0 }, rateLimits: [], changed: ['context'] } as never)
+  }
+}
+
+test('a desktop session start opens the five panes in order, then asks for Office to be shown, and the Decisions title carries the count', async ($, on) => {
   const { opened, panes } = host(on)
   await remember($, 'Scores live in Postgres')
   await remember($, 'Use Drizzle for migrations')
-  await $.session.start(START)
-  // The opens are not awaited by the start: let them finish (Office is opened once more, last).
-  for (let i = 0; i < 20 && opened.length < IDS.length + 1; i++) {
-    await $.session.measure({ context: { window: 1, tokens: 0, percent: 0 }, rateLimits: [], changed: ['context'] } as never)
-  }
+  // The desktop app runs the session headless: it starts with no surface and attaches after.
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
+  await settle($)
   expect(opened.map(o => o.id)).toEqual([...IDS, 'clawd-hq'])
   expect(opened.map(o => o.title)).toEqual(['Office', 'Decisions 2', 'People', 'Log', 'Clawd', 'Office'])
+  // Only the engine's focus request brings an open pane forward: the last Office open makes it.
+  expect(opened.slice(0, 5).every(o => o.focus === undefined)).toBe(true)
+  expect(opened[5]!.focus).toBe(true)
+  expect(panes.map(p => p.id)).toEqual(IDS)
+})
+
+test('a terminal session start opens the five panes once each, without taking the keyboard from the prompt', async ($, on) => {
+  const { opened, panes } = host(on)
+  await $.session.start(START)
+  await settle($)
+  expect(opened.map(o => o.id)).toEqual(IDS)
   expect(opened.every(o => o.focus === undefined)).toBe(true)
   expect(panes.map(p => p.id)).toEqual(IDS)
 })

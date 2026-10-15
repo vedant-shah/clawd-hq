@@ -39,16 +39,45 @@ function fakeIo() {
   return { io, opened }
 }
 
-test('at session start the tabs are opened in order and Office is opened last, so it is the one in front', async () => {
-  const { io, opened } = fakeIo()
-  await openPanes(io, false)
-  expect(opened.slice(0, 5).map(o => o.title)).toEqual(['Office', 'Decisions 3', 'People', 'Log', 'Clawd'])
-  expect(opened[opened.length - 1]!.id).toBe('clawd-hq')
+/**
+ * The engine's own rule for which tab is in front (its pane store, Claude Code 2.1.299): a new id is appended to the tab
+ * strip and shown; opening an id that is already open only retitles it and leaves the shown tab where it was; a `focus`
+ * request the surface honours (the prompt box empty and idle) shows the pane and gives it the keyboard.
+ */
+function engineIo() {
+  const strip: string[] = []
+  const state = { shown: undefined as string | undefined, focused: undefined as string | undefined }
+  const io: PaneIo = {
+    open: async a => {
+      if (!strip.includes(a.id)) { strip.push(a.id); state.shown = state.focused ?? a.id }
+      if (a.focus === true) { state.shown = a.id; state.focused = a.id }
+    },
+    list: async () => [],
+    decisions: async () => 0,
+  }
+  return { io, strip, state }
+}
+
+test('the cause: in the engine a pane opened again without focus stays behind, so the newest tab is the one shown', async () => {
+  const { io, state } = engineIo()
+  for (const p of PANES) await io.open({ id: p.id, title: p.title(0), columns: 60 })
+  await io.open({ id: 'clawd-hq', title: 'Office', columns: 60 })
+  expect(state.shown).toBe('clawd-hq-clawd')
 })
 
-test('without being asked to focus, no open takes the keyboard, so the person can type straight away', async () => {
+test('asked to focus (the /office command, a desktop session start), Office ends up shown, the strip keeps its order and Office holds the keyboard', async () => {
+  const { io, strip, state } = engineIo()
+  await openPanes(io, true)
+  expect(strip).toEqual(PANES.map(p => p.id))
+  expect(state.shown).toBe('clawd-hq')
+  expect(state.focused).toBe('clawd-hq')
+})
+
+test('not asked to focus, each pane is opened once in tab order and nothing takes the keyboard', async () => {
   const { io, opened } = fakeIo()
   await openPanes(io, false)
+  // A second Office open without focus would change nothing in the engine (see the cause above), so none is made.
+  expect(opened.map(o => o.title)).toEqual(['Office', 'Decisions 3', 'People', 'Log', 'Clawd'])
   expect(opened.some(o => o.focus === true)).toBe(false)
 })
 

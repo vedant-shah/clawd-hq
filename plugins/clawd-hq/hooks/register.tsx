@@ -533,7 +533,8 @@ export const register: Register = (on, options) => {
     })
 
     await reconcile($)
-    void openPanes(paneIo($), false)
+    // The desktop app (no surface at start) shows Office only through a focus request; the terminal's typing is left alone.
+    void openPanes(paneIo($), e.surface !== 'terminal')
 
     return next(e)
   })

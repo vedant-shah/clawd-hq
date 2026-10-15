@@ -50,15 +50,16 @@ const openPane = (io: PaneIo, p: PaneSpec, decisions: number, isFocused: boolean
   io.open({ id: p.id, title: p.title(decisions), columns: COLUMNS, ...(isFocused ? { focus: true as const } : {}) })
 
 /**
- * Opens the five in tab order, each on its own so one failure leaves the rest. Office is opened once more last, because the
- * later opens must not leave another one in front: the host shows the latest open. Only when asked for does that last open
- * take the keyboard (`focus` takes it from the prompt box); otherwise the person can type straight away.
+ * Opens the five in tab order, each on its own so one failure leaves the rest. The host appends each new pane to the strip and
+ * shows it, so Clawd ends up in front; opening an open pane again only retitles it. The one way to bring Office forward is a
+ * `focus` request, which the surface grants only over an empty, idle prompt box and which then gives Office the keyboard too.
+ * So Office is opened once more with `focus` only when asked; otherwise each pane is opened once and the person types at once.
  */
 export async function openPanes(io: PaneIo, isFocusing: boolean) {
   let decisions = 0
   await attempt(async () => { decisions = await io.decisions() })
   for (const p of PANES) await attempt(() => openPane(io, p, decisions, false))
-  await attempt(() => openPane(io, paneOf('office'), decisions, isFocusing))
+  if (isFocusing) await attempt(() => openPane(io, paneOf('office'), decisions, true))
 }
 
 /** Brings a pane to the front if it is still open; one the person closed stays closed. */

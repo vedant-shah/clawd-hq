@@ -1,5 +1,5 @@
-// The office's panes: the host draws one tab per pane, so each of the five views is a pane of its own.
-export type PaneView = 'office' | 'decisions' | 'people' | 'log' | 'clawd'
+// The office's panes: the host draws one tab per pane, so each of the four views is a pane of its own.
+export type PaneView = 'office' | 'decisions' | 'people' | 'settings'
 
 export type PaneSpec = {
   id: string
@@ -12,12 +12,14 @@ const BY_VIEW: Record<PaneView, PaneSpec> = {
   office: { id: 'clawd-hq', view: 'office', title: () => 'Office' },
   decisions: { id: 'clawd-hq-decisions', view: 'decisions', title: n => (n > 0 ? `Decisions ${n}` : 'Decisions') },
   people: { id: 'clawd-hq-people', view: 'people', title: () => 'People' },
-  log: { id: 'clawd-hq-log', view: 'log', title: () => 'Log' },
-  clawd: { id: 'clawd-hq-clawd', view: 'clawd', title: () => 'Clawd' },
+  settings: { id: 'clawd-hq-settings', view: 'settings', title: () => 'Settings' },
 }
 
 /** In the order the tabs read. The office keeps the id it always had. */
-export const PANES: readonly PaneSpec[] = [BY_VIEW.office, BY_VIEW.decisions, BY_VIEW.people, BY_VIEW.log, BY_VIEW.clawd]
+export const PANES: readonly PaneSpec[] = [BY_VIEW.office, BY_VIEW.decisions, BY_VIEW.people, BY_VIEW.settings]
+
+/** The ids of the Log and Clawd tabs of earlier versions. Settings has an id of its own, so a pane left open under one of these is closed. */
+const RETIRED = ['clawd-hq-log', 'clawd-hq-clawd'] as const
 
 export const paneOf = (view: PaneView): PaneSpec => BY_VIEW[view]
 
@@ -37,6 +39,8 @@ const COLUMNS = 60
 export type PaneIo = {
   open: (args: { id: string; title: string; columns: number; focus?: true }) => Promise<unknown>
   list: () => Promise<ReadonlyArray<{ id: string; title: string; isShown: boolean; isPlaced: boolean }>>
+  /** Closes a pane; an id that is not open is left alone. */
+  close: (id: string) => Promise<unknown>
   /** How many decisions the project remembers now. */
   decisions: () => Promise<number>
 }
@@ -50,14 +54,16 @@ const openPane = (io: PaneIo, p: PaneSpec, decisions: number, isFocused: boolean
   io.open({ id: p.id, title: p.title(decisions), columns: COLUMNS, ...(isFocused ? { focus: true as const } : {}) })
 
 /**
- * Opens the five in tab order, each on its own so one failure leaves the rest. The host appends each new pane to the strip and
- * shows it, so Clawd ends up in front; opening an open pane again only retitles it. The one way to bring Office forward is a
- * `focus` request, which the surface grants only over an empty, idle prompt box and which then gives Office the keyboard too.
- * So Office is opened once more with `focus` only when asked; otherwise each pane is opened once and the person types at once.
+ * Closes what an earlier version left open, then opens the four in tab order, each on its own so one failure leaves the rest.
+ * The host appends each new pane to the strip and shows it, so Settings ends up in front; opening an open pane again only
+ * retitles it. The one way to bring Office forward is a `focus` request, which the surface grants only over an empty, idle
+ * prompt box and which then gives Office the keyboard too. So Office is opened once more with `focus` only when asked;
+ * otherwise each pane is opened once and the person types at once.
  */
 export async function openPanes(io: PaneIo, isFocusing: boolean) {
   let decisions = 0
   await attempt(async () => { decisions = await io.decisions() })
+  for (const id of RETIRED) await attempt(() => io.close(id))
   for (const p of PANES) await attempt(() => openPane(io, p, decisions, false))
   if (isFocusing) await attempt(() => openPane(io, paneOf('office'), decisions, true))
 }

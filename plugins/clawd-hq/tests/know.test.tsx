@@ -227,12 +227,12 @@ test('a hand-back with no office tab open is not checked, and the log says why',
   expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'no office tab is open' }])
 })
 
-test('the Clawd tab alone is an office tab open: a hand-back is checked', async ($, on) => {
+test('the Settings tab alone is an office tab open: a hand-back is checked', async ($, on) => {
   const { asked, rows, saved, closePane } = office(on)
   await $.session.start(START)
   await hire($)
   rows.set('a1', run('Fix it.'))
-  for (const { id } of PANES) if (id !== 'clawd-hq-clawd') closePane(id)
+  for (const { id } of PANES) if (id !== 'clawd-hq-settings') closePane(id)
   await handBack($, 'a1')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toHaveLength(1)
@@ -243,7 +243,7 @@ test('a check is made while another office tab is in front, and its note waits o
   await $.session.start(START)
   await hire($)
   rows.set('a1', run('Fix it.'))
-  front.id = 'clawd-hq-log'
+  front.id = 'clawd-hq-settings'
   await handBack($, 'a1')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toHaveLength(1)

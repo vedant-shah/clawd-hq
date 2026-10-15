@@ -9,7 +9,7 @@ export const BOSS0: Boss = {
 export const FX0: Fx = {}
 export const PAYROLL0: Payroll = { laidOff: [], isReviewed: false, stacks: [] }
 export const GAUGE0: Gauge = { startedAt: 0, limits: [] }
-/** Nothing read yet: the Clawd tab fills in at session start. */
+/** Nothing read yet: the Settings tab fills in Clawd's instructions at session start. */
 export const BRIEF0: ClawdBrief = { isOn: true }
 
 export function edit(list: Employee[], id: string, fn: (e: Employee) => Employee): Employee[] {

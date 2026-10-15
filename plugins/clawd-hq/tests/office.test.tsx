@@ -4,7 +4,7 @@ import { assemble, avatarFor, clawdAvatar, tinyIcon } from '../hooks/avatars'
 import type { Pose } from '../hooks/avatars'
 import { AMBER, GREEN, RED } from '../hooks/office'
 import { fade, overlay, rasterCells, svgOf, trim, trimLike } from '../hooks/pixels'
-import { CLEAR, DECISIONS, HOUR, LOG, PANE, PEOPLE, START, SURFACES, host, planner } from './host'
+import { CLEAR, DECISIONS, HOUR, PANE, PEOPLE, START, SURFACES, host, mountLog, planner } from './host'
 
 test('a spawned architect gets a desk and shows as working', async ($, on) => {
   host(on, [{ id: 'a1', type: 'ecc:architect', description: 'Design scoring', status: 'running' }])
@@ -187,7 +187,7 @@ test('Clawd\'s card says what he is doing with a coloured dot and no at-work cou
   }
 })
 
-test('a finished specialist moves to the Log tab, not the Office; there is no break room and no send home', { timeoutMs: 15_000 }, async ($, on) => {
+test('a finished specialist moves to the finished list in Settings, not the Office; there is no break room and no send home', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, session } = host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
   // A real session start, so the since-filter is exercised: the specialist finishes after it began.
@@ -212,7 +212,7 @@ test('a finished specialist moves to the Log tab, not the Office; there is no br
 
     await ui.unmount()
 
-    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    const log = await mountLog($, surface)
     expect(await log.find({ type: 'Text', text: /^Writer$/ })).toBeDefined()
     expect(await log.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
     expect(await log.find({ type: 'Text', text: /1h 0m ago/ })).toBeDefined()
@@ -234,7 +234,7 @@ test('the Log lists work newest first, and each row has a dimmed compact avatar'
     await clock.advance(60_000)
   }
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    const ui = await mountLog($, surface)
     const order = (await ui.findAll({ type: 'Text', text: /^(Planned the API|Reviewed the panel|Updated the guide)$/ })).map(t => String(t.text))
     expect(order).toEqual(['Updated the guide', 'Reviewed the panel', 'Planned the API'])
     expect(await ui.find({ type: 'Text', text: /DONE THIS SESSION|Showing/ })).toBeUndefined()
@@ -258,7 +258,7 @@ test('the Log shows 40 rows at most and says how many of how many', async ($, on
     await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: `t${i}`, agentId: `m${i}`, isAborted: false } as never)
     await clock.advance(1_000)
   }
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...LOG })
+  const ui = await mountLog($, 'desktop')
   expect(await ui.find({ type: 'Text', text: /Showing 40 of 45/ })).toBeDefined()
   expect(await ui.findAll({ type: 'Text', text: /^Job number \d+$/ })).toHaveLength(40)
   expect(await ui.find({ type: 'Text', text: /^Job number 45$/ })).toBeDefined()
@@ -278,7 +278,7 @@ test('a specialist that failed shows as Failed in amber in the Log, and Clawd sa
     expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe(RED)
     expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeUndefined()
     await ui.unmount()
-    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    const log = await mountLog($, surface)
     const failed = await log.find({ type: 'Text', text: /Failed after/ })
     expect(failed).toBeDefined()
     expect(failed?.props.color).toBe(AMBER)
@@ -296,7 +296,7 @@ test('the Log empties on /clear, which only ends the session, and fills again af
   await $.agent.spawn({ prompt: 'Write docs', description: 'Updated the setup guide', subagentType: 'ecc:doc-updater' } as never)
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'a1', isAborted: false } as never)
 
-  const before = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...LOG })
+  const before = await mountLog($, 'terminal')
   expect(await before.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
   await before.unmount()
 
@@ -307,7 +307,7 @@ test('the Log empties on /clear, which only ends the session, and fills again af
     const after = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await after.find({ type: 'Text', text: /No one at a desk yet/ })).toBeDefined()
     await after.unmount()
-    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    const log = await mountLog($, surface)
     expect(await log.find({ type: 'Text', text: /Updated the setup guide/ })).toBeUndefined()
     expect(await log.find({ type: 'Text', text: /Nothing has finished yet this session/ })).toBeDefined()
     await log.unmount()
@@ -317,7 +317,7 @@ test('the Log empties on /clear, which only ends the session, and fills again af
   await clock.advance(1_000)
   await $.agent.spawn({ prompt: 'Fix', description: 'Fixed the build', subagentType: 'ecc:build-error-resolver' } as never)
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't2', agentId: 'a2', isAborted: false } as never)
-  const again = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...LOG })
+  const again = await mountLog($, 'desktop')
   expect(await again.find({ type: 'Text', text: /Nothing has finished yet/ })).toBeUndefined()
   expect(await again.find({ type: 'Text', text: /Fixed the build/ })).toBeDefined()
   await again.unmount()
@@ -332,7 +332,7 @@ test('a session end that is not a clear leaves the list alone', { timeoutMs: 15_
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'a1', isAborted: false } as never)
   await clock.advance(HOUR)
   await $.session.end({ reason: 'other', sessionId: 's1', resume: { id: 's1' } } as never)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...LOG })
+  const ui = await mountLog($, 'terminal')
   expect(await ui.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
   await ui.unmount()
 })
@@ -351,7 +351,7 @@ test('text agents write is kept to one short line where it is stored (a task is 
 
   expect(toasts.find(t => t.includes('finished'))).not.toContain('\n')
   for (const surface of SURFACES) {
-    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    const log = await mountLog($, surface)
     const done = await log.find({ type: 'Text', text: /Update the setup guide/ })
     expect(String(done?.text)).not.toContain('\n')
     expect(String(done?.text).length).toBeLessThanOrEqual(160)

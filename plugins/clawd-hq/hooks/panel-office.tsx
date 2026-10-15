@@ -1,4 +1,4 @@
-// The Office tab: Clawd's card and who is at work. Finished work lives in the Log tab.
+// The Office tab: Clawd's card and who is at work. Finished work is listed in the Settings tab.
 import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
 import { artifactsShown, since } from './artifacts'
 import { clawdMood, poseOf, quipOf } from './clawd-says'

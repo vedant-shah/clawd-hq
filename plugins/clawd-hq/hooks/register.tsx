@@ -185,10 +185,10 @@ const briefIo = ($: EngineInterface, home: string, warn: (text: string) => void)
 
 /** What this session's chat was given: read at its first request, again after a session start or /clear. */
 let briefing: Promise<Briefing> | undefined
-/** The main chat's turn began with an edit request from the Clawd tab: the plugin's own instruction files are off limits until it ends. */
+/** The main chat's turn began with an edit request from the Settings tab: the plugin's own instruction files are off limits until it ends. */
 let isEditTurn = false
 
-/** The Clawd tab's calls (hooks/clawd-edit.ts). The prompt box is filled after what is there, never sent. */
+/** The calls behind the buttons for Clawd's instructions in the Settings tab (hooks/clawd-edit.ts). The prompt box is filled after what is there, never sent. */
 const clawdIo = async ($: EngineInterface, opts: BriefingOptions): Promise<ClawdIo> => ({
   isOn: opts.isOn, voiceFile: opts.voiceFile, briefing: briefIo($, await homeOf($), () => undefined),
   loaded: () => (briefing ?? Promise.resolve(undefined)).catch(() => undefined),
@@ -205,6 +205,7 @@ const refreshTab = ($: EngineInterface, opts: BriefingOptions, isFresh: boolean)
 const paneIo = ($: EngineInterface): PaneIo => ({
   open: args => $.ui.open(args),
   list: () => $.ui.panes(),
+  close: id => $.ui.close({ id }),
   decisions: async () => (await read($, memory)).length,
 })
 
@@ -381,14 +382,17 @@ async function onFrame($: EngineInterface, frames: number) {
 
 // ---- The side panel: a snapshot to draw, and what it may ask for ----
 
-async function panelData($: EngineInterface): Promise<PanelData> {
+async function panelData($: EngineInterface, options: BriefingOptions): Promise<PanelData> {
   return {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
     artifacts: await read($, artifacts), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
-    brief: { ...BRIEF0, ...(await read($, clawdBrief)) },
+    brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options,
   }
 }
+
+/** Settings shows the list of finished work (true) or its switches (false); the choice is a display flag, shared by every drawing. */
+const showLog = ($: EngineInterface, isOpen: boolean) => setFx($, f => ({ ...f, isLogOpen: isOpen }))
 
 async function setLaidOff($: EngineInterface, type: string, isOff: boolean) {
   const p = await getPayroll($)
@@ -406,6 +410,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     hire: type => setLaidOff($, type, false),
     settlePayroll: isLayoff => applyPayroll($, isLayoff),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
+    showLog: isOpen => showLog($, isOpen),
     ...knowActions(knowIo($)),
   }
 }
@@ -438,6 +443,7 @@ async function startDemo($: EngineInterface) {
   const id = (n: string) => `${DEMO}${n}`
   const steps = tourSteps({
     show: view => raise(paneIo($), view),
+    showLog: isOpen => showLog($, isOpen),
     setBusy: () => setBoss($, b => ({ ...b, isBusy: true })),
     say: (text, ticks) => demoSay($, text, ticks),
     hire: (n, type, description) => newHire($, id(n), type, description),
@@ -542,7 +548,7 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'office' }, async $ => {
     await openPanes(paneIo($), true)
-    return { text: `${BRAND} is open: Office · Decisions · People · Log · Clawd are the tabs at the top.` }
+    return { text: `${BRAND} is open: Office · Decisions · People · Settings are the tabs at the top.` }
   })
 
   // The header's context bar and limit countdowns follow the engine's own readings.
@@ -551,7 +557,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // A /clear ends the session without a session.start: from here the Log starts over.
+  // A /clear ends the session without a session.start: from here the list of finished work starts over.
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
       briefing = undefined
@@ -702,7 +708,7 @@ export const register: Register = (on, options) => {
   })
 
   // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
-  // An edit request from the Clawd tab carries a note of its own: the file to edit, and what must not be touched.
+  // An edit request from the Settings tab carries a note of its own: the file to edit, and what must not be touched.
   on('prompt.submit', async ($, e, next) => {
     if (brief.isKnowOn) await knowPrompt(knowIo($), e as { text: string })
     const note = await editNote(e.text, brief.voiceFile, $.plugin.root, () => homeOf($))
@@ -750,7 +756,7 @@ export const register: Register = (on, options) => {
         ...b, isBusy: false, idleSince: now, doneAt: now,
         activity: e.reason === 'answer' ? 'All done, boss.' : 'Hmm, that turn stopped early.',
       }))
-      // An edit Claude just made shows on the Clawd tab, marked as waiting for the next session.
+      // An edit Claude just made shows in the Settings tab, marked as waiting for the next session.
       await refreshTab($, brief, true)
     }
     return next(e)
@@ -775,7 +781,7 @@ export const register: Register = (on, options) => {
     })
   }
 
-  // ---- The five office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----
+  // ---- The four office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----
   for (const pane of PANES) {
     on('ui.render', { component: 'Pane', requestId: pane.id }, async ($, e) => {
       const ui = $.ui.resolve(e)
@@ -787,7 +793,7 @@ export const register: Register = (on, options) => {
         Svg: e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg,
       }
       const layout = { columns: e.props.bodyColumns, minHeight: pinHeight(e.surface, e.props.placement, e.props.scroll.bodyRows) }
-      return renderPanel(tools, layout, await panelData($), panelActions($, brief), pane.view)
+      return renderPanel(tools, layout, await panelData($, brief), panelActions($, brief), pane.view)
     })
   }
 }

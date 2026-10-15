@@ -1,14 +1,14 @@
 import { expect, test } from 'claude-code/testing'
 import { PANES, askAgain, openAtStart, openPanes, paneOf, pinHeight, type PaneIo } from '../hooks/panes'
 
-test('the five panes, in the order the host shows them as tabs, with the office keeping its old id and Clawd last', () => {
-  expect(PANES.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log', 'clawd-hq-clawd'])
-  expect(PANES.map(p => p.view)).toEqual(['office', 'decisions', 'people', 'log', 'clawd'])
-  expect(PANES.map(p => p.title(0))).toEqual(['Office', 'Decisions', 'People', 'Log', 'Clawd'])
+test('the four panes, in the order the host shows them as tabs, with the office keeping its old id and Settings last', () => {
+  expect(PANES.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-settings'])
+  expect(PANES.map(p => p.view)).toEqual(['office', 'decisions', 'people', 'settings'])
+  expect(PANES.map(p => p.title(0))).toEqual(['Office', 'Decisions', 'People', 'Settings'])
 })
 
 test('the Decisions title carries the count of what the project remembers, and only that one', () => {
-  expect(PANES.map(p => p.title(44))).toEqual(['Office', 'Decisions 44', 'People', 'Log', 'Clawd'])
+  expect(PANES.map(p => p.title(44))).toEqual(['Office', 'Decisions 44', 'People', 'Settings'])
   expect(PANES[1]!.title(1)).toBe('Decisions 1')
 })
 
@@ -31,12 +31,14 @@ test('the footer is pinned by filling the room: in rows where the surface gave t
 
 function fakeIo() {
   const opened: Array<{ id: string; title: string; focus?: true }> = []
+  const closed: string[] = []
   const io: PaneIo = {
     open: async a => { opened.push(a) },
     list: async () => [],
+    close: async id => { closed.push(id) },
     decisions: async () => 3,
   }
-  return { io, opened }
+  return { io, opened, closed }
 }
 
 /**
@@ -53,6 +55,7 @@ function engineIo() {
       if (a.focus === true && !state.isRefusing) { state.shown = a.id; state.focused = a.id }
     },
     list: async () => strip.map(id => ({ id, title: id, isShown: state.shown === id, isFocused: state.focused === id, isPlaced: !state.isUnplaced })),
+    close: async id => { if (strip.includes(id)) strip.splice(strip.indexOf(id), 1) },
     decisions: async () => 0,
   }
   return { io, strip, state }
@@ -62,10 +65,27 @@ test('the cause: in the engine a pane opened again without focus stays behind, s
   const { io, state } = engineIo()
   for (const p of PANES) await io.open({ id: p.id, title: p.title(0), columns: 60 })
   await io.open({ id: 'clawd-hq', title: 'Office', columns: 60 })
-  expect(state.shown).toBe('clawd-hq-clawd')
+  expect(state.shown).toBe('clawd-hq-settings')
 })
 
-test('asked to focus (the /office command, a desktop session start), Office ends up shown, the strip keeps its order and Office holds the keyboard', async () => {
+test('panes of the old Log and Clawd tabs, left open from an earlier version, are closed and the strip reads Office, Decisions, People, Settings', async () => {
+  const { io, strip } = engineIo()
+  for (const id of ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log', 'clawd-hq-clawd']) await io.open({ id, title: id, columns: 60 })
+  await openPanes(io, false)
+  expect(strip).toEqual(['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-settings'])
+})
+
+test('the old panes are closed before the new ones open, once each, and a host that refuses to close them does not stop the rest', async () => {
+  const { io, opened, closed } = fakeIo()
+  await openPanes(io, false)
+  expect(closed).toEqual(['clawd-hq-log', 'clawd-hq-clawd'])
+  expect(opened.map(o => o.id)).toEqual(PANES.map(p => p.id))
+  const refusing = fakeIo()
+  await openPanes({ ...refusing.io, close: async () => { throw new Error('the host refused') } }, false)
+  expect(refusing.opened.map(o => o.id)).toEqual(PANES.map(p => p.id))
+})
+
+test('asked to focus (the /office command, a session start), Office ends up shown, the strip keeps its order and Office holds the keyboard', async () => {
   const { io, strip, state } = engineIo()
   await openPanes(io, true)
   expect(strip).toEqual(PANES.map(p => p.id))
@@ -77,7 +97,7 @@ test('not asked to focus, each pane is opened once in tab order and nothing take
   const { io, opened } = fakeIo()
   await openPanes(io, false)
   // A second Office open without focus would change nothing in the engine (see the cause above), so none is made.
-  expect(opened.map(o => o.title)).toEqual(['Office', 'Decisions 3', 'People', 'Log', 'Clawd'])
+  expect(opened.map(o => o.title)).toEqual(['Office', 'Decisions 3', 'People', 'Settings'])
   expect(opened.some(o => o.focus === true)).toBe(false)
 })
 
@@ -114,7 +134,7 @@ test('a refused request at session start is made once more, after the first repl
   const { io, state, opened } = recordingEngine()
   state.isRefusing = true
   await openAtStart(io)
-  expect(state.shown).toBe('clawd-hq-clawd')
+  expect(state.shown).toBe('clawd-hq-settings')
   expect(focusOpens(opened)).toEqual(['clawd-hq'])
 
   // Nothing happens before the first reply ends; then the surface is ready and grants it.
@@ -136,7 +156,7 @@ test('the second request is also used up when it is refused too', async () => {
   await askAgain(io)
   await askAgain(io)
   expect(focusOpens(opened)).toHaveLength(2)
-  expect(state.shown).toBe('clawd-hq-clawd')
+  expect(state.shown).toBe('clawd-hq-settings')
 })
 
 test('with no request made at session start there is nothing to ask again', async () => {

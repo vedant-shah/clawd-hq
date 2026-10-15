@@ -1,5 +1,6 @@
 // The quiet host every office test runs on, and the panes it draws.
 import { mock } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 type On = Parameters<typeof mock.clock>[0]
 
@@ -13,10 +14,16 @@ export const paneProps = (requestId: string, title: string, over: Record<string,
 export const PANE = paneProps('clawd-hq', 'Office')
 export const DECISIONS = paneProps('clawd-hq-decisions', 'Decisions')
 export const PEOPLE = paneProps('clawd-hq-people', 'People')
-export const LOG = paneProps('clawd-hq-log', 'Log')
-export const CLAWD = paneProps('clawd-hq-clawd', 'Clawd')
+export const SETTINGS = paneProps('clawd-hq-settings', 'Settings')
 /** Every office pane, in tab order. */
-export const ALL_PANES = [PANE, DECISIONS, PEOPLE, LOG, CLAWD] as const
+export const ALL_PANES = [PANE, DECISIONS, PEOPLE, SETTINGS] as const
+
+/** The Settings pane showing the finished-work list: the link to it is pressed when the pane is showing the switches. */
+export async function mountLog($: Engine, surface: 'terminal' | 'desktop', over: Record<string, unknown> = {}) {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...paneProps('clawd-hq-settings', 'Settings', over) })
+  if ((await ui.find({ key: 'settings-log' })) !== undefined) await ui.press({ key: 'settings-log' })
+  return ui
+}
 export const SURFACES = ['terminal', 'desktop'] as const
 export const HOUR = 3_600_000
 

@@ -1,4 +1,4 @@
-// The Clawd tab's edit button, pure: the ready-made prompts, the note Claude gets with them, the guard on the plugin's own
+// The edit button for Clawd's instructions in the Settings tab, pure: the ready-made prompts, the note Claude gets with them, the guard on the plugin's own
 // files, and the steps behind the buttons. register.tsx hands in every call as `io`.
 import type { ClawdBrief, ClawdPartView } from '../types'
 import { RULES_CHARS, RULES_FILE, VOICE_CHARS, VOICE_FILE, ownPath, readBriefing } from './instructions'

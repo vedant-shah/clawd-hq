@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { AMBER } from '../hooks/office'
-import { HOUR, LOG, PANE, PEOPLE, START, SURFACES, host } from './host'
+import { HOUR, PANE, PEOPLE, START, SURFACES, host, mountLog } from './host'
 
 // ---- A specialist is at work only while its run goes on ----
 
@@ -27,7 +27,7 @@ async function floorOf($: Eng, surface: 'terminal' | 'desktop') {
 
 /** The Log pane's rows of one surface: [when, took] lines. */
 async function logLines($: Eng, surface: 'terminal' | 'desktop') {
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+  const ui = await mountLog($, surface)
   const lines = (await ui.findAll({ type: 'Text', text: /took|Failed after|Lost contact/ })).map(t => String(t.text))
   await ui.unmount()
   return lines
@@ -186,7 +186,7 @@ test('a run the engine still calls running but that went silent for 30 minutes i
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     // Not a failure and not a win: Clawd stays at "All clear".
     expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeDefined()
-    const log = await $.ui.mount({ plugin: 'clawd-hq', surface, ...LOG })
+    const log = await mountLog($, surface)
     const lost = await log.find({ type: 'Text', text: /Lost contact after 30m/ })
     expect(lost).toBeDefined()
     expect(lost?.props.color).toBe(AMBER)

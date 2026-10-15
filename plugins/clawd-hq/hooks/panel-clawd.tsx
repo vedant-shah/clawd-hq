@@ -1,4 +1,4 @@
-// The Clawd tab: the chief of staff's instructions and voice notes as Clawd gets them, each file drawn whole as Markdown,
+// Clawd's instructions, the lower part of the Settings tab: the chief of staff's instructions and voice notes as Clawd gets them, each file drawn whole as Markdown,
 // with one button per file that puts a ready-made edit request in the prompt box (never sent). The fixed Always rules
 // are shown the same way and have no edit button. Every surface draws Markdown, so nothing here falls back to Text.
 import type { ClawdBrief, ClawdPartView } from '../types'

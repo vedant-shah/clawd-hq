@@ -6,6 +6,8 @@ import type { Mood } from '../types'
 
 export type TourIo = {
   show: (view: PaneView) => Promise<unknown>
+  /** Settings shows the list of finished work (true) or its switches (false). */
+  showLog: (isOpen: boolean) => Promise<unknown>
   setBusy: () => Promise<unknown>
   say: (text: string, ticks?: number) => Promise<unknown>
   /** `n` names a stand-in specialist for the length of the tour. */
@@ -49,12 +51,14 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
     ['When an agent fails, it goes home sick and Clawd reacts.', async () => {
       await io.finish('tdd', 'failed')
     }],
-    ['Finishers move to the Log tab, with how long they took.', async () => {
+    ['Finishers are listed in Settings, under Finished this session, with how long they took.', async () => {
       await io.finish('arch', 'done')
       await io.finish('scout', 'done')
-      await io.show('log')
+      await io.showLog(true)
+      await io.show('settings')
     }],
     ['People is the payroll: who’s on the team and who’s in the talent pool for this project.', async () => {
+      await io.showLog(false)
       await io.show('people')
     }],
     ['Leave the office quiet for 2 minutes and Clawd gets drowsy.', async () => {

@@ -28,7 +28,7 @@ const ASKS = /\?|\b(permission|approv|shut ?down)/i
 
 /**
  * A row that only hands work back to Clawd: the "finished" notice of a specialist the office hired, when it ended
- * well, or a message from a teammate the office hired by name. Clawd reports on it and the Log tab lists it, so the
+ * well, or a message from a teammate the office hired by name. Clawd reports on it and the Settings tab lists it, so the
  * raw row can go. A hidden request would be a lost action, so the rule is narrow: anything it is unsure of is shown.
  */
 export function isHandback(row: ChatRow, staff: Employee[]): boolean {

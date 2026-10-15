@@ -7,7 +7,8 @@ type On = Parameters<typeof host>[0]
 
 /** The plugin's own folder: the one above this file's. */
 const ROOT = new URL('..', (import.meta as unknown as { url: string }).url).pathname.replace(/\/$/, '')
-const CLAWD = paneProps('clawd-hq-clawd', 'Clawd')
+/** Clawd's instructions and voice notes live in the Settings tab, below the switches. */
+const CLAWD = paneProps('clawd-hq-settings', 'Settings')
 const OWN_RULES = '/home/me/.clawd-hq/chief-of-staff.md'
 const OWN_VOICE = '/home/me/.clawd-hq/soul.md'
 const RULES = '# Clawd, chief of staff\n\nYou are Clawd.\n\n## What you do yourself\n\n- Talk with the person.\n- One-step **jobs**: a `single` command.\n\n## When to hand work over\n\nHand over every job.\n'

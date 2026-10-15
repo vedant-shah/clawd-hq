@@ -377,6 +377,14 @@ test('a resumed specialist the books do not hold (from before a reload) joins th
   expect((saved.get('roster') as Record<string, { jobs: number }> | undefined)?.['ecc:tdd-guide']?.jobs ?? 0).toBe(0)
 })
 
+test('a workflow\'s agent keeps the script\'s prompt as it is (its answer is the script\'s to read) and is still at work on the floor', async ($, on) => {
+  host(on, [])
+  const sent = spawner(on)
+  await $.agent.spawn({ prompt: 'Review the diff. Answer in JSON.', description: 'Review', subagentType: 'general-purpose', workflow: { runId: 'wf_1', agentIndex: 1 } } as never)
+  expect(sent).toEqual(['Review the diff. Answer in JSON.'])
+  expect(await floorOf($, 'terminal')).toEqual({ atWork: true, empty: false, asks: false })
+})
+
 test('a resume the engine refuses changes nothing on the books', async ($, on) => {
   host(on, [])
   on('agent.spawn', () => ({ deny: 'parked' }) as never)

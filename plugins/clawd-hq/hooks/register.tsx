@@ -563,7 +563,8 @@ export const register: Register = (on, options) => {
     if (e.resume) return rejoin($, await next(e), e)
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     const { effort, prompt } = parseEffort(e.prompt)
-    const sent = prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE
+    // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
+    const sent = e.workflow ? e.prompt : prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE
     const r = await next({ ...e, prompt: sent })
     if (r.agentId) {
       keepBrief(r.agentId, sent)

@@ -8,7 +8,8 @@ import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './a
 import type { ArtifactAnswer } from './artifacts'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
-import { BLURB_CHARS, CHEER_TICKS, DEMO_TOOL, DESCRIPTION_CHARS, FRAME_MS, MAX_BLURBS, MAX_MEMORY, MEM_TOOL, NAME_CHARS, RECALL, STEP_TOOL, TITLE_CHARS } from './constants'
+import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MAX_MEMORY, MEM_TOOL, RECALL, STEP_TOOL, TITLE_CHARS } from './constants'
+import { freshHire, isLively, isSettling, quietBoss, settle, turnEndBoss, withBlurb, withJobs, withLaidOff } from './office-state'
 import { BRAND, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
@@ -33,7 +34,7 @@ import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import { parseStep } from './steps'
-import { REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
+import { DEMO_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withReport, withSaid, withStep, withTool } from './staff-model'
 import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
 
@@ -67,8 +68,6 @@ let recapFor = 0
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
-const isAtDesk = (e: Employee, t: number) => isActive(e) || (e.doneTick !== undefined && t - e.doneTick < CHEER_TICKS)
-
 /**
  * Puts a type on the books, with how often it was hired, kept across sessions in the store. Queued, so it never
  * overlaps another write to the books.
@@ -84,16 +83,14 @@ async function enrollNow($: EngineInterface, type: string, jobs: number) {
     if (saved) await update($, roster, () => cur)
     return
   }
-  const badge = cur[type] ?? { jobs: 0 }
-  const next = { ...cur, [type]: { ...badge, jobs: badge.jobs + jobs } }
+  const next = withJobs(cur, type, jobs)
   await update($, roster, () => next)
   await $.store.set('roster', next)
 }
 
 async function newHire($: EngineInterface, id: string, type: string, description: string, name?: string) {
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  const named = name ? { name: fit(name, NAME_CHARS) } : {}
-  const fresh: Employee = { id, type, description: fit(description, DESCRIPTION_CHARS), ...named, mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
+  const fresh = freshHire({ id, type, description, name }, now, t)
   if ((await read($, staff)).some(e => e.id === id)) {
     await update($, staff, list => hire(list, fresh))
     return
@@ -363,8 +360,6 @@ const knowIo = ($: EngineInterface): KnowIo => ({
 
 async function onFrame($: EngineInterface, frames: number) {
   const [list, f, b, t0] = [await read($, staff), await getFx($), await getBoss($), await read($, tick)]
-  const isLively = list.some(one => isAtDesk(one, t0)) || b.isBusy || f.demo !== undefined ||
-    (b.quip !== undefined && t0 < b.quip.until) || t0 < b.waveUntil
   if (frames % 8 === 0) await reconcile($)
   if (frames % 25 === 0) {
     await reviewPayroll($)
@@ -372,11 +367,9 @@ async function onFrame($: EngineInterface, frames: number) {
     void maybeRecap($).catch(() => undefined)
   }
   // A quiet office only needs a frame now and then, for blinking and snoring; nothing is written in between.
-  if (!isLively && frames % 3 !== 0) return
+  if (!isLively(list, f, b, t0) && frames % 3 !== 0) return
   const t = await update($, tick, n => n + 1)
-  if (list.some(one => one.mood === 'arriving' && t - one.joinedTick >= 3)) {
-    await update($, staff, l => l.map(one => (one.mood === 'arriving' && t - one.joinedTick >= 3 ? { ...one, mood: 'thinking' } : one)))
-  }
+  if (list.some(one => isSettling(one, t))) await update($, staff, l => settle(l, t))
   await showStatus($)
 }
 
@@ -394,11 +387,7 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
 /** Settings shows the list of finished work (true) or its switches (false); the choice is a display flag, shared by every drawing. */
 const showLog = ($: EngineInterface, isOpen: boolean) => setFx($, f => ({ ...f, isLogOpen: isOpen }))
 
-async function setLaidOff($: EngineInterface, type: string, isOff: boolean) {
-  const p = await getPayroll($)
-  const rest = p.laidOff.filter(t => t !== type)
-  await savePayroll($, { ...p, laidOff: isOff ? [...rest, type] : rest, isReviewed: true })
-}
+const setLaidOff = async ($: EngineInterface, type: string, isOff: boolean) => savePayroll($, withLaidOff(await getPayroll($), type, isOff))
 
 function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
   return {
@@ -449,10 +438,7 @@ async function startDemo($: EngineInterface) {
     hire: (n, type, description) => newHire($, id(n), type, description),
     work: (n, tool, input) => demoWork($, id(n), tool, input),
     finish: (n, mood) => clockOut($, id(n), mood),
-    goQuiet: async () => {
-      const now = await $.clock.now()
-      await setBoss($, b => ({ ...b, isBusy: false, proudUntil: 0, oopsUntil: 0, quip: undefined, idleSince: now - NAP_MS - 1 }))
-    },
+    goQuiet: async () => { const now = await $.clock.now(); await setBoss($, b => quietBoss(b, now, NAP_MS)) },
   })
 
   const total = steps.length
@@ -504,11 +490,7 @@ export const register: Register = (on, options) => {
     if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined }))
     await $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })
     await $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })
-    await $.tool.register({
-      name: 'demo',
-      description: `Plays the ${BRAND} office tour in the side panel (about a minute, stand-in employees, nothing real is spawned). Call only when the user asks to see the office demo.`,
-      inputSchema: { type: 'object', properties: {} },
-    })
+    await $.tool.register(DEMO_SPEC)
 
     const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined
     if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved }))
@@ -583,7 +565,7 @@ export const register: Register = (on, options) => {
     // the state refuses a write that lost the race too often, and the hook was then skipped for that type.
     await inLine(async () => {
       if ((await read($, blurbs))[e.agent] !== blurb) {
-        await update($, blurbs, m => Object.fromEntries([...Object.entries(m).filter(([k]) => k !== e.agent), [e.agent, blurb]].slice(-MAX_BLURBS)))
+        await update($, blurbs, m => withBlurb(m, e.agent, blurb))
       }
       if (!(await read($, roster))[e.agent]) await enrollNow($, e.agent, 0)
     })
@@ -752,10 +734,7 @@ export const register: Register = (on, options) => {
       isEditTurn = false
       await askAgain(paneIo($))
       const now = await $.clock.now()
-      await setBoss($, b => ({
-        ...b, isBusy: false, idleSince: now, doneAt: now,
-        activity: e.reason === 'answer' ? 'All done, boss.' : 'Hmm, that turn stopped early.',
-      }))
+      await setBoss($, b => turnEndBoss(b, e.reason, now))
       // An edit Claude just made shows in the Settings tab, marked as waiting for the next session.
       await refreshTab($, brief, true)
     }

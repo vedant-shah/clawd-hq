@@ -1,7 +1,14 @@
 // The tool the office registers for the model, as data.
 import type { EngineInterface } from 'claude-code'
+import { BRAND } from './office'
 
 type ToolSpec = Parameters<EngineInterface['tool']['register']>[0]
+
+export const DEMO_SPEC: ToolSpec = {
+  name: 'demo',
+  description: `Plays the ${BRAND} office tour in the side panel (about a minute, stand-in employees, nothing real is spawned). Call only when the user asks to see the office demo.`,
+  inputSchema: { type: 'object', properties: {} },
+}
 
 export const STEP_SPEC: ToolSpec = {
   name: 'step',

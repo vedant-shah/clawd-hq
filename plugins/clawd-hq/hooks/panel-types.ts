@@ -2,7 +2,7 @@
 import type { Artifact, Badge, Boss, ClawdBrief, Employee, Fx, Gauge, KnowState, Memory, Payroll } from '../types'
 import type { ClawdActions } from './clawd-edit'
 import type { ConfigField } from './configs'
-import type { BriefingOptions } from './instructions'
+import type { BriefPart, BriefingOptions } from './instructions'
 import type { KnowActions } from './know-check'
 
 export type PanelData = {
@@ -39,4 +39,6 @@ export type PanelActions = KnowActions & ClawdActions & {
   showLog: (isOpen: boolean) => unknown
   /** A config's toggle pressed: the settings row is set to `value`; a refusal is kept as the tab's note. */
   setConfig: (field: ConfigField, value: boolean) => unknown
+  /** ▼ (1) or ▲ (-1) pressed under a file's box in Settings: its window moves about 10 lines. */
+  scrollClawd: (part: BriefPart, dir: 1 | -1) => unknown
 }

@@ -185,16 +185,115 @@ test('with Clawd not running the chat, the tab says edits apply once he is', { o
   await ui.unmount()
 })
 
-test('nothing on the tab is cut short: a long file is handed over whole, and every text wraps, on both surfaces', async ($, on) => {
+test('nothing on the tab is cut short: a long file is shown in whole lines, every one reached with ▼, and every text wraps, on both surfaces', async ($, on) => {
   const { files } = office(on)
   const text = `# Mine\n\n## A heading that goes on for much longer than the pane is wide\n\n${Array.from({ length: 300 }, (_, i) => `- Rule ${i} with *marks*, \`code\` and **bold**.`).join('\n')}`
   files.set(OWN_RULES, text)
   await $.session.start(START)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await mount($, surface)
-    expect((await blocks(ui))[0]).toBe(text)
+    const seen = new Set<string>()
+    for (let i = 0; i < 40; i++) {
+      const shown = (await blocks(ui))[0] ?? ''
+      expect(text.includes(shown)).toBe(true)
+      shown.split('\n').forEach(line => seen.add(line))
+      await ui.press({ key: 'clawd-down-rules' })
+    }
+    for (const line of text.split('\n')) if (line !== '') expect(seen.has(line)).toBe(true)
     const texts = await ui.findAll({ type: 'Text' })
     expect(texts.some(t => t.props.wrap === 'truncate' || /…/.test(t.text))).toBe(false)
+    for (let i = 0; i < 40; i++) await ui.press({ key: 'clawd-up-rules' })
     await ui.unmount()
   }
+})
+
+// ---- The box each file sits in ----
+
+/** An own copy of the rules 62 lines long: a heading, a blank line, then 60 rules. */
+const LONG = `# Mine\n\n${Array.from({ length: 60 }, (_, i) => `- Rule ${i + 1}.`).join('\n')}`
+/** The count texts under the boxes, in order (a Text keeps no key, so they are found by what they say). */
+const counts = async (ui: Awaited<ReturnType<typeof mount>>) => ui.findAll({ type: 'Text', text: /^lines \d+–\d+ of \d+$/ })
+/** The count under one file's box: the rules' box comes first, and only a box with ▲ ▼ has one. */
+async function countOf(ui: Awaited<ReturnType<typeof mount>>, part: 'rules' | 'voice') {
+  const rulesHasOne = (await ui.find({ key: 'clawd-up-rules' })) !== undefined
+  return (await counts(ui))[part === 'rules' || !rulesHasOne ? 0 : 1]?.text
+}
+const press = async (ui: Awaited<ReturnType<typeof mount>>, key: string, times = 1) => { for (let i = 0; i < times; i++) await ui.press({ key }) }
+
+test('a long file sits in a darker box of about 12 lines, with ▲ ▼ and a dim count; they move it by about 10 and stop at the ends, on both surfaces', async ($, on) => {
+  const { files } = office(on)
+  files.set(OWN_RULES, LONG)
+  await $.session.start(START)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await mount($, surface)
+    const box = await ui.find({ key: 'clawd-box-rules' })
+    expect(box?.props.backgroundColor).toBe(surface === 'terminal' ? 'userMessageBackground' : '#8080801a')
+    expect((await blocks(ui))[0]).toBe(LONG.split('\n').slice(0, 12).join('\n'))
+    expect(await countOf(ui, 'rules')).toBe('lines 1–12 of 62')
+    expect((await counts(ui))[0]?.props.dimColor).toBe(true)
+    // At the top, ▲ is dim and does nothing.
+    expect((await ui.find({ key: 'clawd-up-rules' }))?.props.dimColor).toBe(true)
+    await press(ui, 'clawd-up-rules')
+    expect(await countOf(ui, 'rules')).toBe('lines 1–12 of 62')
+    await press(ui, 'clawd-down-rules')
+    expect(await countOf(ui, 'rules')).toBe('lines 11–22 of 62')
+    expect((await blocks(ui))[0]).toBe(LONG.split('\n').slice(10, 22).join('\n'))
+    await press(ui, 'clawd-up-rules')
+    expect(await countOf(ui, 'rules')).toBe('lines 1–12 of 62')
+    // At the end, ▼ is dim and does nothing; the last window still fills the box.
+    await press(ui, 'clawd-down-rules', 10)
+    expect(await countOf(ui, 'rules')).toBe('lines 51–62 of 62')
+    expect((await ui.find({ key: 'clawd-down-rules' }))?.props.dimColor).toBe(true)
+    await press(ui, 'clawd-up-rules', 10)
+    await ui.unmount()
+  }
+})
+
+test('a file that fits sits in the same box, with no ▲ ▼ and no count', async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await mount($, surface)
+    for (const part of ['rules', 'voice']) {
+      expect((await ui.find({ key: `clawd-box-${part}` }))?.props.backgroundColor).toBeDefined()
+      expect(await ui.find({ key: `clawd-up-${part}` })).toBeUndefined()
+      expect(await ui.find({ key: `clawd-down-${part}` })).toBeUndefined()
+    }
+    expect(await counts(ui)).toHaveLength(0)
+    expect((await blocks(ui))[0]).toBe(RULES.trim())
+    await ui.unmount()
+  }
+})
+
+test('the place is kept with the panel\'s display flags, for each file on its own: another drawing or surface shows the same lines', async ($, on) => {
+  const { files } = office(on)
+  files.set(OWN_RULES, LONG)
+  files.set(OWN_VOICE, LONG.replace('# Mine', '# My voice'))
+  await $.session.start(START)
+  const first = await mount($)
+  await press(first, 'clawd-down-rules', 2)
+  await press(first, 'clawd-down-voice')
+  await first.unmount()
+  const other = await mount($, 'desktop')
+  expect(await countOf(other, 'rules')).toBe('lines 21–32 of 62')
+  expect(await countOf(other, 'voice')).toBe('lines 11–22 of 62')
+  await other.unmount()
+})
+
+test('when the file changes, its box goes back to the top', async ($, on) => {
+  const { files } = office(on)
+  files.set(OWN_RULES, LONG)
+  await $.session.start(START)
+  const ui = await mount($)
+  await press(ui, 'clawd-down-rules', 3)
+  expect(await countOf(ui, 'rules')).toBe('lines 31–42 of 62')
+  await ui.unmount()
+  await compose($)
+  files.set(OWN_RULES, `${LONG}\n- Rule 61.`)
+  await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 't1', isAborted: false } as never)
+  const again = await mount($)
+  expect(await countOf(again, 'rules')).toBe('lines 1–12 of 63')
+  await press(again, 'clawd-down-rules')
+  expect(await countOf(again, 'rules')).toBe('lines 11–22 of 63')
+  await again.unmount()
 })

@@ -38,6 +38,7 @@ import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import { parseStep } from './steps'
+import { scrolled } from './scroll-window'
 import { DEMO_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withReport, withSaid, withStep, withTool } from './staff-model'
 import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
@@ -398,6 +399,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
     showLog: isOpen => showLog($, isOpen),
     setConfig: (field, value) => setConfig($, field, value),
+    scrollClawd: async (part, dir) => { const text = (await read($, clawdBrief))[part]?.text ?? ''; await setFx($, f => ({ ...f, scroll: scrolled(f.scroll, part, text, dir) })) },
     ...knowActions(knowIo($)),
   }
 }

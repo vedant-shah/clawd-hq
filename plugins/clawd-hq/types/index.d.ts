@@ -115,6 +115,8 @@ export type Fx = {
   isLogOpen?: boolean
   /** Why the last press of a config's toggle did not change it; gone once a change goes through. */
   configNote?: string
+  /** Where the Settings tab's box of each file is: its first line, and the fingerprint of the text it was for (another text starts at the top). */
+  scroll?: { rules?: { at: number; of: number }; voice?: { at: number; of: number } }
 }
 
 /** One part of Clawd's briefing as the Settings tab shows it: the text now, where it comes from, and the file an edit goes to. */

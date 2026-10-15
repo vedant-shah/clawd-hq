@@ -8,6 +8,7 @@ import type { BriefPart } from './instructions'
 import { ACCENT, AMBER } from './office'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
+import { windowOf } from './scroll-window'
 
 const TITLES: Record<BriefPart, string> = { rules: 'INSTRUCTIONS', voice: 'VOICE NOTES' }
 const SOURCES: Record<ClawdPartView['source'], string> = { builtin: 'Built-in', own: 'Your copy', setting: 'Voice file setting' }
@@ -16,6 +17,11 @@ const WHEN = 'Edits apply from your next session.'
 const NO_HOME = 'No home folder was found, so edits cannot be kept.'
 /** The fixed rules without their "## Always" heading line, which the tab's own ALWAYS heading stands in for. */
 const ALWAYS_BODY = LOCKED_RULES.replace(/^## .*\n+/, '')
+/**
+ * The backdrop of a file's box. On the terminal, the theme's band behind the person's own prompts, so it follows a
+ * light or a dark theme. Elsewhere a faint grey wash, which shows on a light page and a dark one alike.
+ */
+const TINT = { terminal: 'userMessageBackground', other: '#8080801a' } as const
 
 /** The file an edit goes to, only where it is not the built-in text: an own copy from the home folder on (`~/.clawd-hq/…`), the setting's path as set. */
 function fileLine(view: ClawdPartView): string | undefined {
@@ -67,14 +73,40 @@ function always({ Box, Text, Markdown, heading }: Kit) {
   )
 }
 
+/** ▲ and ▼ (each dim where it cannot move) and the count of the lines shown, under a box that has more than it shows. */
+function scrollRow({ Box, Button, Text }: Kit, part: BriefPart, w: ReturnType<typeof windowOf>, actions: PanelActions) {
+  return (
+    <Box key={`clawd-scroll-${part}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center" paddingX={1}>
+      <Button key={`clawd-up-${part}`} plain label="▲" dimColor={w.isTop} onPress={() => actions.scrollClawd(part, -1)} />
+      <Button key={`clawd-down-${part}`} plain label="▼" dimColor={w.isEnd} onPress={() => actions.scrollClawd(part, 1)} />
+      <Text key={`clawd-lines-${part}`} dimColor size="footnote" tabular wrap="wrap">{w.count}</Text>
+    </Box>
+  )
+}
+
+/** The file in its box: a window of whole lines on a darker backdrop, then the row that moves it when the file is longer than the box. */
+function textBox(kit: Kit, part: BriefPart, view: ClawdPartView, data: PanelData, actions: PanelActions) {
+  const { Box, Markdown, isTerminal } = kit
+  const kept = data.fx.scroll?.[part]
+  const w = windowOf(view.text, kept?.at ?? 0, kept?.of)
+  return (
+    <Box flexDirection="column">
+      <Box key={`clawd-box-${part}`} flexDirection="column" backgroundColor={isTerminal ? TINT.terminal : TINT.other} paddingX={1}>
+        <Markdown key={`clawd-text-${part}`} text={w.text} />
+      </Box>
+      {!w.isAll && scrollRow(kit, part, w, actions)}
+    </Box>
+  )
+}
+
 function partSection(kit: Kit, part: BriefPart, data: PanelData, actions: PanelActions) {
   const view = data.brief[part]
   if (view === undefined) return null
-  const { Box, Markdown } = kit
+  const { Box } = kit
   return (
     <Box key={`clawd-${part}`} flexDirection="column" gap={1}>
       {header(kit, part, view, actions)}
-      <Markdown key={`clawd-text-${part}`} text={view.text} />
+      {textBox(kit, part, view, data, actions)}
     </Box>
   )
 }

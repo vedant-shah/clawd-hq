@@ -7,7 +7,9 @@ import { ALL_PANES, CLEAR, HOUR, PANE, START, SURFACES, host } from './host'
 type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const elementsOf = (node: Tree) => (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null && 'props' in c)
 const walk = (node: Tree, hit: (t: Tree) => boolean): Tree[] => [...(hit(node) ? [node] : []), ...elementsOf(node).flatMap(c => walk(c, hit))]
-const CONTEXT = { window: 1_000_000, tokens: 169_700, percent: 17 }
+/** The line on Clawd's card with the main chat's model and effort. */
+const CHAT_LINE = { type: 'Text', text: /^(Opus|Sonnet|Haiku) \d/ }
+const CONTEXT ={ window: 1_000_000, tokens: 169_700, percent: 17 }
 /** A Friday, 07:30 in UTC. */
 const WEEKLY_AT = '2026-10-16T07:30:00Z'
 // The runner has a real timer, though its types do not list one.
@@ -52,8 +54,13 @@ test('collapsed, the footer shows the model, the effort and exactly one Usage bu
     expect(walk(footer, t => t.type === 'Button')).toHaveLength(1)
     expect(await labelOf(ui)).toBe('Usage ▾')
     expect(await numbersLine(ui)).toBe('17% · 44% · 76%')
-expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^High$/ })).toBeDefined()
+// The model and effort are on Clawd's card now, as one dim line; the footer has neither.
+    const card = await ui.find(CHAT_LINE)
+    expect(card?.props.dimColor).toBe(true)
+    expect(card?.props.wrap).toBe('wrap')
+    expect(card?.text).toBe('Opus 5.5 · High')
+    expect(walk(footer, t => t.props.key === 'usage-model')).toHaveLength(0)
+    expect(walk(footer, t => /Opus|High/.test(String(t.children?.join(''))))).toHaveLength(0)
     expect(await ui.find({ key: 'usage-details' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /Context window|Session limit|Weekly/ })).toBeUndefined()
     await ui.unmount()
@@ -66,6 +73,7 @@ test('before the first reply there is no model and no effort, and the button has
   expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage ▾')
   expect(await numbersLine(ui)).toBe('–')
   expect(await ui.find({ key: 'usage-model' })).toBeUndefined()
+  expect(await ui.find(CHAT_LINE)).toBeUndefined()
   await ui.press({ key: 'usage-toggle' })
   expect(await ui.find({ type: 'Text', text: /^Context window$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^No reading yet$/ })).toBeDefined()
@@ -78,16 +86,14 @@ test('a request of the main chat names the model and effort; a specialist\'s req
   await request($, 'claude-opus-5-5', 'high')
   await request($, 'claude-haiku-4-5', 'low', 'a1')
   const ui = await mount($, 'terminal')
-  expect(await texts(ui)).toEqual(expect.arrayContaining(['Opus 5.5', 'High']))
-  expect(await ui.find({ type: 'Text', text: /^(Haiku 4\.5|Low)$/ })).toBeUndefined()
+  expect((await ui.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
+  expect(await ui.find({ type: 'Text', text: /Haiku 4\.5|Low/ })).toBeUndefined()
   // A later request of the main chat moves them.
   await request($, 'claude-sonnet-5-1', 'xhigh')
-  expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Extra high$/ })).toBeDefined()
+  expect((await ui.find(CHAT_LINE))?.text).toBe('Sonnet 5.1 · Extra high')
   // A thinking budget in tokens is not an effort word: the last effort of the same model stays.
   await request($, 'claude-sonnet-5-1', 8000)
-  expect(await ui.find({ type: 'Text', text: /^Extra high$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
+  expect((await ui.find(CHAT_LINE))?.text).toBe('Sonnet 5.1 · Extra high')
   await ui.unmount()
 })
 
@@ -95,8 +101,8 @@ test('a session start reads the main chat\'s model', async ($, on) => {
   host(on)
   await $.session.start(START)
   const ui = await mount($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeUndefined()
+  expect((await ui.find(CHAT_LINE))?.text).toBe('Sonnet 5.1')
+  expect(await ui.find({ type: 'Text', text: /Opus 5\.5/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -250,7 +256,7 @@ test('a /clear empties the context reading but keeps the model', async ($, on) =
   await $.session.end(CLEAR)
   const ui = await mount($, 'terminal')
   expect(await numbersLine(ui)).toBe('– · 44% · 76%')
-  expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
+  expect((await ui.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
   await ui.press({ key: 'usage-toggle' })
   expect(await ui.find({ type: 'Text', text: /^No reading yet$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /169\.7k/ })).toBeUndefined()
@@ -282,7 +288,7 @@ test('a read of the gauge that fails during a request neither breaks it nor chan
   // Once the store works again, the next request is noted as usual.
   await request($, 'claude-opus-5-5', 'high')
   const after = await mount($, 'terminal')
-  expect(await after.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
+  expect((await after.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
   await after.unmount()
 })
 
@@ -300,7 +306,7 @@ test('a write of the gauge that fails during a request neither breaks it nor cha
   failing.isOn = false
   await request($, 'claude-opus-5-5', 'high')
   const after = await mount($, 'terminal')
-  expect(await after.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
+  expect((await after.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
   await after.unmount()
 })
 
@@ -326,12 +332,11 @@ test('a request with no effort keeps the effort shown for the same model, and dr
   await request($, 'claude-opus-5-5', 'high')
   await request($, 'claude-opus-5-5', undefined)
   const same = await mount($, 'terminal')
-  expect(await same.find({ type: 'Text', text: /^High$/ })).toBeDefined()
+  expect((await same.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
   await same.unmount()
   await request($, 'claude-sonnet-5-1', undefined)
   const other = await mount($, 'terminal')
-  expect(await other.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
-  expect(await other.find({ type: 'Text', text: /^High$/ })).toBeUndefined()
+  expect((await other.find(CHAT_LINE))?.text).toBe('Sonnet 5.1')
   await other.unmount()
 })
 

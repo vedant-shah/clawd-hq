@@ -1,5 +1,5 @@
-// The panel's footer, like Claude's own status line: the model and effort beside one Usage button (and, at a break in the work, a coffee
-// break button between them, hooks/coffee-break.ts). Pressing Usage opens
+// The panel's footer: one Usage button with its numbers (and, at a break in the work, a coffee
+// break button beside it, hooks/coffee-break.ts). The model and effort now sit on Clawd's card. Pressing Usage opens
 // three rows above it (context window, session limit, weekly limit), each with a bar; the button stays on the bottom
 // edge. Everything wraps between its pieces; nothing is cut.
 import { coffeeView } from './coffee-break'
@@ -70,13 +70,6 @@ export function usageFooter(kit: Kit, data: PanelData, actions: PanelActions) {
       )}
       {coffee.note !== undefined && <Text key="coffee-note" color={coffee.note.isProblem ? AMBER : undefined} dimColor={!coffee.note.isProblem} wrap="wrap">{coffee.note.text}</Text>}
       <Box key="usage-bar" flexDirection="row" flexWrap="wrap" justifyContent="space-between" alignItems="center" columnGap={2}>
-        {(view.model !== undefined || view.effort !== undefined) && (
-          <Box key="usage-model" flexDirection="row" flexWrap="wrap" columnGap={1}>
-            {view.model !== undefined && <Text bold wrap="wrap">{view.model}</Text>}
-            {view.model !== undefined && view.effort !== undefined && <Text dimColor>·</Text>}
-            {view.effort !== undefined && <Text wrap="wrap">{view.effort}</Text>}
-          </Box>
-        )}
         {coffeeButton(kit, coffee.state, actions)}
         <Box key="usage-group" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
           <Button key="usage-toggle" label={`Usage ${arrow}`} onPress={() => actions.toggleUsage()} />

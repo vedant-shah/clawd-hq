@@ -5,7 +5,8 @@ import { clawdMood, poseOf, quipOf } from './clawd-says'
 import { lookAlt, lookOf, stepOf } from './clawd-look'
 import { COFFEE_OFFER_LINE, isDrinking, isOffering } from './coffee-break'
 import { AMBER, GREEN, RED, givenName, hash } from './office'
-import { atWork, deskWords, recentFailures, statusOf, titled, workLine } from './panel-model'
+import { atWork, deskWords, modelLabel, recentFailures, statusOf, titled, workLine } from './panel-model'
+import { effortLabel } from './usage'
 import { stepCount } from './steps'
 import { overlay } from './pixels'
 import { knowSection } from './panel-know'
@@ -34,6 +35,7 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
   const felt = clawdMood(boss, working.length, tick, now)
   const mood = isOffer && felt === 'sleepy' ? 'chill' : felt
   const said = isOffer ? COFFEE_OFFER_LINE : quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length })
+  const chatModel = [modelLabel(data.gauge.model), effortLabel(data.gauge.effort)].filter(Boolean).join(' · ')
   const isStacked = cw < 50
   // On the terminal, which cannot scale a picture, Clawd gets his small drawing: still the largest in the pane.
   // He blinks now and then, and his logbook moves while a turn of his runs. Asleep or at a coffee break he looks it (hooks/clawd-look.ts).
@@ -45,6 +47,8 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
       <Box flexShrink={0}>{sprite('clawd', drawn, { scale: 4, like, alt: lookAlt(look) })}</Box>
       <Box key="clawd-lines" flexDirection="column" flexShrink={1} flexGrow={1} gap={kit.isTerminal ? 0 : 1}>
         <Text bold>Clawd <Text dimColor>Chief of Staff</Text></Text>
+        {/* The main chat's model and effort, muted like a specialist's; nothing while the model is unknown. */}
+        {chatModel !== '' && <Text key="clawd-model" dimColor wrap="wrap">{chatModel}</Text>}
         {/* What he says comes first, under his name; the status line sits below it. */}
         <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>

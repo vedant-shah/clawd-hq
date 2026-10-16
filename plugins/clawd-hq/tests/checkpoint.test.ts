@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { endsInQuestion, isPersonMessage, withHandBack, withPersonSpoke, withTurnEnd } from '../hooks/checkpoint'
+import { isPersonMessage, withHandBack, withPersonSpoke, withTurnEnd } from '../hooks/checkpoint'
 import { BOSS0 } from '../hooks/state'
 import type { Boss } from '../types'
 
@@ -31,24 +31,22 @@ test('the turn a hand-back arrived in is not its report: the report is the turn 
   expect(withTurnEnd(boss({ turns: 4, handedBackAt: 4 }), answered()).isCheckpoint).toBe(false)
 })
 
-test('a report that ends in a question is no checkpoint, and neither is a turn that was stopped or failed', () => {
+test('a report that ends in a plain-text question still closes the piece of work', () => {
   const b = boss({ turns: 5, handedBackAt: 4 })
-  expect(withTurnEnd(b, answered('Done. Should I ship it on Friday?')).isCheckpoint).toBe(false)
-  expect(withTurnEnd(b, { reason: 'aborted', answer: 'Done.' }).isCheckpoint).toBe(false)
-  expect(withTurnEnd(b, { reason: 'error', answer: '' }).isCheckpoint).toBe(false)
+  expect(withTurnEnd(b, answered('Done. Should I ship it on Friday?')).isCheckpoint).toBe(true)
+  expect(withTurnEnd(b, answered('All three are done. Shall I start step 1?')).isCheckpoint).toBe(true)
+})
+
+test('a turn that was stopped or failed is no checkpoint', () => {
+  const b = boss({ turns: 5, handedBackAt: 4 })
+  expect(withTurnEnd(b, { reason: 'aborted' }).isCheckpoint).toBe(false)
+  expect(withTurnEnd(b, { reason: 'error' }).isCheckpoint).toBe(false)
   expect(withTurnEnd(b, { reason: 'answer' }).isCheckpoint).toBe(true)
 })
 
-test('a later turn that asks a question takes an earlier checkpoint away', () => {
-  const b = boss({ turns: 6, handedBackAt: 4, isCheckpoint: true })
+test('a later turn that is not a report takes an earlier checkpoint away', () => {
+  const b = boss({ turns: 6, handedBackAt: undefined, isCheckpoint: true })
   expect(withTurnEnd(b, answered('Which one do you want?')).isCheckpoint).toBe(false)
-})
-
-test('a question is a reply whose last words ask, not any question mark', () => {
-  for (const text of ['Ship it?', 'Ship it?  \n', 'Which one do you want?**', '(Is that right?)', '"Ready?"', 'Ready？', 'All done.\n\nWant me to start on the tests?', '- A?\n- B?'])
-    expect(endsInQuestion(text)).toBe(true)
-  for (const text of ['', '   ', 'All done.', 'Why did it fail? A missing file. Fixed.', 'See https://x.dev/a?b=1', 'Done :)'])
-    expect(endsInQuestion(text)).toBe(false)
 })
 
 test('only what the person sends counts as a message: not a notification, a peer, a schedule or a command', () => {

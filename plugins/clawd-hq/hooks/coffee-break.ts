@@ -34,7 +34,7 @@ export const isOverMark = (g: Gauge): boolean => g.contextTokens !== undefined &
 
 /**
  * A break: a piece of work has closed and nothing is going on. Clawd is not in a turn, no specialist is at work, and no tour plays. The
- * checkpoint mark itself says the work was reported and left no question open, and lasts until the person's next message.
+ * checkpoint mark itself says the work was reported (an open question box keeps Clawd busy, so it hides the button too), and lasts until the person's next message.
  */
 export const isBreakTime = (b: Boss, staff: Employee[], fx: Fx): boolean =>
   b.isCheckpoint === true && !b.isBusy && atWork(staff).length === 0 && fx.demo === undefined

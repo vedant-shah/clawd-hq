@@ -171,14 +171,33 @@ test('a hand-back that arrives while Clawd is in a turn is not reported by that 
   expect(await isShown($)).toBe(true)
 })
 
-test('question pending: a report that ends by asking the person something leaves it hidden', async ($, on) => {
+test('a report that ends with a plain-text question still shows it', async ($, on) => {
   const h = flowHost(on)
   const work = job($, h)
   await work.ask()
   await work.handBack()
-  await work.report('The panel is built. Should I ship it on Friday or Monday?')
+  await work.report('The panel is built. Shall I start step 1?')
   await measure($, OVER)
+  expect(await isShown($)).toBe(true)
+})
+
+test('question box open after a hand-back: it stays hidden while the box waits, and shows once the answered turn ends, even if it ends with a question in words', async ($, on) => {
+  const h = flowHost(on)
+  const work = job($, h)
+  await work.ask()
+  await work.handBack()
+  await measure($, OVER)
+  await startTurn($, 'm2', 'The specialist finished')
+  let answer: (value: unknown) => void = () => undefined
+  h.box.open = new Promise(resolve => { answer = resolve })
+  const asking = $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Friday or Monday?' }] } as never)
+  await pause()
   expect(await isShown($)).toBe(false)
+  answer({ result: { answers: { 'Friday or Monday?': 'Friday' } } })
+  await asking
+  expect(await isShown($)).toBe(false)
+  await endTurn($, 'm2', 'Friday it is. Shall I start step 1?')
+  expect(await isShown($)).toBe(true)
 })
 
 test('question pending: a question box open in Clawd\'s turn keeps it hidden until it is answered and the turn ends', async ($, on) => {

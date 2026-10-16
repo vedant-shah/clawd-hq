@@ -125,8 +125,22 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
     return { value: undefined } as never
   })
   // What the engine answers for the session's start; a test moves it as a new session would.
-  const session = { startedAt: 0 }
-  on('session.usage', () => ({ value: { startedAt: session.startedAt, context: { window: 1_000_000 }, rateLimits: [] } }) as never)
+  // `threshold` is where Claude Code compacts by itself: told only to a call that asks for the breakdown, as the engine does; unset, auto-compact is off.
+  const session = { startedAt: 0, threshold: undefined as number | undefined }
+  on('session.usage', (_$, e) => {
+    const isBreakdown = (e as { breakdown?: string }).breakdown !== undefined
+    const breakdown = isBreakdown ? { breakdown: { autoCompactThreshold: session.threshold, isAutoCompactEnabled: session.threshold !== undefined } } : {}
+    return { value: { startedAt: session.startedAt, context: { window: 1_000_000, ...breakdown }, rateLimits: [] } } as never
+  })
+  // A compaction asked for by the plugin: what it was asked, and how it ends. `skip`: a hook's veto; `error`: a call that rejects; `hold`: one that waits.
+  const compacts: Array<{ instructions?: string }> = []
+  const compact = { skip: undefined as string | undefined, error: undefined as string | undefined, hold: undefined as Promise<void> | undefined }
+  on('session.compact', async (_$, e) => {
+    compacts.push({ instructions: (e as { instructions?: string }).instructions })
+    await compact.hold
+    if (compact.error !== undefined) throw new Error(compact.error)
+    return (compact.skip === undefined ? { messages: [{ role: 'user', text: 'A summary of the chat so far.', toolUses: [] }] } : { skip: compact.skip }) as never
+  })
   // The main chat's model, as `/model` shows it: not the one other tests name, so the footer's model cannot match their text.
   on('session.model', () => ({ value: 'claude-sonnet-5-1' }) as never)
   /** The person closing a pane by hand. */
@@ -134,5 +148,5 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   /** The plugin closing a pane: the ids it asked for, then the same as the person's close. */
   const closed: string[] = []
   on('ui.close', (_$, e) => (closed.push((e as { id: string }).id), closePane((e as { id: string }).id), { value: undefined }) as never)
-  return { clock, opened, closed, toasts, session, panes, closePane, fail, front, focus, files, disk, saved, kv, commands, tools, toolSpecs }
+  return { clock, opened, closed, toasts, session, compacts, compact, panes, closePane, fail, front, focus, files, disk, saved, kv, commands, tools, toolSpecs }
 }

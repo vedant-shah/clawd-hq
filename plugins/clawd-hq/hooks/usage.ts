@@ -136,6 +136,8 @@ export type GaugeIo = {
   now: () => Promise<number>
   usage: () => Promise<{ startedAt: number; context: { tokens?: number; window: number; percent?: number }; rateLimits: Array<{ kind: string; percentUsed: number; resetsAt?: string }> }>
   model: () => Promise<string>
+  /** The token count at which Claude Code compacts by itself; none when its auto-compact is off. */
+  threshold: () => Promise<number | undefined>
   get: () => Promise<Gauge>
   set: (fn: (g: Gauge) => Gauge) => Promise<unknown>
 }
@@ -153,6 +155,18 @@ export async function startGauge(io: GaugeIo) {
     const model = await io.model()
     await io.set(g => withRequest(g, model, g.effort))
   } catch { /* the footer names the model from the first request instead */ }
+  await noteThreshold(io)
+}
+
+/**
+ * Keeps where Claude Code compacts by itself (the coffee break button's second mark), written only when it moved. A read that fails keeps
+ * the last one known: the button's own 300k mark stands either way, so this never gets in the way.
+ */
+export async function noteThreshold(io: GaugeIo) {
+  try {
+    const [at, g] = [await io.threshold(), await io.get()]
+    if (g.autoCompactAt !== at) await io.set(one => ({ ...one, autoCompactAt: at }))
+  } catch { /* the last known point stays; the 300k mark needs none */ }
 }
 
 /** A request of the main chat names the model and effort in use: kept only when either moved, and never in the request's way. */

@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { contextOf, effortLabel, localOffset, noteRequest, resetAt, resetIn, startGauge, tokensShort, usageView, withRequest } from '../hooks/usage'
+import { contextOf, effortLabel, localOffset, noteRequest, noteThreshold, resetAt, resetIn, startGauge, tokensShort, usageView, withRequest } from '../hooks/usage'
 import type { GaugeIo } from '../hooks/usage'
 import type { Gauge } from '../types'
 
@@ -206,6 +206,7 @@ function gaugeIo(over: Partial<GaugeIo> = {}) {
     now: async () => NOW,
     usage: async () => ({ startedAt: NOW - HOUR, context: { window: 1_000_000, tokens: 5_000, percent: 1 }, rateLimits: [{ kind: 'five_hour', percentUsed: 12 }] }),
     model: async () => 'claude-opus-5-5',
+    threshold: async () => undefined,
     get: async () => held,
     set: async fn => { held = fn(held) },
     ...over,
@@ -224,6 +225,41 @@ test('where the engine cannot say, the session began now and the model waits for
   const { io, gauge } = gaugeIo({ usage: async () => { throw new Error('no usage') }, model: async () => { throw new Error('no model') } })
   await startGauge(io)
   expect(gauge()).toEqual({ startedAt: NOW, limits: [] })
+})
+
+test('the point where Claude Code compacts by itself is kept; none when its auto-compact is off', async () => {
+  const { io, gauge } = gaugeIo({ threshold: async () => 167_000 })
+  await noteThreshold(io)
+  expect(gauge().autoCompactAt).toBe(167_000)
+  await noteThreshold({ ...io, threshold: async () => undefined })
+  expect(gauge().autoCompactAt).toBeUndefined()
+})
+
+test('session start reads that point too, and still reads the rest when it cannot', async () => {
+  const read = gaugeIo({ threshold: async () => 167_000 })
+  await startGauge(read.io)
+  expect(read.gauge()).toMatchObject({ autoCompactAt: 167_000, contextTokens: 5_000, model: 'claude-opus-5-5' })
+  const failing = gaugeIo({ threshold: async () => { throw new Error('no breakdown') } })
+  await startGauge(failing.io)
+  expect(failing.gauge()).toMatchObject({ contextTokens: 5_000, model: 'claude-opus-5-5' })
+  expect(failing.gauge().autoCompactAt).toBeUndefined()
+})
+
+test('a point that cannot be read keeps the last one known, and a failing store never throws', async () => {
+  const { io, gauge } = gaugeIo({ threshold: async () => 167_000 })
+  await noteThreshold(io)
+  await expect(noteThreshold({ ...io, threshold: async () => { throw new Error('gone') } })).resolves.toBeUndefined()
+  expect(gauge().autoCompactAt).toBe(167_000)
+  await expect(noteThreshold({ ...io, set: async () => { throw new Error('state gone') } })).resolves.toBeUndefined()
+})
+
+test('a point that has not moved makes no write', async () => {
+  let writes = 0
+  const { io } = gaugeIo({ threshold: async () => 167_000 })
+  const counted: GaugeIo = { ...io, set: async fn => { writes += 1; await io.set(fn) } }
+  await noteThreshold(counted)
+  await noteThreshold(counted)
+  expect(writes).toBe(1)
 })
 
 test('a request is kept only when its model or effort moved, and a failing store never throws', async () => {

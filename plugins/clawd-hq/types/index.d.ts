@@ -80,6 +80,10 @@ export type Boss = {
   doneAt?: number
   /** One line on where things stand, made after a few quiet minutes; gone when the next turn starts. */
   recap?: string
+  /** Clawd's turn count when a specialist last handed work back since the person's latest message; none until then (hooks/checkpoint.ts). */
+  handedBackAt?: number
+  /** A piece of work has closed: a hand-back was reported in a finished turn of Clawd's with no question left open. Lasts until the person's next message. */
+  isCheckpoint?: boolean
   idleSince: number
   hires: number
   wins: number
@@ -98,6 +102,8 @@ export type Gauge = {
   contextPercent?: number
   contextTokens?: number
   contextWindow?: number
+  /** The token count at which Claude Code compacts by itself; none when its auto-compact is off or has not been read. */
+  autoCompactAt?: number
   limits: Limit[]
   model?: string
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -115,6 +121,11 @@ export type Fx = {
   isLogOpen?: boolean
   /** Why the last press of a config's toggle did not change it; gone once a change goes through. */
   configNote?: string
+  /**
+   * The one line the coffee break button leaves under the footer's row: that it is compacting, that the command is ready in the prompt
+   * box, or why it did not compact. `turns` is Clawd's turn count when it was made; a new turn of his makes it stale, and it is not drawn.
+   */
+  coffee?: { kind: 'running' | 'ready' | 'problem'; text: string; turns: number }
   /** Where the Settings tab's box of each file is: its first line, and the fingerprint of the text it was for (another text starts at the top). */
   scroll?: { rules?: { at: number; of: number }; voice?: { at: number; of: number } }
 }

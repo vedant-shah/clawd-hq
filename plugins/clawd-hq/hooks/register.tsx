@@ -17,7 +17,9 @@ import type { ConfigField } from './configs'
 import { BRAND, clip, hash, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
-import { contextOf, noteRequest, startGauge } from './usage'
+import { contextOf, noteRequest, noteThreshold, startGauge } from './usage'
+import { isBreakTime, takeCoffeeBreak, type CoffeeIo } from './coffee-break'
+import { isPersonMessage, withHandBack, withPersonSpoke, withTurnEnd } from './checkpoint'
 import type { GaugeIo } from './usage'
 import { DEMO, isActive } from './panel-model'
 import { tourSteps } from './demo'
@@ -398,6 +400,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     hire: type => setLaidOff(payrollIo($), type, false),
     settlePayroll: isLayoff => applyPayroll(payrollIo($), isLayoff),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
+    coffeeBreak: isTerminal => takeCoffeeBreak(coffeeIo($), isTerminal).catch((err: unknown) => $.ui.toast(`Couldn't compact the chat: ${reasonOf(err)}.`)),
     showLog: isOpen => showLog($, isOpen),
     setConfig: (field, value) => setConfig($, field, value),
     scrollClawd: async (part, dir) => { const text = (await read($, clawdBrief))[part]?.text ?? ''; await setFx($, f => ({ ...f, scroll: scrolled(f.scroll, part, text, dir) })) },
@@ -409,7 +412,17 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
 
 const gaugeIo = ($: EngineInterface): GaugeIo => ({
   now: () => $.clock.now(), usage: () => $.session.usage(), model: () => $.session.model(),
+  threshold: () => $.session.usage({ breakdown: 'summary' }).then(u => u.context.breakdown?.autoCompactThreshold),
   get: () => read($, gauge), set: fn => update($, gauge, fn),
+})
+
+/** The coffee break button (hooks/coffee-break.ts). Where the engine has no compact call (the desktop app can bundle 2.1.295), calling it fails and the command is put in the prompt box instead. */
+const coffeeIo = ($: EngineInterface): CoffeeIo => ({
+  isBreak: async () => isBreakTime(await getBoss($), await read($, staff), await getFx($)),
+  compact: args => $.session.compact(args),
+  promptRead: () => $.prompt.read(), fill: text => $.prompt.fill({ text, mode: 'append' }),
+  setNote: async note => { const { turns } = await getBoss($); await setFx($, f => ({ ...f, coffee: note && { ...note, turns } })) },
+  clearReading: () => update($, gauge, g => ({ ...g, contextPercent: undefined, contextTokens: undefined })),
 })
 
 // ---- The demo: a scripted tour with stand-in employees, cleaned up at the end ----
@@ -696,6 +709,7 @@ export const register: Register = (on, options) => {
   // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
   // An edit request from the Settings tab carries a note of its own: the file to edit, and what must not be touched.
   on('prompt.submit', async ($, e, next) => {
+    if (isPersonMessage(e)) await setBoss($, withPersonSpoke) // what closed before it is behind us: the coffee break button waits for the next checkpoint
     if (brief.isKnowOn) await knowPrompt(knowIo($), e as { text: string })
     const note = await editNote(e.text, brief.voiceFile, $.plugin.root, () => homeOf($))
     return next(note === undefined ? e : { ...e, context: [...(e.context ?? []), note] })
@@ -726,6 +740,7 @@ export const register: Register = (on, options) => {
       const asker = (await read($, staff)).find(one => one.id === e.agentId)
       // Key choices the agent made itself go into the project's memory. Its questions stay in its report, for Clawd.
       if (asker && !asker.id.startsWith(DEMO)) {
+        if (e.reason === 'answer') await setBoss($, withHandBack) // work handed back: a checkpoint once Clawd has reported it
         const by = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
         for (const text of parseChoices(e.answer ?? '')) await remember($, { kind: 'choice', text, by, source: 'report' })
         // After each hand-back, a check of the work against its report; a note may join Clawd's card.
@@ -738,7 +753,8 @@ export const register: Register = (on, options) => {
       isEditTurn = false
       await askAgain(paneIo($))
       const now = await $.clock.now()
-      await setBoss($, b => turnEndBoss(b, e.reason, now))
+      await setBoss($, b => withTurnEnd(turnEndBoss(b, e.reason, now), e))
+      void noteThreshold(gaugeIo($)) // the point Claude Code compacts at can move with the model: read again, never waited for
       // An edit Claude just made shows in the Settings tab, marked as waiting for the next session.
       await refreshTab($, brief, true)
     }

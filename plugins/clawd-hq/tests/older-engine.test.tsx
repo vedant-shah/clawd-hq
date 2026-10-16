@@ -6,6 +6,10 @@ import type { Engine } from 'claude-code/testing'
 import { RULES_FILE, VOICE_FILE } from '../hooks/instructions'
 import { AMBER } from '../hooks/office'
 import { ALL_PANES, START, SURFACES, host } from './host'
+import { flowHost, job, measure } from './flow'
+
+// The runner has a real timer, though its types do not list one.
+declare const setTimeout: (run: () => void, ms: number) => unknown
 
 type On = Parameters<typeof host>[0]
 
@@ -91,6 +95,37 @@ test('a start-up step that fails stops none after it: the tab still fills, and a
   expect((await ui.findAll({ type: 'Markdown' })).length).toBeGreaterThan(0)
   await ui.unmount()
   expect(h.toasts.some(t => /start-up/.test(t) && /already registered/.test(t))).toBe(true)
+})
+
+test('the coffee break button, its working word and its amber line draw only Text props the 2.1.295 engine takes, on every pane and surface', async ($, on) => {
+  const h = flowHost(on)
+  h.compact.skip = 'a hook said no'
+  const work = job($, h)
+  await work.ask()
+  await work.handBack()
+  await work.report()
+  await measure($, 310_000)
+  const refused: string[] = []
+  for (const surface of SURFACES) {
+    for (const pane of ALL_PANES) {
+      refused.push(...(await refusedProps($, pane, surface)))
+      // With its amber line up, and with the word that stands in for the button while it works.
+      refused.push(...(await refusedProps($, pane, surface, ['coffee-break'])))
+    }
+  }
+  // A press under a held compaction shows the working word in the button's place.
+  let release: () => void = () => undefined
+  h.compact.hold = new Promise<void>(resolve => { release = resolve })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...ALL_PANES[0] })
+  const pressing = ui.press({ key: 'coffee-break' })
+  await new Promise<void>(resolve => setTimeout(resolve, 25))
+  expect(await ui.find({ type: 'Text', text: /^Compacting the chat/ })).toBeDefined()
+  const working = await ui.findAll({ type: 'Text' })
+  release()
+  await pressing
+  await ui.unmount()
+  refused.push(...working.flatMap(t => Object.keys(t.props).filter(p => !OLDER_TEXT_PROPS.has(p) && !isKitWeight(t.props, p))))
+  expect([...new Set(refused)]).toEqual([])
 })
 
 test('the Settings tab shows the instructions and voice boxes, with the text it read, on every surface', async ($, on) => {

@@ -35,6 +35,8 @@ export type PanelActions = KnowActions & ClawdActions & {
   settlePayroll: (isLayoff: boolean) => unknown
   /** Opens the usage footer's rows, or closes them. */
   toggleUsage: () => unknown
+  /** The coffee break button pressed: the chat is compacted now (or, where the engine cannot, `/compact` is put in the prompt box). */
+  coffeeBreak: (isTerminal: boolean) => unknown
   /** Settings shows the list of finished work (true) or its configs again (false). */
   showLog: (isOpen: boolean) => unknown
   /** A config's toggle pressed: the settings row is set to `value`; a refusal is kept as the tab's note. */

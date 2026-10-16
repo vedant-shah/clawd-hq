@@ -102,7 +102,7 @@ export function coffeeView(data: Pick<PanelData, 'boss' | 'staff' | 'fx' | 'gaug
 }
 
 /** `done` is no line at all: it only keeps `at`, the time a compaction stood, so Clawd can go on drinking for a while. */
-type Note = { kind: 'running' | 'ready' | 'problem' | 'done'; text: string; at?: number }
+type Note = { kind: 'running' | 'ready' | 'problem' | 'done'; text: string; at?: number; isPerson?: boolean }
 
 /** DECIDED: after a compaction that stood, Clawd keeps the mug this long, then goes back to his normal look. */
 export const COFFEE_AFTERGLOW_MS = 120_000
@@ -112,10 +112,13 @@ export const COFFEE_OFFER_LINE = "It's time to take a coffee break."
 /** The button is showing and has not been pressed: Clawd offers the break (awake, normal look) and does not drink yet. */
 export const isOffering = (data: Pick<PanelData, 'boss' | 'staff' | 'fx' | 'gauge'>): boolean => coffeeView(data).state === 'ready'
 
-/** Clawd holds the mug: the pressed compaction is running in this turn of his, or one stood less than `COFFEE_AFTERGLOW_MS` ago. */
+/**
+ * Clawd holds the mug: the pressed compaction is running in this turn of his, the person's own `/compact` is running, or one stood less
+ * than `COFFEE_AFTERGLOW_MS` ago.
+ */
 export function isDrinking({ boss, fx, now }: Pick<PanelData, 'boss' | 'fx' | 'now'>): boolean {
   const c = fx.coffee
-  if (c?.kind === 'running') return c.turns === boss.turns
+  if (c?.kind === 'running') return c.isPerson === true || c.turns === boss.turns
   return c?.kind === 'done' && c.at !== undefined && now - c.at < COFFEE_AFTERGLOW_MS
 }
 
@@ -199,6 +202,29 @@ async function runPress(io: CoffeeIo, isTerminal: boolean, waitMs: number): Prom
     await io.setNote(undefined).catch(() => undefined)
     throw err
   }
+}
+
+/**
+ * The person's own `/compact` of the main chat: typed, or the one the button filled on the desktop app, with or without text after it.
+ * The engine compacting by itself, a plugin's call (the button's own, which `runPress` follows), one ahead of time and a specialist's are not.
+ */
+export const isPersonCompact = (e: { trigger: string; agentId?: string }): boolean => e.trigger === 'manual' && e.agentId === undefined
+
+/**
+ * Clawd holds the mug while the person's `/compact` runs (`run` is the engine's compaction) and, when it stands, for the afterglow, as
+ * after a press. A skip, a failure or a cancel takes the mug away. The engine's answer or failure passes on untouched: a mug that cannot
+ * be shown never stops a compaction.
+ */
+export async function whileCompacting<T extends { skip?: string }>(io: Pick<CoffeeIo, 'now' | 'setNote' | 'clearReading'>, run: () => Promise<T>): Promise<T> {
+  const drop = () => io.setNote(undefined).catch(() => undefined)
+  await io.setNote({ kind: 'running', text: WORKING, isPerson: true }).catch(() => undefined)
+  const r = await run().catch(async (err: unknown) => { await drop(); throw err })
+  if (r.skip !== undefined) {
+    await drop()
+    return r
+  }
+  await io.now().then(at => io.setNote({ kind: 'done', text: '', at })).then(() => io.clearReading()).catch(() => undefined)
+  return r
 }
 
 /** A press under way:a second press meanwhile does nothing. Set before anything is awaited, so two presses at one moment still compact once. */

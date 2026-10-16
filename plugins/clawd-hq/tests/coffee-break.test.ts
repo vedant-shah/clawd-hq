@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 import { BOX_BUSY, DIALOG_OPEN } from '../hooks/clawd-edit'
 import {
-  AUTO_COMPACT_MARGIN, COFFEE_AFTERGLOW_MS, COFFEE_NOTE, COFFEE_OFFER_LINE, COFFEE_TOKENS, coffeeView, isBreakTime, isDrinking, isOffering, isOverMark, takeCoffeeBreak, triggerAt,
+  AUTO_COMPACT_MARGIN, COFFEE_AFTERGLOW_MS, COFFEE_NOTE, COFFEE_OFFER_LINE, COFFEE_TOKENS, coffeeView, isBreakTime, isDrinking, isOffering, isOverMark, isPersonCompact,
+  takeCoffeeBreak, triggerAt, whileCompacting,
 } from '../hooks/coffee-break'
 import type { CoffeeIo } from '../hooks/coffee-break'
 import { BOSS0, GAUGE0 } from '../hooks/state'
@@ -134,6 +135,8 @@ test('he drinks while the compaction runs, and not while the button only shows',
   expect(drinking({ coffee: { kind: 'running', text: 'Compacting the chat…', turns: 3 } })).toBe(true)
   // A running line left from another turn of his is stale.
   expect(drinking({ coffee: { kind: 'running', text: 'Compacting the chat…', turns: 2 } })).toBe(false)
+  // The person's own /compact runs until the engine ends it, even if it starts a turn of his on the way.
+  expect(drinking({ coffee: { kind: 'running', text: 'Compacting the chat…', turns: 2, isPerson: true } })).toBe(true)
 })
 
 test('he drinks for two minutes after a compaction that stood, then not', () => {
@@ -425,4 +428,46 @@ test('on an older engine a second press, with /compact already in the box, keeps
   const typed = fakeIo({ compact: noCompact, promptRead: async () => ({ text: '  /compact' }) })
   await takeCoffeeBreak(typed.io, false)
   expect(lastNote(typed.log)).toEqual({ kind: 'ready', text: 'Ready in your prompt box. Send it to compact.' })
+})
+
+// ---- The person's own /compact: typed, or the one the button filled ----
+
+/** The engine's answer for a compaction that stood. */
+const STOOD = { messages: [] as string[], skip: undefined }
+
+test('only the person\'s /compact of the main chat counts: not the engine\'s own, a plugin\'s, one ahead of time, or a specialist\'s', () => {
+  expect(isPersonCompact({ trigger: 'manual' })).toBe(true)
+  for (const trigger of ['auto', 'plugin', 'precompute']) expect(isPersonCompact({ trigger })).toBe(false)
+  expect(isPersonCompact({ trigger: 'manual', agentId: 'w1' })).toBe(false)
+})
+
+test('while the person\'s /compact runs he holds the mug; when it stands it is kept as done, and the reading starts over', async () => {
+  const { io, log } = fakeIo()
+  const seen: Array<string | undefined> = []
+  const r = await whileCompacting(io, async () => { seen.push(lastNote(log)?.kind); return STOOD })
+  expect(seen).toEqual(['running'])
+  expect(log.notes).toEqual([{ kind: 'running', text: 'Compacting the chat…', isPerson: true }, { kind: 'done', text: '', at: 777 }])
+  expect(log.cleared).toBe(1)
+  expect(r).toBe(STOOD)
+})
+
+test('a /compact that is skipped leaves no mug and no afterglow, and the engine\'s answer passes on as it was', async () => {
+  const { io, log } = fakeIo()
+  expect(await whileCompacting(io, async () => ({ skip: 'a hook said no' }))).toEqual({ skip: 'a hook said no' })
+  expect(lastNote(log)).toBeUndefined()
+  expect(log.cleared).toBe(0)
+})
+
+test('a /compact that fails or is cancelled leaves no mug, and the failure passes on to the engine untouched', async () => {
+  const { io, log } = fakeIo()
+  const cancelled = new Error('Compaction canceled.')
+  await expect(whileCompacting(io, () => Promise.reject(cancelled))).rejects.toBe(cancelled)
+  expect(lastNote(log)).toBeUndefined()
+  expect(log.cleared).toBe(0)
+})
+
+test('the mug failing to show never stops the compaction or changes its answer', async () => {
+  const { io } = fakeIo({ setNote: async () => { throw new Error('state gone') }, clearReading: async () => { throw new Error('gone') } })
+  expect(await whileCompacting(io, async () => STOOD)).toBe(STOOD)
+  expect(await whileCompacting(io, async () => ({ skip: 'no' }))).toEqual({ skip: 'no' })
 })

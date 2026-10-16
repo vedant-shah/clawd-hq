@@ -149,6 +149,115 @@ test('a skipped or failed compaction gives him no mug', async ($, on) => {
   expect((await cardNow($)).alt).toMatch(/holding a logbook$/)
 })
 
+// ---- The person's own /compact: typed, or the one the button filled on the desktop app ----
+
+/** The desktop app refuses the plugin's compact call in its SDK session, so the press only fills `/compact` into the prompt box. */
+const HEADLESS = 'clawd-hq: $.session.compact: not available in a headless (-p / SDK) session yet: compaction here runs inside a turn (a /compact prompt); catch it and carry on.'
+/** The person sends `/compact`, with or without text after it: the engine's own compaction, trigger `manual`. */
+const sendCompact = ($: Engine, over: { instructions?: string; trigger?: string; agentId?: string } = {}) =>
+  $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'Build the panel', toolUses: [] }], ...over } as never)
+/** Holds the next compaction until the returned function is called. */
+function holdCompact(h: ReturnType<typeof flowHost>) {
+  let release: () => void = () => undefined
+  h.compact.hold = new Promise<void>(resolve => { release = resolve })
+  return () => { release(); h.compact.hold = undefined }
+}
+const isDrinkingNow = async ($: Engine) => (await cardNow($)).alt.endsWith('drinking coffee')
+async function isButtonShown($: Engine) {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
+  const found = await ui.find(BUTTON)
+  await ui.unmount()
+  return found !== undefined
+}
+
+test('desktop: a press that only fills /compact gives no mug; once the person sends it he drinks while it runs and two minutes after', async ($, on) => {
+  const h = flowHost(on)
+  await $.session.start(START)
+  await atBreak($, h)
+  h.compact.error = HEADLESS
+  await press($)
+  expect(await isDrinkingNow($)).toBe(false)
+  h.compact.error = undefined
+
+  const release = holdCompact(h)
+  const sending = sendCompact($, { instructions: 'Keep my latest request and any open work.' })
+  await pause()
+  expect(await isDrinkingNow($)).toBe(true)
+  expect(await isOffered($)).toBe(false)
+  release()
+  await sending
+  // It stood: the same as after a pressed compaction, the checkpoint is over and the button goes.
+  expect(await isButtonShown($)).toBe(false)
+  await h.clock.advance(COFFEE_AFTERGLOW_MS - MOMENT)
+  expect(await isDrinkingNow($)).toBe(true)
+  await h.clock.advance(MOMENT)
+  expect(await isDrinkingNow($)).toBe(false)
+})
+
+test('desktop: a turn that the /compact itself starts mid-run does not take the mug away', async ($, on) => {
+  const h = flowHost(on)
+  await $.session.start(START)
+  await atBreak($, h)
+  const release = holdCompact(h)
+  const sending = sendCompact($)
+  await pause()
+  await startTurn($, 'm-compact', '/compact')
+  expect(await isDrinkingNow($)).toBe(true)
+  release()
+  await sending
+  await endTurn($, 'm-compact', '')
+  expect(await isDrinkingNow($)).toBe(true)
+})
+
+test('a /compact typed with no text, and with no break on offer, gets the mug too', async ($, on) => {
+  const h = flowHost(on)
+  await $.session.start(START)
+  await job($, h).ask()
+  const release = holdCompact(h)
+  const sending = sendCompact($)
+  await pause()
+  expect(await isDrinkingNow($)).toBe(true)
+  release()
+  await sending
+  expect(await isDrinkingNow($)).toBe(true)
+})
+
+test('a /compact that is skipped, fails or is cancelled leaves no mug and no afterglow', async ($, on) => {
+  const h = flowHost(on)
+  await $.session.start(START)
+  await atBreak($, h)
+  h.compact.skip = 'a hook said no'
+  await sendCompact($)
+  expect(await isDrinkingNow($)).toBe(false)
+  h.compact.skip = undefined
+  h.compact.error = 'Compaction canceled.'
+  const release = holdCompact(h)
+  const failing = sendCompact($).catch((err: unknown) => err)
+  await pause()
+  expect(await isDrinkingNow($)).toBe(true)
+  release()
+  // The send fails (the test engine names a failing stand-in as "no implementation", not by its words).
+  expect(await failing).toBeDefined()
+  expect(await isDrinkingNow($)).toBe(false)
+  // Passing the failure on never makes the engine run the compaction again.
+  expect(h.compacts).toHaveLength(2)
+})
+
+test('the engine compacting by itself, or a specialist\'s own compaction, gives no mug', async ($, on) => {
+  const h = flowHost(on)
+  await $.session.start(START)
+  await job($, h).ask()
+  for (const over of [{ trigger: 'auto' }, { trigger: 'manual', agentId: 'w1' }]) {
+    const release = holdCompact(h)
+    const running = sendCompact($, over)
+    await pause()
+    expect(await isDrinkingNow($)).toBe(false)
+    release()
+    await running
+    expect(await isDrinkingNow($)).toBe(false)
+  }
+})
+
 test('before the chat is big enough there is no break, so no coffee', async ($, on) => {
   const h = flowHost(on)
   await $.session.start(START)

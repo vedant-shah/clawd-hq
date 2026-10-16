@@ -130,9 +130,10 @@ export type Fx = {
   /**
    * The one line the coffee break button leaves under the footer's row: that it is compacting, that the command is ready in the prompt
    * box, or why it did not compact. `turns` is Clawd's turn count when it was made; a new turn of his makes it stale, and it is not drawn.
-   * `done` is no line: a compaction stood at `at` (ms), and Clawd drinks coffee for a while after it.
+   * `done` is no line: a compaction stood at `at` (ms), and Clawd drinks coffee for a while after it. `isPerson`: the person's own
+   * `/compact` is running, which ends only when the engine ends it, so a turn it starts on the way does not make it stale.
    */
-  coffee?: { kind: 'running' | 'ready' | 'problem' | 'done'; text: string; turns: number; at?: number }
+  coffee?: { kind: 'running' | 'ready' | 'problem' | 'done'; text: string; turns: number; at?: number; isPerson?: boolean }
   /** Where the Settings tab's box of each file is: its first line, and the fingerprint of the text it was for (another text starts at the top). */
   scroll?: { rules?: { at: number; of: number }; voice?: { at: number; of: number } }
 }

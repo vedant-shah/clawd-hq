@@ -18,7 +18,7 @@ import { BRAND, clip, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { contextOf, noteRequest, noteThreshold, startGauge } from './usage'
-import { isBreakTime, takeCoffeeBreak, type CoffeeIo } from './coffee-break'
+import { isBreakTime, isPersonCompact, takeCoffeeBreak, whileCompacting, type CoffeeIo } from './coffee-break'
 import { isNotification, isPersonMessage, withHandBack, withNewWork, withNotice, withPersonSpoke, withToolUsed, withTurnEnd } from './checkpoint'
 import { keepCoffeeRecord } from './coffee-debug'
 import type { CoffeeDebugIo } from './coffee-debug'
@@ -504,6 +504,9 @@ export const register: Register = (on, options) => {
     void keepCoffeeRecord(coffeeDebugIo($), 'measure') // the reading of the turn that just ended, which the turn's own record could not have yet
     return next(e)
   })
+
+  // The person's own /compact (typed, or the one the coffee break button filled): Clawd drinks while it runs, and a while after it stands.
+  on('session.compact', async ($, e, next) => (isPersonCompact(e) ? whileCompacting(coffeeIo($), () => next(e)) : next(e)))
 
   // A /clear ends the session without a session.start: from here the list of finished work starts over.
   on('session.end', async ($, e, next) => {

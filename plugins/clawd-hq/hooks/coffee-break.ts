@@ -124,9 +124,18 @@ const COMPACT_COMMAND = '/compact'
  * message alone (never `instanceof TypeError`: the engine may run plugins in another JS realm, or wrap the call). Any other failure is not.
  */
 const MISSING_WORDS = /not a function|is not defined|undefined/
+/** The desktop app has the call but refuses it in a headless (-p / SDK) session: "… not available in a headless … session yet …". */
+const HEADLESS_WORDS = /headless|not available/i
+const messageOf = (err: unknown): string =>
+  typeof err === 'string' ? err : typeof (err as { message?: unknown } | null)?.message === 'string' ? (err as { message: string }).message : ''
 export function isMissingCall(err: unknown): boolean {
-  const message = typeof err === 'string' ? err : typeof (err as { message?: unknown } | null)?.message === 'string' ? (err as { message: string }).message : ''
+  const message = messageOf(err)
   return /compact/.test(message) && MISSING_WORDS.test(message)
+}
+/** The engine refuses compaction here as a headless session: the same prompt-box fallback applies. */
+export function isHeadlessRefusal(err: unknown): boolean {
+  const message = messageOf(err)
+  return /compact/i.test(message) && HEADLESS_WORDS.test(message)
 }
 
 /** Compacts now: nothing when it stood, one plain line when it was skipped or failed, and `'missing'` where the engine has no such call. */
@@ -135,7 +144,7 @@ async function compactNow(compact: CoffeeIo['compact']): Promise<Note | 'missing
     const r = await compact({ instructions: COFFEE_NOTE })
     return r.skip === undefined ? undefined : problem(`The chat was not compacted: ${r.skip}.`)
   } catch (err) {
-    return isMissingCall(err) ? 'missing' : problem(`Couldn't compact the chat: ${reasonOf(err)}.`)
+    return isMissingCall(err) || isHeadlessRefusal(err) ? 'missing' : problem(`Couldn't compact the chat: ${reasonOf(err)}.`)
   }
 }
 

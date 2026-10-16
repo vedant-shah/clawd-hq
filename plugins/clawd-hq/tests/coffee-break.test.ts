@@ -322,6 +322,47 @@ test('a missing compact call is found from the message alone: a plain Error, or 
   expect(lastNote(other.log)?.kind).toBe('problem')
 })
 
+// ---- The desktop app: compact is refused in a headless / SDK session ----
+
+const DESKTOP_ERROR =
+  'clawd-hq: $.session.compact: not available in a headless (-p / SDK) session yet: compaction here runs inside a turn (a /compact prompt); catch it and carry on.'
+
+test('the desktop app\'s headless error takes the prompt-box fallback: filled, never sent, no amber line', async () => {
+  const { io, log } = fakeIo({ compact: async () => { throw new Error(DESKTOP_ERROR) } })
+  await takeCoffeeBreak(io, false)
+  expect(log.fills).toEqual([`/compact ${COFFEE_NOTE}`])
+  expect(lastNote(log)).toEqual({ kind: 'ready', text: 'Ready in your prompt box. Send it to compact.' })
+  expect(log.cleared).toBe(0)
+  expect(log.notes.some(n => n?.kind === 'done')).toBe(false)
+})
+
+test('a variant wording with "headless" or "not available" and "compact" also falls back', async () => {
+  for (const message of ['compact is not available here', 'session.compact: headless session', 'Compact not available in SDK mode'.toLowerCase()]) {
+    const { io, log } = fakeIo({ compact: () => Promise.reject(new Error(message)) })
+    await takeCoffeeBreak(io, false)
+    expect(log.fills).toEqual([`/compact ${COFFEE_NOTE}`])
+  }
+})
+
+test('words like "headless" or "not available" without compact are an ordinary failure', async () => {
+  for (const message of ['the network is not available', 'headless browser crashed']) {
+    const { io, log } = fakeIo({ compact: async () => { throw new Error(message) } })
+    await takeCoffeeBreak(io, false)
+    expect(log.fills).toEqual([])
+    expect(lastNote(log)).toEqual({ kind: 'problem', text: `Couldn't compact the chat: ${message}.` })
+  }
+})
+
+test('a headless error with a refused fill or a busy box tells the person what to type', async () => {
+  const refused = fakeIo({ compact: async () => { throw new Error(DESKTOP_ERROR) }, fill: async () => ({ isFilled: false }) })
+  await takeCoffeeBreak(refused.io, false)
+  expect(lastNote(refused.log)).toEqual({ kind: 'problem', text: `Type this in the chat: /compact ${COFFEE_NOTE}` })
+  const busy = fakeIo({ compact: async () => { throw new Error(DESKTOP_ERROR) }, promptRead: async () => ({ text: 'half a thought' }) })
+  await takeCoffeeBreak(busy.io, false)
+  expect(busy.log.fills).toEqual([])
+  expect(lastNote(busy.log)).toEqual({ kind: 'problem', text: BOX_BUSY })
+})
+
 test('whatever fails after the running note is set, the note ends cleared or replaced, never left saying "Compacting"', async () => {
   const outcome = async (over: Partial<CoffeeIo>) => {
     const { io, log } = fakeIo(over)

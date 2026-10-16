@@ -178,6 +178,7 @@ function fakeIo(over: Partial<CoffeeIo> = {}) {
   const io: CoffeeIo = {
     now: async () => 777,
     isBreak: async () => true,
+    ask: async () => ({ isAnswered: false }),
     compact: async args => { log.compacts.push(args.instructions); return {} },
     promptRead: async () => ({ text: '' }),
     fill: async text => { log.fills.push(text); return { isFilled: true } },
@@ -199,7 +200,7 @@ test('pressing compacts once, right away, with the note', async () => {
 test('a compaction that stands leaves no line, only the time it was done, and the reading of the context starts over', async () => {
   const { io, log } = fakeIo()
   await takeCoffeeBreak(io, true)
-  expect(log.notes.map(n => n?.kind)).toEqual(['running', 'done'])
+  expect(log.notes.map(n => n?.kind)).toEqual(['running', 'running', 'done'])
   expect(lastNote(log)).toEqual({ kind: 'done', text: '', at: 777 })
   expect(log.cleared).toBe(1)
 })
@@ -232,6 +233,41 @@ test('a second press while the first is working compacts nothing more', async ()
   await second
   await pause()
   release()
+  await first
+  expect(log.compacts).toHaveLength(1)
+})
+
+// ---- The note the model writes ----
+
+test('the model\'s answer follows the fixed note, in the compact call and in the prompt-box command', async () => {
+  const ask = async () => ({ isAnswered: true as const, text: 'Goal: ship it.\nNext: test it.' })
+  const direct = fakeIo({ ask })
+  await takeCoffeeBreak(direct.io, true)
+  expect(direct.log.compacts).toEqual([`${COFFEE_NOTE}\nGoal: ship it.\nNext: test it.`])
+  expect(direct.log.notes.map(n => n?.text)).toEqual(['Writing the note…', 'Compacting the chat…', ''])
+  const box = fakeIo({ ask, compact: noCompact })
+  await takeCoffeeBreak(box.io, true)
+  expect(box.log.fills).toEqual([`/compact ${COFFEE_NOTE} Goal: ship it. Next: test it.`])
+})
+
+test('a failed, empty or too slow question leaves the fixed note alone', async () => {
+  const never = () => new Promise<never>(() => undefined)
+  const cases = [
+    fakeIo({ ask: () => Promise.reject(new Error('no')) }),
+    fakeIo({ ask: async () => ({ isAnswered: true, text: '  \n ' }) }),
+    fakeIo({ ask: never }),
+  ]
+  for (const c of cases) await takeCoffeeBreak(c.io, true, 20)
+  for (const c of cases) expect(c.log.compacts).toEqual([COFFEE_NOTE])
+})
+
+test('a second press while the note is being written compacts once', async () => {
+  let release: (v: { isAnswered: false }) => void = () => undefined
+  const { io, log } = fakeIo({ ask: () => new Promise(r => { release = r }) })
+  const first = takeCoffeeBreak(io, true)
+  await takeCoffeeBreak(io, true)
+  await pause()
+  release({ isAnswered: false })
   await first
   expect(log.compacts).toHaveLength(1)
 })

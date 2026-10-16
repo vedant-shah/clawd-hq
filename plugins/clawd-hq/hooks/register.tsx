@@ -400,6 +400,7 @@ const gaugeIo = ($: EngineInterface): GaugeIo => ({
 const coffeeIo = ($: EngineInterface): CoffeeIo => ({
   now: () => $.clock.now(),
   isBreak: async () => isBreakTime(await getBoss($), await read($, staff), await getFx($)),
+  ask: prompt => $.model.fork({ prompt }), // the note's one short question, on the cached chat
   compact: args => $.session.compact(args),
   promptRead: () => $.prompt.read(), fill: text => $.prompt.fill({ text, mode: 'append' }),
   setNote: async note => { const { turns } = await getBoss($); await setFx($, f => ({ ...f, coffee: note && { ...note, turns } })) },

@@ -98,8 +98,9 @@ test('asleep: eyes read as shut, a thin dark line wider than tall, on both drawi
     expect(rows.length).toBeLessThanOrEqual(2)
     expect(Math.max(...rows.map(r => r.lastIndexOf('#') - r.indexOf('#') + 1))).toBeGreaterThanOrEqual(4)
   }
-  // Small drawing: one dot tall, three wide, per eye.
-  expect(shapeIn(compact, PALETTE.k, 3, 4, 12, 7)).toEqual(['..........', '.###..###.', '..........', '..........'])
+  // Small drawing: no black at all; each eye a two-dot line in the darker skin shade, one dot tall, on the open eye's lower row.
+  expect(compact.flat()).not.toContain(PALETTE.k)
+  expect(shapeIn(compact, PALETTE.d, 3, 4, 12, 7)).toEqual(['..........', '..........', '.##....##.', '..........'])
 })
 
 test('the z drifts up between steps and loops back, in both drawings', () => {
@@ -134,10 +135,11 @@ test('the looks keep his navy blazer and red tie', () => {
   for (const one of [asleep, coffee]) {
     expect(one.full[15]![9]).toBe(PALETTE.r)
     expect(one.full[18]![8]).toBe(PALETTE.r)
-    // The small drawing wears the navy blazer with a white shirt strip, and no tie, in every look.
+    // The small drawing keeps his orange body with a navy hem row, no tie and no white on the torso, in every look.
     expect(one.compact.flat()).not.toContain(PALETTE.r)
-    for (const [x, y] of [[4, 7], [11, 7], [4, 8], [11, 8]] as const) expect(one.compact[y]![x]).toBe(PALETTE.n)
-    for (const [x, y] of [[7, 7], [8, 7], [7, 8], [8, 8]] as const) expect(one.compact[y]![x]).toBe(PALETTE.w)
+    expect(one.compact[8]!.slice(3, 13)).toEqual(Array(10).fill(PALETTE.n))
+    for (const y of [4, 5, 6, 7]) expect(one.compact[y]!.slice(2, 14)).not.toContain(PALETTE.w)
+    for (const [x, y] of [[2, 6], [2, 7]] as const) expect(one.compact[y]![x]).toBe(PALETTE.o)
     expect(one.full.slice(0, 9).flat().every(c => c === null)).toBe(true)
   }
   expect(still.full[15]![9]).toBe(PALETTE.r)

@@ -142,8 +142,8 @@ export function avatarFor(agentType: string): Character {
 // A small red tie, drawn for now: Clawd has no crown and no emblem yet.
 const TIE: Part[] = [{ x: 9, y: 15, rows: ['rr', 'rr', 'rr', 'rr'] }, { x: 8, y: 18, rows: ['rrrr'] }]
 
-// Clawd's navy blazer on the small drawing (his own, not the shared body), in place of the tie: a white shirt strip down the middle of the lower torso.
-const SUIT_ICON: Part = { x: 2, y: 7, rows: ['nnnnnwwnnnnn', '.nnnnwwnnnn.'] }
+// Clawd's navy hem on the small drawing (his own, not the shared body), in place of the tie: the bottom torso row turns navy; no white, arms stay orange.
+const HEM_ICON: Part = { x: 3, y: 8, rows: ['nnnnnnnnnn'] }
 
 // The small drawing's eyes are two dots tall: a blink covers the upper dot of each with the body's colour.
 const BLINK_ICON: Part = { x: 0, y: 5, rows: ['.....o....o.....'] }
@@ -167,6 +167,6 @@ export function clawdAvatar(pose: Pose = {}): { full: Grid; compact: Grid } {
   const clawd = CHARACTERS.find(c => c.id === 'clawd')!
   const held = holdings(pose.look ?? 'normal', pose.step ?? 0, pose, { full: PARTS.prop![clawd.prop]!, compact: COMPACT.accent[clawd.compactAccent]! })
   const full = paintAll(blank(GRID.width, GRID.height), [BODY, PARTS.outfit![clawd.outfit]!, held.eyes ?? PARTS.expression![clawd.expression]!, ...TIE, ...held.full])
-  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, SUIT_ICON, ...held.eyesSmall, ...held.compact])
+  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, HEM_ICON, ...held.eyesSmall, ...held.compact])
   return { full, compact }
 }

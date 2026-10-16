@@ -1,6 +1,8 @@
 // The Clawd HQ avatars, pure: layered 24x24 sprites, 16x12 list icons and 8x8 tiny pictures built from the embedded parts.
 import { BLINK, BODY, CHARACTERS, COMPACT, COMPACT_GRID, GRID, LAYER_ORDER, PALETTE, PARTS } from './avatar-data'
 import type { Character, Part } from './avatar-data'
+import { FULL_MUG, SMALL_MUG, fullSteam, fullZ, smallSteam, smallZ } from './clawd-look'
+import type { Look } from './clawd-look'
 import { hash } from './office'
 
 /** Palette colors (hex) or null where empty. */
@@ -19,7 +21,7 @@ function paint(grid: Grid, part: Part): Grid {
 const paintAll = (grid: Grid, parts: Part[]): Grid => parts.reduce(paint, grid)
 
 /** A moment of a picture's small motions: the eyes shut for a blink, and what it holds raised one dot while it works. */
-export type Pose = { isBlinking?: boolean; isLifted?: boolean }
+export type Pose = { isBlinking?: boolean; isLifted?: boolean; look?: Look; step?: number }
 
 const raised = (part: Part): Part => ({ ...part, y: part.y - 1 })
 
@@ -144,13 +146,25 @@ const TIE_ICON: Part = { x: 7, y: 6, rows: ['rr', 'rr'] }
 // The small drawing's eyes are two dots tall: a blink covers the upper dot of each with the body's colour.
 const BLINK_ICON: Part = { x: 0, y: 5, rows: ['.....o....o.....'] }
 
-/** Clawd's interim look: his outfit, expression and prop, no crown or emblem, plus the tie. A blink swaps only the eyes; a lift raises his logbook a dot. */
+/**
+ * What fills Clawd's hand and the air around it, and how his eyes sit, for a look at a step: the logbook (lifted a dot while he works), or
+ * nothing but rising z's while he sleeps (eyes shut, as in a blink), or a mug with steam (eyes wide, with a glint). Both drawings.
+ */
+function holdings(look: Look, step: number, pose: Pose, logbook: { full: Part; compact: Part }) {
+  if (look === 'asleep') return { eyes: BLINK, eyesSmall: [BLINK_ICON], full: fullZ(step), compact: smallZ(step) }
+  if (look === 'coffee') return { eyes: PARTS.expression!.sparkle!, eyesSmall: [], full: [FULL_MUG, ...fullSteam(step)], compact: [SMALL_MUG, ...smallSteam(step)] }
+  const [full, compact] = pose.isLifted ? [raised(logbook.full), raised(logbook.compact)] : [logbook.full, logbook.compact]
+  return { eyes: pose.isBlinking ? BLINK : undefined, eyesSmall: pose.isBlinking ? [BLINK_ICON] : [], full: [full], compact: [compact] }
+}
+
+/**
+ * Clawd's interim look: his outfit, expression and prop, no crown or emblem, plus the tie. A blink swaps only the eyes; a lift raises his
+ * logbook a dot. A `look` of asleep or coffee (with the `step` of the z's or the steam) changes the eyes and what is in his hand.
+ */
 export function clawdAvatar(pose: Pose = {}): { full: Grid; compact: Grid } {
   const clawd = CHARACTERS.find(c => c.id === 'clawd')!
-  const expression = pose.isBlinking ? BLINK : PARTS.expression![clawd.expression]!
-  const [prop, accent] = [PARTS.prop![clawd.prop]!, COMPACT.accent[clawd.compactAccent]!]
-  const full = paintAll(blank(GRID.width, GRID.height), [BODY, PARTS.outfit![clawd.outfit]!, expression, pose.isLifted ? raised(prop) : prop, ...TIE])
-  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height),
-    [COMPACT.body, ...(pose.isBlinking ? [BLINK_ICON] : []), pose.isLifted ? raised(accent) : accent, TIE_ICON])
+  const held = holdings(pose.look ?? 'normal', pose.step ?? 0, pose, { full: PARTS.prop![clawd.prop]!, compact: COMPACT.accent[clawd.compactAccent]! })
+  const full = paintAll(blank(GRID.width, GRID.height), [BODY, PARTS.outfit![clawd.outfit]!, held.eyes ?? PARTS.expression![clawd.expression]!, ...TIE, ...held.full])
+  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, ...held.eyesSmall, ...held.compact, TIE_ICON])
   return { full, compact }
 }

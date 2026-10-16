@@ -5,17 +5,19 @@ import { percentLabel } from './meters'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import { localOffset, usageView } from './usage'
-import type { UsageRow } from './usage'
+import type { UsageReading, UsageRow } from './usage'
+import { usageTint } from './usage-tint'
 
 function row(kit: Kit, r: UsageRow) {
   const { Box, Text, bar } = kit
+  const tint = usageTint(r.value)
   return (
     <Box key={`usage-${r.key}`} flexDirection="column">
       <Box flexDirection="row" flexWrap="wrap" justifyContent="space-between" columnGap={2}>
         <Text wrap="wrap">{r.label}</Text>
         <Box flexDirection="row" columnGap={1}>
-          {r.detail !== undefined && <Text dimColor wrap="wrap">{r.detail}</Text>}
-          {r.percent !== undefined && <Text wrap="wrap">{r.percent}</Text>}
+          {r.detail !== undefined && <Text dimColor={tint === undefined} color={tint} wrap="wrap">{r.detail}</Text>}
+          {r.percent !== undefined && <Text color={tint} wrap="wrap">{r.percent}</Text>}
         </Box>
       </Box>
       {bar(r.value, `${r.label} ${percentLabel(r.value)} used`)}
@@ -23,10 +25,27 @@ function row(kit: Kit, r: UsageRow) {
   )
 }
 
+/**
+ * The button's text in pieces, so each number can carry its own colour: "Usage", then the numbers with a dot between.
+ * The Button's label still names it whole, for the address and for a screen reader.
+ */
+function buttonText(kit: Kit, readings: UsageReading[], arrow: string) {
+  const { Text } = kit
+  return [
+    'Usage ',
+    ...readings.flatMap((r, i) => [
+      ...(i > 0 ? [' · '] : []),
+      <Text key={`usage-n${i}`} color={usageTint(r.value)}>{r.text}</Text>,
+    ]),
+    ` ${arrow}`,
+  ]
+}
+
 export function usageFooter(kit: Kit, data: PanelData, actions: PanelActions) {
   const { Box, Text, Button } = kit
   const view = usageView(data.gauge, data.now, localOffset)
   const isOpen = data.fx.isUsageOpen === true
+  const arrow = isOpen ? '▴' : '▾'
   return (
     <Box key="gauges" flexDirection="column" gap={kit.isTerminal ? 0 : 1}>
       {isOpen && (
@@ -42,7 +61,7 @@ export function usageFooter(kit: Kit, data: PanelData, actions: PanelActions) {
             {view.effort !== undefined && <Text wrap="wrap">{view.effort}</Text>}
           </Box>
         )}
-        <Button key="usage-toggle" label={`${view.button} ${isOpen ? '▴' : '▾'}`} onPress={() => actions.toggleUsage()} />
+        <Button key="usage-toggle" label={`${view.button} ${arrow}`} onPress={() => actions.toggleUsage()}>{buttonText(kit, view.readings, arrow)}</Button>
       </Box>
     </Box>
   )

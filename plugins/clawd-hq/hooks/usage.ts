@@ -20,7 +20,10 @@ export type UsageRow = {
   value: number
 }
 
-export type UsageView = { model?: string; effort?: string; button: string; rows: UsageRow[] }
+/** One number on the button: its text, and the reading it comes from (none for a dash). */
+export type UsageReading = { text: string; value?: number }
+
+export type UsageView = { model?: string; effort?: string; button: string; readings: UsageReading[]; rows: UsageRow[] }
 
 /** 169.7k, 3k, 1M, 1.5M: the count as Claude writes it. */
 export function tokensShort(n: number): string {
@@ -111,16 +114,20 @@ function limitRows(g: Gauge, now: number, offsetAt: (at: number) => number | und
  * The button's readings in fixed places, context then session then weekly, so a number is never taken for another: a
  * dash holds the place of one that is missing or hidden. With no limit shown (no subscription) there is the context alone.
  */
-function slots(g: Gauge, limits: UsageRow[]): string[] {
-  const context = g.contextPercent === undefined ? '–' : percentLabel(g.contextPercent)
+function slots(g: Gauge, limits: UsageRow[]): UsageReading[] {
+  const context: UsageReading = g.contextPercent === undefined ? { text: '–' } : { text: percentLabel(g.contextPercent), value: g.contextPercent }
   if (limits.length === 0) return [context]
-  return [context, ...LIMITS.map(({ key }) => limits.find(r => r.key === key)?.percent ?? '–')]
+  return [context, ...LIMITS.map(({ key }): UsageReading => {
+    const r = limits.find(l => l.key === key)
+    return r?.percent === undefined ? { text: '–' } : { text: r.percent, value: r.value }
+  })]
 }
 
 export function usageView(g: Gauge, now: number, offsetAt: (at: number) => number | undefined): UsageView {
   const [context, ...limits] = [contextRow(g), ...limitRows(g, now, offsetAt)]
   const rows = [context!, ...limits]
-  return { model: modelLabel(g.model), effort: effortLabel(g.effort), button: `Usage ${slots(g, limits).join(' · ')}`, rows }
+  const readings = slots(g, limits)
+  return { model: modelLabel(g.model), effort: effortLabel(g.effort), button: `Usage ${readings.map(r => r.text).join(' · ')}`, readings, rows }
 }
 
 // ---- Keeping the gauge, through plain calls register.tsx hands in (`$` never leaves that file) ----

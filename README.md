@@ -29,7 +29,7 @@ Then run `/reload-plugins` or restart Claude Code. Auto-update is off by default
 - `/office` opens the office.
 - `/office-demo` plays a one-minute tour.
 
-`/office` opens four tabs: Office (who is at work and what each specialist is doing right now), Decisions (the project memory), People (hire and lay off) and Settings (the plugin's configs, with toggles, the work finished this session, and Clawd's instructions and voice notes, which you can ask Claude to edit). The bottom row of each tab shows how full the context is and, on a Claude subscription, how much of your session and weekly limits you have used.
+`/office` opens four tabs: Office (who is at work and what each specialist is doing right now), Decisions (the project memory), People (hire and lay off) and Settings (the plugin's configs, with toggles, the work finished this session, and Clawd's instructions and voice notes, which you can ask Claude to edit). The bottom row of each tab shows how full the context is and, on a Claude subscription, how much of your session and weekly limits you have used, with each number turning amber at 70% and red at 90%.
 
 The office opens on the Office tab when a session starts, in the terminal and in the desktop app alike. Showing a tab this way also gives it the keyboard, so your first keys go to the panel until you click the prompt box or press Esc. If Claude Code cannot do that at that moment (a reply is already running, or there is text in the prompt box), the request is made once more when the first reply ends, and then not again. When the plugin reloads during a session (for example, after you change a config in the Settings tab), the tabs stay as you left them.
 

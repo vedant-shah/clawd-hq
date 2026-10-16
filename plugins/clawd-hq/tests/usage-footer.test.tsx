@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { ACCENT } from '../hooks/office'
+import { ACCENT, AMBER, RED } from '../hooks/office'
 import { localOffset, resetAt } from '../hooks/usage'
 import { ALL_PANES, CLEAR, HOUR, PANE, START, SURFACES, host } from './host'
 
@@ -330,4 +330,70 @@ test('a request with no effort keeps the effort shown for the same model, and dr
   expect(await other.find({ type: 'Text', text: /^Sonnet 5\.1$/ })).toBeDefined()
   expect(await other.find({ type: 'Text', text: /^High$/ })).toBeUndefined()
   await other.unmount()
+})
+
+// ---- The numbers turn amber at 70% and red at 90% ----
+
+/** The footer's gauge with chosen readings: context, session and weekly percents (a missing one is left out). */
+async function measureAt($: Engine, now: number, context: number | undefined, session: number, week: number) {
+  const rateLimits = [
+    { kind: 'five_hour', percentUsed: session, resetsAt: new Date(now + 3 * HOUR).toISOString() },
+    { kind: 'seven_day', percentUsed: week, resetsAt: WEEKLY_AT },
+  ]
+  await $.session.measure({ context: { ...CONTEXT, percent: context }, rateLimits, changed: ['context', 'rateLimits'] } as never)
+}
+
+const colorOf = async (ui: Awaited<ReturnType<typeof mount>>, text: RegExp) => (await ui.find({ type: 'Text', text }))?.props.color
+
+test('on the button each number is plain below 70, amber from 70 and red from 90, the dash and the rest stay plain', async ($, on) => {
+  const { clock } = host(on)
+  await measureAt($, clock.now(), 69, 70, 90)
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    const button = (await ui.find({ key: 'usage-toggle' }))!
+    expect(button.props.label).toBe('Usage 69% · 70% · 90% ▾')
+    expect(await colorOf(ui, /^69%$/)).toBeUndefined()
+    expect(await colorOf(ui, /^70%$/)).toBe(AMBER)
+    expect(await colorOf(ui, /^90%$/)).toBe(RED)
+    expect(await colorOf(ui, /^Usage$/)).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('89 is amber and a missing context stays a plain dash beside coloured limits', async ($, on) => {
+  const { clock } = host(on)
+  await measureAt($, clock.now(), undefined, 89, 95)
+  const ui = await mount($, 'terminal')
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage – · 89% · 95% ▾')
+  expect(await colorOf(ui, /^–$/)).toBeUndefined()
+  expect(await colorOf(ui, /^89%$/)).toBe(AMBER)
+  expect(await colorOf(ui, /^95%$/)).toBe(RED)
+  await ui.unmount()
+})
+
+test('pressing the coloured button still opens and closes the details', async ($, on) => {
+  const { clock } = host(on)
+  await measureAt($, clock.now(), 92, 70, 10)
+  const ui = await mount($, 'terminal')
+  await ui.press({ key: 'usage-toggle' })
+  expect(await ui.find({ key: 'usage-details' })).toBeDefined()
+  await ui.press({ key: 'usage-toggle' })
+  expect(await ui.find({ key: 'usage-details' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('in the open details the same rule colours each row: the context row\'s counts and each limit\'s percent', async ($, on) => {
+  const { clock } = host(on)
+  await measureAt($, clock.now(), 92, 70, 10)
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    await ui.press({ key: 'usage-toggle' })
+    expect(await colorOf(ui, /^169\.7k \/ 1M \(92%\)$/)).toBe(RED)
+    // Only the rows above the button (the button's own numbers are checked apart).
+    const details = walk((await ui.drawn()) as unknown as Tree, t => t.props.key === 'usage-details')[0]!
+    const limits = walk(details, t => t.type === 'Text' && /^(70|10)%$/.test(String(t.children?.[0])))
+    expect(limits.map(t => [t.children?.[0], t.props.color])).toEqual([['70%', AMBER], ['10%', undefined]])
+    await ui.press({ key: 'usage-toggle' })
+    await ui.unmount()
+  }
 })

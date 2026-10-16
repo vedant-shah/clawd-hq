@@ -118,13 +118,19 @@ export const RED = '#e05d5d'
 export const GREEN = '#6bbf7a'
 
 export const CLAWD_LINES: Record<ClawdMood, string[]> = {
-  chill: ['Shell yeah, quiet day.', 'Sipping coffee, admiring the roadmap.', 'Anyone need anything? No? Great.', 'I alphabetised the agents. Again.', 'Inbox zero. I am unstoppable.'],
-  focused: ['Claws on keyboard.', 'Let’s get cracking.', 'Reading. Thinking. Pinching.', 'In the zone. Do not disturb.'],
-  delegating: ['Desks are busy. I’m all ears.', 'Delegation is a love language.', 'Teamwork makes the dream work.'],
-  proud: ['Claw-some work, {title}!', 'The {title} nailed it. Raise incoming.', 'That’s my {title}!'],
-  stressed: ['{n} agents at once? I’m a crab, not an octopus.', 'Everything is fine. Totally fine. 💦', 'Who approved all this headcount? Oh. Me.'],
-  oops: ['Nobody panic. I’m panicking.', 'Take the rest of the day, {title}.', 'We’ll call that a learning opportunity.'],
-  sleepy: ['zZz…', '…five more minutes…', '…mmh… delegate… the… zZz'],
+  chill: ['Shell yeah, quiet day.', 'Sipping coffee, admiring the roadmap.', 'Anyone need anything? No? Great.', 'I alphabetised the agents. Again.', 'Inbox zero. I am unstoppable.',
+    'Quiet office. Suspiciously quiet.', 'Low tide, high morale.', 'Sorted the sticky notes by vibe.', 'Pretending to read the backlog.', 'My calendar is wide open. So are my claws.', 'Walking sideways, thinking forwards.'],
+  focused: ['Claws on keyboard.', 'Let’s get cracking.', 'Reading. Thinking. Pinching.', 'In the zone. Do not disturb.',
+    'Thinking so hard my shell creaks.', 'Shh. Genius at work. Allegedly.', 'Two claws, one keyboard, zero chill.', 'Pinch-perfect focus.'],
+  delegating: ['Desks are busy. I’m all ears.', 'Delegation is a love language.', 'Teamwork makes the dream work.',
+    'Management is professional pointing.', 'My best skill: knowing who to ask.', 'Many hands. More claws.', 'I’ve delegated my worries too.', 'Hiring is half the job. Snacks are the other half.'],
+  proud: ['Claw-some work, {title}!', 'The {title} nailed it. Raise incoming.', 'That’s my {title}!',
+    'Employee of the month: {title}.', 'Shell-ebrate good times, {title}!', 'Chef’s claw. Lovely work, {title}.', 'Framing that one. Nice, {title}.'],
+  stressed: ['{n} agents at once? I’m a crab, not an octopus.', 'Everything is fine. Totally fine. 💦', 'Who approved all this headcount? Oh. Me.',
+    'Juggling {n} desks with two claws.', 'Breathe in. Delegate out.', 'Running on coffee and sideways walking.'],
+  oops: ['Nobody panic. I’m panicking.', 'Take the rest of the day, {title}.', 'We’ll call that a learning opportunity.',
+    'That went sideways. Like me.', 'Plot twist. Regrouping.', 'Fixable. Probably. Coffee first.'],
+  sleepy: ['zZz…', '…five more minutes…', '…mmh… delegate… the… zZz', '…dreaming of clean diffs…', '…counting merged PRs… zZz', '…zZz… ship it… zZz…'],
 }
 
 export function fill(line: string, vars: Record<string, string | number>): string {

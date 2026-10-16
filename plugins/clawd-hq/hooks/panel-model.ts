@@ -57,12 +57,12 @@ export function modelLabel(id: string | undefined): string | undefined {
 
 /**
  * The lines of a row at work, apart from its name: what it said in its last step; the sentence for what it does now,
- * which stands in until it has said anything; and the dim model, run time and tokens used so far.
+ * which stands in until it has said anything; and the dim model, effort level (when recorded), run time and tokens used so far.
  */
 export function workLine(one: Employee, now: number): { said?: string; sentence: string; stats: string } {
   const tokens = one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''
-  const model = modelLabel(one.model)
-  return { said: one.said, sentence: one.activity ?? READING_BRIEF, stats: `· ${model ? `${model} · ` : ''}${ago(now - one.startedAt)}${tokens}` }
+  const hiring = [modelLabel(one.model), one.effort].filter(Boolean).map(part => `${part} · `).join('')
+  return { said: one.said, sentence: one.activity ?? READING_BRIEF, stats: `· ${hiring}${ago(now - one.startedAt)}${tokens}` }
 }
 
 /**

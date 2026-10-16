@@ -62,6 +62,14 @@ test('a specialist at work shows its model ahead of its time and tokens, once th
   expect(workLine(emp({ startedAt: 0, model: 'claude-haiku-5-5' }), 30_000).stats).toBe('· Haiku 5.5 · 30s')
 })
 
+test('a specialist at work shows its effort level right after its model, and none when no effort was recorded', () => {
+  const one = emp({ startedAt: 0, tokens: 290_000, model: 'claude-sonnet-5-5', effort: 'high' })
+  expect(workLine(one, 17 * MIN).stats).toBe('· Sonnet 5.5 · high · 17m · 290K tokens')
+  expect(workLine({ ...one, effort: undefined }, 17 * MIN).stats).toBe('· Sonnet 5.5 · 17m · 290K tokens')
+  // Without a known model the level still reads, ahead of the time.
+  expect(workLine(emp({ startedAt: 0, effort: 'max' }), 30_000).stats).toBe('· max · 30s')
+})
+
 test('a specialist at work shows what it is doing, how long it has been at it and what it has used', () => {
   const one = emp({ id: 'a1', startedAt: 0, activity: 'Reading scoring.ts', tokens: 84_000 })
   expect(workLine(one, 12 * MIN)).toEqual({ said: undefined, sentence: 'Reading scoring.ts', stats: '· 12m · 84K tokens' })

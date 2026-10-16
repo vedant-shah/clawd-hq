@@ -2,9 +2,14 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { clawdAvatar } from '../hooks/avatars'
 import { NAP_MS } from '../hooks/clawd-says'
+import { COFFEE_AFTERGLOW_MS } from '../hooks/coffee-break'
 import { rasterCells, svgOf, trimLike } from '../hooks/pixels'
-import { PANE, START } from './host'
+import { DECISIONS, PANE, START } from './host'
 import { endTurn, flowHost, job, measure, startTurn } from './flow'
+
+// The runner has a real timer, though its types do not list one.
+declare const setTimeout: (run: () => void, ms: number) => unknown
+const pause = (ms = 25) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 const OVER = 310_000
 const NAME = 'Clawd, the chief of staff'
@@ -60,28 +65,88 @@ test('a new turn wakes him at once', async ($, on) => {
   expect((await cardNow($)).alt).toMatch(/holding a logbook$/)
 })
 
-test('at a break he drinks coffee, even if he would also be asleep, and goes back to work with the next turn', async ($, on) => {
-  const h = flowHost(on)
-  await $.session.start(START)
+const OFFER = "It's time to take a coffee break."
+const BUTTON = { key: 'coffee-break' }
+
+/** Whether the break sentence is in Clawd's bubble on the desktop pane, on a fresh drawing. */
+async function isOffered($: Engine) {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
+  const found = await ui.find({ type: 'Text', text: OFFER })
+  await ui.unmount()
+  return found !== undefined
+}
+
+/** A closed piece of work, past the mark: the button shows. */
+async function atBreak($: Engine, h: ReturnType<typeof flowHost>) {
   const work = job($, h)
   await work.ask()
   await work.handBack()
   await work.report()
   await measure($, OVER)
+}
+
+/** Presses the button (it is in the footer of every pane; the Decisions pane keeps the Office pane free to look at meanwhile). */
+async function press($: Engine) {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
+  await ui.press(BUTTON)
+  await ui.unmount()
+}
+
+test('while the button only shows he is awake in his normal look and says the one break sentence, even past the nap time', async ($, on) => {
+  const h = flowHost(on)
+  await $.session.start(START)
+  await atBreak($, h)
+  const offer = await cardNow($)
+  expect(offer.alt).toBe(`${NAME}, in a navy blazer and red tie, holding a logbook`)
+  expect(await isOffered($)).toBe(true)
+
+  // Past the nap time he would sleep: not through his own invitation.
+  await h.clock.advance(NAP_MS + MOMENT)
+  expect((await cardNow($)).alt).toMatch(/holding a logbook$/)
+  expect(await isOffered($)).toBe(true)
+
+  // The person's next message starts a turn: the button is gone, so are the sentence and the offer.
+  await startTurn($, 'm9', 'Next thing')
+  expect(await isOffered($)).toBe(false)
+  await endTurn($, 'm9', 'Done.')
+})
+
+test('after the press he drinks while it compacts, and for two minutes after it stood, then looks normal and speaks normally', async ($, on) => {
+  const h = flowHost(on)
+  await $.session.start(START)
+  await atBreak($, h)
+  let release: () => void = () => undefined
+  h.compact.hold = new Promise<void>(resolve => { release = resolve })
+  const pressing = press($)
+  await pause()
   const coffee = await cardNow($)
   expect(coffee.alt).toBe(`${NAME}, drinking coffee`)
   expect(drawnAt('coffee').svgs).toContain(coffee.source)
   expect(drawnAt('coffee').cells).toContain(coffee.cells)
   expect(coffee.size).toEqual([92, 64])
+  expect(await isOffered($)).toBe(false)
+  release()
+  await pressing
 
-  // Past the nap time the break is still on: coffee wins over sleep.
-  await h.clock.advance(NAP_MS + MOMENT)
+  // Done: the mug stays for two minutes (the nap time is the same length, and the mug is not the look of the sleeper).
+  await h.clock.advance(COFFEE_AFTERGLOW_MS - MOMENT)
   expect((await cardNow($)).alt).toMatch(/drinking coffee$/)
+  expect(await isOffered($)).toBe(false)
+  await h.clock.advance(MOMENT)
+  expect((await cardNow($)).alt).not.toMatch(/drinking coffee$/)
+})
 
-  // The person's next message starts a turn: the break is over.
-  await startTurn($, 'm9', 'Next thing')
+test('a skipped or failed compaction gives him no mug', async ($, on) => {
+  const h = flowHost(on)
+  await $.session.start(START)
+  await atBreak($, h)
+  h.compact.skip = 'a hook said no'
+  await press($)
   expect((await cardNow($)).alt).toMatch(/holding a logbook$/)
-  await endTurn($, 'm9', 'Done.')
+  h.compact.skip = undefined
+  h.compact.error = 'a turn is running'
+  await press($)
+  expect((await cardNow($)).alt).toMatch(/holding a logbook$/)
 })
 
 test('before the chat is big enough there is no break, so no coffee', async ($, on) => {

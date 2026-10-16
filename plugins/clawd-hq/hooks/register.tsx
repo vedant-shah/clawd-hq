@@ -398,6 +398,7 @@ const gaugeIo = ($: EngineInterface): GaugeIo => ({
 
 /** The coffee break button (hooks/coffee-break.ts). Where the engine has no compact call (the desktop app can bundle 2.1.295), calling it fails and the command is put in the prompt box instead. */
 const coffeeIo = ($: EngineInterface): CoffeeIo => ({
+  now: () => $.clock.now(),
   isBreak: async () => isBreakTime(await getBoss($), await read($, staff), await getFx($)),
   compact: args => $.session.compact(args),
   promptRead: () => $.prompt.read(), fill: text => $.prompt.fill({ text, mode: 'append' }),

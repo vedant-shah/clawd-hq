@@ -3,7 +3,7 @@ import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
 import { artifactsShown, since } from './artifacts'
 import { clawdMood, poseOf, quipOf } from './clawd-says'
 import { lookAlt, lookOf, stepOf } from './clawd-look'
-import { coffeeView } from './coffee-break'
+import { COFFEE_OFFER_LINE, isDrinking, isOffering } from './coffee-break'
 import { AMBER, GREEN, RED, givenName, hash } from './office'
 import { atWork, deskWords, recentFailures, statusOf, titled, workLine } from './panel-model'
 import { stepCount } from './steps'
@@ -23,24 +23,21 @@ const TONE = { clear: GREEN, busy: AMBER, alert: RED } as const
 
 type Ctx = { kit: Kit; data: PanelData; actions: PanelActions; cw: number }
 
-/** Break time: the footer's coffee button is showing, or its compaction is running in this very turn of Clawd's. */
-function isCoffeeTime(data: PanelData): boolean {
-  const { fx, boss } = data
-  return coffeeView(data).state !== 'hidden' || (fx.coffee?.kind === 'running' && fx.coffee.turns === boss.turns)
-}
-
 function clawdCard({ kit, data, actions, cw }: Ctx) {
   const { Box, Text, sprite } = kit
   const { staff, boss, tick, now } = data
   const working = atWork(staff)
   const failed = recentFailures(staff, now, SICK_MS).map(one => titled(one, data))
   const status = statusOf(boss.isBusy, working.length, failed)
-  const mood = clawdMood(boss, working.length, tick, now)
-  const said = quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length })
+  // While the button shows he is awake (DECIDED: no napping through his own invitation) and his one fixed line wins over any quip.
+  const isOffer = isOffering(data)
+  const felt = clawdMood(boss, working.length, tick, now)
+  const mood = isOffer && felt === 'sleepy' ? 'chill' : felt
+  const said = isOffer ? COFFEE_OFFER_LINE : quipOf(boss, mood, tick, { title: boss.lastTitle, n: working.length })
   const isStacked = cw < 50
   // On the terminal, which cannot scale a picture, Clawd gets his small drawing: still the largest in the pane.
   // He blinks now and then, and his logbook moves while a turn of his runs. Asleep or at a coffee break he looks it (hooks/clawd-look.ts).
-  const look = lookOf(mood, isCoffeeTime(data))
+  const look = lookOf(mood, isDrinking(data))
   const [still, moving] = [clawdAvatar(), clawdAvatar({ ...poseOf(tick, 0, boss.isBusy), look, step: stepOf(tick) })]
   const [like, drawn] = kit.isTerminal ? [still.compact, moving.compact] : [still.full, moving.full]
   return (

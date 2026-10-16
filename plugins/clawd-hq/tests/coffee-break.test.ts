@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 import { BOX_BUSY, DIALOG_OPEN } from '../hooks/clawd-edit'
-import { AUTO_COMPACT_MARGIN, COFFEE_NOTE, COFFEE_TOKENS, coffeeView, isBreakTime, isOverMark, takeCoffeeBreak, triggerAt } from '../hooks/coffee-break'
+import {
+  AUTO_COMPACT_MARGIN, COFFEE_AFTERGLOW_MS, COFFEE_NOTE, COFFEE_OFFER_LINE, COFFEE_TOKENS, coffeeView, isBreakTime, isDrinking, isOffering, isOverMark, takeCoffeeBreak, triggerAt,
+} from '../hooks/coffee-break'
 import type { CoffeeIo } from '../hooks/coffee-break'
 import { BOSS0, GAUGE0 } from '../hooks/state'
 import type { PanelData } from '../hooks/panel-types'
@@ -114,6 +116,45 @@ test('while it compacts the button gives way to a plain word, and a ready line i
   expect(coffeeView(data({ boss: boss({ turns: 3 }), fx: ready, gauge: gauge({ contextTokens: 10 }) }))).toEqual({ state: 'hidden' })
 })
 
+// ---- Clawd's offer and his drink ----
+
+test('the offer is the button showing, not pressed and not compacting; the line is one fixed sentence', () => {
+  expect(COFFEE_OFFER_LINE).toBe("It's time to take a coffee break.")
+  expect(isOffering(data())).toBe(true)
+  expect(isOffering(data({ gauge: gauge({ contextTokens: 10 }) }))).toBe(false)
+  const running: Fx = { coffee: { kind: 'running', text: 'Compacting the chat…', turns: 3 } }
+  expect(isOffering(data({ boss: boss({ turns: 3 }), fx: running }))).toBe(false)
+})
+
+const NOW = 5_000_000
+const drinking = (fx: Fx, now = NOW, over: Partial<Boss> = {}) => isDrinking({ boss: boss({ turns: 3, ...over }), fx, now })
+
+test('he drinks while the compaction runs, and not while the button only shows', () => {
+  expect(drinking({})).toBe(false)
+  expect(drinking({ coffee: { kind: 'running', text: 'Compacting the chat…', turns: 3 } })).toBe(true)
+  // A running line left from another turn of his is stale.
+  expect(drinking({ coffee: { kind: 'running', text: 'Compacting the chat…', turns: 2 } })).toBe(false)
+})
+
+test('he drinks for two minutes after a compaction that stood, then not', () => {
+  expect(COFFEE_AFTERGLOW_MS).toBe(120_000)
+  const done = (at: number): Fx => ({ coffee: { kind: 'done', text: '', turns: 3, at } })
+  expect(drinking(done(NOW))).toBe(true)
+  expect(drinking(done(NOW - COFFEE_AFTERGLOW_MS + 1))).toBe(true)
+  expect(drinking(done(NOW - COFFEE_AFTERGLOW_MS))).toBe(false)
+  // Another turn of his does not end it: the drink lasts by the clock.
+  expect(drinking(done(NOW), NOW, { turns: 9 })).toBe(true)
+})
+
+test('he does not drink after a skipped, failed or command-only press', () => {
+  for (const kind of ['problem', 'ready'] as const) expect(drinking({ coffee: { kind, text: 'x', turns: 3 } })).toBe(false)
+})
+
+test('a finished drink is never drawn as a line under the footer', () => {
+  const fx: Fx = { coffee: { kind: 'done', text: '', turns: 3, at: NOW } }
+  expect(coffeeView(data({ boss: boss({ turns: 3 }), fx }))).toEqual({ state: 'ready' })
+})
+
 // ---- The note sent with the compaction ----
 
 test('the note asks the summary to keep what the next step needs, in a few plain lines', () => {
@@ -133,8 +174,9 @@ const noCompact: CoffeeIo['compact'] = () => { throw new TypeError('$.session.co
 
 /** The calls a press makes, recorded. */
 function fakeIo(over: Partial<CoffeeIo> = {}) {
-  const log = { compacts: [] as string[], notes: [] as Array<{ kind: string; text: string } | undefined>, fills: [] as string[], cleared: 0 }
+  const log = { compacts: [] as string[], notes: [] as Array<{ kind: string; text: string; at?: number } | undefined>, fills: [] as string[], cleared: 0 }
   const io: CoffeeIo = {
+    now: async () => 777,
     isBreak: async () => true,
     compact: async args => { log.compacts.push(args.instructions); return {} },
     promptRead: async () => ({ text: '' }),
@@ -154,10 +196,11 @@ test('pressing compacts once, right away, with the note', async () => {
   expect(log.fills).toEqual([])
 })
 
-test('a compaction that stands leaves no line, and the reading of the context starts over', async () => {
+test('a compaction that stands leaves no line, only the time it was done, and the reading of the context starts over', async () => {
   const { io, log } = fakeIo()
   await takeCoffeeBreak(io, true)
-  expect(log.notes.map(n => n?.kind)).toEqual(['running', undefined])
+  expect(log.notes.map(n => n?.kind)).toEqual(['running', 'done'])
+  expect(lastNote(log)).toEqual({ kind: 'done', text: '', at: 777 })
   expect(log.cleared).toBe(1)
 })
 
@@ -200,7 +243,7 @@ test('after a press has ended, a later press works again, even after a failure',
   isFailing = false
   await takeCoffeeBreak(io, true)
   expect(log.compacts).toHaveLength(2)
-  expect(lastNote(log)).toBeUndefined()
+  expect(lastNote(log)?.kind).toBe('done')
 })
 
 test('a press that finds it is no longer a break compacts nothing and says so', async () => {

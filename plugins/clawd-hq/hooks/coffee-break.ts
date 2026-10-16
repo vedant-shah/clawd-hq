@@ -61,15 +61,34 @@ export type CoffeeView = {
 export function coffeeView(data: Pick<PanelData, 'boss' | 'staff' | 'fx' | 'gauge'>): CoffeeView {
   const { boss, staff, fx, gauge } = data
   const isTime = isOverMark(gauge) && isBreakTime(boss, staff, fx)
-  const left = fx.coffee !== undefined && fx.coffee.turns === boss.turns ? fx.coffee : undefined
+  const here = fx.coffee !== undefined && fx.coffee.turns === boss.turns ? fx.coffee : undefined
+  const left = here?.kind === 'done' ? undefined : here
   if (!isTime) return left?.kind === 'problem' ? { state: 'hidden', note: { text: left.text, isProblem: true } } : { state: 'hidden' }
   if (left?.kind === 'running') return { state: 'running' }
   return left === undefined ? { state: 'ready' } : { state: 'ready', note: { text: left.text, isProblem: left.kind === 'problem' } }
 }
 
-type Note = { kind: 'running' | 'ready' | 'problem'; text: string }
+/** `done` is no line at all: it only keeps `at`, the time a compaction stood, so Clawd can go on drinking for a while. */
+type Note = { kind: 'running' | 'ready' | 'problem' | 'done'; text: string; at?: number }
+
+/** DECIDED: after a compaction that stood, Clawd keeps the mug this long, then goes back to his normal look. */
+export const COFFEE_AFTERGLOW_MS = 120_000
+/** What Clawd says while the button shows, in place of any mood line. */
+export const COFFEE_OFFER_LINE = "It's time to take a coffee break."
+
+/** The button is showing and has not been pressed: Clawd offers the break (awake, normal look) and does not drink yet. */
+export const isOffering = (data: Pick<PanelData, 'boss' | 'staff' | 'fx' | 'gauge'>): boolean => coffeeView(data).state === 'ready'
+
+/** Clawd holds the mug: the pressed compaction is running in this turn of his, or one stood less than `COFFEE_AFTERGLOW_MS` ago. */
+export function isDrinking({ boss, fx, now }: Pick<PanelData, 'boss' | 'fx' | 'now'>): boolean {
+  const c = fx.coffee
+  if (c?.kind === 'running') return c.turns === boss.turns
+  return c?.kind === 'done' && c.at !== undefined && now - c.at < COFFEE_AFTERGLOW_MS
+}
 
 export type CoffeeIo = {
+  /** The clock, in milliseconds. */
+  now: () => Promise<number>
   /** Still a break right now: the button may have been drawn before Clawd began a turn. */
   isBreak: () => Promise<boolean>
   /** The engine's compact call. A resolved `skip` is a hook's veto. On an older engine it throws that it is not a function (see `isMissingCall`). */
@@ -128,7 +147,7 @@ async function runPress(io: CoffeeIo, isTerminal: boolean): Promise<void> {
   try {
     await io.setNote({ kind: 'running', text: WORKING })
     const left = await compactNow(io.compact)
-    await io.setNote(left === 'missing' ? await fillCommand(io, isTerminal) : left)
+    await io.setNote(left === 'missing' ? await fillCommand(io, isTerminal) : left ?? { kind: 'done', text: '', at: await io.now() })
     if (left === undefined) await io.clearReading()
   } catch (err) {
     await io.setNote(undefined).catch(() => undefined)

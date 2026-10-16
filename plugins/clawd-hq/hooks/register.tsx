@@ -4,6 +4,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, Mood, Payroll } from '../types'
 import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, boxAnswers, fit, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
+import { resumedEffort } from './resume-effort'
 import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './artifacts'
 import type { ArtifactAnswer } from './artifacts'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
@@ -139,10 +140,13 @@ async function signOfLife($: EngineInterface, id: string, activity?: string) {
 }
 
 /** A resumed specialist is at work again, on a new run; one the books lost (from before a reload) joins them, not counted as a hire. */
-async function rejoin<R extends { agentId?: string }>($: EngineInterface, r: R, e: { subagentType: string; description: string; name?: string }) {
+async function rejoin<R extends { agentId?: string }>($: EngineInterface, r: R, e: { subagentType: string; description: string; name?: string; resume?: { agentId: string } }, said?: Effort) {
   if (!r.agentId) return r
   const [now, t] = [await $.clock.now(), await read($, tick)]
   if (!(await read($, staff)).some(one => one.id === r.agentId)) await update($, staff, l => hire(l, freshHire({ ...e, id: r.agentId!, type: e.subagentType }, now, t)))
+  // The level it was hired with (or the follow-up's new one) goes on; the books are the copy that outlives a reload.
+  const level = resumedEffort(said, [r.agentId, e.resume?.agentId], await read($, staff), efforts)
+  if (level) { efforts.set(r.agentId, level); await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, effort: level }))) }
   await signOfLife($, r.agentId)
   await showStatus($)
   return r
@@ -543,9 +547,9 @@ export const register: Register = (on, options) => {
 
   on('agent.spawn', async ($, e, next) => {
     // A resumed run keeps its first brief (the engine takes no change to it) and its place on the books: no hire is counted again.
-    if (e.resume) return rejoin($, await next(e), e)
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     const { effort, prompt } = parseEffort(e.prompt)
+    if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
     const sent = e.workflow ? e.prompt : prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE
     const r = await next({ ...e, prompt: sent })

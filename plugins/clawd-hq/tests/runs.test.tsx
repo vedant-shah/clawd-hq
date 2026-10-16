@@ -392,3 +392,67 @@ test('a resume the engine refuses changes nothing on the books', async ($, on) =
   expect(r).toEqual({ deny: 'parked' })
   for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
 })
+
+// ---- A resumed specialist keeps the effort level it was hired with ----
+
+/** Every effort the engine was about to send for the model requests of specialists, in order. */
+function efforts(on: Parameters<typeof host>[0]) {
+  const seen: Array<unknown> = []
+  on('turn.step', async function* (_$, e) {
+    seen.push(e.effort)
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
+  })
+  return seen
+}
+const request = async ($: Eng, id: string) => {
+  const run = $.turn.step({ turnId: 'r1', index: 0, model: 'claude-opus-5-5', messageCount: 3, agentId: id } as never)
+  let part = await run.next()
+  while (!part.done) part = await run.next()
+}
+const cardOf = async ($: Eng, id: string) => {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  const row = JSON.stringify(await ui.find({ key: `desk-${id}` }))
+  await ui.unmount()
+  return row
+}
+const HIRE_MEDIUM = { prompt: '[effort: medium]\nBuild the panel', description: 'Build redesigned panel', subagentType: 'ecc:tdd-guide' } as never
+
+test('a resumed specialist with no effort line keeps its hired level on every request and on its card', async ($, on) => {
+  host(on, [])
+  spawner(on)
+  const seen = efforts(on)
+  await $.agent.spawn(HIRE_MEDIUM)
+  await stop($, 't1', 1)
+  for (let i = 0; i < 4; i++) {
+    await $.agent.spawn(RESUME('Keep going.'))
+    await request($, 't1')
+    await stop($, 't1', 2 + i)
+  }
+  expect(seen).toEqual(['medium', 'medium', 'medium', 'medium'])
+  await $.agent.spawn(RESUME('Once more.'))
+  expect(await cardOf($, 't1')).toMatch(/medium · /)
+})
+
+test('a follow-up that starts with an effort line changes the level', async ($, on) => {
+  host(on, [])
+  spawner(on)
+  const seen = efforts(on)
+  await $.agent.spawn(HIRE_MEDIUM)
+  await stop($, 't1', 1)
+  await $.agent.spawn(RESUME('[effort: high]\nThink harder.'))
+  await request($, 't1')
+  expect(seen).toEqual(['high'])
+  expect(await cardOf($, 't1')).toMatch(/high · /)
+})
+
+test('a resume the engine answers under another id hands the level on to that id', async ($, on) => {
+  host(on, [])
+  on('agent.spawn', (_$, e) => ({ model: 'claude-opus-5-5', agentId: (e as { resume?: unknown }).resume ? 'n2' : 't1' }) as never)
+  const seen = efforts(on)
+  await $.agent.spawn(HIRE_MEDIUM)
+  await stop($, 't1', 1)
+  await $.agent.spawn(RESUME('Keep going.'))
+  await request($, 'n2')
+  expect(seen).toEqual(['medium'])
+  expect(await cardOf($, 'n2')).toMatch(/medium · /)
+})

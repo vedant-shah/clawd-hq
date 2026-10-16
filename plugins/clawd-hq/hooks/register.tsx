@@ -25,7 +25,7 @@ import { LOGBOOK_FILE, loadLogbook, saveLogbook, withDecision } from './logbook'
 import type { LogbookIo } from './logbook'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
-import { SHIPPED_DENY, clawdActions, editNote, editPartOf, guardOnCrash, isShippedWrite, refreshClawd } from './clawd-edit'
+import { SHIPPED_DENY, clawdActions, editNote, editPartOf, guardOnCrash, isShippedWrite, readFailed, readFailedLine, refreshClawd } from './clawd-edit'
 import type { ClawdIo } from './clawd-edit'
 import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
@@ -41,7 +41,7 @@ import { parseStep } from './steps'
 import { scrolled } from './scroll-window'
 import { DEMO_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withReport, withSaid, withStep, withTool } from './staff-model'
-import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine } from './state'
+import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine, reasonOf, runEach, startNote } from './state'
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
 const boss = atom({ plugin: 'clawd-hq', key: 'boss' } as const, BOSS0)
@@ -208,8 +208,9 @@ const clawdIo = async ($: EngineInterface, opts: BriefingOptions): Promise<Clawd
   get: async () => ({ ...BRIEF0, ...(await read($, clawdBrief)) }), set: fn => update($, clawdBrief, b => fn({ ...BRIEF0, ...b })),
 })
 
-/** The tab follows the files; a read that fails leaves it as it was and never stops the hook that asked. */
-const refreshTab = ($: EngineInterface, opts: BriefingOptions, isFresh: boolean) => clawdIo($, opts).then(io => refreshClawd(io, isFresh)).catch(() => undefined)
+/** The tab follows the files. A read that fails is an amber line in the tab with why (a toast if even that fails); it never stops the hook that asked. */
+const refreshTab = ($: EngineInterface, opts: BriefingOptions, isFresh: boolean) => clawdIo($, opts).then(io => refreshClawd(io, isFresh))
+  .catch((err: unknown) => update($, clawdBrief, b => readFailed({ ...BRIEF0, ...b }, err))).catch((err: unknown) => $.ui.toast(readFailedLine(reasonOf(err))))
 
 // ---- The panes: one per view, so the host's own tab strip switches between them (hooks/panes.ts) ----
 
@@ -484,26 +485,25 @@ export const register: Register = (on, options) => {
     isArtifactsWarned = false
     // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.
     isRecapOn = brief.isRecapOn
-    await resetRecap($)
-    await startKnow(knowIo($), cwd)
-    // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
-    if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined }))
-    await $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })
-    await $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })
-    await $.tool.register(DEMO_SPEC)
-
-    const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined
-    if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved }))
-    const recalled = await loadMemory($)
-    await update($, memory, () => recalled)
-    // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
-    const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`))
-    await update($, artifacts, () => pages)
-    await $.tool.register(REMEMBER_SPEC)
-    await $.tool.register(STEP_SPEC)
-    await enroll($, 'general-purpose', 0)
-    await startGauge(gaugeIo($))
-    await refreshTab($, brief, true)
+    // Each step stands on its own: one that fails stops none after it (the Settings tab still fills), and the person is told which.
+    const failed = await runEach([
+      ['recap', () => resetRecap($)],
+      ['check on finished work', () => startKnow(knowIo($), cwd)],
+      // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
+      ['payroll review', async () => { if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined })) }],
+      ['/office', () => $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })],
+      ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })],
+      ['demo tool', () => $.tool.register(DEMO_SPEC)],
+      ['payroll', async () => { const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined; if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved })) }],
+      ['decisions', async () => { const recalled = await loadMemory($); await update($, memory, () => recalled) }],
+      // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
+      ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
+      ['remember tool', () => $.tool.register(REMEMBER_SPEC)],
+      ['step tool', () => $.tool.register(STEP_SPEC)],
+      ['roster', () => enroll($, 'general-purpose', 0)],
+      ['meters', () => startGauge(gaugeIo($))],
+      ['instructions', () => refreshTab($, brief, true)],
+    ])
 
     let frames = 0
     timer?.cancel()
@@ -515,7 +515,8 @@ export const register: Register = (on, options) => {
       void onFrame($, frames).finally(() => { isFraming = false })
     })
 
-    await reconcile($)
+    const all = [...failed, ...(await runEach([['agent list', () => reconcile($)]]))]
+    if (all.length > 0) $.ui.toast(startNote(all))
     // Office is asked to the front on every surface; a refusal is tried once more after the first reply (hooks/panes.ts).
     void openAtStart(paneIo($))
 

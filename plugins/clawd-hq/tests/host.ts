@@ -39,8 +39,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const opened: OpenArgs[] = []
   const panes: Array<{ id: string; title: string }> = []
   const toasts: string[] = []
-  /** The host refusing to open or list panes: every id, or only the ids named. */
-  const fail = { list: false, open: false, ids: new Set<string>() }
+  /** The host refusing to open or list panes: every id, or only the ids named. `tools`: refusing every tool the plugin registers. */
+  const fail = { list: false, open: false, ids: new Set<string>(), tools: false }
   /** The tab the host shows in front; unset, every pane reads as shown, as before. */
   const front = { id: undefined as string | undefined }
   /** A `focus` request the surface refuses (a reply running, text in the prompt box): the pane opens, but the shown tab stays. Only once a test has set `front`. */
@@ -118,6 +118,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const toolSpecs: Array<{ name: string; isDeferred?: boolean }> = []
   on('tool.register', (_$, e) => {
     const spec = e as { name: string; isDeferred?: boolean }
+    // A refusal, not a throw: a hook that throws is skipped and the call goes on.
+    if (fail.tools) return { deny: 'already registered' } as never
     tools.push(spec.name)
     toolSpecs.push({ name: spec.name, isDeferred: spec.isDeferred })
     return { value: undefined } as never

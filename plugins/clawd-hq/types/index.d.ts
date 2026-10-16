@@ -139,6 +139,8 @@ export type ClawdBrief = {
   voice?: ClawdPartView
   /** `line`: the prompt to type by hand, where the prompt box could not take it. */
   notice?: { text: string; line?: string }
+  /** Why the last read of the instructions failed; gone once a read works. */
+  readError?: string
 }
 
 /** How a note on Clawd's card is headed: a fact worth knowing, or a risk that may need action. */

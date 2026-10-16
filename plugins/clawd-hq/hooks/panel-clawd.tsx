@@ -3,6 +3,7 @@
 // in the prompt box (never sent), then the fixed Always rules, short and dim, with no button. Every surface draws
 // Markdown, so nothing here falls back to Text.
 import type { ClawdBrief, ClawdPartView } from '../types'
+import { readFailedLine } from './clawd-edit'
 import { LOCKED_RULES } from './instructions'
 import type { BriefPart } from './instructions'
 import { ACCENT, AMBER } from './office'
@@ -79,7 +80,7 @@ function scrollRow({ Box, Button, Text }: Kit, part: BriefPart, w: ReturnType<ty
     <Box key={`clawd-scroll-${part}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center" paddingX={1}>
       <Button key={`clawd-up-${part}`} plain label="▲" dimColor={w.isTop} onPress={() => actions.scrollClawd(part, -1)} />
       <Button key={`clawd-down-${part}`} plain label="▼" dimColor={w.isEnd} onPress={() => actions.scrollClawd(part, 1)} />
-      <Text key={`clawd-lines-${part}`} dimColor size="footnote" tabular wrap="wrap">{w.count}</Text>
+      <Text key={`clawd-lines-${part}`} dimColor wrap="wrap">{w.count}</Text>
     </Box>
   )
 }
@@ -117,7 +118,7 @@ function noticeView({ Box, Text }: Kit, n: NonNullable<ClawdBrief['notice']>) {
   return (
     <Box key="clawd-notice" borderStyle="round" borderDimColor paddingX={1} flexDirection="column">
       <Text wrap="wrap">{n.text}</Text>
-      <Text weight="semibold" wrap="wrap">{n.line.trimEnd()}</Text>
+      <Text bold wrap="wrap">{n.line.trimEnd()}</Text>
     </Box>
   )
 }
@@ -125,10 +126,11 @@ function noticeView({ Box, Text }: Kit, n: NonNullable<ClawdBrief['notice']>) {
 export function clawdTab(kit: Kit, data: PanelData, actions: PanelActions) {
   const { Box, Text } = kit
   const b = data.brief
-  const isEmpty = b.rules === undefined && b.voice === undefined
+  const isEmpty = b.rules === undefined && b.voice === undefined && b.readError === undefined
   return (
     <Box flexDirection="column" gap={1}>
       {!b.isOn && <Text key="clawd-off" color={AMBER} wrap="wrap">{OFF_LINE}</Text>}
+      {b.readError !== undefined && <Text key="clawd-read-error" color={AMBER} wrap="wrap">{readFailedLine(b.readError)}</Text>}
       {b.notice !== undefined && noticeView(kit, b.notice)}
       {isEmpty && <Text dimColor wrap="wrap">Nothing to show yet. Clawd's instructions are read when a session starts.</Text>}
       {partSection(kit, 'rules', data, actions)}

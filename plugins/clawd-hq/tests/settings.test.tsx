@@ -113,7 +113,8 @@ test('Settings lists the four configs, each a name with its toggle on the right 
   }
 })
 
-test('the configs view uses the weight prop, never the old bold, and its headings read like the Office tab\'s', async ($, on) => {
+// The desktop app's own engine (2.1.295) refuses a whole drawing over a `weight` prop, so the headings use the older `bold`.
+test('the configs view draws no weight prop, and its headings are bold and dim, like the Office tab\'s', async ($, on) => {
   const { files } = host(on)
   files.set(`${ROOT}/${RULES_FILE}`, '# Clawd, chief of staff\n\n- Talk with the person.\n')
   files.set(`${ROOT}/${VOICE_FILE}`, 'Tone notes.\n')
@@ -123,11 +124,11 @@ test('the configs view uses the weight prop, never the old bold, and its heading
     const texts = allTexts(holding((await ui.drawn()) as unknown as Tree, 'CONFIGS', 'ALWAYS'))
     expect(texts.some(t => textIn(t) === 'Recap')).toBe(true)
     expect(texts.some(t => /Sonnet/.test(textIn(t)))).toBe(false)
-    // The engine adds the old flag beside a weight for older surfaces; a bold of our own would come without one.
-    expect(texts.filter(t => t.props.bold !== undefined && t.props.weight === undefined)).toEqual([])
+    // On the desktop the test engine pairs every bold with a weight of its own; one of ours would come without a bold.
+    expect(texts.filter(t => t.props.weight !== undefined && t.props.bold !== true)).toEqual([])
     for (const heading of ['CONFIGS', 'INSTRUCTIONS', 'VOICE NOTES', 'ALWAYS']) {
       const t = texts.find(x => textIn(x) === heading)
-      expect(t?.props.weight).toBe('semibold')
+      expect(t?.props.bold).toBe(true)
       expect(t?.props.dimColor).toBe(true)
     }
     await ui.unmount()

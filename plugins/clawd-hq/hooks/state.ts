@@ -16,6 +16,25 @@ export function edit(list: Employee[], id: string, fn: (e: Employee) => Employee
   return list.map(e => (e.id === id ? fn(e) : e))
 }
 
+/** Why something failed, in words: an error's message, or the thrown value as text. */
+export const reasonOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+/** Steps that do not depend on one another, run in order: each runs whatever the one before it did. Those that failed, by name with why. */
+export async function runEach(steps: ReadonlyArray<readonly [string, () => Promise<unknown>]>): Promise<string[]> {
+  let failed: string[] = []
+  for (const [name, run] of steps) {
+    try {
+      await run()
+    } catch (err) {
+      failed = [...failed, `${name} (${reasonOf(err)})`]
+    }
+  }
+  return failed
+}
+
+/** The toast for a start-up that partly failed. */
+export const startNote = (failed: readonly string[]) => `Clawd HQ: part of its start-up failed: ${failed.join('; ')}. The rest is running.`
+
 /** Runs tasks one after another, in the order asked, whatever each one's outcome: for writes many hooks make at the same moment. */
 let line: Promise<unknown> = Promise.resolve()
 export function inLine<T>(task: () => Promise<T>): Promise<T> {

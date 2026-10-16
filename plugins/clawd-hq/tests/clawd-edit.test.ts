@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import {
   BOX_BUSY, DIALOG_OPEN, SHIPPED_DENY, clawdActions, editContext, editNote, editPartOf, editPath, guardOnCrash, isShippedWrite, partView, promptOf,
-  readyText, refreshClawd,
+  readFailed, readFailedLine, readyText, refreshClawd,
 } from '../hooks/clawd-edit'
 import type { ClawdIo } from '../hooks/clawd-edit'
 import type { Briefing, PartRead } from '../hooks/instructions'
@@ -278,6 +278,20 @@ test('a refresh shows the parts as they are now, compared with what the session 
   expect(state().voice).toMatchObject({ source: 'builtin', isChanged: false })
   await refreshClawd(io, true)
   expect(state().notice).toBeUndefined()
+})
+
+test('a read that failed is kept with its reason, beside what the tab showed; the next refresh that works clears it', async () => {
+  const { io, state } = fake()
+  await refreshClawd(io, true)
+  const before = state()
+  const failed = readFailed(before, new Error('EACCES: permission denied'))
+  expect(failed).toEqual({ ...before, readError: 'EACCES: permission denied' })
+  expect(before.readError).toBeUndefined()
+  expect(readFailed({ isOn: true }, 'odd').readError).toBe('odd')
+  expect(readFailedLine('EACCES')).toBe('Couldn\'t read Clawd\'s instructions: EACCES')
+  await io.set(() => failed)
+  await refreshClawd(io, true)
+  expect(state().readError).toBeUndefined()
 })
 
 // ---- When the hook holding the guard fails ----

@@ -3,6 +3,7 @@
 import type { ClawdBrief, ClawdPartView } from '../types'
 import { RULES_CHARS, RULES_FILE, VOICE_CHARS, VOICE_FILE, ownPath, readBriefing } from './instructions'
 import type { BriefPart, Briefing, BriefingIo, PartRead } from './instructions'
+import { reasonOf } from './state'
 
 // ---- The prompt, and what Claude is told with it ----
 
@@ -121,6 +122,12 @@ export const readyText = (isTerminal: boolean) =>
 
 const readNow = (io: ClawdIo) => readBriefing({ ...io.briefing, warn: () => undefined }, { voiceFile: io.voiceFile, isQuiet: true })
 const say = (io: ClawdIo, notice: NonNullable<ClawdBrief['notice']>) => io.set(b => ({ ...b, notice }))
+
+/** The tab's one amber line for a read that failed. */
+export const readFailedLine = (reason: string) => `Couldn't read Clawd's instructions: ${reason}`
+
+/** A read that failed, kept with its reason beside what the tab showed, so the tab says so instead of staying empty. A refresh that works rebuilds the brief without it. */
+export const readFailed = (b: ClawdBrief, err: unknown): ClawdBrief => ({ ...b, readError: reasonOf(err) })
 
 /** Shows both parts as they are now. `isFresh` (after a turn) also drops the word the last button left. */
 export async function refreshClawd(io: ClawdIo, isFresh: boolean) {

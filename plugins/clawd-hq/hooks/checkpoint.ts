@@ -1,6 +1,6 @@
 // When a piece of work has closed, pure: the coffee break button is offered only at such a checkpoint, never between the steps of a job.
 // A specialist handing its work back starts it; Clawd's own turn that reports it closes it, even if it ends with a question; the person's
-// next message ends it. Clawd's card (the boss) keeps the marks.
+// new work ends it (a specialist hired or resumed, or a turn in which Clawd used tools himself); plain chat does not. Clawd's card (the boss) keeps the marks.
 //
 // Which turn reports a hand-back? The one that starts after it. But a background job's notification can also JOIN a turn already running
 // (Clawd waiting at a question box while a second specialist finishes), or be heard before the specialist's own end: then that turn is the
@@ -30,9 +30,21 @@ export function withNotice(b: Boss, isIntoTurn: boolean): Boss {
   return isPending ? { ...b, handedBackAt: b.turns - 1 } : { ...b, carriedAt: b.turns }
 }
 
-/** The person sent a message: what closed before it is behind us. `kind` is where it came from, kept for the record of the button. */
+/**
+ * The person sent a message. A checkpoint that stands stays: plain chat is not new work. Only a hand-back still waiting for its report is
+ * dropped. `kind` is where the message came from, kept for the record of the button.
+ */
 export const withPersonSpoke = (b: Boss, kind?: string): Boss =>
-  ({ ...b, handedBackAt: undefined, carriedAt: undefined, isCheckpoint: false, spokeBy: kind ?? 'none' })
+  ({ ...b, handedBackAt: undefined, carriedAt: undefined, spokeBy: kind ?? 'none' })
+
+/** Tools that are no work: Clawd asking the person something, or looking for a tool. */
+const IDLE_TOOLS = new Set(['AskUserQuestion', 'ToolSearch'])
+
+/** Clawd used a tool himself: that turn is work, unless the tool only asks or searches. */
+export const withToolUsed = (b: Boss, tool: string): Boss => (IDLE_TOOLS.has(tool) || b.hasWorked ? b : { ...b, hasWorked: true })
+
+/** A specialist was hired or resumed: new work has started, and the checkpoint is over. */
+export const withNewWork = (b: Boss): Boss => ({ ...b, handedBackAt: undefined, isCheckpoint: false })
 
 /**
  * Clawd's turn ended. It closes a piece of work when a specialist handed work back in an earlier turn (the turn it arrived in is not
@@ -42,8 +54,11 @@ export const withPersonSpoke = (b: Boss, kind?: string): Boss =>
  */
 export function withTurnEnd(b: Boss, end: { reason: string }): Boss {
   const isReport = b.handedBackAt !== undefined && b.turns > b.handedBackAt
-  const isClosed = isReport && end.reason === 'answer'
-  return b.isCheckpoint === isClosed ? b : { ...b, isCheckpoint: isClosed }
+  // A standing checkpoint lasts through plain chat; a turn in which Clawd worked himself ends it. A fresh one needs a report.
+  const isStanding = b.isCheckpoint === true
+  const isClosed = isStanding ? !b.hasWorked : isReport && end.reason === 'answer'
+  const next = isClosed || !isStanding ? { ...b, isCheckpoint: isClosed } : { ...b, isCheckpoint: false, handedBackAt: undefined }
+  return { ...next, hasWorked: undefined }
 }
 
 /** A prompt that is the person's own message to Clawd: not from a notification, a peer or a schedule, and not a slash command. */

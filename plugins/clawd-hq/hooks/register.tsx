@@ -19,7 +19,7 @@ import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { contextOf, noteRequest, noteThreshold, startGauge } from './usage'
 import { isBreakTime, takeCoffeeBreak, type CoffeeIo } from './coffee-break'
-import { isNotification, isPersonMessage, withHandBack, withNotice, withPersonSpoke, withTurnEnd } from './checkpoint'
+import { isNotification, isPersonMessage, withHandBack, withNewWork, withNotice, withPersonSpoke, withToolUsed, withTurnEnd } from './checkpoint'
 import { keepCoffeeRecord } from './coffee-debug'
 import type { CoffeeDebugIo } from './coffee-debug'
 import type { GaugeIo } from './usage'
@@ -404,7 +404,7 @@ const coffeeIo = ($: EngineInterface): CoffeeIo => ({
   compact: args => $.session.compact(args),
   promptRead: () => $.prompt.read(), fill: text => $.prompt.fill({ text, mode: 'append' }),
   setNote: async note => { const { turns } = await getBoss($); await setFx($, f => ({ ...f, coffee: note && { ...note, turns } })) },
-  clearReading: () => update($, gauge, g => ({ ...g, contextPercent: undefined, contextTokens: undefined })),
+  clearReading: async () => { await setBoss($, withNewWork); await update($, gauge, g => ({ ...g, contextPercent: undefined, contextTokens: undefined })) }, // a compaction ends the checkpoint too
 })
 
 /** The record of why the coffee break button shows or not (hooks/coffee-debug.ts), kept at `debug:coffee` in the store. */
@@ -551,6 +551,7 @@ export const register: Register = (on, options) => {
     // A resumed run keeps its first brief (the engine takes no change to it) and its place on the books: no hire is counted again.
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     const { effort, prompt } = parseEffort(e.prompt)
+    await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
     if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
     const sent = e.workflow ? e.prompt : prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE
@@ -600,7 +601,7 @@ export const register: Register = (on, options) => {
     const id = e.agentId
     if (isEditTurn && isShippedWrite(tool, input)) return { deny: SHIPPED_DENY } as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
-    if (id === undefined && tool !== STEP_TOOL) knowToolUsed()
+    if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); await setBoss($, b => withToolUsed(b, tool)) } // work of his own ends a coffee break checkpoint at the turn's end
 
     if (tool === DEMO_TOOL) {
       await openPanes(paneIo($), false)

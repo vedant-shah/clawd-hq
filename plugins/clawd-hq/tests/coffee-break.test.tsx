@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import { COFFEE_NOTE } from '../hooks/coffee-break'
 import { AMBER } from '../hooks/office'
 import { ALL_PANES, PANE, START, SURFACES } from './host'
-import { endTurn, flowHost, handBack, hire, job, measure, say, startTurn } from './flow'
+import { BUILD, endTurn, flowHost, handBack, hire, job, measure, say, startTurn } from './flow'
 
 type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const elementsOf = (node: Tree) => (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null && 'props' in c)
@@ -239,20 +239,62 @@ test('a specialist that failed or was stopped is not a hand-back', async ($, on)
   expect(await isShown($)).toBe(false)
 })
 
-test('a new message from the person hides it, until the next piece of work closes', async ($, on) => {
+test('plain chat keeps it: hidden while Clawd answers, back after a reply with no tools', async ($, on) => {
   const h = flowHost(on)
   await atCheckpoint($, h)
   expect(await isShown($)).toBe(true)
-  await say($, 'Now do the next thing')
-  expect(await isShown($)).toBe(false)
-  // Clawd answers it with words alone: still no checkpoint.
-  await startTurn($, 'm3')
-  await endTurn($, 'm3', 'Sure, it is a small change.')
-  expect(await isShown($)).toBe(false)
+  await say($, 'What does that mean?')
+  expect(await isShown($)).toBe(true)
+  await startTurn($, 'm3', 'What does that mean?')
+  expect(await isShown($)).toBe(false) // Clawd is in a turn
+  await endTurn($, 'm3', 'It means the panel is built.')
+  expect(await isShown($)).toBe(true)
+})
+
+test('a specialist hired after the checkpoint takes it away, until that work closes', async ($, on) => {
+  const h = flowHost(on)
+  await atCheckpoint($, h)
   const next = job($, h, 'w9')
   await next.ask()
+  expect(await isShown($)).toBe(false)
   await next.handBack()
   await next.report()
+  expect(await isShown($)).toBe(true)
+})
+
+test('a resumed specialist takes it away too', async ($, on) => {
+  const h = flowHost(on)
+  await atCheckpoint($, h)
+  await say($, 'Carry on please')
+  await startTurn($, 'm3', 'Carry on please')
+  await $.agent.spawn({ ...(BUILD as object), resume: 'w1' } as never)
+  await endTurn($, 'm3', 'He is back on it.')
+  expect(await isShown($)).toBe(false)
+})
+
+for (const tool of ['Read', 'Bash', 'Edit']) {
+  test(`a turn in which Clawd used ${tool} himself takes it away, and later plain chat does not bring it back`, async ($, on) => {
+    const h = flowHost(on)
+    await atCheckpoint($, h)
+    await say($, 'Look at the file')
+    await startTurn($, 'm3', 'Look at the file')
+    await $.tool.call({ tool } as never)
+    await endTurn($, 'm3', 'I looked.')
+    expect(await isShown($)).toBe(false)
+    await startTurn($, 'm4', 'Thanks')
+    await endTurn($, 'm4', 'You are welcome.')
+    expect(await isShown($)).toBe(false)
+  })
+}
+
+test('a turn with only a question box or a tool search keeps it', async ($, on) => {
+  const h = flowHost(on)
+  await atCheckpoint($, h)
+  await say($, 'Ask me something')
+  await startTurn($, 'm3', 'Ask me something')
+  await $.tool.call({ tool: 'ToolSearch' } as never)
+  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Which?' }] } as never)
+  await endTurn($, 'm3', 'Thanks for choosing.')
   expect(await isShown($)).toBe(true)
 })
 
@@ -264,7 +306,7 @@ test('a notification, a peer message or a slash command does not take the checkp
   await say($, '/office')
   expect(await isShown($)).toBe(true)
   await say($, 'Please continue', 'bridge')
-  expect(await isShown($)).toBe(false)
+  expect(await isShown($)).toBe(true) // a message is not new work
 })
 
 test('the tour is not a break', async ($, on) => {
@@ -279,9 +321,8 @@ test('the tour is not a break', async ($, on) => {
 
 test('pressing compacts the main chat right away, once, with the note, and the button goes', async ($, on) => {
   const h = flowHost(on)
-  await atCheckpoint($, h)
   for (const surface of SURFACES) {
-    await measure($, OVER)
+    await atCheckpoint($, h) // a compaction ends the checkpoint, so each surface gets a new piece of work
     const ui = await mount($, surface)
     await ui.press(BUTTON)
     expect(h.compacts.slice(-1)).toEqual([{ instructions: COFFEE_NOTE }])
@@ -293,7 +334,7 @@ test('pressing compacts the main chat right away, once, with the note, and the b
   expect(h.compacts).toHaveLength(2)
 })
 
-test('after a compaction the next measure decides: small, it stays hidden; large again, it returns', async ($, on) => {
+test('after a compaction that stood the checkpoint is over: it stays hidden, however large the chat, until new work closes', async ($, on) => {
   const h = flowHost(on)
   await atCheckpoint($, h)
   const ui = await mount($)
@@ -301,8 +342,13 @@ test('after a compaction the next measure decides: small, it stays hidden; large
   await measure($, 40_000)
   expect(await ui.find(BUTTON)).toBeUndefined()
   await measure($, OVER)
-  expect(await ui.find(BUTTON)).toBeDefined()
+  expect(await ui.find(BUTTON)).toBeUndefined()
   await ui.unmount()
+  const next = job($, h, 'w9')
+  await next.ask()
+  await next.handBack()
+  await next.report()
+  expect(await isShown($)).toBe(true)
 })
 
 test('a compaction a hook skipped shows one plain amber line with the reason, and the button stays for another try', async ($, on) => {

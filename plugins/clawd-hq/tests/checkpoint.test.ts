@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { isPersonMessage, withHandBack, withNotice, withPersonSpoke, withTurnEnd } from '../hooks/checkpoint'
+import { isPersonMessage, withHandBack, withNewWork, withNotice, withPersonSpoke, withToolUsed, withTurnEnd } from '../hooks/checkpoint'
 import { BOSS0 } from '../hooks/state'
 import type { Boss } from '../types'
 
@@ -11,11 +11,26 @@ test('a hand-back is noted with the turn count it came at, and is no checkpoint 
   expect(b).toMatchObject({ handedBackAt: 4, isCheckpoint: false, turns: 4 })
 })
 
-test('the person speaking wipes the hand-back and the checkpoint', () => {
+test('the person speaking wipes the waiting hand-back but leaves a standing checkpoint', () => {
   const b = withPersonSpoke(boss({ turns: 4, handedBackAt: 3, isCheckpoint: true }))
   expect(b.handedBackAt).toBeUndefined()
-  expect(b.isCheckpoint).toBe(false)
+  expect(b.isCheckpoint).toBe(true)
   expect(b.turns).toBe(4)
+})
+
+test('a standing checkpoint survives a plain turn, and a turn with work or a new hire ends it', () => {
+  const standing = boss({ turns: 6, isCheckpoint: true })
+  expect(withTurnEnd(standing, answered('Plain words.')).isCheckpoint).toBe(true)
+  const worked = withTurnEnd(withToolUsed(standing, 'Read'), answered())
+  expect(worked).toMatchObject({ isCheckpoint: false, hasWorked: undefined })
+  expect(withTurnEnd(withToolUsed(standing, 'AskUserQuestion'), answered()).isCheckpoint).toBe(true)
+  expect(withTurnEnd(withToolUsed(standing, 'ToolSearch'), answered()).isCheckpoint).toBe(true)
+  expect(withNewWork(standing).isCheckpoint).toBe(false)
+})
+
+test('work in a turn does not stop that turn from reporting a fresh hand-back', () => {
+  const b = withToolUsed(boss({ turns: 5, handedBackAt: 4 }), 'Read')
+  expect(withTurnEnd(b, answered()).isCheckpoint).toBe(true)
 })
 
 test('the turn after a hand-back that ends in an answer closes the piece of work', () => {
@@ -44,9 +59,9 @@ test('a turn that was stopped or failed is no checkpoint', () => {
   expect(withTurnEnd(b, { reason: 'answer' }).isCheckpoint).toBe(true)
 })
 
-test('a later turn that is not a report takes an earlier checkpoint away', () => {
+test('a later turn that is not a report leaves an earlier checkpoint standing', () => {
   const b = boss({ turns: 6, handedBackAt: undefined, isCheckpoint: true })
-  expect(withTurnEnd(b, answered('Which one do you want?')).isCheckpoint).toBe(false)
+  expect(withTurnEnd(b, answered('Which one do you want?')).isCheckpoint).toBe(true)
 })
 
 test('only what the person sends counts as a message: not a notification, a peer, a schedule or a command', () => {

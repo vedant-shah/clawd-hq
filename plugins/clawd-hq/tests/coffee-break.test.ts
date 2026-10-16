@@ -238,7 +238,7 @@ test('without a compact call, a question open in the chat, or a box that takes n
 })
 
 test('only a missing compact call falls back to the prompt box: any other failure is told, not worked around', async () => {
-  for (const err of [new TypeError('Cannot read properties of undefined'), new TypeError('x is not a function'), new Error('compact is not a function')]) {
+  for (const err of [new TypeError('Cannot read properties of undefined'), new TypeError('x is not a function'), new Error('a turn is running')]) {
     const { io, log } = fakeIo({ compact: () => { throw err } })
     await takeCoffeeBreak(io, true)
     expect(log.fills).toEqual([])
@@ -254,4 +254,45 @@ test('without a compact call, a prompt box that cannot be read counts as empty, 
   const { io, log } = fakeIo({ compact: noCompact, promptRead: async () => { throw new Error('no composer') } })
   await takeCoffeeBreak(io, true)
   expect(log.fills).toHaveLength(1)
+})
+
+test('a missing compact call is found from the message alone: a plain Error, or an error from another realm, both fall back', async () => {
+  const foreign = { name: 'TypeError', message: '$.session.compact is not a function' } // what another JS realm's TypeError looks like to instanceof
+  for (const err of [new Error('$.session.compact is not a function'), foreign, new Error('compact is not defined'), new Error('$.session.compact is undefined')]) {
+    const { io, log } = fakeIo({ compact: () => { throw err } })
+    await takeCoffeeBreak(io, true)
+    expect(log.fills).toEqual([`/compact ${COFFEE_NOTE}`])
+  }
+  const other = fakeIo({ compact: () => { throw { name: 'TypeError', message: 'a turn is running' } } })
+  await takeCoffeeBreak(other.io, true)
+  expect(other.log.fills).toEqual([])
+  expect(lastNote(other.log)?.kind).toBe('problem')
+})
+
+test('whatever fails after the running note is set, the note ends cleared or replaced, never left saying "Compacting"', async () => {
+  const outcome = async (over: Partial<CoffeeIo>) => {
+    const { io, log } = fakeIo(over)
+    await takeCoffeeBreak(io, true).catch(() => undefined)
+    return lastNote(log)
+  }
+  // The final note cannot be kept.
+  const final = fakeIo({ compact: async () => ({ skip: 'no' }) })
+  let isFirst = true
+  final.io.setNote = async note => { final.log.notes.push(note); if (note?.kind === 'problem' && isFirst) { isFirst = false; throw new Error('state gone') } }
+  await takeCoffeeBreak(final.io, true).catch(() => undefined)
+  expect(lastNote(final.log)).toBeUndefined()
+  // The reading cannot be cleared after a good compaction.
+  expect(await outcome({ clearReading: async () => { throw new Error('gone') } })).toBeUndefined()
+  // The prompt box calls misbehave in a way that throws out of the fallback.
+  expect(await outcome({ compact: noCompact, promptRead: () => { throw new Error('x') }, fill: () => { throw new Error('y') } })).not.toMatchObject({ kind: 'running' })
+})
+
+test('on an older engine a second press, with /compact already in the box, keeps the ready line instead of "busy"', async () => {
+  const { io, log } = fakeIo({ compact: noCompact, promptRead: async () => ({ text: `/compact ${COFFEE_NOTE}` }) })
+  await takeCoffeeBreak(io, true)
+  expect(log.fills).toEqual([])
+  expect(lastNote(log)).toEqual({ kind: 'ready', text: 'Ready in your prompt box. Press Esc, then Enter to compact.' })
+  const typed = fakeIo({ compact: noCompact, promptRead: async () => ({ text: '  /compact' }) })
+  await takeCoffeeBreak(typed.io, false)
+  expect(lastNote(typed.log)).toEqual({ kind: 'ready', text: 'Ready in your prompt box. Send it to compact.' })
 })

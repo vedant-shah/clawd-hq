@@ -78,18 +78,28 @@ const problem = (text: string): Note => ({ kind: 'problem', text })
 /** Without a compact call: `/compact` and the note go in the prompt box when it is empty (as "Edit with Claude" does), never sent. */
 async function fillCommand(io: CoffeeIo, isTerminal: boolean): Promise<Note> {
   const box = await io.promptRead().catch(() => ({ text: '' }))
+  const ready: Note = { kind: 'ready', text: `Ready in your prompt box. ${isTerminal ? 'Press Esc, then Enter' : 'Send it'} to compact.` }
+  // A second press finds the command from the first still waiting: that is the ready state, not a busy box.
+  if (box.text.trimStart().startsWith(COMPACT_COMMAND)) return ready
   if (box.text.trim() !== '') return problem(BOX_BUSY)
-  const line = `/compact ${COFFEE_NOTE}`
+  const line = `${COMPACT_COMMAND} ${COFFEE_NOTE}`
   const r = await io.fill(line).catch(() => ({ isFilled: false, refusal: undefined as string | undefined }))
-  if (r.isFilled) return { kind: 'ready', text: `Ready in your prompt box. ${isTerminal ? 'Press Esc, then Enter' : 'Send it'} to compact.` }
+  if (r.isFilled) return ready
   return problem(r.refusal === 'dialog' ? DIALOG_OPEN : `Type this in the chat: ${line}`)
 }
 
+const COMPACT_COMMAND = '/compact'
+
 /**
  * The engine has no compact call (the desktop app can bundle Claude Code 2.1.295): calling it fails as a missing function does. The loader
- * does not let a plugin look at `$.session.compact` without calling it, so this is how an older engine is told apart. Any other failure is not.
+ * does not let a plugin look at `$.session.compact` without calling it, so this is how an older engine is told apart. It is told from the
+ * message alone (never `instanceof TypeError`: the engine may run plugins in another JS realm, or wrap the call). Any other failure is not.
  */
-export const isMissingCall = (err: unknown): boolean => err instanceof TypeError && /compact/.test(err.message) && /not a function/.test(err.message)
+const MISSING_WORDS = /not a function|is not defined|undefined/
+export function isMissingCall(err: unknown): boolean {
+  const message = typeof err === 'string' ? err : typeof (err as { message?: unknown } | null)?.message === 'string' ? (err as { message: string }).message : ''
+  return /compact/.test(message) && MISSING_WORDS.test(message)
+}
 
 /** Compacts now: nothing when it stood, one plain line when it was skipped or failed, and `'missing'` where the engine has no such call. */
 async function compactNow(compact: CoffeeIo['compact']): Promise<Note | 'missing' | undefined> {
@@ -101,7 +111,23 @@ async function compactNow(compact: CoffeeIo['compact']): Promise<Note | 'missing
   }
 }
 
-/** A press under way: a second press meanwhile does nothing. Set before anything is awaited, so two presses at one moment still compact once. */
+/**
+ * The press itself. Any failure after the running word is set (a note that cannot be kept, a reading that cannot be cleared) takes the word
+ * away before it is passed on, so "Compacting the chat…" is never left standing.
+ */
+async function runPress(io: CoffeeIo, isTerminal: boolean): Promise<void> {
+  try {
+    await io.setNote({ kind: 'running', text: WORKING })
+    const left = await compactNow(io.compact)
+    await io.setNote(left === 'missing' ? await fillCommand(io, isTerminal) : left)
+    if (left === undefined) await io.clearReading()
+  } catch (err) {
+    await io.setNote(undefined).catch(() => undefined)
+    throw err
+  }
+}
+
+/** A press under way:a second press meanwhile does nothing. Set before anything is awaited, so two presses at one moment still compact once. */
 let isPressing = false
 
 /**
@@ -113,10 +139,7 @@ export async function takeCoffeeBreak(io: CoffeeIo, isTerminal: boolean): Promis
   isPressing = true
   try {
     if (!(await io.isBreak())) return void (await io.setNote(problem(NOT_NOW)))
-    await io.setNote({ kind: 'running', text: WORKING })
-    const left = await compactNow(io.compact)
-    await io.setNote(left === 'missing' ? await fillCommand(io, isTerminal) : left)
-    if (left === undefined) await io.clearReading()
+    await runPress(io, isTerminal)
   } finally {
     isPressing = false
   }

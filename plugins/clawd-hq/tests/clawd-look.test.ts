@@ -91,13 +91,9 @@ test('asleep: the z on the small drawing has a diagonal, and the terminal can pl
 
 test('asleep: eyes read as shut, a thin dark line wider than tall, on both drawings', () => {
   const { full, compact } = draw('asleep')
-  // Big drawing: each eye is at most two dots tall and four wide; an open eye is two wide and three tall.
-  for (const [x0, x1] of [[4, 9], [10, 15]] as const) {
-    const eye = shapeIn(full, PALETTE.k, x0, 10, x1, 13)
-    const rows = eye.filter(r => r.includes('#'))
-    expect(rows.length).toBeLessThanOrEqual(2)
-    expect(Math.max(...rows.map(r => r.lastIndexOf('#') - r.indexOf('#') + 1))).toBeGreaterThanOrEqual(4)
-  }
+  // Big drawing: no black; each eye a flat two-dot line in the darker skin shade, one dot tall, mid-height of where the open eye sat (rows 11 to 13).
+  expect(full.slice(9).flat()).not.toContain(PALETTE.k)
+  expect(shapeIn(full, PALETTE.d, 4, 10, 15, 13)).toEqual(['............', '............', '..##....##..', '............'])
   // Small drawing: no black at all; each eye a two-dot line in the darker skin shade, one dot tall, on the open eye's lower row.
   expect(compact.flat()).not.toContain(PALETTE.k)
   expect(shapeIn(compact, PALETTE.d, 3, 4, 12, 7)).toEqual(['..........', '..........', '.##....##.', '..........'])

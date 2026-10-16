@@ -59,10 +59,10 @@ const FULL_Z: Climb = { shape: BIG_Z, y: 17, rise: 3, steps: 4, pieces: [{ x: 19
 const SMALL_Z: Climb = { shape: TINY_Z, y: 8, rise: 2, steps: 3, pieces: [{ x: 13, ahead: 0 }], isSwaying: false }
 
 /**
- * Eyes shut for a nap: each eye a flat dark line, wider than tall and lower in the face than an open eye's top, so it cannot read as open.
- * The big drawing's line is a gentle smile (ends up, middle down) four dots wide; the small one is a flat two-dot line in the darker skin shade, one dot tall, where the open eye's lower dot was.
+ * Eyes shut for a nap: each eye a short flat line in the darker skin shade (low contrast, no black), one dot tall and as wide as an open eye,
+ * set in the middle of where the open eye sat. Both drawings use the same look.
  */
-export const CLOSED_EYES: Part = { x: 4, y: 10, rows: ['............', '.k..k..k..k.', '..kk....kk..', '............'] }
+export const CLOSED_EYES: Part = { x: 4, y: 10, rows: ['............', '............', '..dd....dd..', '............'] }
 export const CLOSED_EYES_ICON: Part = { x: 0, y: 5, rows: ['.....o....o.....', '....dd....dd....'] }
 const FULL_STEAM: Climb = { shape: ['g', 'g'], y: 11, rise: 1, steps: 4, pieces: [{ x: 17, ahead: 0 }, { x: 19, ahead: 2 }], isSwaying: true }
 const SMALL_STEAM: Climb = { shape: ['g'], y: 6, rise: 1, steps: 3, pieces: [{ x: 13, ahead: 0 }, { x: 15, ahead: 1 }], isSwaying: false }

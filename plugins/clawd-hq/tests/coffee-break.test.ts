@@ -33,6 +33,16 @@ test('a threshold that makes no sense is ignored, and the 300k mark stands', () 
   for (const autoCompactAt of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) expect(triggerAt(gauge({ autoCompactAt }))).toBe(300_000)
 })
 
+test('a reading that names the percent and the window but no token count is counted from them', () => {
+  expect(isOverMark(gauge({ contextPercent: 48, contextWindow: 1_000_000 }))).toBe(true)
+  expect(isOverMark(gauge({ contextPercent: 29, contextWindow: 1_000_000 }))).toBe(false)
+  // The count, when the engine gives it, wins over the percent.
+  expect(isOverMark(gauge({ contextTokens: 100_000, contextPercent: 48, contextWindow: 1_000_000 }))).toBe(false)
+  // No window, or no percent, is no reading.
+  expect(isOverMark(gauge({ contextPercent: 48 }))).toBe(false)
+  expect(isOverMark(gauge({ contextWindow: 1_000_000 }))).toBe(false)
+})
+
 test('the mark is reached at exactly the mark, and not one token before it', () => {
   expect(isOverMark(gauge({ contextTokens: 299_999 }))).toBe(false)
   expect(isOverMark(gauge({ contextTokens: 300_000 }))).toBe(true)

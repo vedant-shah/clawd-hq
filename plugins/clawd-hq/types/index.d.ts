@@ -84,6 +84,10 @@ export type Boss = {
   handedBackAt?: number
   /** A piece of work has closed: a hand-back was reported in a finished turn of Clawd's with no question left open. Lasts until the person's next message. */
   isCheckpoint?: boolean
+  /** The turn of Clawd's that a background job's notification started or joined with no hand-back heard yet: a hand-back that comes in that turn is reported by it. */
+  carriedAt?: number
+  /** Where the person's latest message came from (its origin kind, or `none` where the engine named none), kept for the coffee break record. */
+  spokeBy?: string
   idleSince: number
   hires: number
   wins: number

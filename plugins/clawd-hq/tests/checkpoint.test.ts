@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { isPersonMessage, withHandBack, withPersonSpoke, withTurnEnd } from '../hooks/checkpoint'
+import { isPersonMessage, withHandBack, withNotice, withPersonSpoke, withTurnEnd } from '../hooks/checkpoint'
 import { BOSS0 } from '../hooks/state'
 import type { Boss } from '../types'
 
@@ -57,4 +57,49 @@ test('only what the person sends counts as a message: not a notification, a peer
   expect(sent('  /compact keep the plan', 'composer')).toBe(false)
   // A message that is only a picture has no text, but it is the person speaking.
   expect(sent('', 'composer')).toBe(true)
+})
+
+// ---- A notification that reaches Clawd's turn: the turn that sees a hand-back is the one that reports it ----
+
+test('a notification that comes while Clawd is idle, after the hand-back, leaves it to the next turn', () => {
+  const b = withNotice(boss({ turns: 4, handedBackAt: 4 }), false)
+  expect(b.handedBackAt).toBe(4)
+  expect(b.carriedAt).toBeUndefined()
+})
+
+test('a notification that joins the running turn after the hand-back makes that turn the report', () => {
+  const b = withNotice(boss({ turns: 4, isBusy: true, handedBackAt: 4 }), true)
+  expect(b.handedBackAt).toBe(3)
+  expect(withTurnEnd(b, answered()).isCheckpoint).toBe(true)
+})
+
+test('a notification with no hand-back yet is kept for the turn that carries it, and the hand-back that follows in that turn is reported by it', () => {
+  const idle = withNotice(boss({ turns: 4 }), false)
+  expect(idle.carriedAt).toBe(5)
+  const joined = withNotice(boss({ turns: 5, isBusy: true }), true)
+  expect(joined.carriedAt).toBe(5)
+  const b = withHandBack({ ...joined, handedBackAt: undefined })
+  expect(b).toMatchObject({ handedBackAt: 4, isCheckpoint: false })
+  expect(b.carriedAt).toBeUndefined()
+  expect(withTurnEnd(b, answered()).isCheckpoint).toBe(true)
+})
+
+test('a hand-back is carried by the running turn only once: the next one waits for a turn of its own', () => {
+  const first = withHandBack(boss({ turns: 5, isBusy: true, carriedAt: 5 }))
+  expect(first.handedBackAt).toBe(4)
+  const second = withHandBack({ ...first, isBusy: true })
+  expect(second.handedBackAt).toBe(5)
+  expect(withTurnEnd(second, answered()).isCheckpoint).toBe(false)
+})
+
+test('a carried mark of an earlier turn, or one while Clawd is idle, carries nothing', () => {
+  expect(withHandBack(boss({ turns: 6, isBusy: true, carriedAt: 5 })).handedBackAt).toBe(6)
+  expect(withHandBack(boss({ turns: 5, isBusy: false, carriedAt: 5 })).handedBackAt).toBe(5)
+})
+
+test('the person speaking takes the carried mark away, and keeps where the message came from', () => {
+  const b = withPersonSpoke(boss({ turns: 4, carriedAt: 5, handedBackAt: 3 }), 'composer')
+  expect(b.carriedAt).toBeUndefined()
+  expect(b.spokeBy).toBe('composer')
+  expect(withPersonSpoke(boss(), undefined).spokeBy).toBe('none')
 })

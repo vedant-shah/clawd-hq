@@ -18,7 +18,9 @@ import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { contextOf, noteRequest, noteThreshold, startGauge } from './usage'
 import { isBreakTime, takeCoffeeBreak, type CoffeeIo } from './coffee-break'
-import { isPersonMessage, withHandBack, withPersonSpoke, withTurnEnd } from './checkpoint'
+import { isNotification, isPersonMessage, withHandBack, withNotice, withPersonSpoke, withTurnEnd } from './checkpoint'
+import { keepCoffeeRecord } from './coffee-debug'
+import type { CoffeeDebugIo } from './coffee-debug'
 import type { GaugeIo } from './usage'
 import { DEMO, isActive } from './panel-model'
 import { startDemo } from './demo'
@@ -399,6 +401,12 @@ const coffeeIo = ($: EngineInterface): CoffeeIo => ({
   clearReading: () => update($, gauge, g => ({ ...g, contextPercent: undefined, contextTokens: undefined })),
 })
 
+/** The record of why the coffee break button shows or not (hooks/coffee-debug.ts), kept at `debug:coffee` in the store. */
+const coffeeDebugIo = ($: EngineInterface): CoffeeDebugIo => ({
+  now: () => $.clock.now(), save: (key, value) => $.store.set(key, value),
+  data: async () => ({ boss: await getBoss($), staff: await read($, staff), fx: await getFx($), gauge: await read($, gauge) }),
+})
+
 // ---- The demo: a scripted tour with stand-in employees, cleaned up at the end ----
 
 const demoIo = ($: EngineInterface): DemoIo => ({
@@ -487,6 +495,7 @@ export const register: Register = (on, options) => {
   // The header's context bar and limit countdowns follow the engine's own readings.
   on('session.measure', async ($, e, next) => {
     await update($, gauge, g => ({ ...g, ...contextOf(e.context), limits: limitsOf(e.rateLimits) }))
+    void keepCoffeeRecord(coffeeDebugIo($), 'measure') // the reading of the turn that just ended, which the turn's own record could not have yet
     return next(e)
   })
 
@@ -646,7 +655,8 @@ export const register: Register = (on, options) => {
   // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
   // An edit request from the Settings tab carries a note of its own: the file to edit, and what must not be touched.
   on('prompt.submit', async ($, e, next) => {
-    if (isPersonMessage(e)) await setBoss($, withPersonSpoke) // what closed before it is behind us: the coffee break button waits for the next checkpoint
+    if (isPersonMessage(e)) await setBoss($, b => withPersonSpoke(b, e.origin?.kind)) // what closed before it is behind us: the coffee break button waits for the next checkpoint
+    else if (isNotification(e)) await setBoss($, b => withNotice(b, e.turnId !== undefined)) // a job's notification starts or joins a turn: which one reports a hand-back
     if (brief.isKnowOn) await knowPrompt(knowIo($), e as { text: string })
     const note = await editNote(e.text, brief.voiceFile, $.plugin.root, () => homeOf($))
     return next(note === undefined ? e : { ...e, context: [...(e.context ?? []), note] })
@@ -691,7 +701,8 @@ export const register: Register = (on, options) => {
       await askAgain(paneIo($))
       const now = await $.clock.now()
       await setBoss($, b => withTurnEnd(turnEndBoss(b, e.reason, now), e))
-      void noteThreshold(gaugeIo($)) // the point Claude Code compacts at can move with the model: read again, never waited for
+      // The point Claude Code compacts at can move with the model: read again, never waited for. The record of the button follows it.
+      void noteThreshold(gaugeIo($)).then(() => keepCoffeeRecord(coffeeDebugIo($), 'turn'))
       // An edit Claude just made shows in the Settings tab, marked as waiting for the next session.
       await refreshTab($, brief, true)
     }

@@ -29,8 +29,17 @@ export function triggerAt(g: Gauge): number {
   return own !== undefined && Number.isFinite(own) && own > 0 ? Math.min(COFFEE_TOKENS, Math.round(own * AUTO_COMPACT_MARGIN)) : COFFEE_TOKENS
 }
 
+/** The tokens in the chat: the engine's own count, or, where it names only the percent of the window, that share of it. None with no reading. */
+export function tokensOf(g: Gauge): number | undefined {
+  if (g.contextTokens !== undefined) return g.contextTokens
+  return g.contextPercent !== undefined && g.contextWindow !== undefined ? Math.round((g.contextPercent / 100) * g.contextWindow) : undefined
+}
+
 /** The context has reached the mark; with no reading of it yet, it has not. */
-export const isOverMark = (g: Gauge): boolean => g.contextTokens !== undefined && g.contextTokens >= triggerAt(g)
+export function isOverMark(g: Gauge): boolean {
+  const tokens = tokensOf(g)
+  return tokens !== undefined && tokens >= triggerAt(g)
+}
 
 /**
  * A break: a piece of work has closed and nothing is going on. Clawd is not in a turn, no specialist is at work, and no tour plays. The

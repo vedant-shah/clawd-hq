@@ -1,7 +1,7 @@
 // The Clawd HQ avatars, pure: layered 24x24 sprites, 16x12 list icons and 8x8 tiny pictures built from the embedded parts.
 import { BLINK, BODY, CHARACTERS, COMPACT, COMPACT_GRID, GRID, LAYER_ORDER, PALETTE, PARTS } from './avatar-data'
 import type { Character, Part } from './avatar-data'
-import { FULL_MUG, SMALL_MUG, fullSteam, fullZ, smallSteam, smallZ } from './clawd-look'
+import { CLOSED_EYES, CLOSED_EYES_ICON, FULL_MUG, SMALL_MUG, fullSteam, fullZ, smallSteam, smallZ } from './clawd-look'
 import type { Look } from './clawd-look'
 import { hash } from './office'
 
@@ -141,7 +141,9 @@ export function avatarFor(agentType: string): Character {
 
 // A small red tie, drawn for now: Clawd has no crown and no emblem yet.
 const TIE: Part[] = [{ x: 9, y: 15, rows: ['rr', 'rr', 'rr', 'rr'] }, { x: 8, y: 18, rows: ['rrrr'] }]
-const TIE_ICON: Part = { x: 7, y: 6, rows: ['rr', 'rr'] }
+
+// Clawd's navy blazer on the small drawing (his own, not the shared body), in place of the tie: a white shirt strip down the middle of the lower torso.
+const SUIT_ICON: Part = { x: 2, y: 7, rows: ['nnnnnwwnnnnn', '.nnnnwwnnnn.'] }
 
 // The small drawing's eyes are two dots tall: a blink covers the upper dot of each with the body's colour.
 const BLINK_ICON: Part = { x: 0, y: 5, rows: ['.....o....o.....'] }
@@ -151,7 +153,7 @@ const BLINK_ICON: Part = { x: 0, y: 5, rows: ['.....o....o.....'] }
  * nothing but rising z's while he sleeps (eyes shut, as in a blink), or a mug with steam (eyes wide, with a glint). Both drawings.
  */
 function holdings(look: Look, step: number, pose: Pose, logbook: { full: Part; compact: Part }) {
-  if (look === 'asleep') return { eyes: BLINK, eyesSmall: [BLINK_ICON], full: fullZ(step), compact: smallZ(step) }
+  if (look === 'asleep') return { eyes: CLOSED_EYES, eyesSmall: [CLOSED_EYES_ICON], full: fullZ(step), compact: smallZ(step) }
   if (look === 'coffee') return { eyes: PARTS.expression!.sparkle!, eyesSmall: [], full: [FULL_MUG, ...fullSteam(step)], compact: [SMALL_MUG, ...smallSteam(step)] }
   const [full, compact] = pose.isLifted ? [raised(logbook.full), raised(logbook.compact)] : [logbook.full, logbook.compact]
   return { eyes: pose.isBlinking ? BLINK : undefined, eyesSmall: pose.isBlinking ? [BLINK_ICON] : [], full: [full], compact: [compact] }
@@ -165,6 +167,6 @@ export function clawdAvatar(pose: Pose = {}): { full: Grid; compact: Grid } {
   const clawd = CHARACTERS.find(c => c.id === 'clawd')!
   const held = holdings(pose.look ?? 'normal', pose.step ?? 0, pose, { full: PARTS.prop![clawd.prop]!, compact: COMPACT.accent[clawd.compactAccent]! })
   const full = paintAll(blank(GRID.width, GRID.height), [BODY, PARTS.outfit![clawd.outfit]!, held.eyes ?? PARTS.expression![clawd.expression]!, ...TIE, ...held.full])
-  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, ...held.eyesSmall, ...held.compact, TIE_ICON])
+  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, SUIT_ICON, ...held.eyesSmall, ...held.compact])
   return { full, compact }
 }

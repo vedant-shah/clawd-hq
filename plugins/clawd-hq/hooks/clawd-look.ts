@@ -34,25 +34,36 @@ type Climb = {
   y: number
   rise: number
   steps: number
-  /** Each piece's left edge, and how many steps ahead of the others it is in the loop. */
-  pieces: ReadonlyArray<{ x: number; ahead: number }>
+  /** Each piece's left edge, how many steps ahead of the others it is in the loop, and its own shape if it is not the climb's. */
+  pieces: ReadonlyArray<{ x: number; ahead: number; shape?: string[] }>
   /** The piece leans one dot right on every other step, for a floating look. */
   isSwaying: boolean
 }
 
 /** The pieces of a climb at `step`, as parts to paint. */
 function climbing(c: Climb, step: number): Part[] {
-  return c.pieces.map(({ x, ahead }) => {
+  return c.pieces.map(({ x, ahead, shape }) => {
     const at = (step + ahead) % c.steps
-    return { x: x + (c.isSwaying ? at % 2 : 0), y: c.y - c.rise * at, rows: c.shape }
+    return { x: x + (c.isSwaying ? at % 2 : 0), y: c.y - c.rise * at, rows: shape ?? c.shape }
   })
 }
 
-const Z = ['bbb', '.b.', 'bbb']
+// Real Z's: a bar on top, a slanting stroke, a bar at the bottom. The big drawing has room for two sizes; the small one fits a 3 by 4 Z.
+const BIG_Z = ['bbbbb', '...b.', '..b..', '.b...', 'bbbbb']
+const MID_Z = ['bbbb', '..b.', '.b..', 'bbbb']
+const TINY_Z = ['bbb', '..b', '.b.', 'bbb']
 
 // Where the logbook was: the z's take its place in both drawings; the mug takes it too. (DECIDED: the logbook is put down for a nap or a break.)
-const FULL_Z: Climb = { shape: Z, y: 15, rise: 2, steps: 4, pieces: [{ x: 19, ahead: 0 }, { x: 19, ahead: 2 }], isSwaying: true }
-const SMALL_Z: Climb = { shape: Z, y: 8, rise: 2, steps: 3, pieces: [{ x: 13, ahead: 0 }], isSwaying: false }
+// The big drawing's z's sit in the 5 free columns right of the body (no sway: a 5-wide z would leave the picture), a larger and a smaller one.
+const FULL_Z: Climb = { shape: BIG_Z, y: 17, rise: 3, steps: 4, pieces: [{ x: 19, ahead: 0 }, { x: 20, ahead: 2, shape: MID_Z }], isSwaying: false }
+const SMALL_Z: Climb = { shape: TINY_Z, y: 8, rise: 2, steps: 3, pieces: [{ x: 13, ahead: 0 }], isSwaying: false }
+
+/**
+ * Eyes shut for a nap: each eye a flat dark line, wider than tall and lower in the face than an open eye's top, so it cannot read as open.
+ * The big drawing's line is a gentle smile (ends up, middle down) four dots wide; the small one is a flat three-dot line, one dot tall.
+ */
+export const CLOSED_EYES: Part = { x: 4, y: 10, rows: ['............', '.k..k..k..k.', '..kk....kk..', '............'] }
+export const CLOSED_EYES_ICON: Part = { x: 0, y: 5, rows: ['....kkk..kkk....', '.....o....o.....'] }
 const FULL_STEAM: Climb = { shape: ['g', 'g'], y: 11, rise: 1, steps: 4, pieces: [{ x: 17, ahead: 0 }, { x: 19, ahead: 2 }], isSwaying: true }
 const SMALL_STEAM: Climb = { shape: ['g'], y: 6, rise: 1, steps: 3, pieces: [{ x: 13, ahead: 0 }, { x: 15, ahead: 1 }], isSwaying: false }
 

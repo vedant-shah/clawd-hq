@@ -58,6 +58,50 @@ test('asleep: eyes shut for good, no logbook, and a blue z where the logbook was
   expect(where(asleep.compact, BLUE).length).toBeGreaterThanOrEqual(5)
 })
 
+/** The cells of a colour in a box, as rows of text ("#" for the colour), for reading a small shape. */
+const shapeIn = (g: Grid, color: string | undefined, x0: number, y0: number, x1: number, y1: number) =>
+  g.slice(y0, y1 + 1).map(row => row.slice(x0, x1 + 1).map(c => (c === color ? '#' : '.')).join(''))
+
+test('asleep: the z\'s on the big drawing are real Z\'s, one larger and one smaller, whatever the step', () => {
+  const BIG = ['#####', '...#.', '..#..', '.#...', '#####']
+  const MID = ['####', '..#.', '.#..', '####']
+  for (const step of [0, 1, 2, 3]) {
+    const blueRight = draw('asleep', step).full.map(row => row.map((c, x) => (x >= 19 ? c : null)))
+    const rows = where(blueRight, BLUE).map(cell => Number(cell.split(',')[1]))
+    const found = (shape: string[]) => {
+      for (let y = 0; y + shape.length <= 24; y++) for (let x = 19; x + shape[0]!.length <= 25; x++) {
+        if (JSON.stringify(shapeIn(blueRight, BLUE, x, y, x + shape[0]!.length - 1, y + shape.length - 1)) === JSON.stringify(shape)) return true
+      }
+      return false
+    }
+    expect(found(BIG)).toBe(true)
+    expect(found(MID)).toBe(true)
+    expect(Math.min(...rows)).toBeGreaterThanOrEqual(8)
+  }
+})
+
+test('asleep: the z on the small drawing has a diagonal, and the terminal can place it inside the card', () => {
+  for (const step of [0, 1, 2]) {
+    const at = (draw('asleep', step).compact).map(row => row.map((c, x) => (x >= 13 ? c : null)))
+    const ys = where(at, BLUE).map(cell => Number(cell.split(',')[1]))
+    const top = Math.min(...ys)
+    expect(shapeIn(at, BLUE, 13, top, 15, top + 3)).toEqual(['###', '..#', '.#.', '###'])
+  }
+})
+
+test('asleep: eyes read as shut, a thin dark line wider than tall, on both drawings', () => {
+  const { full, compact } = draw('asleep')
+  // Big drawing: each eye is at most two dots tall and four wide; an open eye is two wide and three tall.
+  for (const [x0, x1] of [[4, 9], [10, 15]] as const) {
+    const eye = shapeIn(full, PALETTE.k, x0, 10, x1, 13)
+    const rows = eye.filter(r => r.includes('#'))
+    expect(rows.length).toBeLessThanOrEqual(2)
+    expect(Math.max(...rows.map(r => r.lastIndexOf('#') - r.indexOf('#') + 1))).toBeGreaterThanOrEqual(4)
+  }
+  // Small drawing: one dot tall, three wide, per eye.
+  expect(shapeIn(compact, PALETTE.k, 3, 4, 12, 7)).toEqual(['..........', '.###..###.', '..........', '..........'])
+})
+
 test('the z drifts up between steps and loops back, in both drawings', () => {
   for (const pick of [(a: ReturnType<typeof clawdAvatar>) => a.full, (a: ReturnType<typeof clawdAvatar>) => a.compact]) {
     const frames = [0, 1, 2, 3, 4].map(step => pick(draw('asleep', step)))
@@ -90,7 +134,10 @@ test('the looks keep his navy blazer and red tie', () => {
   for (const one of [asleep, coffee]) {
     expect(one.full[15]![9]).toBe(PALETTE.r)
     expect(one.full[18]![8]).toBe(PALETTE.r)
-    for (const [x, y] of [[7, 6], [8, 6], [7, 7], [8, 7]] as const) expect(one.compact[y]![x]).toBe(PALETTE.r)
+    // The small drawing wears the navy blazer with a white shirt strip, and no tie, in every look.
+    expect(one.compact.flat()).not.toContain(PALETTE.r)
+    for (const [x, y] of [[4, 7], [11, 7], [4, 8], [11, 8]] as const) expect(one.compact[y]![x]).toBe(PALETTE.n)
+    for (const [x, y] of [[7, 7], [8, 7], [7, 8], [8, 8]] as const) expect(one.compact[y]![x]).toBe(PALETTE.w)
     expect(one.full.slice(0, 9).flat().every(c => c === null)).toBe(true)
   }
   expect(still.full[15]![9]).toBe(PALETTE.r)

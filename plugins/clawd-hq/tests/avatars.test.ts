@@ -104,7 +104,12 @@ test('Clawd wears his blazer and a red tie, with no crown or emblem', () => {
   // The crown would sit at the top, over the body's empty rows.
   expect(full.slice(0, 9).flat().every(c => c === null)).toBe(true)
   expect(compact).toHaveLength(12)
-  for (const [x, y] of [[7, 6], [8, 6], [7, 7], [8, 7]] as const) expect(compact[y]![x]).toBe(red)
+  // His small drawing has no tie: a navy blazer over the lower torso with a white shirt strip down the middle.
+  expect(compact.flat()).not.toContain(red)
+  for (const [x, y] of [[4, 7], [11, 7], [4, 8], [11, 8]] as const) expect(compact[y]![x]).toBe(PALETTE.n)
+  for (const [x, y] of [[7, 7], [8, 7], [7, 8], [8, 8]] as const) expect(compact[y]![x]).toBe(PALETTE.w)
+  // His eyes stay clear of the suit.
+  for (const [x, y] of [[5, 5], [5, 6], [10, 5], [10, 6]] as const) expect(compact[y]![x]).toBe(PALETTE.k)
 })
 
 test('Clawd blinks by swapping only his eyes', () => {

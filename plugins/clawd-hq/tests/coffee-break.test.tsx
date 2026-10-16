@@ -54,7 +54,7 @@ test('at a checkpoint past 300,000 tokens the button shows in the footer row, be
     const button = await ui.find(BUTTON)
     expect(button?.props.label).toBe(LABEL)
     const bar = walk((await ui.drawn()) as unknown as Tree, t => t.props.key === 'usage-bar')[0]!
-    expect(elementsOf(bar).map(c => c.props.key)).toEqual(['usage-model', 'coffee-break', 'usage-toggle'])
+    expect(elementsOf(bar).map(c => c.props.key)).toEqual(['usage-model', 'coffee-break', 'usage-group'])
     await ui.unmount()
   }
 })

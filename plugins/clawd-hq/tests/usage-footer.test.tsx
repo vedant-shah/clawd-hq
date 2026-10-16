@@ -50,8 +50,9 @@ test('collapsed, the footer shows the model, the effort and exactly one Usage bu
     const root = (await ui.drawn()) as unknown as Tree
     const footer = walk(root, t => t.props.key === 'gauges')[0]!
     expect(walk(footer, t => t.type === 'Button')).toHaveLength(1)
-    expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% · 44% · 76% ▾')
-    expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
+    expect(await labelOf(ui)).toBe('Usage ▾')
+    expect(await numbersLine(ui)).toBe('17% · 44% · 76%')
+expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^High$/ })).toBeDefined()
     expect(await ui.find({ key: 'usage-details' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /Context window|Session limit|Weekly/ })).toBeUndefined()
@@ -62,7 +63,8 @@ test('collapsed, the footer shows the model, the effort and exactly one Usage bu
 test('before the first reply there is no model and no effort, and the button has a dash', async ($, on) => {
   host(on)
   const ui = await mount($, 'terminal')
-  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage – ▾')
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage ▾')
+  expect(await numbersLine(ui)).toBe('–')
   expect(await ui.find({ key: 'usage-model' })).toBeUndefined()
   await ui.press({ key: 'usage-toggle' })
   expect(await ui.find({ type: 'Text', text: /^Context window$/ })).toBeDefined()
@@ -121,7 +123,8 @@ test('pressing the button opens three rows above it, each with a bar; pressing a
   const ui = await mount($, 'terminal')
   await ui.press({ key: 'usage-toggle' })
 
-  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% · 44% · 76% ▴')
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage ▴')
+  expect(await numbersLine(ui)).toBe('17% · 44% · 76%')
   const lines = await texts(ui)
   expect(lines).toEqual(expect.arrayContaining(['Context window', '169.7k / 1M (17%)', 'Session limit', 'Resets in 3 hr 52 min', '44%', 'Weekly · all models', '76%']))
   expect(lines.some(t => /^Resets /.test(t) && t !== 'Resets in 3 hr 52 min')).toBe(true)
@@ -140,8 +143,8 @@ test('pressing the button opens three rows above it, each with a bar; pressing a
   expect(walk(footer, t => t.props.key === 'usage-details').length).toBe(1)
 
   await ui.press({ key: 'usage-toggle' })
-  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% · 44% · 76% ▾')
-  expect(await ui.find({ key: 'usage-details' })).toBeUndefined()
+  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage ▾')
+expect(await ui.find({ key: 'usage-details' })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -149,7 +152,7 @@ test('without a subscription only the context row opens, and the button lists on
   const { clock } = host(on)
   await measure($, clock.now(), false)
   const ui = await mount($, 'terminal')
-  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% ▾')
+  expect(await numbersLine(ui)).toBe('17%')
   await ui.press({ key: 'usage-toggle' })
   expect(await ui.find({ type: 'Text', text: /^Context window$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Session limit|Weekly/ })).toBeUndefined()
@@ -163,7 +166,7 @@ test('a session window whose reset has passed is hidden', async ($, on) => {
     rateLimits: [{ kind: 'five_hour', percentUsed: 90, resetsAt: new Date(clock.now() - 60_000).toISOString() }],
   } as never)
   const ui = await mount($, 'terminal')
-  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 17% ▾')
+  expect(await numbersLine(ui)).toBe('17%')
   await ui.unmount()
 })
 
@@ -246,7 +249,7 @@ test('a /clear empties the context reading but keeps the model', async ($, on) =
   await request($, 'claude-opus-5-5', 'high')
   await $.session.end(CLEAR)
   const ui = await mount($, 'terminal')
-  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage – · 44% · 76% ▾')
+  expect(await numbersLine(ui)).toBe('– · 44% · 76%')
   expect(await ui.find({ type: 'Text', text: /^Opus 5\.5$/ })).toBeDefined()
   await ui.press({ key: 'usage-toggle' })
   expect(await ui.find({ type: 'Text', text: /^No reading yet$/ })).toBeDefined()
@@ -343,6 +346,13 @@ async function measureAt($: Engine, now: number, context: number | undefined, se
   await $.session.measure({ context: { ...CONTEXT, percent: context }, rateLimits, changed: ['context', 'rateLimits'] } as never)
 }
 
+/** The numbers beside the button as one line ("17% · 44% · 76%"), and the button's own label (just "Usage" and the arrow). */
+const numbersLine = async (ui: Awaited<ReturnType<typeof mount>>) => {
+  const numbers = walk((await ui.drawn()) as unknown as Tree, t => t.props.key === 'usage-numbers')[0]!
+  return walk(numbers, t => t.type === 'Text').map(t => String(t.children?.[0])).join(' ')
+}
+const labelOf = async (ui: Awaited<ReturnType<typeof mount>>) => (await ui.find({ key: 'usage-toggle' }))?.props.label
+
 const colorOf = async (ui: Awaited<ReturnType<typeof mount>>, text: RegExp) => (await ui.find({ type: 'Text', text }))?.props.color
 
 test('on the button each number is plain below 70, amber from 70 and red from 90, the dash and the rest stay plain', async ($, on) => {
@@ -351,7 +361,8 @@ test('on the button each number is plain below 70, amber from 70 and red from 90
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
     const button = (await ui.find({ key: 'usage-toggle' }))!
-    expect(button.props.label).toBe('Usage 69% · 70% · 90% ▾')
+    expect(button.props.label).toBe('Usage ▾')
+    expect(await numbersLine(ui)).toBe('69% · 70% · 90%')
     expect(await colorOf(ui, /^69%$/)).toBeUndefined()
     expect(await colorOf(ui, /^70%$/)).toBe(AMBER)
     expect(await colorOf(ui, /^90%$/)).toBe(RED)
@@ -364,7 +375,7 @@ test('89 is amber and a missing context stays a plain dash beside coloured limit
   const { clock } = host(on)
   await measureAt($, clock.now(), undefined, 89, 95)
   const ui = await mount($, 'terminal')
-  expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage – · 89% · 95% ▾')
+  expect(await numbersLine(ui)).toBe('– · 89% · 95%')
   expect(await colorOf(ui, /^–$/)).toBeUndefined()
   expect(await colorOf(ui, /^89%$/)).toBe(AMBER)
   expect(await colorOf(ui, /^95%$/)).toBe(RED)
@@ -379,6 +390,62 @@ test('pressing the coloured button still opens and closes the details', async ($
   expect(await ui.find({ key: 'usage-details' })).toBeDefined()
   await ui.press({ key: 'usage-toggle' })
   expect(await ui.find({ key: 'usage-details' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the numbers are coloured Text beside the button, never inside it, so the desktop shows the colour', async ($, on) => {
+  const { clock } = host(on)
+  await measureAt($, clock.now(), 69, 70, 90)
+  for (const surface of SURFACES) {
+    const ui = await mount($, surface)
+    const toggle = walk((await ui.drawn()) as unknown as Tree, t => t.props.key === 'usage-toggle')[0]!
+    expect(walk(toggle, t => t.type === 'Text' && t.props.color !== undefined)).toHaveLength(0)
+    const numbers = walk((await ui.drawn()) as unknown as Tree, t => t.props.key === 'usage-numbers')[0]!
+    expect(walk(numbers, t => t.type === 'Text').map(t => [t.children?.[0], t.props.color])).toEqual([
+      ['69%', undefined], ['·', undefined], ['70%', AMBER], ['·', undefined], ['90%', RED],
+    ])
+    await ui.unmount()
+  }
+})
+
+/** The colour of the filled part of the line-glyph bar in a row (the bar's outer Text has no props, so walk() skips it; this does not). */
+const filledColors = (node: Tree): unknown[] => {
+  const kids = (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null)
+  const isFill = node.type === 'Text' && /^━+$/.test(String(node.children?.[0]))
+  return [...(isFill ? [node.props?.color] : []), ...kids.flatMap(filledColors)]
+}
+
+test('each bar in the open details takes its number\'s colour: normal accent at 69, amber at 70 and 89, red at 90', async ($, on) => {
+  const { clock } = host(on)
+  for (const [percent, tint] of [[69, ACCENT], [70, AMBER], [89, AMBER], [90, RED]] as const) {
+    await measureAt($, clock.now(), percent, 10, 10)
+    for (const surface of SURFACES) {
+      const ui = await mount($, surface)
+      await ui.press({ key: 'usage-toggle' })
+      const details = walk((await ui.drawn()) as unknown as Tree, t => t.props.key === 'usage-details')[0]!
+      const contextRow = elementsOf(details)[0]!
+      if (surface === 'terminal') {
+        expect(filledColors(contextRow)).toEqual([tint])
+      } else {
+        const svg = walk(contextRow, t => t.type === 'Svg')[0]!
+        expect(String(svg.props.source)).toContain(`fill="${tint}"`)
+      }
+      const limitRow = elementsOf(details)[1]!
+      if (surface === 'terminal') expect(filledColors(limitRow)).toEqual([ACCENT])
+      await ui.press({ key: 'usage-toggle' })
+      await ui.unmount()
+    }
+  }
+})
+
+test('on a limit row the reset time stays dim even when the percent is amber or red', async ($, on) => {
+  const { clock } = host(on)
+  await measureAt($, clock.now(), 10, 92, 75)
+  const ui = await mount($, 'terminal')
+  await ui.press({ key: 'usage-toggle' })
+  const reset = await ui.find({ type: 'Text', text: /^Resets / })
+  expect(reset?.props.color).toBeUndefined()
+  expect(reset?.props.dimColor).toBe(true)
   await ui.unmount()
 })
 

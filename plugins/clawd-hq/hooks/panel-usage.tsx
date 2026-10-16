@@ -20,29 +20,31 @@ function row(kit: Kit, r: UsageRow) {
       <Box flexDirection="row" flexWrap="wrap" justifyContent="space-between" columnGap={2}>
         <Text wrap="wrap">{r.label}</Text>
         <Box flexDirection="row" columnGap={1}>
-          {r.detail !== undefined && <Text dimColor={tint === undefined} color={tint} wrap="wrap">{r.detail}</Text>}
+          {r.detail !== undefined && (r.percent === undefined
+            ? <Text dimColor={tint === undefined} color={tint} wrap="wrap">{r.detail}</Text>
+            : <Text dimColor wrap="wrap">{r.detail}</Text>)}
           {r.percent !== undefined && <Text color={tint} wrap="wrap">{r.percent}</Text>}
         </Box>
       </Box>
-      {bar(r.value, `${r.label} ${percentLabel(r.value)} used`)}
+      {bar(r.value, `${r.label} ${percentLabel(r.value)} used`, 'wide', tint)}
     </Box>
   )
 }
 
 /**
- * The button's text in pieces, so each number can carry its own colour: "Usage", then the numbers with a dot between.
- * The Button's label still names it whole, for the address and for a screen reader.
+ * The numbers beside the button, each its own coloured Text with a dot between. They sit OUTSIDE the Button because the
+ * desktop draws a Button as a native button, which drops the colour of anything inside it.
  */
-function buttonText(kit: Kit, readings: UsageReading[], arrow: string) {
-  const { Text } = kit
-  return [
-    'Usage ',
-    ...readings.flatMap((r, i) => [
-      ...(i > 0 ? [' · '] : []),
-      <Text key={`usage-n${i}`} color={usageTint(r.value)}>{r.text}</Text>,
-    ]),
-    ` ${arrow}`,
-  ]
+function usageNumbers(kit: Kit, readings: UsageReading[]) {
+  const { Box, Text } = kit
+  return (
+    <Box key="usage-numbers" flexDirection="row" flexWrap="wrap" columnGap={1}>
+      {readings.flatMap((r, i) => [
+        ...(i > 0 ? [<Text key={`usage-dot${i}`} dimColor>·</Text>] : []),
+        <Text key={`usage-n${i}`} color={usageTint(r.value)} wrap="wrap">{r.text}</Text>,
+      ])}
+    </Box>
+  )
 }
 
 /** The coffee break button in the footer row, or the plain word that stands in for it while the chat is compacting; nothing when it is not time. */
@@ -76,7 +78,10 @@ export function usageFooter(kit: Kit, data: PanelData, actions: PanelActions) {
           </Box>
         )}
         {coffeeButton(kit, coffee.state, actions)}
-        <Button key="usage-toggle" label={`${view.button} ${arrow}`} onPress={() => actions.toggleUsage()}>{buttonText(kit, view.readings, arrow)}</Button>
+        <Box key="usage-group" flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
+          <Button key="usage-toggle" label={`Usage ${arrow}`} onPress={() => actions.toggleUsage()} />
+          {usageNumbers(kit, view.readings)}
+        </Box>
       </Box>
     </Box>
   )

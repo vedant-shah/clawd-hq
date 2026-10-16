@@ -30,11 +30,11 @@ export function barGlyphs(percent: number, size: BarSize = 'wide'): { on: string
 }
 
 /** The image bar: a dim rounded track with an accent fill that is never narrower than its own height. */
-export function barSvg(percent: number, size: BarSize = 'wide'): string {
+export function barSvg(percent: number, size: BarSize = 'wide', color: string = ACCENT): string {
   const [p, width] = [clampPercent(percent), WIDTH[size]]
   const fill = p === 0 ? 0 : Math.max(BAR_H, Math.round((width * p) / 100))
   const rect = (w: number, color: string) => `<rect width="${w}" height="${BAR_H}" rx="${BAR_H / 2}" fill="${color}"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${BAR_H}" width="${width}" height="${BAR_H}">${rect(width, TRACK)}${fill > 0 ? rect(fill, ACCENT) : ''}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${BAR_H}" width="${width}" height="${BAR_H}">${rect(width, TRACK)}${fill > 0 ? rect(fill, color) : ''}</svg>`
 }
 
 /** The limit windows as the gauge keeps them: only the fields it reads. */

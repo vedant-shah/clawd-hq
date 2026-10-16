@@ -43,10 +43,10 @@ export function kitOf(tools: PanelTools) {
   }
 
   /** A thin gauge bar, `wide` for the footer or `small` for a specialist's progress: a rounded image where there is an Svg, line glyphs on the terminal. */
-  const bar = (percent: number, alt: string, size: BarSize = 'wide') => {
-    if (Svg) return <Svg source={barSvg(percent, size)} alt={alt} width={WIDTH[size]} height={BAR_H} />
+  const bar = (percent: number, alt: string, size: BarSize = 'wide', color: string = ACCENT) => {
+    if (Svg) return <Svg source={barSvg(percent, size, color)} alt={alt} width={WIDTH[size]} height={BAR_H} />
     const { on, off } = barGlyphs(percent, size)
-    return <Text>{on !== '' && <Text color={ACCENT}>{on}</Text>}<Text dimColor>{off}</Text></Text>
+    return <Text>{on !== '' && <Text color={color}>{on}</Text>}<Text dimColor>{off}</Text></Text>
   }
 
   // Only Text props every engine in use takes: the desktop app can bundle an older one (2.1.295) than the terminal's,

@@ -214,7 +214,8 @@ test('on every pane the gauges are the last thing, and nothing above them is a g
       expect(rows[rows.length - 1]?.props.key).toBe('gauges')
       expect(rows.slice(0, -1).some(r => r.props.key === 'gauges')).toBe(false)
       expect((await ui.findAll({ key: 'gauges' }))).toHaveLength(1)
-      expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 21% ▾')
+      expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage ▾')
+      expect(await ui.find({ type: 'Text', text: /^21%$/ })).toBeDefined()
       await ui.unmount()
     }
   }

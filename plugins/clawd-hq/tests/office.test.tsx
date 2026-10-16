@@ -149,7 +149,8 @@ test('a reading above zero never reads 0%: the label agrees with the sliver of b
   await $.session.measure({ context: { window: 1_000_000, tokens: 3_000, percent: 0.3 }, rateLimits: [], changed: ['context'] } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage 1% ▾')
+    expect((await ui.find({ key: 'usage-toggle' }))?.props.label).toBe('Usage ▾')
+    expect(await ui.find({ type: 'Text', text: /^1%$/ })).toBeDefined()
     await ui.press({ key: 'usage-toggle' })
     expect(await ui.find({ type: 'Text', text: /^3k \/ 1M \(1%\)$/ })).toBeDefined()
     if (surface === 'terminal') expect(await ui.find({ type: 'Text', text: /^━$/ })).toBeDefined()

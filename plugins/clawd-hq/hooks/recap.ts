@@ -1,6 +1,9 @@
 // The recap on Clawd's card: one line on where things stand, made the way Claude Code's own session recap is.
-// Pure: when one is due and how its line reads. register.tsx asks the model (`$` never leaves that file).
+// When one is due, how its line reads, and the steps of asking for one. `$` never leaves register.tsx: it hands in
+// the calls as `io`.
+import type { Boss } from '../types'
 import { fit } from './desk'
+import { side } from './side-ask'
 
 /** Quiet time after the last finished turn before a recap is made. */
 export const RECAP_AFTER_MS = 3 * 60_000
@@ -40,4 +43,56 @@ export function isRecapDue(s: RecapState): boolean {
  */
 export function recapLine(text: string): string | undefined {
   return fit(text.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' '), RECAP_CHARS) || undefined
+}
+
+// ---- Asking for one: the counts below belong to this session, the calls come in as `io` ----
+
+/** Whether the recap may be made here, Clawd's turns this session, and the turn count the last one was asked at. */
+let isRecapOn = true
+let turnsSeen = 0
+let recapFor = 0
+
+/** The setting only: whether anything is drawn is read at each frame's ask. */
+export const setRecapOn = (isOn: boolean) => { isRecapOn = isOn }
+/** A turn of Clawd's began: work goes on, so the count moves. */
+export const noteRecapTurn = () => { turnsSeen += 1 }
+
+export type RecapIo = {
+  now: () => Promise<number>
+  boss: () => Promise<Boss>
+  setBoss: (fn: (b: Boss) => Boss) => Promise<unknown>
+  /** The tour is playing. */
+  isTouring: () => Promise<boolean>
+  /** Something is drawn for the person to look at. */
+  isShown: () => Promise<boolean>
+  ask: (prompt: string) => Promise<{ isAnswered: true; text: string } | { isAnswered: false }>
+}
+
+/**
+ * Asks the model over the session's own transcript, which the API serves from the main thread's cache, as Claude
+ * Code's own session recap does. Once per pause: the turn count is noted before the question goes out. Only while no
+ * other side question runs or waits (hooks/side-ask.ts); a later frame tries again.
+ */
+export async function maybeRecap(io: RecapIo) {
+  const [b, isTouring, now] = [await io.boss(), await io.isTouring(), await io.now()]
+  if (!isRecapDue({ isOn: isRecapOn, isBusy: b.isBusy || isTouring, idleSince: b.idleSince, now, turns: turnsSeen, lastFor: recapFor })) return
+  // A recap is for someone looking at the panel: none while nothing is drawn. Read only once one is due, to keep frames cheap.
+  if (!(await io.isShown())) return
+  side.tryNow(() => askRecap(io))
+}
+
+async function askRecap(io: RecapIo) {
+  const asked = turnsSeen
+  recapFor = asked
+  const reply = await io.ask(RECAP_PROMPT)
+  const text = reply.isAnswered ? recapLine(reply.text) : undefined
+  // A turn that began while the model was answering has made the line stale: it is dropped.
+  if (text !== undefined && asked === turnsSeen) await io.setBoss(boss => (boss.isBusy ? boss : { ...boss, recap: text }))
+}
+
+/** A new session, or a /clear: the turns are counted afresh and an old recap goes. */
+export async function resetRecap(io: RecapIo) {
+  turnsSeen = 0
+  recapFor = 0
+  if ((await io.boss()).recap !== undefined) await io.setBoss(b => ({ ...b, recap: undefined }))
 }

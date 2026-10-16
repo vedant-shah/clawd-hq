@@ -7,14 +7,13 @@ import type { Effort } from './desk'
 import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './artifacts'
 import type { ArtifactAnswer } from './artifacts'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
-import { NAP_MS } from './clawd-says'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MAX_MEMORY, MEM_TOOL, RECALL, STEP_TOOL, TITLE_CHARS } from './constants'
-import { freshHire, isLively, isSettling, quietBoss, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
+import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { applyPayroll, resetPayroll, reviewPayroll, setLaidOff } from './payroll'
 import type { PayrollIo } from './payroll'
 import { NO_ROW, ROWS_KEY, configKeyOf, refusalOf, rowKeys } from './configs'
 import type { ConfigField } from './configs'
-import { BRAND, clip, hash, labelOf, roleOf } from './office'
+import { BRAND, clip, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { contextOf, noteRequest, noteThreshold, startGauge } from './usage'
@@ -22,16 +21,17 @@ import { isBreakTime, takeCoffeeBreak, type CoffeeIo } from './coffee-break'
 import { isPersonMessage, withHandBack, withPersonSpoke, withTurnEnd } from './checkpoint'
 import type { GaugeIo } from './usage'
 import { DEMO, isActive } from './panel-model'
-import { tourSteps } from './demo'
+import { startDemo } from './demo'
+import type { DemoIo } from './demo'
 import { LOGBOOK_FILE, loadLogbook, saveLogbook, withDecision } from './logbook'
 import type { LogbookIo } from './logbook'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
 import { SHIPPED_DENY, clawdActions, editNote, editPartOf, guardOnCrash, isShippedWrite, readFailed, readFailedLine, refreshClawd } from './clawd-edit'
 import type { ClawdIo } from './clawd-edit'
-import { RECAP_PROMPT, isRecapDue, recapLine } from './recap'
+import { maybeRecap, noteRecapTurn, resetRecap, setRecapOn } from './recap'
+import type { RecapIo } from './recap'
 import { isHandback, isNoUpdate } from './quiet'
-import { side } from './side-ask'
 import { checkHandback, checkOwnTurn, forgetKnow, isWatching, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
@@ -67,10 +67,6 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 
 // The project the session runs in: payroll is kept per project.
 let cwd = ''
-// The recap on Clawd's card: whether it may be made here, Clawd's turns this session, and the turn count the last one was asked at.
-let isRecapOn = true
-let turnsSeen = 0
-let recapFor = 0
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
@@ -295,36 +291,14 @@ async function keepArtifact($: EngineInterface, folder: string, input: Record<st
   })
 }
 
-// ---- The recap: one line on where things stand, after a few quiet minutes ----
+// ---- The recap (hooks/recap.ts): one line on where things stand, after a few quiet minutes ----
 
-/**
- * Asks the model over the session's own transcript, which the API serves from the main thread's cache, as Claude
- * Code's own session recap does. Once per pause: the turn count is noted before the question goes out. Only while no
- * other side question runs or waits (hooks/side-ask.ts); a later frame tries again.
- */
-async function maybeRecap($: EngineInterface) {
-  const [b, f, now] = [await getBoss($), await getFx($), await $.clock.now()]
-  if (!isRecapDue({ isOn: isRecapOn, isBusy: b.isBusy || f.demo !== undefined, idleSince: b.idleSince, now, turns: turnsSeen, lastFor: recapFor })) return
-  // A recap is for someone looking at the panel: none while nothing is drawn. Read only once one is due, to keep frames cheap.
-  if ((await $.session.surfaces().catch(() => [])).length === 0) return
-  side.tryNow(() => askRecap($))
-}
-
-async function askRecap($: EngineInterface) {
-  const asked = turnsSeen
-  recapFor = asked
-  const reply = await $.model.fork({ prompt: RECAP_PROMPT })
-  const text = reply.isAnswered ? recapLine(reply.text) : undefined
-  // A turn that began while the model was answering has made the line stale: it is dropped.
-  if (text !== undefined && asked === turnsSeen) await setBoss($, boss => (boss.isBusy ? boss : { ...boss, recap: text }))
-}
-
-/** A new session, or a /clear: the turns are counted afresh and an old recap goes. */
-async function resetRecap($: EngineInterface) {
-  turnsSeen = 0
-  recapFor = 0
-  if ((await getBoss($)).recap !== undefined) await setBoss($, b => ({ ...b, recap: undefined }))
-}
+const recapIo = ($: EngineInterface): RecapIo => ({
+  now: () => $.clock.now(), boss: () => getBoss($), setBoss: fn => setBoss($, fn),
+  isTouring: async () => (await getFx($)).demo !== undefined,
+  isShown: async () => ((await $.session.surfaces().catch(() => [])).length > 0),
+  ask: prompt => $.model.fork({ prompt }),
+})
 
 // ---- The check on finished work (hooks/know-check.ts): what it may do, each a `$` call spelled here ----
 
@@ -348,7 +322,7 @@ async function onFrame($: EngineInterface, frames: number) {
   if (frames % 25 === 0) {
     await reviewPayroll(payrollIo($))
     // The model takes its time: the frames go on meanwhile, and a recap that fails is simply not shown.
-    void maybeRecap($).catch(() => undefined)
+    void maybeRecap(recapIo($)).catch(() => undefined)
   }
   // A quiet office only needs a frame now and then, for blinking and snoring; nothing is written in between.
   if (!isLively(list, f, b, t0) && frames % 3 !== 0) return
@@ -427,52 +401,15 @@ const coffeeIo = ($: EngineInterface): CoffeeIo => ({
 
 // ---- The demo: a scripted tour with stand-in employees, cleaned up at the end ----
 
-let demoTimers: Timer[] = []
-
-async function demoWork($: EngineInterface, id: string, tool: string, input: Record<string, unknown>) {
-  const activity = sentenceOf(tool, input)
-  await update($, staff, l => edit(l, id, one => ({ ...withTool(one, activity), tokens: (one.tokens ?? 0) + 18_000 + (hash(activity) % 9000) })))
-}
-
-async function demoSay($: EngineInterface, text: string, ticks = 10) {
-  const t = await read($, tick)
-  await setBoss($, b => ({ ...b, quip: { text, until: t + ticks } }))
-}
-
-async function startDemo($: EngineInterface) {
-  for (const timer of demoTimers) timer.cancel()
-  demoTimers = []
-  const saved = await getBoss($)
-  const id = (n: string) => `${DEMO}${n}`
-  const steps = tourSteps({
-    show: view => raise(paneIo($), view),
-    showLog: isOpen => showLog($, isOpen),
-    setBusy: () => setBoss($, b => ({ ...b, isBusy: true })),
-    say: (text, ticks) => demoSay($, text, ticks),
-    hire: (n, type, description) => newHire($, id(n), type, description),
-    work: (n, tool, input) => demoWork($, id(n), tool, input),
-    finish: (n, mood) => clockOut($, id(n), mood),
-    goQuiet: async () => { const now = await $.clock.now(); await setBoss($, b => quietBoss(b, now, NAP_MS)) },
-  })
-
-  const total = steps.length
-  steps.forEach(([caption, run], i) => {
-    demoTimers.push($.clock.after(i * 5000, () => {
-      void (async () => {
-        await setFx($, f => ({ ...f, demo: { step: i + 1, total, caption } }))
-        await run()
-      })().catch(() => undefined) // a step that fails is skipped; it must not become an unhandled rejection
-    }))
-  })
-  demoTimers.push($.clock.after(total * 5000 + 1500, () => {
-    void (async () => {
-      await update($, staff, l => l.filter(e => !e.id.startsWith(DEMO)))
-      await setFx($, f => ({ ...f, demo: undefined }))
-      await setBoss($, b => ({ ...saved, turns: b.turns, recap: b.recap, quip: undefined }))
-      await showStatus($)
-    })()
-  }))
-}
+const demoIo = ($: EngineInterface): DemoIo => ({
+  show: view => raise(paneIo($), view), showLog: isOpen => showLog($, isOpen),
+  boss: () => getBoss($), setBoss: fn => setBoss($, fn), tick: () => read($, tick), now: () => $.clock.now(),
+  hire: (id, type, description) => newHire($, id, type, description), finish: (id, mood) => clockOut($, id, mood),
+  editStaff: (id, fn) => update($, staff, l => edit(l, id, fn)),
+  dropStandIns: () => update($, staff, l => l.filter(e => !e.id.startsWith(DEMO))),
+  setDemo: demo => setFx($, f => ({ ...f, demo })), showStatus: () => showStatus($),
+  after: (ms, fn) => $.clock.after(ms, fn),
+})
 
 export const register: Register = (on, options) => {
   let timer: Timer | undefined
@@ -497,10 +434,10 @@ export const register: Register = (on, options) => {
     isLogbookWarned = false
     isArtifactsWarned = false
     // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.
-    isRecapOn = brief.isRecapOn
+    setRecapOn(brief.isRecapOn)
     // Each step stands on its own: one that fails stops none after it (the Settings tab still fills), and the person is told which.
     const failed = await runEach([
-      ['recap', () => resetRecap($)],
+      ['recap', () => resetRecap(recapIo($))],
       ['check on finished work', () => startKnow(knowIo($), cwd)],
       // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
       ['payroll review', async () => { if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined })) }],
@@ -561,14 +498,14 @@ export const register: Register = (on, options) => {
       await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined, contextTokens: undefined }))
     }
     // Another conversation takes over this process without a session.start: its recap and its turns are its own.
-    if (e.reason === 'clear' || e.reason === 'resume') await resetRecap($)
+    if (e.reason === 'clear' || e.reason === 'resume') await resetRecap(recapIo($))
     await forgetKnow(knowIo($))
     return next(e)
   })
 
   on('command.run', { command: 'office-demo' }, async $ => {
     await openPanes(paneIo($), false)
-    await startDemo($)
+    await startDemo(demoIo($))
     return { text: `The ${BRAND} tour is playing in the side panel (about a minute).` }
   })
 
@@ -652,7 +589,7 @@ export const register: Register = (on, options) => {
 
     if (tool === DEMO_TOOL) {
       await openPanes(paneIo($), false)
-      await startDemo($)
+      await startDemo(demoIo($))
       return { result: `The ${BRAND} tour is playing in the side panel for about a minute. If the panel is not visible, the user can type /office.` } as never
     }
 
@@ -728,7 +665,7 @@ export const register: Register = (on, options) => {
     // Since 2.1.299 specialists' turns start here too: all of this is about Clawd's own, in the main chat.
     if (e.agentId !== undefined) return next(e)
     // Work goes on, so a recap of the pause before it is out of date.
-    turnsSeen += 1
+    noteRecapTurn()
     knowTurnStart(e.text ?? '')
     isEditTurn = editPartOf(e.text ?? '') !== undefined
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, recap: undefined, activity: e.text ? READING_BRIEF : 'Back at it' }))

@@ -1,8 +1,13 @@
-// The one-minute tour's script: what each step says and does. Pure: the office's own actions come in as `io`,
-// so `$` and the state stay in register.tsx. Each step's caption is drawn at the top of every pane while it plays.
-import { BRAND } from './office'
+// The one-minute tour: its script (what each step says and does) and its timing. The office's own actions come in as
+// `io`, so `$` and the state stay in register.tsx. Each step's caption is drawn at the top of every pane while it plays.
+import type { Boss, Employee, Fx, Mood } from '../types'
+import { sentenceOf } from './activity'
+import { BRAND, hash } from './office'
+import { quietBoss } from './office-state'
+import { NAP_MS } from './clawd-says'
 import type { PaneView } from './panes'
-import type { Mood } from '../types'
+import { DEMO } from './panel-model'
+import { withTool } from './staff-model'
 
 export type TourIo = {
   show: (view: PaneView) => Promise<unknown>
@@ -71,4 +76,73 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.say('Thanks for visiting. Now, back to work!', 12)
     }],
   ]
+}
+
+// ---- Playing it: stand-in employees, one step every five seconds, cleaned up at the end ----
+
+/** What playing the tour needs of the office; every call is a closure built in register.tsx. */
+export type DemoIo = {
+  show: TourIo['show']
+  showLog: TourIo['showLog']
+  boss: () => Promise<Boss>
+  setBoss: (fn: (b: Boss) => Boss) => Promise<unknown>
+  tick: () => Promise<number>
+  now: () => Promise<number>
+  /** `id` is the stand-in's full id (it starts with DEMO). */
+  hire: (id: string, type: string, description: string) => Promise<unknown>
+  finish: (id: string, mood: Mood) => Promise<unknown>
+  editStaff: (id: string, fn: (e: Employee) => Employee) => Promise<unknown>
+  dropStandIns: () => Promise<unknown>
+  setDemo: (demo: Fx['demo']) => Promise<unknown>
+  showStatus: () => Promise<unknown>
+  after: (ms: number, fn: () => void) => { cancel: () => void }
+}
+
+const STEP_MS = 5000
+let demoTimers: Array<{ cancel: () => void }> = []
+
+/** A stand-in at work: what it is doing now, and the tokens that go with it. */
+const work = (io: DemoIo, id: string, tool: string, input: Record<string, unknown>) => {
+  const activity = sentenceOf(tool, input)
+  return io.editStaff(id, one => ({ ...withTool(one, activity), tokens: (one.tokens ?? 0) + 18_000 + (hash(activity) % 9000) }))
+}
+
+async function say(io: DemoIo, text: string, ticks = 10) {
+  const t = await io.tick()
+  await io.setBoss(b => ({ ...b, quip: { text, until: t + ticks } }))
+}
+
+export async function startDemo(io: DemoIo) {
+  for (const timer of demoTimers) timer.cancel()
+  demoTimers = []
+  const saved = await io.boss()
+  const id = (n: string) => `${DEMO}${n}`
+  const steps = tourSteps({
+    show: io.show,
+    showLog: io.showLog,
+    setBusy: () => io.setBoss(b => ({ ...b, isBusy: true })),
+    say: (text, ticks) => say(io, text, ticks),
+    hire: (n, type, description) => io.hire(id(n), type, description),
+    work: (n, tool, input) => work(io, id(n), tool, input),
+    finish: (n, mood) => io.finish(id(n), mood),
+    goQuiet: async () => { const now = await io.now(); await io.setBoss(b => quietBoss(b, now, NAP_MS)) },
+  })
+
+  const total = steps.length
+  steps.forEach(([caption, run], i) => {
+    demoTimers.push(io.after(i * STEP_MS, () => {
+      void (async () => {
+        await io.setDemo({ step: i + 1, total, caption })
+        await run()
+      })().catch(() => undefined) // a step that fails is skipped; it must not become an unhandled rejection
+    }))
+  })
+  demoTimers.push(io.after(total * STEP_MS + 1500, () => {
+    void (async () => {
+      await io.dropStandIns()
+      await io.setDemo(undefined)
+      await io.setBoss(b => ({ ...saved, turns: b.turns, recap: b.recap, quip: undefined }))
+      await io.showStatus()
+    })()
+  }))
 }

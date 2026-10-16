@@ -31,7 +31,7 @@ import { SHIPPED_DENY, clawdActions, editNote, editPartOf, guardOnCrash, isShipp
 import type { ClawdIo } from './clawd-edit'
 import { maybeRecap, noteRecapTurn, resetRecap, setRecapOn } from './recap'
 import type { RecapIo } from './recap'
-import { isHandback, isNoUpdate } from './quiet'
+import { isBackgroundHint, isHandback, isNoUpdate, rowLook } from './quiet'
 import { checkHandback, checkOwnTurn, forgetKnow, isWatching, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
@@ -712,6 +712,27 @@ export const register: Register = (on, options) => {
 
     on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
       if (!isNoUpdate(e.props.text)) return next(e)
+      const { Text } = $.ui.resolve(e)
+      return <Text>{''}</Text>
+    })
+
+    // Small rows: the office's own bookkeeping calls are hidden or dimmed (hooks/quiet.ts says which). Errors always show.
+    on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+      const look = rowLook(e.props, await read($, staff))
+      if (look === 'show') return next(e)
+      const { Text } = $.ui.resolve(e)
+      return look === 'hide' ? <Text>{''}</Text> : <Text dimColor>{await next(e)}</Text>
+    })
+
+    on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+      const look = rowLook(e.props, await read($, staff))
+      if (look === 'show') return next(e)
+      const { Text } = $.ui.resolve(e)
+      return look === 'hide' ? <Text>{''}</Text> : <Text dimColor>{await next(e)}</Text>
+    })
+
+    on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => {
+      if (!isBackgroundHint(e.props.kind)) return next(e)
       const { Text } = $.ui.resolve(e)
       return <Text>{''}</Text>
     })

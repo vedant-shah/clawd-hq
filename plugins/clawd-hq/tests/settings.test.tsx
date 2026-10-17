@@ -59,7 +59,7 @@ const labelOf = async (ui: Ui, field: string) => (await ui.find({ key: `config-$
 /** A settings row as the engine lists it: its key and the plugin that owns it. */
 type Row = { key: string; owner: string }
 const OURS: Row[] = FIELDS.map(f => ({ key: `clawd-hq.${f}`, owner: 'clawd-hq' }))
-const NO_ROW = 'This setting can\'t be changed from here while the plugin runs from a folder. Use /plugin.'
+const NO_ROW = 'This setting isn\'t listed here; use /config.'
 
 /** The engine's settings rows and every change asked of them; `answer` is what a change gets back. */
 function configs(on: On, answer: (e: { key: string; value: unknown }) => unknown = e => ({ value: e.value }), rows: Row[] = OURS) {
@@ -194,7 +194,7 @@ test('the key is the one of the row this plugin owns for that field, whatever th
     const ui = await mount($, surface)
     await ui.press({ key: 'config-recap' })
     expect(asked).toEqual([{ key: 'inline:7f.recap', value: false }])
-    expect(await shows(ui, /^Could not change|can't be changed from here/)).toBe(false)
+    expect(await shows(ui, /^Could not change|isn't listed here/)).toBe(false)
     await ui.unmount()
   }
 })

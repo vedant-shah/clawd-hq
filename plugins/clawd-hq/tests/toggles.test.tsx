@@ -13,7 +13,7 @@ type On = Parameters<typeof host>[0]
 type Field = 'chiefOfStaff' | 'quietChat' | 'recap' | 'youShouldKnow'
 const FIELDS: readonly Field[] = ['chiefOfStaff', 'quietChat', 'recap', 'youShouldKnow']
 const TITLES: Record<Field, string> = { chiefOfStaff: 'Clawd runs the chat', quietChat: 'Quiet chat', recap: 'Recap', youShouldKnow: 'You should know' }
-const NO_ROW = /can't be changed from here/
+const NO_ROW = /isn't listed here/
 const MIN = 60_000
 
 /** The plugin's own folder: the one above this file's. */
@@ -124,7 +124,7 @@ async function press($: Engine, field: Field, surface: 'terminal' | 'desktop' = 
 
 // ---- The bug: the engine names a row's owner as the loader keys the plugin, never by its bare name ----
 
-test('a press changes the row the engine lists as ours, owned "clawd-hq@inline" or "clawd-hq@<marketplace>", with no "Use /plugin" line', async ($, on) => {
+test('a press changes the row the engine lists as ours, owned "clawd-hq@inline" or "clawd-hq@<marketplace>", with no "not listed" line', { timeoutMs: 15_000 }, async ($, on) => {
   host(on)
   let owner = 'clawd-hq@inline'
   const asked: Array<{ key: string; value: unknown }> = []

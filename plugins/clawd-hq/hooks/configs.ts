@@ -24,8 +24,8 @@ export const WHEN_APPLIED = 'Changes apply right away.'
 /** A reload in the middle of Clawd's turn would lose what the turn holds, so the toggles wait until he is free. */
 export const WAIT_FOR_FREE = 'You can change these when Clawd is free.'
 
-/** Shown when the settings list has no row of this plugin for the field: a plugin run from a folder may have none. */
-export const NO_ROW = 'This setting can\'t be changed from here while the plugin runs from a folder. Use /plugin.'
+/** Shown when the settings list has no row of this plugin for the field (the desktop app's SDK session lists none). */
+export const NO_ROW = 'This setting isn\'t listed here; use /config.'
 
 /** The store key of the last settings list's row keys (hooks/register.tsx writes it at each press). */
 export const ROWS_KEY = 'debug:config-rows'

@@ -1,20 +1,22 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
 
 import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, Mood, Payroll } from '../types'
-import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, boxAnswers, fit, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
+import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
 import { resumedEffort } from './resume-effort'
-import { LIST_LIMIT, artifactCall, cleanArtifacts, listedPages, withArtifact, withoutArtifact, withoutGone } from './artifacts'
-import type { ArtifactAnswer } from './artifacts'
+import { cleanArtifacts, keepArtifact, sweepArtifacts } from './artifacts'
+import type { ArtifactAnswer, ArtifactIo } from './artifacts'
+import { loadMemory, remember, rememberCall, saveBoxAnswer, saveMemory } from './memory-io'
+import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
-import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MAX_MEMORY, MEM_TOOL, RECALL, STEP_TOOL, TITLE_CHARS } from './constants'
+import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MEM_TOOL, RECALL, STEP_TOOL } from './constants'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { applyPayroll, resetPayroll, reviewPayroll, setLaidOff } from './payroll'
 import type { PayrollIo } from './payroll'
 import { ROWS_KEY, setToggle } from './configs'
 import type { ConfigField, ConfigIo } from './configs'
-import { BRAND, clip, labelOf, roleOf } from './office'
+import { BRAND, labelOf, roleOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { contextOf, noteRequest, noteThreshold, startGauge } from './usage'
@@ -26,8 +28,6 @@ import type { GaugeIo } from './usage'
 import { DEMO, isActive } from './panel-model'
 import { startDemo } from './demo'
 import type { DemoIo } from './demo'
-import { LOGBOOK_FILE, loadLogbook, saveLogbook, withDecision } from './logbook'
-import type { LogbookIo } from './logbook'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
 import { SHIPPED_DENY, clawdActions, editNote, editPartOf, guardOnCrash, isShippedWrite, readFailed, readFailedLine, refreshClawd } from './clawd-edit'
@@ -42,7 +42,8 @@ import { PANES, askAgain, openAtStart, openPanes, pinHeight, raise, retitleDecis
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
-import { parseStep } from './steps'
+import { reportStep } from './steps'
+import type { StepIo } from './steps'
 import { scrolled } from './scroll-window'
 import { DEMO_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withReport, withSaid, withStep, withTool } from './staff-model'
@@ -225,46 +226,22 @@ const paneIo = ($: EngineInterface): PaneIo => ({
   decisions: async () => (await read($, memory)).length,
 })
 
-// ---- Memory: the project's decisions, a plain file in its .clawd-hq folder, mirrored in state for the pane ----
+// ---- Memory: the project's decisions (hooks/memory-io.ts) ----
 
 /** Set once a write failed this session, so the person is told once and not on every decision. */
 let isLogbookWarned = false
 /** The same for the artifact list. */
 let isArtifactsWarned = false
 
-const logbookIo = ($: EngineInterface): LogbookIo => ({
-  cwd, exists: path => $.fs.exists(path), read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text),
-  now: () => $.clock.now(), held: () => read($, memory),
+const memoryIo = ($: EngineInterface): MemoryIo => ({
+  logbook: { cwd, exists: path => $.fs.exists(path), read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text), now: () => $.clock.now(), held: () => read($, memory) },
+  keep: async list => { await update($, memory, () => list) },
+  warnOnce: text => { if (!isLogbookWarned) $.ui.toast(text); isLogbookWarned = true },
+  retitle: () => retitleDecisions(paneIo($)),
+  now: () => $.clock.now(),
+  quip: async (text, frames) => { const t = await read($, tick); await setBoss($, b => ({ ...b, quip: { text, until: t + frames } })) },
+  byOf: async id => { const one = (await read($, staff)).find(e => e.id === id); return one ? labelOf(one, (await read($, blurbs))[one.type] ?? '') : 'agent' },
 })
-
-const loadMemory = async ($: EngineInterface): Promise<Memory[]> => (await loadLogbook(logbookIo($))).list
-
-async function saveMemory($: EngineInterface, fn: (list: Memory[]) => Memory[]) {
-  const io = logbookIo($)
-  const book = await loadLogbook(io)
-  const list = fn(book.list).slice(-MAX_MEMORY)
-  await update($, memory, () => list)
-  if (!(await saveLogbook(io, book, list))) {
-    // The decision stays in this session; the person hears of it once.
-    if (!isLogbookWarned) $.ui.toast(`Could not save decisions to ${LOGBOOK_FILE}. They are kept for this session only.`)
-    isLogbookWarned = true
-  }
-  await retitleDecisions(paneIo($))
-}
-
-async function remember($: EngineInterface, m: Omit<Memory, 'id' | 'at'>, supersedes?: string) {
-  const at = await $.clock.now()
-  const text = m.text.replace(/\s+/g, ' ').trim()
-  if (!text) return
-  await saveMemory($, list => withDecision(list, { ...m, text }, at, supersedes))
-}
-
-/** An answer the person gave in Clawd's question box, saved as their decision. The question is cut before the answer is, so a long question never pushes the answer out of what is saved. */
-async function saveBoxAnswer($: EngineInterface, question: string, said: string) {
-  await remember($, { kind: 'decision', text: `${fit(question, TITLE_CHARS)} → ${said}`, by: 'CEO', source: 'desk' })
-  const t = await read($, tick)
-  await setBoss($, b => ({ ...b, quip: { text: `On it, boss: “${clip(said, 32)}”`, until: t + 8 } }))
-}
 
 // ---- Payroll: which agent types Clawd is offered (hooks/payroll.ts) ----
 
@@ -277,37 +254,19 @@ const payrollIo = ($: EngineInterface): PayrollIo => ({
 
 // ---- The Artifact Desk: the pages Claude published or opened here, kept per project folder ----
 
-/** Notes what a call to the Artifact tool did. The change is made on the list as it stands when the write lands, so calls made at the same moment all land. */
-async function keepArtifact($: EngineInterface, folder: string, input: Record<string, unknown>, ran: ArtifactAnswer) {
-  const call = artifactCall(input, ran)
-  if (!call) return
-  const at = await $.clock.now()
-  await inLine(async () => {
-    // The session moved to another project while the call ran: this page is not that project's, so it is dropped.
-    if (cwd !== folder) return
-    const next = await update($, artifacts, list => (call.isDelete ? withoutArtifact(list, call.link) : withArtifact(list, call.link, call.title, at)))
-    if (!folder) return
-    try {
-      await $.store.set(`artifacts:${folder}`, next)
-    } catch {
-      // The page stays in this session's list; the person hears of it once.
-      if (!isArtifactsWarned) $.ui.toast('Could not save the artifact list. It is kept for this session only.')
-      isArtifactsWarned = true
-    }
-  })
-}
+const artifactIo = ($: EngineInterface): ArtifactIo => ({
+  folder: () => cwd, now: () => $.clock.now(),
+  change: fn => update($, artifacts, fn),
+  save: (folder, list) => $.store.set(`artifacts:${folder}`, list),
+  warnOnce: text => { if (!isArtifactsWarned) $.ui.toast(text); isArtifactsWarned = true },
+  check: i => $.tool.check(i as never), list: i => $.tool.call({ tool: 'Artifact', ...i }) as never,
+})
 
-/** Once per session start: pages gone from claude.ai leave the list. Only a list call the engine allows unasked is made; anything else removes nothing. */
-async function sweepArtifacts($: EngineInterface, folder: string) {
-  const startedAt = await $.clock.now()
-  const links = await listedPages({ check: i => $.tool.check(i as never), list: i => $.tool.call({ tool: 'Artifact', ...i }) as never }, LIST_LIMIT)
-  if (!links || !folder) return
-  await inLine(async () => {
-    if (cwd !== folder) return
-    const next = await update($, artifacts, list => withoutGone(list, links, startedAt))
-    await $.store.set(`artifacts:${folder}`, next).catch(() => undefined)
-  })
-}
+/** The step tool (hooks/steps.ts): only a specialist at work here reports. */
+const stepIo = ($: EngineInterface): StepIo => ({
+  isAtWork: async id => { const one = await specialistOf($, id); return one !== undefined && isActive(one) },
+  record: async (id, report) => { const now = await $.clock.now(); await update($, staff, l => edit(l, id, one => withReport(one, report, now))) },
+})
 
 // ---- The recap (hooks/recap.ts): one line on where things stand, after a few quiet minutes ----
 
@@ -382,7 +341,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     editClawd: async (target, isTerminal) => clawdActions(await clawdIo($, opts)).editClawd(target, isTerminal),
     resetClawd: async part => clawdActions(await clawdIo($, opts)).resetClawd(part),
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
-    forget: id => saveMemory($, list => list.filter(x => x.id !== id)),
+    forget: id => saveMemory(memoryIo($), list => list.filter(x => x.id !== id)),
     layOff: type => setLaidOff(payrollIo($), type, true),
     hire: type => setLaidOff(payrollIo($), type, false),
     settlePayroll: isLayoff => applyPayroll(payrollIo($), isLayoff),
@@ -432,6 +391,20 @@ const demoIo = ($: EngineInterface): DemoIo => ({
   after: (ms, fn) => $.clock.after(ms, fn),
 })
 
+/** A row drawn as nothing. */
+function blank($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0]) {
+  const { Text } = $.ui.resolve(e)
+  return <Text>{''}</Text>
+}
+
+/** A small row as its look says: drawn as it is, as nothing, or dimmed. */
+async function smallRow($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], look: ReturnType<typeof rowLook>, draw: () => Promise<RenderElement>): Promise<RenderElement> {
+  if (look === 'show') return draw()
+  if (look === 'hide') return blank($, e)
+  const { Text } = $.ui.resolve(e)
+  return <Text dimColor>{await draw()}</Text>
+}
+
 export const register: Register = (on, options) => {
   let timer: Timer | undefined
   let isFraming = false
@@ -466,7 +439,7 @@ export const register: Register = (on, options) => {
       ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })],
       ['demo tool', () => $.tool.register(DEMO_SPEC)],
       ['payroll', async () => { const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined; if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved })) }],
-      ['decisions', async () => { const recalled = await loadMemory($); await update($, memory, () => recalled) }],
+      ['decisions', async () => { const recalled = await loadMemory(memoryIo($)); await update($, memory, () => recalled) }],
       // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
       ['remember tool', () => $.tool.register(REMEMBER_SPEC)],
@@ -490,7 +463,7 @@ export const register: Register = (on, options) => {
     if (all.length > 0) $.ui.toast(startNote(all))
     // Office is asked to the front on every surface; a refusal is tried once more after the first reply (hooks/panes.ts).
     void openAtStart(paneIo($))
-    void sweepArtifacts($, cwd).catch(() => undefined) // not waited for: session start never holds on it
+    void sweepArtifacts(artifactIo($), cwd).catch(() => undefined) // not waited for: session start never holds on it
 
     return next(e)
   })
@@ -565,7 +538,7 @@ export const register: Register = (on, options) => {
     await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
     if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
-    const sent = e.workflow ? e.prompt : prompt + recallNote((await loadMemory($)).slice(-RECALL)) + BRIEF_NOTE
+    const sent = e.workflow ? e.prompt : prompt + recallNote((await loadMemory(memoryIo($))).slice(-RECALL)) + BRIEF_NOTE
     const r = await next({ ...e, prompt: sent })
     if (r.agentId) {
       keepBrief(r.agentId, sent)
@@ -602,7 +575,7 @@ export const register: Register = (on, options) => {
     const folder = cwd
     const ran = await next(e)
     // The tool's answer matters more than the desk: the save is started, not waited for, and a desk that cannot be kept is skipped, not thrown.
-    void keepArtifact($, folder, e as unknown as Record<string, unknown>, ran as ArtifactAnswer).catch(() => undefined)
+    void keepArtifact(artifactIo($), folder, e as unknown as Record<string, unknown>, ran as ArtifactAnswer).catch(() => undefined)
     return ran
   })
 
@@ -620,34 +593,15 @@ export const register: Register = (on, options) => {
       return { result: `The ${BRAND} tour is playing in the side panel for about a minute. If the panel is not visible, the user can type /office.` } as never
     }
 
-    if (tool === MEM_TOOL) {
-      const decision = fit(String(input.decision ?? ''), SAVED_CHARS)
-      // A subagent's call is its own note, never the user's decision.
-      const caller = id ? (await read($, staff)).find(one => one.id === id) : undefined
-      const by = caller ? labelOf(caller, (await read($, blurbs))[caller.type] ?? '') : 'agent'
-      const mine = id === undefined ? { kind: 'decision' as const, by: 'CEO' } : { kind: 'choice' as const, by }
-      await remember($, { ...mine, text: decision, source: 'clawd' }, typeof input.supersedes === 'string' ? input.supersedes : undefined)
-      const t = await read($, tick)
-      await setBoss($, b => ({ ...b, quip: { text: `Noted for the record: “${clip(decision, 40)}”`, until: t + 10 } }))
-      return { result: `Recorded in the project memory: ${decision}` } as never
-    }
+    if (tool === MEM_TOOL) return { result: await rememberCall(memoryIo($), id, input) } as never
 
-    // A specialist's own report of how far along it is (hooks/steps.ts). Only one at work here counts; any other call is ignored.
-    if (tool === STEP_TOOL) {
-      const mine = id ? await specialistOf($, id) : undefined
-      if (!mine || !isActive(mine)) return { result: 'Ignored: only a specialist at work here reports steps.' } as never
-      const parsed = parseStep(input)
-      if ('error' in parsed) return { deny: parsed.error } as never
-      const now = await $.clock.now()
-      // The run is checked again inside the write: it may have ended since it was read.
-      await update($, staff, l => edit(l, mine.id, one => withReport(one, parsed.report, now)))
-      return { result: `Noted: ${parsed.report.done} of ${parsed.report.total} steps done.` } as never
-    }
+    // A specialist's own report of how far along it is. Only one at work here counts; any other call is ignored.
+    if (tool === STEP_TOOL) return await reportStep(stepIo($), id, input) as never
 
     // What the person answers in Clawd's question box is saved as their decision, each question with its own answer.
     if (tool === 'AskUserQuestion' && id === undefined) {
       const ran = await next(e)
-      for (const { question, said } of boxAnswers(input, ran)) await saveBoxAnswer($, question, said)
+      for (const { question, said } of boxAnswers(input, ran)) await saveBoxAnswer(memoryIo($), question, said)
       return ran
     }
 
@@ -685,7 +639,7 @@ export const register: Register = (on, options) => {
   // Clawd's standing orders and the project's memory ride at the top of every conversation.
   on('prompt.context', async ($, e, next) => {
     const r = await next(e)
-    const entries = (await loadMemory($)).slice(-RECALL)
+    const entries = (await loadMemory(memoryIo($))).slice(-RECALL)
     return { ...r, blocks: [...r.blocks, { name: 'clawdMemory', text: memoryBlock(entries) }] }
   })
 
@@ -707,7 +661,7 @@ export const register: Register = (on, options) => {
       if (asker && !asker.id.startsWith(DEMO)) {
         if (e.reason === 'answer') await setBoss($, withHandBack) // work handed back: a checkpoint once Clawd has reported it
         const by = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
-        for (const text of parseChoices(e.answer ?? '')) await remember($, { kind: 'choice', text, by, source: 'report' })
+        for (const text of parseChoices(e.answer ?? '')) await remember(memoryIo($), { kind: 'choice', text, by, source: 'report' })
         // After each hand-back, a check of the work against its report; a note may join Clawd's card.
         if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
       }
@@ -735,36 +689,16 @@ export const register: Register = (on, options) => {
       // Most rows are the person's own or already in full: nothing is read for them.
       if (p.isExpanded || (!p.task && !p.from)) return next(e)
       if (!isHandback({ isExpanded: p.isExpanded, originKind: p.origin.kind, text: p.text, task: p.task, from: p.from }, await read($, staff))) return next(e)
-      const { Text } = $.ui.resolve(e)
-      return <Text>{''}</Text>
+      return blank($, e)
     })
 
-    on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
-      if (!isNoUpdate(e.props.text)) return next(e)
-      const { Text } = $.ui.resolve(e)
-      return <Text>{''}</Text>
-    })
+    on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => (isNoUpdate(e.props.text) ? blank($, e) : next(e)))
 
     // Small rows: the office's own bookkeeping calls are hidden or dimmed (hooks/quiet.ts says which). Errors always show.
-    on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
-      const look = rowLook(e.props, await read($, staff))
-      if (look === 'show') return next(e)
-      const { Text } = $.ui.resolve(e)
-      return look === 'hide' ? <Text>{''}</Text> : <Text dimColor>{await next(e)}</Text>
-    })
+    on('ui.render', { component: 'ToolUse' }, async ($, e, next) => smallRow($, e, rowLook(e.props, await read($, staff)), () => next(e)))
+    on('ui.render', { component: 'ToolResult' }, async ($, e, next) => smallRow($, e, rowLook(e.props, await read($, staff)), () => next(e)))
 
-    on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-      const look = rowLook(e.props, await read($, staff))
-      if (look === 'show') return next(e)
-      const { Text } = $.ui.resolve(e)
-      return look === 'hide' ? <Text>{''}</Text> : <Text dimColor>{await next(e)}</Text>
-    })
-
-    on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => {
-      if (!isBackgroundHint(e.props.kind)) return next(e)
-      const { Text } = $.ui.resolve(e)
-      return <Text>{''}</Text>
-    })
+    on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => (isBackgroundHint(e.props.kind) ? blank($, e) : next(e)))
   }
 
   // ---- The four office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----

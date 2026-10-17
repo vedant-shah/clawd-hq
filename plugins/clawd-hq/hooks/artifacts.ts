@@ -2,6 +2,7 @@
 // Pure: which calls count, which link and title they leave, and how the list is kept and shown. register.tsx keeps the list.
 import type { Artifact } from '../types'
 import { fit } from './desk'
+import { inLine } from './state'
 
 /** The newest this many artifacts are kept per project. */
 export const ARTIFACT_KEEP = 50
@@ -133,6 +134,47 @@ export function withoutGone(list: Artifact[], links: string[], startedAt: number
   const there = new Set(links)
   const kept = list.filter(a => there.has(a.url) || a.at > startedAt)
   return kept.length === list.length ? list : kept
+}
+
+/** What the desk may do. The folder is read when the work lands, since the session can move to another project meanwhile. */
+export type ArtifactIo = ListIo & {
+  folder: () => string
+  now: () => Promise<number>
+  /** The list as it stands when the write lands: the change is made on that, so calls made at the same moment all land. Queued. */
+  change: (fn: (list: Artifact[]) => Artifact[]) => Promise<Artifact[]>
+  save: (folder: string, list: Artifact[]) => Promise<unknown>
+  /** Shows the text once a session. */
+  warnOnce: (text: string) => void
+}
+
+/** Notes what a call to the Artifact tool did. */
+export async function keepArtifact(io: ArtifactIo, folder: string, input: Record<string, unknown>, ran: ArtifactAnswer) {
+  const call = artifactCall(input, ran)
+  if (!call) return
+  const at = await io.now()
+  await inLine(async () => {
+    // The session moved to another project while the call ran: this page is not that project's, so it is dropped.
+    if (io.folder() !== folder) return
+    const next = await io.change(list => (call.isDelete ? withoutArtifact(list, call.link) : withArtifact(list, call.link, call.title, at)))
+    if (!folder) return
+    try {
+      await io.save(folder, next)
+    } catch {
+      // The page stays in this session's list; the person hears of it once.
+      io.warnOnce('Could not save the artifact list. It is kept for this session only.')
+    }
+  })
+}
+
+/** Once per session start: pages gone from claude.ai leave the list. Only a list call the engine allows unasked is made; anything else removes nothing. */
+export async function sweepArtifacts(io: ArtifactIo, folder: string) {
+  const startedAt = await io.now()
+  const links = await listedPages(io, LIST_LIMIT)
+  if (!links || !folder) return
+  await inLine(async () => {
+    if (io.folder() !== folder) return
+    await io.save(folder, await io.change(list => withoutGone(list, links, startedAt))).catch(() => undefined)
+  })
 }
 
 /** A list read back from the store, which anyone can edit: only well-formed entries with a real link survive, once each. */

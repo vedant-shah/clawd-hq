@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Employee } from '../types'
-import { MAX_PLAN, NOTE_CHARS, parseStep, stepCount, stepLine, withoutStepPrefix, withProgress, withWords } from '../hooks/steps'
+import { MAX_PLAN, NOTE_CHARS, parseStep, stepCount, stepLine, reportStep, withoutStepPrefix, withProgress, withWords } from '../hooks/steps'
+import type { StepReport } from '../hooks/steps'
 import { STEP_SPEC } from '../hooks/tool-specs'
 import { endRun, restart, withReport, withSaid } from '../hooks/staff-model'
 import { barGlyphs, barOf, barSvg } from '../hooks/meters'
@@ -183,4 +184,21 @@ test('what a specialist says is what sets progress from words, through withSaid'
 test('progress from words ends with the run, like the tool\'s', () => {
   const going = withWords(emp(), 'Step 1 of 4: starting.')
   expect(endRun(going, 'done', 'signal', 10, 1)).toMatchObject({ stepDone: undefined, stepTotal: undefined, stepBy: undefined })
+})
+
+test('the step tool notes a report from a specialist at work, and says how far along it is', async () => {
+  const kept: Array<[string, StepReport]> = []
+  const io = { isAtWork: async (id: string) => id === 'a1', record: async (id: string, r: StepReport) => { kept.push([id, r]) } }
+  expect(await reportStep(io, 'a1', { done: 2, total: 5 })).toEqual({ result: 'Noted: 2 of 5 steps done.' })
+  expect(kept).toEqual([['a1', { done: 2, total: 5 }]])
+})
+
+test('the step tool ignores a call from Clawd or from one not at work, and refuses a bad report with the reason', async () => {
+  const kept: string[] = []
+  const io = { isAtWork: async (id: string) => id === 'a1', record: async (id: string) => { kept.push(id) } }
+  const ignored = { result: 'Ignored: only a specialist at work here reports steps.' }
+  expect(await reportStep(io, undefined, { done: 1, total: 2 })).toEqual(ignored)
+  expect(await reportStep(io, 'gone', { done: 1, total: 2 })).toEqual(ignored)
+  expect(await reportStep(io, 'a1', { done: 1, total: 99 })).toEqual({ deny: 'total must be a whole number from 1 to 12.' })
+  expect(kept).toEqual([])
 })

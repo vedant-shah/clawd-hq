@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { ARTIFACT_KEEP, ARTIFACT_SHOWN, LIST_INPUT, LIST_LIMIT, TITLE_CHARS, listedLinks, listedPages, withoutGone, artifactCall, artifactsShown, cleanArtifacts, isArtifactLink, since, withArtifact, withoutArtifact } from '../hooks/artifacts'
+import { ARTIFACT_KEEP, ARTIFACT_SHOWN, LIST_INPUT, LIST_LIMIT, TITLE_CHARS, listedLinks, listedPages, withoutGone, artifactCall, artifactsShown, cleanArtifacts, isArtifactLink, since, withArtifact, withoutArtifact, keepArtifact, sweepArtifacts } from '../hooks/artifacts'
+import type { ArtifactIo } from '../hooks/artifacts'
 import type { Artifact } from '../types'
 
 const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e'
@@ -201,4 +202,66 @@ test('"how long ago" reads in plain steps', () => {
   expect(since(47 * 3_600_000)).toBe('47h ago')
   expect(since(48 * 3_600_000)).toBe('2d ago')
   expect(since(-5_000)).toBe('just now')
+})
+
+type Desk = { io: ArtifactIo; list: Artifact[]; saved: Array<[string, Artifact[]]>; warned: string[]; folder: string }
+
+function desk(start: Artifact[], over: { folder?: string; save?: ArtifactIo['save']; decision?: unknown; links?: Artifact[] } = {}): Desk {
+  const d: Desk = { io: undefined as never, list: start, saved: [], warned: [], folder: over.folder ?? '/proj' }
+  d.io = {
+    folder: () => d.folder, now: async () => 100,
+    change: async fn => (d.list = fn(d.list)),
+    save: over.save ?? (async (folder, list) => { d.saved.push([folder, list]) }),
+    warnOnce: text => { d.warned.push(text) },
+    check: async () => ({ decision: over.decision ?? 'allow' }),
+    list: async () => ({ text: (over.links ?? []).map(a => a.url).join(' ') }),
+  }
+  return d
+}
+
+test('a published page joins the desk and the list is saved under its folder', async () => {
+  const d = desk([])
+  await keepArtifact(d.io, '/proj', { title: 'Plan' }, { text: `Created ${PLAIN}` })
+  expect(d.list).toEqual([{ url: PLAIN, title: 'Plan', at: 100 }])
+  expect(d.saved).toEqual([['/proj', d.list]])
+})
+
+test('a deleted page leaves the desk; a call with no effect changes nothing', async () => {
+  const d = desk([{ url: PLAIN, title: 'Plan', at: 1 }])
+  await keepArtifact(d.io, '/proj', { action: 'read', url: PLAIN }, { text: 'x' })
+  expect(d.saved).toEqual([])
+  await keepArtifact(d.io, '/proj', { action: 'delete', url: PLAIN }, { text: 'gone' })
+  expect(d.list).toEqual([])
+})
+
+test('a page whose call began in another project is dropped', async () => {
+  const d = desk([], { folder: '/other' })
+  await keepArtifact(d.io, '/proj', { title: 'Plan' }, { text: `Created ${PLAIN}` })
+  expect([d.list, d.saved]).toEqual([[], []])
+})
+
+test('a list that cannot be saved stays in the session and the person hears of it', async () => {
+  const d = desk([], { save: async () => { throw new Error('full') } })
+  await keepArtifact(d.io, '/proj', { title: 'Plan' }, { text: `Created ${PLAIN}` })
+  expect(d.list.length).toBe(1)
+  expect(d.warned).toEqual(['Could not save the artifact list. It is kept for this session only.'])
+})
+
+test('the sweep removes the pages the answer left out, and saves', async () => {
+  const keep = { url: PLAIN, title: 'Kept', at: 1 }
+  const d = desk([keep, { url: CODE, title: 'Gone', at: 1 }], { links: [keep, made(1)] })
+  await sweepArtifacts(d.io, '/proj')
+  expect(d.list).toEqual([keep])
+  expect(d.saved.length).toBe(1)
+})
+
+test('the sweep removes nothing when the engine would ask, there is no folder, or the session moved on', async () => {
+  const start = [{ url: CODE, title: 'Stays', at: 1 }]
+  const asked = desk(start, { decision: 'ask', links: [made(1)] })
+  await sweepArtifacts(asked.io, '/proj')
+  const noFolder = desk(start, { links: [made(1)] })
+  await sweepArtifacts(noFolder.io, '')
+  const moved = desk(start, { folder: '/other', links: [made(1)] })
+  await sweepArtifacts(moved.io, '/proj')
+  expect([asked, noFolder, moved].map(d => d.list)).toEqual([start, start, start])
 })

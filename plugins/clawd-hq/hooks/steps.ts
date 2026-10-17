@@ -32,6 +32,21 @@ export function parseStep(input: Record<string, unknown>): StepParsed {
   return { report: { done: Math.min(done, total), total, ...(text === '' ? {} : { note: text }) } }
 }
 
+/** What the step tool may do: whether a specialist is at work here, and put a report on its record (checked again inside the write). */
+export type StepIo = {
+  isAtWork: (id: string) => Promise<boolean>
+  record: (id: string, report: StepReport) => Promise<void>
+}
+
+/** The step tool's answer to a call. Only a specialist at work here reports; any other call is ignored. A report that is refused says why. */
+export async function reportStep(io: StepIo, agentId: string | undefined, input: Record<string, unknown>): Promise<{ result: string } | { deny: string }> {
+  if (agentId === undefined || !(await io.isAtWork(agentId))) return { result: 'Ignored: only a specialist at work here reports steps.' }
+  const parsed = parseStep(input)
+  if ('error' in parsed) return { deny: parsed.error }
+  await io.record(agentId, parsed.report)
+  return { result: `Noted: ${parsed.report.done} of ${parsed.report.total} steps done.` }
+}
+
 /** The specialist after a report: its steps and plan replace the last ones; a note left out clears the old note. The tool's report is the one that stands from here on. */
 export const withProgress = (one: Employee, r: StepReport): Employee =>
   ({ ...one, stepDone: r.done, stepTotal: r.total, stepNote: r.note, stepBy: 'tool' })

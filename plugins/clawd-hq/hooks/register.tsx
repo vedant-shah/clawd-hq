@@ -5,7 +5,7 @@ import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, M
 import { BRIEF_NOTE, HANDOVER_NOTE, SAVED_CHARS, STAFFING_NOTE, boxAnswers, fit, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
 import { resumedEffort } from './resume-effort'
-import { artifactCall, cleanArtifacts, withArtifact, withoutArtifact } from './artifacts'
+import { LIST_LIMIT, artifactCall, cleanArtifacts, listedPages, withArtifact, withoutArtifact, withoutGone } from './artifacts'
 import type { ArtifactAnswer } from './artifacts'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MAX_MEMORY, MEM_TOOL, RECALL, STEP_TOOL, TITLE_CHARS } from './constants'
@@ -297,6 +297,18 @@ async function keepArtifact($: EngineInterface, folder: string, input: Record<st
   })
 }
 
+/** Once per session start: pages gone from claude.ai leave the list. Only a list call the engine allows unasked is made; anything else removes nothing. */
+async function sweepArtifacts($: EngineInterface, folder: string) {
+  const startedAt = await $.clock.now()
+  const links = await listedPages({ check: i => $.tool.check(i as never), list: i => $.tool.call({ tool: 'Artifact', ...i }) as never }, LIST_LIMIT)
+  if (!links || !folder) return
+  await inLine(async () => {
+    if (cwd !== folder) return
+    const next = await update($, artifacts, list => withoutGone(list, links, startedAt))
+    await $.store.set(`artifacts:${folder}`, next).catch(() => undefined)
+  })
+}
+
 // ---- The recap (hooks/recap.ts): one line on where things stand, after a few quiet minutes ----
 
 const recapIo = ($: EngineInterface): RecapIo => ({
@@ -483,6 +495,7 @@ export const register: Register = (on, options) => {
     if (all.length > 0) $.ui.toast(startNote(all))
     // Office is asked to the front on every surface; a refusal is tried once more after the first reply (hooks/panes.ts).
     void openAtStart(paneIo($))
+    void sweepArtifacts($, cwd).catch(() => undefined) // not waited for: session start never holds on it
 
     return next(e)
   })

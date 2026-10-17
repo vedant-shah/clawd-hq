@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { ARTIFACT_KEEP, ARTIFACT_SHOWN, TITLE_CHARS, artifactCall, artifactsShown, cleanArtifacts, isArtifactLink, since, withArtifact, withoutArtifact } from '../hooks/artifacts'
+import { ARTIFACT_KEEP, ARTIFACT_SHOWN, LIST_INPUT, LIST_LIMIT, TITLE_CHARS, listedLinks, listedPages, withoutGone, artifactCall, artifactsShown, cleanArtifacts, isArtifactLink, since, withArtifact, withoutArtifact } from '../hooks/artifacts'
 import type { Artifact } from '../types'
 
 const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e'
@@ -144,6 +144,53 @@ test('the newest 6 are shown, and the rest are counted', () => {
 test('only real links are ever drawn, even from a list that was not cleaned', () => {
   const view = artifactsShown([made(1), { url: 'https://evil.com/x', title: 'Evil', at: 1 }])
   expect(view.rows).toEqual([made(1)])
+})
+
+// ---- Pages deleted on claude.ai leave the list ----
+const linkN = (n: number) => `https://claude.ai/artifact/id${n}`
+const listing = (...ns: number[]) => ({ text: ns.map(n => `- Page ${n}: ${linkN(n)}`).join('\n') })
+
+test('the list call asks the read-only list action for everything, up to the limit', () => {
+  expect(LIST_INPUT).toEqual({ action: 'list', scope: 'all', limit: LIST_LIMIT })
+})
+
+test('the links of an answer are every real artifact link in it, once each', () => {
+  expect(listedLinks({ text: `${linkN(1)} and ${linkN(2)} and ${linkN(1)} and https://evil.com/x` }, 10)).toEqual([linkN(1), linkN(2)])
+})
+
+test('an answer that failed, was refused, is missing, or lists nothing tells nothing', () => {
+  for (const ran of [undefined, { isError: true, text: listing(1) }, { deny: 'no', text: listing(1) }, { text: 'nothing here' }]) {
+    expect(listedLinks(ran as never, 10)).toBeUndefined()
+  }
+})
+
+test('an answer with as many rows as the limit asked for may be cut short, so it tells nothing', () => {
+  expect(listedLinks(listing(1, 2, 3), 3)).toBeUndefined()
+  expect(listedLinks(listing(1, 2, 3), 4)).toEqual([linkN(1), linkN(2), linkN(3)])
+})
+
+test('rows whose link is not in the answer are removed, but only rows older than the call', () => {
+  const rows = [made(1, 5), made(2, 5), made(3, 50)]
+  expect(withoutGone(rows, [linkN(1)], 10).map(a => a.url)).toEqual([linkN(1), linkN(3)])
+  expect(withoutGone(rows, [linkN(1), linkN(2), linkN(3)], 10)).toBe(rows)
+  expect(rows).toHaveLength(3)
+})
+
+test('the sweep lists only when the check says "allow" for exactly that input', async () => {
+  const seen: Array<Record<string, unknown>> = []
+  const io = { check: async (i: Record<string, unknown>) => (seen.push(i), { decision: 'allow' }), list: async () => listing(1) as never }
+  expect(await listedPages(io, 200)).toEqual([linkN(1)])
+  expect(seen).toEqual([{ tool: 'Artifact', input: LIST_INPUT }])
+})
+
+test('any other verdict, a failed check, a missing check or a failed call skips silently and removes nothing', async () => {
+  let called = 0
+  const counting = (decision: unknown) => ({ check: async () => ({ decision }), list: async () => (called++, listing(1) as never) })
+  for (const decision of ['ask', 'deny', undefined, 'ALLOW', null]) expect(await listedPages(counting(decision), 200)).toBeUndefined()
+  expect(called).toBe(0)
+  expect(await listedPages({ check: async () => { throw new Error('x') }, list: async () => listing(1) as never }, 200)).toBeUndefined()
+  expect(await listedPages({ check: undefined as never, list: async () => listing(1) as never }, 200)).toBeUndefined()
+  expect(await listedPages({ check: async () => ({ decision: 'allow' }), list: async () => { throw new Error('denied') } }, 200)).toBeUndefined()
 })
 
 test('"how long ago" reads in plain steps', () => {

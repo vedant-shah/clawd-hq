@@ -95,6 +95,46 @@ export function withoutArtifact(list: Artifact[], url: string): Artifact[] {
   return list.some(a => a.url === url) ? list.filter(a => a.url !== url) : list
 }
 
+/** The read-only call that lists every page the person can see, as many as the tool will give at once. */
+export const LIST_LIMIT = 200
+export const LIST_INPUT = { action: 'list', scope: 'all', limit: LIST_LIMIT } as const
+
+/** Every real link in a list answer, once each. Nothing when the answer failed, was refused, names no page, or has as many as the limit (it may be cut short). */
+export function listedLinks(ran: ArtifactAnswer | undefined, limit: number): string[] | undefined {
+  if (!ran || ran.isError || ran.deny) return undefined
+  const found = new Set<string>()
+  for (const text of textsOf(ran)) {
+    for (const one of text.matchAll(LINK_IN_TEXT)) {
+      const url = one[0].replace(TRAILING, '')
+      if (isArtifactLink(url)) found.add(url)
+    }
+  }
+  return found.size === 0 || found.size >= limit ? undefined : [...found]
+}
+
+/** What the sweep may do: ask whether the call would run unasked, and make the call. */
+export type ListIo = {
+  check: (input: { tool: 'Artifact'; input: typeof LIST_INPUT }) => Promise<{ decision?: unknown }>
+  list: (input: typeof LIST_INPUT) => Promise<ArtifactAnswer>
+}
+
+/** The links the Artifact tool lists now, but only if the engine says the call needs no question to the person. Any other verdict, or any failure, is nothing. */
+export async function listedPages(io: ListIo, limit: number): Promise<string[] | undefined> {
+  try {
+    if ((await io.check({ tool: 'Artifact', input: LIST_INPUT })).decision !== 'allow') return undefined
+    return listedLinks(await io.list(LIST_INPUT), limit)
+  } catch {
+    return undefined
+  }
+}
+
+/** The list without the pages the answer left out. A page published or opened since the call began is newer than the answer and stays. */
+export function withoutGone(list: Artifact[], links: string[], startedAt: number): Artifact[] {
+  const there = new Set(links)
+  const kept = list.filter(a => there.has(a.url) || a.at > startedAt)
+  return kept.length === list.length ? list : kept
+}
+
 /** A list read back from the store, which anyone can edit: only well-formed entries with a real link survive, once each. */
 export function cleanArtifacts(raw: unknown): Artifact[] {
   if (!Array.isArray(raw)) return []

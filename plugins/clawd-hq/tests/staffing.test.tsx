@@ -22,7 +22,15 @@ test('the hiring tool tells Clawd that handing work over is the person\'s standi
   expect(HANDOVER_NOTE).toMatch(/in the background/)
 })
 
-test('with the chief of staff option off, the hiring tool keeps its own rule about when to hire', { options: { chiefOfStaff: false } }, async ($, on) => {
+test('the staffing note names concrete Haiku jobs and says read-only jobs start at Haiku', async () => {
+  for (const job of [/search/i, /summari[sz]e/i, /count or list/i, /run the tests/i, /README|code comment/i, /rename/i]) {
+    expect(STAFFING_NOTE).toMatch(job)
+  }
+  expect(STAFFING_NOTE).toMatch(/a job that only reads and reports starts at `haiku`, unless it needs judgment/i)
+  expect(STAFFING_NOTE).toMatch(/Code changes stay on `sonnet` or `opus`/)
+})
+
+test('with the chief of staff option off, the hiring tool keeps its own rule about when to hire',{ options: { chiefOfStaff: false } }, async ($, on) => {
   host(on)
   on('tool.describe', (_$, e) => ({ description: (e as { description: string }).description }) as never)
   const { description } = await describe($, 'Agent')

@@ -1,5 +1,5 @@
 // The plugin's on/off configs as the Settings tab shows them, and how a press finds the settings row to change.
-// register.tsx makes the change itself (`$.config.set`); nothing here touches `$`.
+// `setToggle` makes a change through the io register.tsx builds (`configIo`); nothing here touches `$`.
 import type { BriefingOptions } from './instructions'
 
 export type ConfigField = 'chiefOfStaff' | 'quietChat' | 'recap' | 'youShouldKnow'
@@ -37,19 +37,51 @@ export type ListedRow = { key: string; provider: { plugin: string } }
 const fieldOf = (key: string) => key.slice(key.lastIndexOf('.') + 1)
 
 /**
+ * Whether a row's owner is this plugin. The engine names the owner as the loader keys the plugin, `<name>@inline` from a
+ * folder or `<name>@<marketplace>` installed (seen in the store's `debug:config-rows`), not by its bare name.
+ */
+const isOurs = (owner: string, plugin: string) => owner === plugin || owner.startsWith(`${plugin}@`)
+
+/**
  * The key of the row this plugin owns for `field`, matched on the row's owner and field and never on a guessed key
  * (a plugin run from a folder has rows whose keys do not start with its name). None when no such row is listed.
  */
 export function configKeyOf(rows: readonly ListedRow[], plugin: string, field: ConfigField): string | undefined {
-  return rows.find(r => r.provider.plugin === plugin && fieldOf(r.key) === field)?.key
+  return rows.find(r => isOurs(r.provider.plugin, plugin) && fieldOf(r.key) === field)?.key
 }
 
 /** What the store keeps of a list, to see its real shape: our rows' keys, and other plugins' keys with their owner. Never a value. */
 export function rowKeys(rows: readonly ListedRow[], plugin: string) {
   return {
     plugin,
-    keys: rows.filter(r => r.provider.plugin === plugin).map(r => r.key),
-    others: rows.filter(r => r.provider.plugin !== plugin && r.provider.plugin !== 'engine').map(r => `${r.provider.plugin}: ${r.key}`),
+    keys: rows.filter(r => isOurs(r.provider.plugin, plugin)).map(r => r.key),
+    others: rows.filter(r => !isOurs(r.provider.plugin, plugin) && r.provider.plugin !== 'engine').map(r => `${r.provider.plugin}: ${r.key}`),
+  }
+}
+
+/** What setting a toggle needs from the engine: this plugin's name, the settings rows, a change to one, and a place for the rows' keys. */
+export type ConfigIo = {
+  plugin: string
+  list: () => Promise<readonly ListedRow[]>
+  set: (args: { key: string; value: boolean }) => Promise<{ deny?: string }>
+  keepKeys: (record: ReturnType<typeof rowKeys>) => Promise<unknown>
+}
+
+/**
+ * Sets one of the plugin's on/off configs in the settings, as /config would; the engine then reloads the plugin with it.
+ * The one way in, for the Settings switch and for code (onboarding). Resolves to nothing once written, or to the plain
+ * line saying why not (no row of ours, a refusal, a call that failed); it never rejects.
+ */
+export async function setToggle(io: ConfigIo, field: ConfigField, value: boolean): Promise<string | undefined> {
+  try {
+    const rows = await io.list()
+    await io.keepKeys(rowKeys(rows, io.plugin)).catch(() => undefined) // a look-up aid only: a failed write must not stop the change
+    const key = configKeyOf(rows, io.plugin, field)
+    if (key === undefined) return NO_ROW
+    const r = await io.set({ key, value })
+    return r.deny === undefined ? undefined : refusalOf(field, r.deny)
+  } catch (err) {
+    return refusalOf(field, err instanceof Error ? err.message : String(err))
   }
 }
 

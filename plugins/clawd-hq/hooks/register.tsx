@@ -33,6 +33,7 @@ import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
 import { SHIPPED_DENY, clawdActions, editNote, editPartOf, guardOnCrash, isShippedWrite, readFailed, readFailedLine, refreshClawd } from './clawd-edit'
 import type { ClawdIo } from './clawd-edit'
 import { maybeRecap, noteRecapTurn, resetRecap, setRecapOn } from './recap'
+import { liveOptions, loadSaved, useSaved } from './toggle-store'
 import type { RecapIo } from './recap'
 import { isBackgroundHint, isHandback, isNoUpdate, rowLook } from './quiet'
 import { checkHandback, checkOwnTurn, forgetKnow, isWatching, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
@@ -325,6 +326,7 @@ const showLog = ($: EngineInterface, isOpen: boolean) => setFx($, f => ({ ...f, 
 /** The settings rows for `setToggle` (hooks/configs.ts): the Settings switch's, and the one to hand any other caller (onboarding). */
 const configIo = ($: EngineInterface): ConfigIo => ({
   plugin: $.plugin.name, list: () => $.config.list(), set: args => $.config.set(args), keepKeys: record => $.store.set(ROWS_KEY, record),
+  save: (key, value) => $.store.set(key, value), refresh: async () => $.ui.invalidate('tool.describe'), // the Agent tool's text follows Clawd's switch
 })
 
 /** A config's toggle pressed: its settings row is changed as in /config, and the plugin reloads with it. A refusal, or a call that fails, is shown plainly. */
@@ -408,7 +410,7 @@ async function smallRow($: EngineInterface, e: Parameters<EngineInterface['ui'][
 export const register: Register = (on, options) => {
   let timer: Timer | undefined
   let isFraming = false
-  const brief = optionsOf(options)
+  const brief = liveOptions(optionsOf(options)) // each switch read when used: a saved press first (hooks/toggle-store.ts)
 
   // Clawd's rules and voice join the main chat's instructions: read once a session (and again after /clear), then the same text on every request, so the prompt cache holds.
   on('prompt.compose', async ($, e, next) => {
@@ -428,9 +430,10 @@ export const register: Register = (on, options) => {
     isLogbookWarned = false
     isArtifactsWarned = false
     // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.
-    setRecapOn(brief.isRecapOn)
+    setRecapOn(() => brief.isRecapOn)
     // Each step stands on its own: one that fails stops none after it (the Settings tab still fills), and the person is told which.
     const failed = await runEach([
+      ['saved switches', async () => useSaved(await loadSaved(key => $.store.get(key)))],
       ['recap', () => resetRecap(recapIo($))],
       ['check on finished work', () => startKnow(knowIo($), cwd)],
       // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
@@ -634,7 +637,7 @@ export const register: Register = (on, options) => {
     return next(note === undefined ? e : { ...e, context: [...(e.context ?? []), note] })
   })
   // While ours is on and an office tab is open, Claude Code's own "You should know" stays quiet; every other side question passes.
-  if (brief.isKnowOn) on('model.fork', async ($, e, next) => (isBuiltinKnow(next.origin) && (await isWatching(knowIo($))) ? { value: QUIET_FORK } : next(e)))
+  on('model.fork', async ($, e, next) => (brief.isKnowOn && isBuiltinKnow(next.origin) && (await isWatching(knowIo($))) ? { value: QUIET_FORK } : next(e)))
 
   // Clawd's standing orders and the project's memory ride at the top of every conversation.
   on('prompt.context', async ($, e, next) => {
@@ -682,23 +685,24 @@ export const register: Register = (on, options) => {
   })
 
   // ---- The quiet chat: filler rows are not drawn (hooks/quiet.ts says which); the full view shows everything ----
-  // Only while Clawd runs the chat: his rules are what make him report on what is hidden.
-  if (brief.isQuiet && brief.isOn) {
+  // Only while Clawd runs the chat: his rules are what make him report on what is hidden. Read at each row: a press applies at once.
+  const isQuiet = () => brief.isQuiet && brief.isOn
+  {
     on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
       const p = e.props
       // Most rows are the person's own or already in full: nothing is read for them.
-      if (p.isExpanded || (!p.task && !p.from)) return next(e)
+      if (!isQuiet() || p.isExpanded || (!p.task && !p.from)) return next(e)
       if (!isHandback({ isExpanded: p.isExpanded, originKind: p.origin.kind, text: p.text, task: p.task, from: p.from }, await read($, staff))) return next(e)
       return blank($, e)
     })
 
-    on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => (isNoUpdate(e.props.text) ? blank($, e) : next(e)))
+    on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => (isQuiet() && isNoUpdate(e.props.text) ? blank($, e) : next(e)))
 
     // Small rows: the office's own bookkeeping calls are hidden or dimmed (hooks/quiet.ts says which). Errors always show.
-    on('ui.render', { component: 'ToolUse' }, async ($, e, next) => smallRow($, e, rowLook(e.props, await read($, staff)), () => next(e)))
-    on('ui.render', { component: 'ToolResult' }, async ($, e, next) => smallRow($, e, rowLook(e.props, await read($, staff)), () => next(e)))
+    on('ui.render', { component: 'ToolUse' }, async ($, e, next) => (isQuiet() ? smallRow($, e, rowLook(e.props, await read($, staff)), () => next(e)) : next(e)))
+    on('ui.render', { component: 'ToolResult' }, async ($, e, next) => (isQuiet() ? smallRow($, e, rowLook(e.props, await read($, staff)), () => next(e)) : next(e)))
 
-    on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => (isBackgroundHint(e.props.kind) ? blank($, e) : next(e)))
+    on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => (isQuiet() && isBackgroundHint(e.props.kind) ? blank($, e) : next(e)))
   }
 
   // ---- The four office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----

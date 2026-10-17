@@ -13,7 +13,8 @@ type On = Parameters<typeof host>[0]
 type Field = 'chiefOfStaff' | 'quietChat' | 'recap' | 'youShouldKnow'
 const FIELDS: readonly Field[] = ['chiefOfStaff', 'quietChat', 'recap', 'youShouldKnow']
 const TITLES: Record<Field, string> = { chiefOfStaff: 'Clawd runs the chat', quietChat: 'Quiet chat', recap: 'Recap', youShouldKnow: 'You should know' }
-const NO_ROW = /isn't listed here/
+/** Any note the tab gives when a press did not fully go through. */
+const NO_ROW = /^Could not change|this session only/
 const MIN = 60_000
 
 /** The plugin's own folder: the one above this file's. */
@@ -134,14 +135,83 @@ test('a press changes the row the engine lists as ours, owned "clawd-hq@inline" 
   ] }) as never)
   on('config.set', (_$, e) => (asked.push({ key: (e as { key: string }).key, value: (e as { value: unknown }).value }), { value: (e as { value: unknown }).value }) as never)
   await $.session.start(START)
+  let round = 0
   for (const name of ['clawd-hq@inline', 'clawd-hq@vedant-shah']) {
     owner = name
     for (const surface of SURFACES) {
       asked.length = 0
       for (const field of FIELDS) expect(await press($, field, surface)).toBe(false)
-      expect(asked).toEqual(FIELDS.map(f => ({ key: `clawd-hq.${f}`, value: false })))
+      // A press applies at once, so each round turns every switch back the other way.
+      expect(asked).toEqual(FIELDS.map(f => ({ key: `clawd-hq.${f}`, value: round % 2 === 1 })))
+      round += 1
     }
   }
+})
+
+// ---- The desktop app: its SDK session lists no settings rows at all, so a press is kept in the plugin's own store ----
+
+/** No settings rows, as the desktop app (2.1.295) lists them; `isFailing` is a list call that fails outright. */
+function noRows(on: On, isFailing = false) {
+  const asked: unknown[] = []
+  on('config.list', () => { if (isFailing) throw new Error('not in this session'); return { value: [] } as never })
+  on('config.set', (_$, e) => (asked.push(e), { value: (e as { value: unknown }).value }) as never)
+  return asked
+}
+
+for (const field of FIELDS) {
+  test(`${TITLES[field]}, with no settings rows: a press flips it at once, the feature follows with no reload, and it holds through a /clear and the next session start`, { timeoutMs: 25_000 }, async ($, on) => {
+    const h = stage(on)
+    const asked = noRows(on, field === 'recap')
+    await $.session.start(START)
+    expect(await IS_AT_WORK[field]($, h)).toBe(true)
+    expect(await press($, field)).toBe(false)
+    expect(asked).toEqual([])
+    expect(h.saved.get(`toggle:${field}`)).toBe(false)
+    for (const surface of SURFACES) expect(await labelOf($, field, surface)).toBe('○ Off')
+    expect(await IS_AT_WORK[field]($, h)).toBe(false)
+    await $.session.end(CLEAR)
+    await $.session.start(START)
+    expect(await labelOf($, field)).toBe('○ Off')
+    expect(await IS_AT_WORK[field]($, h)).toBe(false)
+    expect(await press($, field)).toBe(false)
+    expect(h.saved.get(`toggle:${field}`)).toBe(true)
+    expect(await labelOf($, field)).toBe('● On')
+  })
+}
+
+test('a switch saved in the store wins over the settings, which win over the default; the other switches keep theirs', { options: { quietChat: false, recap: false } }, async ($, on) => {
+  host(on, [], { 'toggle:quietChat': true, 'toggle:youShouldKnow': false, 'toggle:chiefOfStaff': 'yes' })
+  noRows(on)
+  await $.session.start(START)
+  // Saved On over the settings' Off; settings' Off with nothing saved; saved Off over the default; a value that is not true or false is ignored.
+  expect(await labelOf($, 'quietChat')).toBe('● On')
+  expect(await labelOf($, 'recap')).toBe('○ Off')
+  expect(await labelOf($, 'youShouldKnow')).toBe('○ Off')
+  expect(await labelOf($, 'chiefOfStaff')).toBe('● On')
+})
+
+test('a row the organization locks is not changed, here or in the store: the tab says so and the switch keeps its value', async ($, on) => {
+  const h = host(on)
+  on('config.list', () => ({ value: [{ key: 'clawd-hq.recap', label: 'Recap', kind: 'boolean', value: true, provider: { plugin: 'clawd-hq@inline', tier: 'user' }, isLocked: true }] }) as never)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...SETTINGS })
+  await ui.press({ key: 'config-recap' })
+  expect(await ui.find({ type: 'Text', text: 'Could not change Recap: your organization manages this setting.' })).toBeDefined()
+  expect(h.saved.has('toggle:recap')).toBe(false)
+  expect((await ui.find({ key: 'config-recap' }))?.props.label).toBe('● On')
+  await ui.unmount()
+})
+
+test('a store that cannot save keeps the change for this session, and the tab says it is not kept', async ($, on) => {
+  const h = host(on)
+  noRows(on)
+  await $.session.start(START)
+  h.kv.isWriteFailing = true
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...SETTINGS })
+  await ui.press({ key: 'config-recap' })
+  expect(await ui.find({ type: 'Text', text: /^Recap is changed for this session only: it could not be saved\.$/ })).toBeDefined()
+  expect((await ui.find({ key: 'config-recap' }))?.props.label).toBe('○ Off')
+  await ui.unmount()
 })
 
 // ---- Each switch: saved, applied, and kept ----

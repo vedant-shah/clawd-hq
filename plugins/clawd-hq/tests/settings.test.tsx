@@ -59,7 +59,6 @@ const labelOf = async (ui: Ui, field: string) => (await ui.find({ key: `config-$
 /** A settings row as the engine lists it: its key and the plugin that owns it. */
 type Row = { key: string; owner: string }
 const OURS: Row[] = FIELDS.map(f => ({ key: `clawd-hq.${f}`, owner: 'clawd-hq' }))
-const NO_ROW = 'This setting isn\'t listed here; use /config.'
 
 /** The engine's settings rows and every change asked of them; `answer` is what a change gets back. */
 function configs(on: On, answer: (e: { key: string; value: unknown }) => unknown = e => ({ value: e.value }), rows: Row[] = OURS) {
@@ -170,14 +169,16 @@ test('pressing a toggle changes that config in the settings to the other value, 
   host(on)
   const asked = configs(on)
   await $.session.start(START)
-  for (const surface of SURFACES) {
+  const first = [
+    { key: 'clawd-hq.chiefOfStaff', value: false }, { key: 'clawd-hq.quietChat', value: false },
+    { key: 'clawd-hq.recap', value: true }, { key: 'clawd-hq.youShouldKnow', value: false },
+  ]
+  for (const [i, surface] of SURFACES.entries()) {
     asked.length = 0
     const ui = await mount($, surface)
     for (const field of FIELDS) await ui.press({ key: `config-${field}` })
-    expect(asked).toEqual([
-      { key: 'clawd-hq.chiefOfStaff', value: false }, { key: 'clawd-hq.quietChat', value: false },
-      { key: 'clawd-hq.recap', value: true }, { key: 'clawd-hq.youShouldKnow', value: false },
-    ])
+    // A press applies at once, so the second surface's presses turn each switch back.
+    expect(asked).toEqual(i === 0 ? first : first.map(a => ({ ...a, value: !a.value })))
     expect(await shows(ui, /^Could not change/)).toBe(false)
     await ui.unmount()
   }
@@ -189,27 +190,27 @@ test('the key is the one of the row this plugin owns for that field, whatever th
   const rows = [{ key: 'clawd-hq.recap', owner: 'other' }, { key: 'inline:7f.quietChat', owner: 'clawd-hq' }, { key: 'inline:7f.recap', owner: 'clawd-hq' }]
   const asked = configs(on, e => ({ value: e.value }), rows)
   await $.session.start(START)
-  for (const surface of SURFACES) {
+  for (const [i, surface] of SURFACES.entries()) {
     asked.length = 0
     const ui = await mount($, surface)
     await ui.press({ key: 'config-recap' })
-    expect(asked).toEqual([{ key: 'inline:7f.recap', value: false }])
+    expect(asked).toEqual([{ key: 'inline:7f.recap', value: i === 1 }])
     expect(await shows(ui, /^Could not change|isn't listed here/)).toBe(false)
     await ui.unmount()
   }
 })
 
-test('with no row of this plugin for the field nothing is set, one plain line says where to change it, and the toggle keeps its value', async ($, on) => {
-  host(on)
+test('with no row of this plugin for the field no settings row is set, yet the switch flips, kept in the plugin\'s store, with no note', async ($, on) => {
+  const { saved } = host(on)
   const asked = configs(on, e => ({ value: e.value }), [{ key: 'clawd-hq.recap', owner: 'other' }, { key: 'theme', owner: 'engine' }])
   await $.session.start(START)
-  for (const surface of SURFACES) {
+  for (const [i, surface] of SURFACES.entries()) {
     const ui = await mount($, surface)
     await ui.press({ key: 'config-recap' })
     expect(asked).toEqual([])
-    expect(await count(ui, NO_ROW.replace(/[.?/]/g, '\\$&'))).toBe(1)
-    expect(await shows(ui, /^Could not change/)).toBe(false)
-    expect(await labelOf(ui, 'recap')).toBe('● On')
+    expect(saved.get('toggle:recap')).toBe(i === 1)
+    expect(await shows(ui, /^Could not change|isn't listed here|not saved|could not be saved/)).toBe(false)
+    expect(await labelOf(ui, 'recap')).toBe(i === 0 ? '○ Off' : '● On')
     await ui.unmount()
   }
 })
@@ -224,15 +225,30 @@ test('each press keeps the keys of the settings rows (never their values) in the
   await ui.unmount()
 })
 
-test('a change the settings refuse shows its reason plainly, and the toggle keeps its value', async ($, on) => {
-  host(on)
-  configs(on, () => ({ deny: 'Your organization manages this setting.' }))
+test('a change the settings refuse is still made, kept in the plugin\'s store: the switch flips with no note', async ($, on) => {
+  const { saved } = host(on)
+  configs(on, () => ({ deny: 'Only its dialog changes this setting.' }))
   await $.session.start(START)
+  const ui = await mount($)
+  await ui.press({ key: 'config-recap' })
+  expect(await shows(ui, /^Could not change|this session only/)).toBe(false)
+  expect(saved.get('toggle:recap')).toBe(false)
+  expect(await labelOf(ui, 'recap')).toBe('○ Off')
+  await ui.unmount()
+})
+
+test('a change neither the settings nor the store take holds for this session only, and the tab says so', async ($, on) => {
+  const { kv } = host(on)
+  configs(on, () => ({ deny: 'Only its dialog changes this setting.' }))
+  await $.session.start(START)
+  kv.isWriteFailing = true
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
-    await ui.press({ key: 'config-recap' })
-    expect(await shows(ui, 'Could not change Recap: Your organization manages this setting.')).toBe(true)
     expect(await labelOf(ui, 'recap')).toBe('● On')
+    await ui.press({ key: 'config-recap' })
+    expect(await shows(ui, 'Recap is changed for this session only: it could not be saved.')).toBe(true)
+    expect(await labelOf(ui, 'recap')).toBe('○ Off')
+    await ui.press({ key: 'config-recap' })
     await ui.unmount()
   }
 })
@@ -264,17 +280,18 @@ test('while Clawd is busy with a turn the configs cannot be changed: dimmed valu
   await ui.unmount()
 })
 
-test('the next change that goes through clears the note of a refused one', async ($, on) => {
-  host(on)
+test('the next change that goes through clears the note of one that was not kept', async ($, on) => {
+  const { kv } = host(on)
   let isRefusing = true
   configs(on, e => (isRefusing ? { deny: 'The value does not fit.' } : { value: e.value }))
   await $.session.start(START)
+  kv.isWriteFailing = true
   const ui = await mount($)
   await ui.press({ key: 'config-quietChat' })
-  expect(await shows(ui, 'Could not change Quiet chat: The value does not fit.')).toBe(true)
+  expect(await shows(ui, 'Quiet chat is changed for this session only: it could not be saved.')).toBe(true)
   isRefusing = false
   await ui.press({ key: 'config-quietChat' })
-  expect(await shows(ui, /^Could not change/)).toBe(false)
+  expect(await shows(ui, /this session only/)).toBe(false)
   await ui.unmount()
 })
 

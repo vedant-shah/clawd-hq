@@ -48,12 +48,12 @@ export function recapLine(text: string): string | undefined {
 // ---- Asking for one: the counts below belong to this session, the calls come in as `io` ----
 
 /** Whether the recap may be made here, Clawd's turns this session, and the turn count the last one was asked at. */
-let isRecapOn = true
+let isRecapOn: () => boolean = () => true
 let turnsSeen = 0
 let recapFor = 0
 
-/** The setting only: whether anything is drawn is read at each frame's ask. */
-export const setRecapOn = (isOn: boolean) => { isRecapOn = isOn }
+/** The setting only, read at each frame's ask (a switch pressed in Settings applies at once), as is whether anything is drawn. */
+export const setRecapOn = (isOn: () => boolean) => { isRecapOn = isOn }
 /** A turn of Clawd's began: work goes on, so the count moves. */
 export const noteRecapTurn = () => { turnsSeen += 1 }
 
@@ -75,7 +75,7 @@ export type RecapIo = {
  */
 export async function maybeRecap(io: RecapIo) {
   const [b, isTouring, now] = [await io.boss(), await io.isTouring(), await io.now()]
-  if (!isRecapDue({ isOn: isRecapOn, isBusy: b.isBusy || isTouring, idleSince: b.idleSince, now, turns: turnsSeen, lastFor: recapFor })) return
+  if (!isRecapDue({ isOn: isRecapOn(), isBusy: b.isBusy || isTouring, idleSince: b.idleSince, now, turns: turnsSeen, lastFor: recapFor })) return
   // A recap is for someone looking at the panel: none while nothing is drawn. Read only once one is due, to keep frames cheap.
   if (!(await io.isShown())) return
   side.tryNow(() => askRecap(io))

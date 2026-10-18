@@ -51,6 +51,8 @@ import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import { reportStep } from './steps'
 import type { StepIo } from './steps'
+import { isCountedTool } from './usage-count'
+import { recordUse } from './use-tally'
 import { scrolled } from './scroll-window'
 import { DEMO_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
 import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withReport, withSaid, withStep, withTool } from './staff-model'
@@ -633,6 +635,8 @@ export const register: Register = (on, options) => {
     const tool = String(e.tool)
     const input = e as unknown as Record<string, unknown>
     const id = e.agentId
+    // The running tally of agent and skill use (hooks/use-tally.ts): names and counts only, for what session files are too big to show. Never waited for.
+    if (isCountedTool(tool)) void (async () => recordUse({ get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value) }, cwd, await $.session.id(), tool, input))().catch(() => undefined)
     if (isEditTurn && isShippedWrite(tool, input)) return { deny: SHIPPED_DENY } as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
     if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); await setBoss($, b => withToolUsed(b, tool)) } // work of his own ends a coffee break checkpoint at the turn's end

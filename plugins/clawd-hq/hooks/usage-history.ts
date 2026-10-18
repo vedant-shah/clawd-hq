@@ -1,17 +1,22 @@
 // What past sessions in this folder used: agent and skill names with counts. Nothing else is kept, and it never leaves this computer.
 // Reads through OnboardIo closures only (the session files are Claude Code's own and may change shape, so every line is read defensively).
 // A skill shows up two ways: the Skill tool (a tool_use block) and a slash command (a user line that begins with the command tags).
+// The file read refuses more than 4 MiB and has no range option, so a session file that big is not read; its agents come from the small
+// `subagents/*.meta.json` files beside it (usage-subagents.ts) and its other uses from the running tally the plugin keeps (use-tally.ts).
 import type { FsListEntry, OnboardIo, PastUse } from './onboard-types'
+import { EMPTY, MAX_FILE_BYTES, countLine, sumCounts, mostOf } from './usage-count'
+import type { Counts, Tally } from './usage-count'
+import { subagentUse } from './usage-subagents'
+import type { SessionUse } from './usage-subagents'
+import { savedTally } from './use-tally'
+import type { SessionTally } from './use-tally'
 
-/** The newest session files read, the size above which one is left out, and the most bytes read in all. */
+export { MAX_FILE_BYTES, countLine }
+/** The newest session files looked at, and the most bytes read in all (session files and subagent files together). */
 export const MAX_FILES = 100
-export const MAX_FILE_BYTES = 4 * 1024 * 1024
 export const MAX_TOTAL_BYTES = 32 * 1024 * 1024
 
-export type UsageIo = Pick<OnboardIo, 'cwd' | 'home' | 'configDir' | 'list' | 'read' | 'breakdown' | 'commands'>
-type Counts = Pick<PastUse, 'agents' | 'skills'>
-/** The counts while reading: slash commands wait in `commands` until the names the engine knows are checked. */
-type Tally = Counts & { readonly commands?: Readonly<Record<string, number>> }
+export type UsageIo = Pick<OnboardIo, 'cwd' | 'home' | 'configDir' | 'list' | 'read' | 'breakdown' | 'commands' | 'get' | 'set'>
 type Listed = FsListEntry & { readonly mtimeMs?: number }
 
 /** The folder name Claude Code gives a project: slash, underscore and dot become a dash. A looser name (every other character too) is the second try. */
@@ -21,42 +26,9 @@ export function projectFolders(cwd: string): readonly string[] {
   return tested === loose ? [tested] : [tested, loose]
 }
 
-const bump = (record: Readonly<Record<string, number>>, name: string): Record<string, number> => ({ ...record, [name]: (record[name] ?? 0) + 1 })
-
-/** Adds one block's use to the counts, or returns them as they were. */
-function countBlock(counts: Tally, block: unknown): Tally {
-  if (typeof block !== 'object' || block === null) return counts
-  const { type, name, input } = block as { type?: unknown; name?: unknown; input?: unknown }
-  if (type !== 'tool_use' || typeof input !== 'object' || input === null) return counts
-  const { subagent_type: agent, skill } = input as { subagent_type?: unknown; skill?: unknown }
-  if ((name === 'Agent' || name === 'Task') && typeof agent === 'string' && agent) return { ...counts, agents: bump(counts.agents, agent) }
-  if (name === 'Skill' && typeof skill === 'string' && skill) return { ...counts, skills: bump(counts.skills, skill) }
-  return counts
-}
-
-/** A slash command's text begins with its tags (message then name, or name then message); text that only quotes them does not. */
-const COMMAND_TEXT = /^\s*<command-(?:message|name)>/
-const COMMAND_NAME = /<command-name>\/?([^<\s]+)<\/command-name>/
-
-function countCommand(counts: Tally, content: unknown): Tally {
-  const name = typeof content === 'string' && COMMAND_TEXT.test(content) ? COMMAND_NAME.exec(content)?.[1] : undefined
-  return name ? { ...counts, commands: bump(counts.commands ?? {}, name) } : counts
-}
-
-/** Counts one session line. Only the names it holds are looked at; a line that is not JSON, or holds no tool use or command, changes nothing. */
-export function countLine(line: string, counts: Tally): Tally {
-  if (!line.includes('"tool_use"') && !line.includes('<command-name>')) return counts
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(line)
-  } catch {
-    return counts
-  }
-  const content = (parsed as { message?: { content?: unknown } } | null)?.message?.content
-  return Array.isArray(content) ? content.reduce(countBlock, counts) : countCommand(counts, content)
-}
-
 const newestFirst = (a: Listed, b: Listed) => (b.mtimeMs ?? 0) - (a.mtimeMs ?? 0) || (a.name < b.name ? 1 : -1)
+/** A session file is named by its session id. */
+const sessionOf = (e: Listed) => e.name.replace(/\.jsonl$/, '')
 
 async function sessionFiles(io: UsageIo): Promise<{ dir: string; files: readonly Listed[] }> {
   const root = `${io.configDir() ?? `${io.home()}/.claude`}/projects`
@@ -99,20 +71,43 @@ function settle(tally: Tally, isSkill: (typed: string) => boolean): Counts {
   return { agents: tally.agents, skills }
 }
 
-/** Past use in this folder: the newest 100 session files under 4 MiB and 32 MiB in all, counted line by line. */
-export async function pastUse(io: UsageIo): Promise<PastUse> {
-  const { dir, files } = await sessionFiles(io)
-  const small = files.filter(e => (e.size ?? 0) <= MAX_FILE_BYTES)
-  const newest = [...small].sort(newestFirst).slice(0, MAX_FILES)
-  const chosen = withinBudget(newest)
-  let tally: Tally = { agents: {}, skills: {} }
-  let read = 0
+/** Reads the chosen session files line by line; the counts, the sessions that were read and the bytes they took. */
+async function readSessions(io: UsageIo, dir: string, chosen: readonly Listed[]): Promise<{ tally: Tally; read: ReadonlySet<string>; bytes: number }> {
+  let tally: Tally = EMPTY
+  const read = new Set<string>()
+  let bytes = 0
   for (const entry of chosen) {
     const text = await io.read(`${dir}/${entry.name}`)
     if (text === undefined) continue
     tally = text.split('\n').reduce((acc, line) => countLine(line, acc), tally)
-    read += 1
+    read.add(sessionOf(entry))
+    bytes += entry.size ?? 0
   }
-  const counts = settle(tally, await skillCommands(io))
-  return { ...counts, files: read, skipped: files.length - small.length + newest.length - chosen.length }
+  return { tally, read, bytes }
+}
+
+/**
+ * What the sessions add beyond the files that were read: for each session whose file was not read, its subagent files and the running tally
+ * (the same events seen two ways, so the larger count of each name); for a session that was read, only the skills its subagents ran.
+ * A session the tally knows but the newest files no longer list counts from the tally alone.
+ */
+function extraUse(subs: readonly SessionUse[], saved: SessionTally, unread: ReadonlySet<string>): Counts {
+  const fromFiles = subs.map(({ session, counts }) => (unread.has(session) && saved[session] ? mostOf(counts, saved[session]) : counts))
+  const listed = new Set(subs.map(s => s.session))
+  const tallyOnly = Object.entries(saved).filter(([session]) => !listed.has(session)).map(([, counts]) => counts)
+  return [...fromFiles, ...tallyOnly].reduce(sumCounts, EMPTY)
+}
+
+/** Past use in this folder: the newest 100 session files under 4 MiB and 32 MiB in all, counted line by line, with the subagent files and the running tally beside them. */
+export async function pastUse(io: UsageIo): Promise<PastUse> {
+  const { dir, files } = await sessionFiles(io)
+  const newest = [...files].sort(newestFirst).slice(0, MAX_FILES)
+  const small = newest.filter(e => (e.size ?? 0) <= MAX_FILE_BYTES)
+  const chosen = withinBudget(small)
+  const { tally, read, bytes } = await readSessions(io, dir, chosen)
+  const sessions = newest.map(sessionOf)
+  const unread = new Set(sessions.filter(s => !read.has(s)))
+  const subs = await subagentUse(io, dir, sessions, unread, MAX_TOTAL_BYTES - bytes)
+  const counts = sumCounts(settle(tally, await skillCommands(io)), extraUse(subs, await savedTally(io, io.cwd), unread))
+  return { ...counts, files: read.size, skipped: newest.length - chosen.length }
 }

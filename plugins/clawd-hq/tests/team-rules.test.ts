@@ -265,10 +265,22 @@ test('the rule pick fills each seat by its kind of work, strongest first, and ta
     { seat: 'Check', name: 'ecc:code-reviewer' },
     { seat: 'Check', name: 'ecc:security-reviewer' },
     { seat: 'Find out', name: 'ecc:code-explorer' },
-    { seat: 'Specialist', name: 'ecc:doc-updater' },
     { seat: 'Specialist', name: 'plugin-authoring' },
+    { seat: 'Specialist', name: 'ecc:doc-updater' },
     { seat: 'Specialist', name: 'claude-code-guide' },
   ])
+})
+
+test('a fit to what the project says it is outranks a fit read from its files: plugin-authoring leads the specialists of a Claude Code mod', () => {
+  const cands = [
+    cand('ecc:ai-regression-testing', { kind: 'skill' }),
+    cand('ecc:e2e-testing', { kind: 'skill' }),
+    cand('plugin-authoring', { kind: 'skill', plugin: undefined, source: 'built in' }),
+  ]
+  expect(rulePick(cands, facts()).map(p => p.name)).toEqual(['plugin-authoring', 'ecc:ai-regression-testing', 'ecc:e2e-testing'])
+  // Without the project saying it is a mod, the same three tie on files and fall back to name order.
+  const quiet = rulePick(cands, facts({ tells: [], outline: ['docs/', 'tests/', 'vitest.config.ts'] })).map(p => p.name)
+  expect(quiet).toEqual(['ecc:ai-regression-testing', 'ecc:e2e-testing'])
 })
 
 test('the rule pick never seats a tool-like skill, and leaves a seat empty when nothing fits it', () => {

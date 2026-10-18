@@ -10,6 +10,8 @@ export type FakeOver = {
   readonly breakdown?: UsageBreakdown
   readonly commands?: readonly CommandEntry[]
   readonly blurbs?: Readonly<Record<string, string>>
+  /** The plugin's own store, by key. */
+  readonly store?: Readonly<Record<string, unknown>>
 }
 
 type Listed = FsListEntry & { readonly mtimeMs?: number }
@@ -51,6 +53,8 @@ export function fakeScan(files: Readonly<Record<string, string>>, over: FakeOver
     breakdown: async () => over.breakdown,
     commands: async () => over.commands ?? [],
     blurbs: () => over.blurbs ?? {},
+    get: async <T>(key: string) => over.store?.[key] as T | undefined,
+    set: async (): Promise<void> => undefined,
   }
   return { io, log }
 }

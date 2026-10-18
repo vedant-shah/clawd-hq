@@ -215,7 +215,7 @@ export function projectSignals(facts: ProjectFacts): Readonly<Record<string, str
   }))
 }
 
-type Fit = { readonly text: string; readonly strength: number }
+type Fit = { readonly text: string; readonly strength: number; readonly kind?: string }
 /** A helper fits when the project depends on a package of its name, or shows the kind of work its name says. */
 function fitOf(c: Candidate, signals: Readonly<Record<string, string>>, deps: readonly string[]): Fit | undefined {
   const name = bare(c.id).toLowerCase()
@@ -224,8 +224,12 @@ function fitOf(c: Candidate, signals: Readonly<Record<string, string>>, deps: re
   const words = tokens(name)
   const kind = Object.keys(SIGNS).find(k => own(signals, k) && SIGNS[k]?.words.some(w => words.has(w)))
   const found = kind ? own(signals, kind) : undefined
-  return found ? { text: found, strength: 10 } : undefined
+  return found ? { text: found, strength: 10, kind } : undefined
 }
+
+/** The kinds of work the project's own tells name (a Claude Code mod says so itself), not just files and dependencies that hint at it. */
+const tellKindsOf = (facts: ProjectFacts): ReadonlySet<string> =>
+  new Set(Object.entries(SIGNS).filter(([, sign]) => sign.tell !== undefined && facts.tells.some(t => sign.tell?.test(t))).map(([kind]) => kind))
 
 const RECEIPT_PARTS = 2
 const originOf = (c: Candidate) => (c.plugin ? `from the ${c.plugin} plugin` : /built/i.test(c.source) ? 'built into Claude Code' : 'installed')
@@ -257,15 +261,18 @@ const CORE_NAMES: ReadonlySet<string> = new Set(['planner', 'architect', 'tdd-gu
 const NAMED_WEIGHT = 500
 const CORE_WEIGHT = 100
 const USE_WEIGHT = 3
+/** A fit to what the project says it is (its own tells) ranks above a fit read from its files: plugin-authoring in a Claude Code mod. */
+const TELL_FIT_WEIGHT = 50
 /** A seat's second pick needs at least this: a core name, real past use, or a mention in the instructions. */
 const STRONG = 100
 
 type Ranked = { readonly c: Candidate; readonly seat?: CoreSeat; readonly score: number; readonly hasFit: boolean }
 
-function ranked(c: Candidate, signals: Readonly<Record<string, string>>, deps: readonly string[]): Ranked {
+function ranked(c: Candidate, signals: Readonly<Record<string, string>>, deps: readonly string[], tellKinds: ReadonlySet<string>): Ranked {
   const words = tokens(bare(c.id))
   const fit = fitOf(c, signals, deps)
-  const score = (c.isNamed ? NAMED_WEIGHT : 0) + c.uses * USE_WEIGHT + (CORE_NAMES.has(bare(c.id)) ? CORE_WEIGHT : 0) + (fit?.strength ?? 0) + (c.kind === 'agent' ? 1 : 0)
+  const tellBonus = fit?.kind !== undefined && tellKinds.has(fit.kind) ? TELL_FIT_WEIGHT : 0
+  const score = (c.isNamed ? NAMED_WEIGHT : 0) + c.uses * USE_WEIGHT + (CORE_NAMES.has(bare(c.id)) ? CORE_WEIGHT : 0) + (fit?.strength ?? 0) + tellBonus + (c.kind === 'agent' ? 1 : 0)
   return { c, seat: CORE_SEATS.find(s => SEAT_WORDS[s].some(w => words.has(w))), score, hasFit: fit !== undefined }
 }
 
@@ -276,7 +283,8 @@ const seatPicks = (seat: CoreSeat, list: readonly Ranked[]): RawPick[] =>
 export function rulePick(cands: readonly Candidate[], facts: ProjectFacts): readonly RawPick[] {
   const signals = projectSignals(facts)
   const deps = depNames(facts.deps)
-  const list = cands.filter(c => !wantsPerson(c)).map(c => ranked(c, signals, deps)).filter(r => !isToolSkill(r.c, r.hasFit))
+  const tellKinds = tellKindsOf(facts)
+  const list = cands.filter(c => !wantsPerson(c)).map(c => ranked(c, signals, deps, tellKinds)).filter(r => !isToolSkill(r.c, r.hasFit))
     .sort((a, b) => b.score - a.score || a.c.id.localeCompare(b.c.id))
   const core = CORE_SEATS.flatMap(seat => seatPicks(seat, list))
   const taken = new Set(core.map(p => p.name))

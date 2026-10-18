@@ -6,8 +6,6 @@ import { SEATS, WORKFLOW_STEPS } from './onboard-types'
 import type { OnboardButton, OnboardCard, Pick, Seat } from './onboard-types'
 import type { Kit } from './panel-kit'
 
-/** The one line on cost, drawn under the offer. */
-export const OFFER_COST_LINE = 'Setup asks Opus once, which costs about $0.20 of your plan.'
 /** Why skills are not parked with the agents. */
 export const SKILLS_NOTE = "Skills can't be hidden, so they stay available to Claude. Only agents get parked."
 /** Shown while the quiet look around runs and nothing else has been said. */
@@ -121,7 +119,6 @@ function wordsBlock(ctx: Ctx) {
   return (
     <Box key="onboard-words" flexDirection="column">
       {lines.map((l, i) => <Text key={`line-${i}`} wrap="wrap">{l}</Text>)}
-      {card.step === 'offer' && <Text key="onboard-cost" dimColor wrap="wrap">{OFFER_COST_LINE}</Text>}
     </Box>
   )
 }

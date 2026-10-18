@@ -9,7 +9,8 @@ import type { OnboardAction, OnboardButton, OnboardCard, Seat, Team, ToggleField
 /** Held in memory once setup has nothing to show this session: drawn as nothing, and the frame check stops looking. */
 export const QUIET: OnboardCard = { step: 'done', lines: [], buttons: [] }
 
-export const OFFER_LINE = "I'm Clawd, your chief of staff. Want me to set up a starting team for this project? Two quick questions, then I look around this folder."
+export const OFFER_LINE = "I'm Clawd, your chief of staff. Tell me what you need and I'll make sure it gets done: I hand the work to the right specialists, check what comes back, and keep you posted."
+export const OFFER_ASK = 'Want me to set up a starting team for this project? Two quick questions, then I look around this folder.'
 export const INTRO_LINE = 'Two quick questions first.'
 export const BOX_NOTE = 'The question box closed without a Yes or No, so answer here on the card.'
 export const ROLE_LINE = "I couldn't tell what you do here. Which fits best?"
@@ -28,7 +29,7 @@ const SEARCH_SEATS: readonly Seat[] = SEATS.filter(s => s !== 'Specialist')
 const btn = (action: OnboardAction, label: string, isPrimary?: true): OnboardButton => (isPrimary ? { action, label, isPrimary } : { action, label })
 const withNote = (card: OnboardCard, note: string | undefined): OnboardCard => (note === undefined ? card : { ...card, note })
 
-export const offerCard = (): OnboardCard => ({ step: 'offer', lines: [OFFER_LINE], buttons: [btn('start', 'Start', true), btn('later', 'Later'), btn('skip', 'Skip')] })
+export const offerCard = (): OnboardCard => ({ step: 'offer', lines: [OFFER_LINE, OFFER_ASK], buttons: [btn('start', 'Start', true), btn('later', 'Later'), btn('skip', 'Skip')] })
 
 /** A step that failed: the offer again, with what went wrong, so Start tries setup again from the questions. */
 export const failedCard = (reason: string): OnboardCard => ({ ...offerCard(), note: `Setup stopped: ${reason}. Start tries again.` })

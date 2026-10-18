@@ -18,7 +18,9 @@ const KNOWN_ABOUT: Readonly<Record<string, string>> = {
   'claude-code-guide': 'Answers questions about Claude Code, its settings and hooks, and the Agent SDK.',
 }
 
-type Where = 'own' | 'project' | 'plugin'
+const BUILT_IN_SOURCE = 'built in'
+
+type Where = 'own' | 'project' | 'plugin' | 'builtin'
 type Found = { readonly name: string; readonly kind: 'agent' | 'skill'; readonly where: Where; readonly plugin?: string; readonly about: string }
 
 /** The first sentence of a description, spaces folded, at most 160 characters and cut at a word, never mid-word. */
@@ -48,8 +50,10 @@ export function frontMatterDescription(text: string): string {
 
 const bareOf = (name: string) => name.slice(name.indexOf(':') + 1)
 const pluginOf = (name: string) => (name.includes(':') ? name.slice(0, name.indexOf(':')) : undefined)
-const sourceOf = (where: Where, plugin?: string) => (where === 'own' ? OWN : where === 'project' ? PROJECT : plugin ?? 'installed')
-const whereOf = (engineSource: string): Where => (/^(user|userSettings)$/.test(engineSource) ? 'own' : /^(project|projectSettings)$/.test(engineSource) ? 'project' : 'plugin')
+const SOURCE_OF: Readonly<Record<Where, string>> = { own: OWN, project: PROJECT, builtin: BUILT_IN_SOURCE, plugin: 'installed' }
+const sourceOf = (where: Where, plugin?: string) => (where === 'plugin' ? plugin ?? SOURCE_OF.plugin : SOURCE_OF[where])
+const whereOf = (engineSource: string): Where =>
+  /^(user|userSettings)$/.test(engineSource) ? 'own' : /^(project|projectSettings)$/.test(engineSource) ? 'project' : /^built-?in$/i.test(engineSource) ? 'builtin' : 'plugin'
 
 /** Folders on disk named the way Claude Code looks for them. */
 function diskDirs(io: HelpersIo, kind: 'agents' | 'skills'): ReadonlyArray<{ dir: string; where: Where }> {
@@ -148,7 +152,8 @@ export async function installedHelpers(io: HelpersIo, past: PastUse, instruction
   const descriptions = descriptionsOf(commands)
   const disk = new Map([...agentFiles, ...skillFiles].map(f => [`${f.kind}:${f.name}`, f.about]))
   const listed = fromBreakdown(breakdown, io.blurbs(), name => disk.get(`skill:${name}`) ?? '')
-  const found = merge([...listed, ...agentFiles, ...skillFiles]).filter(f => !isBuiltIn(f.name))
+  // Built-in agents (general-purpose, Explore, Plan) are always on and stay out; built-in skills (plugin-authoring) are real candidates.
+  const found = merge([...listed, ...agentFiles, ...skillFiles]).filter(f => f.kind === 'skill' || !isBuiltIn(f.name))
   const helpers = found.map(f => toHelper(f, past, instructions, descriptions))
   return [...helpers, ...usedButMissing(past, helpers)]
 }

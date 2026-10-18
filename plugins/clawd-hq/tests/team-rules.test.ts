@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { Helper, PastUse, ProjectFacts } from '../hooks/onboard-types'
-import { BUILTINS, candidateList, isToolLike, isWrongLanguage, projectSignals, projectTech, receiptOf, rulePick } from '../hooks/team-rules'
+import { BUILTINS, candidateList, isToolLike, isWrongLanguage, needsPerson, projectSignals, projectTech, receiptOf, rulePick } from '../hooks/team-rules'
 import type { Candidate } from '../hooks/team-rules'
 
 const facts = (over: Partial<ProjectFacts> = {}): ProjectFacts => ({
@@ -69,8 +69,19 @@ test('the list drops noise and built-ins but always keeps what was used, named o
     helper('Explore', { plugin: undefined, source: 'built-in' }),
     helper('clawd-hq:make-shadcn', { plugin: undefined }),
   ], use(), facts())
-  expect(ids(list)).toEqual(['ecc:planner', 'ecc:loop', 'pdf', 'ecc:django-reviewer'])
+  // `loop` was used, but a tool by name is the person's to run by hand; `pdf` is theirs, so it stays.
+  expect(ids(list)).toEqual(['ecc:planner', 'pdf', 'ecc:django-reviewer'])
   for (const name of BUILTINS) expect(ids(list)).not.toContain(name)
+})
+
+test('a tool by name is dropped when used, kept when the person owns it or names it, and a description-only tool stays when used', () => {
+  const list = candidateList([
+    skill('strategic-compact', { uses: 9 }),
+    skill('pptx', { uses: 2, isNamed: true }),
+    skill('schedule', { uses: 1, plugin: undefined, source: 'built in' }),
+    skill('deck-maker', { uses: 3, about: 'Makes .pptx files from notes.' }),
+  ], use({ skills: { 'ecc:aside': 4 } }), facts())
+  expect(ids(list)).toEqual(['ecc:pptx', 'ecc:deck-maker'])
 })
 
 test('a candidate\'s id carries its plugin, and its past use is counted by that id or its bare name', () => {
@@ -114,6 +125,90 @@ test('a description is cut to one plain line', () => {
   expect(c!.about).toBe('Plans things well.')
   const [long] = candidateList([helper('planner', { about: 'y'.repeat(400) })], use(), facts())
   expect(long!.about.length).toBeLessThanOrEqual(160)
+})
+
+// ---- Skills that need the person present ----
+
+test('a skill that interviews, grills or quizzes the person, or asks them questions, needs the person present', () => {
+  expect(needsPerson('grill-me', '')).toBe(true)
+  expect(needsPerson('ecc:grill-me', 'Whatever.')).toBe(true)
+  expect(needsPerson('stress-test', 'Interview the user relentlessly about a plan or design until reaching shared understanding.')).toBe(true)
+  expect(needsPerson('x', 'Interviews me about the idea before anything is written.')).toBe(true)
+  expect(needsPerson('x', 'Grill the user on their design.')).toBe(true)
+  expect(needsPerson('x', 'Quizzes the user on what they learned.')).toBe(true)
+  expect(needsPerson('x', 'Asks the user clarifying questions, then writes a spec.')).toBe(true)
+  expect(needsPerson('x', 'Ask the user questions one at a time.')).toBe(true)
+})
+
+test('a skill that only mentions the user, or interviews as a topic, does not need the person present', () => {
+  expect(needsPerson('human-resources:interview-prep', 'Prepare interview questions and a rubric for candidates.')).toBe(false)
+  expect(needsPerson('user-research:user-research-cookiy', 'Conduct user interviews and synthesise what users say.')).toBe(false)
+  expect(needsPerson('ecc:plan', 'Restate requirements and wait for the user to confirm before touching any code.')).toBe(false)
+  expect(needsPerson('x', 'Reviews code the user wrote and reports problems to the user.')).toBe(false)
+  expect(needsPerson('x', 'Asks the user to approve the diff.')).toBe(false)
+  expect(needsPerson('x', 'Answers questions from the user about the codebase.')).toBe(false)
+  expect(needsPerson('x', 'Builds a quiz app and a grill menu page.')).toBe(false)
+  expect(needsPerson('ecc:user-journey', 'Maps the user journey.')).toBe(false)
+})
+
+test('a skill that needs the person is never a candidate, even when used, named or the person\'s own', () => {
+  const list = candidateList([
+    skill('grill-me', { isOwn: true, source: 'userSettings', plugin: undefined, uses: 4, isNamed: true, about: 'Interview the user relentlessly about a plan.' }),
+    skill('stress-test', { about: 'Interviews the user about a design.', uses: 2 }),
+    skill('ecc:plan', { about: 'Restate requirements and wait for the user to confirm.' }),
+    helper('planner'),
+  ], use({ skills: { 'grill-me': 4 } }), facts())
+  expect(ids(list)).toEqual(['ecc:plan', 'ecc:planner'])
+})
+
+test('an agent is not dropped by the interview rule, only skills', () => {
+  const list = candidateList([helper('requirements-bot', { about: 'Asks the user clarifying questions.' })], use(), facts())
+  expect(ids(list)).toEqual(['ecc:requirements-bot'])
+})
+
+// ---- Built-in skills ----
+
+const modFacts = () => facts()
+const pluginAuthoring = () => skill('plugin-authoring', {
+  plugin: undefined, source: 'built in',
+  about: 'Make a mod: a change to Claude\'s own interface or behaviour, such as a live pane or panel, a status line, a toast, a slash command, or a hook on tool calls or prompts.',
+})
+
+test('a built-in skill that fits the project stays a candidate even though its description names a slash command', () => {
+  const list = candidateList([pluginAuthoring(), helper('planner')], use(), modFacts())
+  expect(ids(list)).toContain('plugin-authoring')
+  expect(list.find(c => c.id === 'plugin-authoring')?.source).toBe('built in')
+  expect(receiptOf(list.find(c => c.id === 'plugin-authoring')!, projectSignals(modFacts()), modFacts().deps)).toBe('fits: Claude Code mod')
+})
+
+test('a built-in skill that is a tool is still noise: by name always, by description when the project shows no need', () => {
+  const noMod = facts({ tells: [], outline: ['src/', 'package.json'], deps: [] })
+  const list = candidateList([
+    skill('loop', { plugin: undefined, source: 'built in', about: 'Run a prompt on a recurring interval.' }),
+    skill('pptx', { plugin: undefined, source: 'built in', about: 'Makes slide decks.' }),
+    skill('schedule', { plugin: undefined, source: 'built in', about: 'Create a cron job.' }),
+    pluginAuthoring(),
+  ], use(), noMod)
+  expect(ids(list)).toEqual([])
+  expect(rulePick([cand('loop', { kind: 'skill', uses: 3, plugin: undefined, source: 'built in', about: 'Run a prompt on a recurring interval.' })], noMod)).toEqual([])
+})
+
+test('the rule pick seats a built-in skill that fits the project as a specialist', () => {
+  const plugin = cand('plugin-authoring', { kind: 'skill', plugin: undefined, source: 'built in', about: pluginAuthoring().about })
+  expect(rulePick([cand('ecc:planner'), plugin], modFacts())).toEqual([{ seat: 'Plan', name: 'ecc:planner' }, { seat: 'Specialist', name: 'plugin-authoring' }])
+})
+
+test('an installed planner fills the Plan seat ahead of skills that only talk about plans or need the person', () => {
+  const list = candidateList([
+    skill('grill-me', { isOwn: true, source: 'userSettings', plugin: undefined, uses: 3, about: 'Interview the user relentlessly about a plan or design.' }),
+    skill('ecc:plan', { uses: 2, about: 'Restate requirements and create a step-by-step plan.' }),
+    helper('planner', { about: 'Expert planning specialist for complex features.' }),
+    pluginAuthoring(),
+  ], use(), modFacts())
+  const picks = rulePick(list, modFacts())
+  expect(picks.find(p => p.seat === 'Plan')).toEqual({ seat: 'Plan', name: 'ecc:planner' })
+  expect(picks.map(p => p.name)).not.toContain('grill-me')
+  expect(picks.map(p => p.name)).toContain('plugin-authoring')
 })
 
 // ---- Facts and receipts ----

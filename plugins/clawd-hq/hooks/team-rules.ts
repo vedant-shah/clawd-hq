@@ -77,6 +77,20 @@ const depNames = (deps: readonly string[]) =>
 /** A skill that runs a tool or the harness, not a kind of work: decks, loops, settings, session care. */
 export const isToolLike = (name: string, about: string) => TOOL_NAME.test(bare(name)) || TOOL_DESC.test(about)
 
+// A skill that works by talking to the person (interviewing, quizzing, asking questions) is something they run, not a background hire.
+// The rule is narrow on purpose: the verb must be aimed at "me", "you" or "the user", so a skill that only mentions users stays.
+const GRILL_NAME = 'grill'
+const TALKS_AT = /\b(?:interview(?:s|ing)?|grill(?:s|ing)?|quiz(?:zes|zing)?)\s+(?:me|you|the\s+(?:user|person))\b/i
+const ASKS_QUESTIONS = /\bask(?:s|ing)?\s+(?:me|the\s+user)(?:\s+[\w-]+){0,2}\s+questions\b/i
+
+/** Whether a skill needs the person present: named for grilling, or described as interviewing, quizzing or questioning them. */
+export const needsPerson = (name: string, about: string) =>
+  tokens(bare(name)).has(GRILL_NAME) || TALKS_AT.test(about) || ASKS_QUESTIONS.test(about)
+
+const isToolByName = (c: Candidate) => c.kind === 'skill' && TOOL_NAME.test(bare(c.id))
+/** A tool-like skill by name always; by its description only when the project shows no sign of needing it (a mod project needs a skill that makes mods). */
+const isToolSkill = (c: Candidate, hasFit: boolean) => isToolByName(c) || (c.kind === 'skill' && !hasFit && TOOL_DESC.test(c.about))
+
 /** The project's languages and frameworks, from its file counts, manifests and dependencies. */
 export function projectTech(facts: ProjectFacts): ReadonlySet<string> {
   const byLang = Object.entries(facts.fileTypes).reduce<Readonly<Record<string, number>>>((acc, [ext, n]) => {
@@ -106,8 +120,13 @@ export function isWrongLanguage(id: string, about: string, tech: ReadonlySet<str
 const idOf = (h: Helper) => (h.name.includes(':') || !h.plugin ? h.name : `${h.plugin}:${h.name}`)
 const isAllowed = (id: string) => !BUILTINS.has(id) && !OWN_HIRE.test(id)
 const isKept = (c: Candidate) => c.uses > 0 || c.isNamed || c.isOwn
-const isNoise = (c: Candidate, tech: ReadonlySet<string>) =>
-  (c.kind === 'skill' && isToolLike(c.id, c.about)) || isWrongLanguage(c.id, c.about, tech)
+const isNoise = (c: Candidate, tech: ReadonlySet<string>, hasFit: boolean) => isToolSkill(c, hasFit) || isWrongLanguage(c.id, c.about, tech)
+/**
+ * Never a hire, however much it was used, named or owned: the person has to be there for it.
+ * A skill that is a tool by its name (compact, pptx, loop) is the person's to run by hand, so using it is no reason to hire it; only their own or a named one stays.
+ */
+const wantsPerson = (c: Candidate) => c.kind === 'skill' && needsPerson(c.id, c.about)
+const isHandTool = (c: Candidate) => isToolByName(c) && !c.isOwn && !c.isNamed
 
 /** Past use by the full id, plus by the bare name for a plugin's helper (sessions name both ways). */
 function usesOf(use: PastUse, kind: Candidate['kind'], id: string): number {
@@ -150,12 +169,14 @@ function onePerId(list: readonly Candidate[]): readonly Candidate[] {
   return [...best.values()]
 }
 
-/** Everything the model may pick from: no field cut and no seat cut, only built-ins and obvious noise left out. */
+/** Everything the model may pick from: no field cut and no seat cut, only built-in agents, skills that need the person, tools and obvious noise left out. */
 export function candidateList(helpers: readonly Helper[], use: PastUse, facts: ProjectFacts): readonly Candidate[] {
   const tech = projectTech(facts)
-  const installed = helpers.map(h => fromHelper(h, use)).filter(c => isAllowed(c.id) && (isKept(c) || !isNoise(c, tech)))
+  const [signals, deps] = [projectSignals(facts), depNames(facts.deps)]
+  const hasFit = (c: Candidate) => fitOf(c, signals, deps) !== undefined
+  const installed = helpers.map(h => fromHelper(h, use)).filter(c => isAllowed(c.id) && (isKept(c) || !isNoise(c, tech, hasFit(c))))
   const known = new Set(helpers.flatMap(h => [idOf(h), h.name, bare(h.name)]))
-  return onePerId([...installed, ...notOnDisk(use, known)])
+  return onePerId([...installed, ...notOnDisk(use, known)].filter(c => !wantsPerson(c) && !isHandTool(c)))
 }
 
 // ---- Signals and receipts ----
@@ -255,7 +276,7 @@ const seatPicks = (seat: CoreSeat, list: readonly Ranked[]): RawPick[] =>
 export function rulePick(cands: readonly Candidate[], facts: ProjectFacts): readonly RawPick[] {
   const signals = projectSignals(facts)
   const deps = depNames(facts.deps)
-  const list = cands.filter(c => !(c.kind === 'skill' && isToolLike(c.id, c.about))).map(c => ranked(c, signals, deps))
+  const list = cands.filter(c => !wantsPerson(c)).map(c => ranked(c, signals, deps)).filter(r => !isToolSkill(r.c, r.hasFit))
     .sort((a, b) => b.score - a.score || a.c.id.localeCompare(b.c.id))
   const core = CORE_SEATS.flatMap(seat => seatPicks(seat, list))
   const taken = new Set(core.map(p => p.name))

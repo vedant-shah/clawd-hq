@@ -133,6 +133,17 @@ test('built-in helpers in the engine list are left out', async () => {
   expect((await installedHelpers(fakeScan({}, { breakdown: b }).io, none, '')).map(h => h.name)).toEqual(['x'])
 })
 
+test('a built-in skill is kept, labelled as built in; built-in agents are still left out', async () => {
+  const b: UsageBreakdown = {
+    agents: [{ name: 'general-purpose', source: 'built-in' }, { name: 'Explore', source: 'built-in' }, { name: 'Plan', source: 'built-in' }],
+    skills: [{ name: 'plugin-authoring', source: 'built-in' }, { name: 'loop', source: 'built-in' }],
+  }
+  const commands = [{ name: 'plugin-authoring', description: 'Make a mod. More.', source: 'builtin' }]
+  const list = await installedHelpers(fakeScan({}, { breakdown: b, commands }).io, { ...none, skills: { 'plugin-authoring': 2 } }, '')
+  expect(list.map(h => h.name)).toEqual(['plugin-authoring', 'loop'])
+  expect(find(list, 'plugin-authoring')).toEqual({ name: 'plugin-authoring', kind: 'skill', source: 'built in', about: 'Make a mod.', uses: 2, isNamed: false, isOwn: false })
+})
+
 test('nothing available gives an empty list, and a failing engine list does not stop the rest', async () => {
   expect(await installedHelpers(fakeScan({}).io, none, '')).toEqual([])
   const f = fakeScan({}, { blurbs: { a: 'Fine.' } })

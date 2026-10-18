@@ -6,7 +6,7 @@ export type OnboardStep = 'offer' | 'intro' | 'scan' | 'team' | 'workflow' | 'fi
 
 /** The two settings setup asks about (the Settings switches of the same names). */
 export type ToggleField = 'chiefOfStaff' | 'quietChat'
-/** One answer waiting to be applied; each applied change reloads the plugin, so they go one per session start. */
+/** One answer not applied yet: the other question is still open, or Clawd's turn is running. Each is dropped once applied, so a reload resumes with the rest. */
 export type PendingToggle = { readonly field: ToggleField; readonly value: boolean }
 
 /** Setup's place, kept per project at `onboard:<folder>`. `later` hides the offer until the next session. */
@@ -135,8 +135,6 @@ export type AskQuestion = {
   readonly options: readonly { readonly label: string; readonly description: string }[]
   readonly multiSelect?: boolean
 }
-/** The box's answers by question text, or `undefined` when it was rejected, denied or could not open. */
-export type AskAnswers = Readonly<Record<string, string>> | undefined
 
 /** A skill or command the engine lists. */
 export type CommandEntry = { readonly name: string; readonly description?: string; readonly source?: string }
@@ -156,7 +154,8 @@ export type CompleteRequest = {
   readonly effort?: 'low' | 'medium' | 'high'
   readonly timeoutMs: number
 }
-export type FsListEntry = { readonly name: string; readonly isDir: boolean; readonly size?: number }
+/** `mtimeMs` is filled for session files (`.jsonl`) only, from a stat of each. */
+export type FsListEntry = { readonly name: string; readonly isDir: boolean; readonly size?: number; readonly mtimeMs?: number }
 /** The agents and skills the engine says are loaded, from `$.session.usage({ breakdown })`. */
 export type UsageBreakdown = {
   readonly agents: readonly { readonly name: string; readonly source: string }[]
@@ -174,7 +173,7 @@ export type OnboardIo = {
   readonly get: <T>(key: string) => Promise<T | undefined>
   readonly set: (key: string, value: unknown) => Promise<void>
   /** A view is attached (the desktop attaches after session start). */
-  readonly isShown: () => boolean
+  readonly isShown: () => Promise<boolean>
   readonly list: (dir: string) => Promise<readonly FsListEntry[]>
   readonly read: (path: string) => Promise<string | undefined>
   readonly exists: (path: string) => Promise<boolean>
@@ -187,20 +186,29 @@ export type OnboardIo = {
   /** Agent type to its blurb, as the `agent.offer` hook keeps them. */
   readonly blurbs: () => Readonly<Record<string, string>>
   readonly complete: (req: CompleteRequest) => Promise<string | undefined>
-  readonly askBox: (questions: readonly AskQuestion[]) => Promise<AskAnswers>
-  readonly askOne: (question: string, options: readonly string[]) => Promise<string | undefined>
+  /**
+   * One question in Claude Code's own question box (`$.ui.ask`: a mod's direct AskUserQuestion call is refused by the host),
+   * resolving to the label chosen or text typed under Other; `undefined` when it was dismissed or could not open.
+   */
+  readonly ask: (question: AskQuestion) => Promise<string | undefined>
   /** Goes through the Settings switch path; `false` when it could not be changed from here. */
   readonly setToggle: (field: ToggleField, value: boolean) => Promise<boolean>
   /** The current value of a setting. */
   readonly options: () => Promise<Readonly<Record<ToggleField, boolean>>>
+  /** Clawd's turn is running: a switch change waits until it ends (the Settings switch refuses then too). */
+  readonly isBusy: () => Promise<boolean>
   readonly registerHire: (spec: HireSpec) => Promise<boolean>
+  /** Replaces the payroll's laid-off list, marks the payroll reviewed and keeps its stacks. */
   readonly savePayroll: (laidOff: readonly string[]) => Promise<void>
+  /** The agent types on the laid-off list now: parked earlier, by hand or by a past setup. */
+  readonly parked: () => readonly string[]
   readonly allAgentTypes: () => readonly string[]
   readonly showPeople: () => void
   /** Appends to the prompt box; nothing is sent. */
   readonly fill: (text: string) => Promise<void>
-  readonly suggest: (text: string) => Promise<void>
-  readonly card: () => OnboardCard | undefined
-  readonly setCard: (card: OnboardCard | undefined) => void
+  /** The person's answer, saved in Decisions. */
+  readonly decide: (question: string, said: string) => Promise<void>
+  readonly card: () => Promise<OnboardCard | undefined>
+  readonly setCard: (card: OnboardCard | undefined) => Promise<void>
   readonly toast: (text: string) => void
 }

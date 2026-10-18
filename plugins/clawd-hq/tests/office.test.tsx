@@ -90,7 +90,7 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   expect(opened.some(o => /desk/i.test(o.id))).toBe(false)
   expect(toasts.some(t => /for the CEO|DynamoDB|Launch Friday/.test(t))).toBe(false)
   // No command opens a desk, and no tool files a question on one.
-  expect(commands).toEqual(['office', 'office-demo'])
+  expect(commands).toEqual(['office', 'office-demo', 'office-setup'])
   expect(tools).toEqual(['demo', 'remember', 'step'])
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
@@ -595,7 +595,8 @@ const MANY = [
 
 /** A project with many agent types on offer, and the clock run until the review is made. */
 async function untilReview($: Engine, on: Parameters<typeof host>[0], types = MANY) {
-  const h = host(on, [])
+  // The review waits until setup is done or skipped (tests/onboard-flow.test.tsx covers the wait).
+  const h = host(on, [], { 'onboard:/repo': { step: 'skipped', pending: [], at: 1 } })
   on('agent.offer', () => ({ isOffered: true }) as never)
   on('fs.list', () => ({ value: [{ name: 'package.json', kind: 'file' }] }) as never)
   await $.session.start(START)

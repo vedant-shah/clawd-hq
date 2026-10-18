@@ -12,7 +12,13 @@ import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MEM_TOOL, RECALL, STEP_TOOL } from './constants'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
-import { applyPayroll, resetPayroll, reviewPayroll, setLaidOff } from './payroll'
+import { applyPayroll, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
+import { checkOnboard, chooseOnboard, isSetupBusy, onboardTurnEnd, restartOnboard, savedOf, startOnboard } from './onboard'
+import { ancestorPaths, answerText, breakdownOf, commandsOf, listEntries } from './onboard-adapt'
+import { rehire } from './hire'
+import { PROFILE_BLOCK, profileBlock } from './profile'
+import { PROFILE_KEY } from './onboard-types'
+import type { OnboardCard, OnboardIo, Profile } from './onboard-types'
 import type { PayrollIo } from './payroll'
 import { ROWS_KEY, setToggle } from './configs'
 import type { ConfigField, ConfigIo } from './configs'
@@ -62,6 +68,7 @@ const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
 const know = atom({ plugin: 'clawd-hq', key: 'know' } as const, KNOW0)
 const clawdBrief = atom({ plugin: 'clawd-hq', key: 'brief' } as const, BRIEF0)
+const onboard = atom({ plugin: 'clawd-hq', key: 'onboard' } as const, null as OnboardCard | null)
 
 // Values written by an older version of the mod lack the newer fields: fill them in.
 async function getBoss($: EngineInterface): Promise<Boss> { return { ...BOSS0, ...(await read($, boss)) } }
@@ -292,13 +299,43 @@ const knowIo = ($: EngineInterface): KnowIo => ({
   setCard: fn => update($, know, s => fn({ ...KNOW0, ...s })),
 })
 
+// ---- Setup (hooks/onboard.ts): built per use, so the clock, home folder, agent lists and payroll are read as they are now ----
+
+/** The setup card held this session; only setup's own code writes it, so the loose stored shape is an OnboardCard. */
+const setupCard = async ($: EngineInterface) => ((await read($, onboard)) ?? undefined) as OnboardCard | undefined
+
+const onboardIo = async ($: EngineInterface, opts: BriefingOptions): Promise<OnboardIo> => {
+  const [now, home, config, known, p] = [await $.clock.now(), await homeOf($), await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined), await read($, blurbs), await getPayroll($)]
+  const types = [...new Set([...Object.keys(known), ...Object.keys(await read($, roster))])]
+  return {
+    now: () => now, cwd, home: () => home, configDir: () => config || undefined, blurbs: () => known, allAgentTypes: () => types, parked: () => p.laidOff,
+    get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value),
+    isShown: async () => (await $.session.surfaces().catch(() => [])).length > 0, isBusy: async () => (await getBoss($)).isBusy,
+    list: dir => listEntries(dir, d => $.fs.list(d), path => $.fs.stat(path)), read: path => $.fs.read(path).catch(() => undefined), exists: path => $.fs.exists(path),
+    ancestors: async name => ancestorPaths(await $.fs.ancestors({ names: [name] })),
+    breakdown: async () => breakdownOf(await $.session.usage({ breakdown: 'summary' })), commands: async () => commandsOf(await $.command.list()),
+    complete: async req => answerText(await $.model.complete(req)),
+    ask: q => $.ui.ask(q.question, { options: q.options.map(o => o.label), header: q.header }).catch(() => undefined), // a mod's own AskUserQuestion call is refused: "that is $.ui.ask"
+    setToggle: async (field, value) => (await setToggle(configIo($), field, value)) === undefined, options: async () => ({ chiefOfStaff: opts.isOn, quietChat: opts.isQuiet }),
+    registerHire: ({ name, description, prompt, skills }) => $.agent.register({ name, description, prompt, skills }).then(() => true, () => false),
+    savePayroll: laidOff => savePayroll(payrollIo($), { ...p, laidOff: [...laidOff], isReviewed: true }), // its stacks kept
+    showPeople: () => void raise(paneIo($), 'people'), fill: async text => { await $.prompt.fill({ text, mode: 'append' }) }, toast: text => $.ui.toast(text),
+    decide: (question, said) => saveBoxAnswer(memoryIo($), question, said),
+    card: () => setupCard($), setCard: async card => { await update($, onboard, () => card ?? null) },
+  }
+}
+
 // ---- The frame clock ----
 
-async function onFrame($: EngineInterface, frames: number) {
+async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions) {
   const [list, f, b, t0] = [await read($, staff), await getFx($), await getBoss($), await read($, tick)]
-  if (frames % 8 === 0) await reconcile($)
+  if (frames % 8 === 0) {
+    await reconcile($)
+    const isDrawn = (await $.session.surfaces().catch(() => [])).length > 0 // the desktop attaches after session start
+    if (isDrawn && !(await read($, onboard))) void onboardIo($, opts).then(checkOnboard).catch(() => undefined) // slow steps never hold a frame
+  }
   if (frames % 25 === 0) {
-    await reviewPayroll(payrollIo($))
+    if (!isSetupBusy(await savedOf({ cwd, get: async key => (await $.store.get(key)) as never }))) await reviewPayroll(payrollIo($))
     // The model takes its time: the frames go on meanwhile, and a recap that fails is simply not shown.
     void maybeRecap(recapIo($)).catch(() => undefined)
   }
@@ -316,7 +353,7 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
     artifacts: await read($, artifacts), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
-    brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options,
+    brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options, onboard: await setupCard($),
   }
 }
 
@@ -352,6 +389,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     showLog: isOpen => showLog($, isOpen),
     setConfig: (field, value) => setConfig($, field, value),
     scrollClawd: async (part, dir) => { const text = (await read($, clawdBrief))[part]?.text ?? ''; await setFx($, f => ({ ...f, scroll: scrolled(f.scroll, part, text, dir) })) },
+    choose: async button => { void chooseOnboard(await onboardIo($, opts), button) }, // a step can wait on the question box or a model: the press does not
     ...knowActions(knowIo($)),
   }
 }
@@ -447,6 +485,9 @@ export const register: Register = (on, options) => {
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
       ['remember tool', () => $.tool.register(REMEMBER_SPEC)],
       ['step tool', () => $.tool.register(STEP_SPEC)],
+      ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames; answers left waiting applied
+      ['skill hires', async () => rehire(await onboardIo($, brief))], // the engine forgets registered agents each session
+      ['/office-setup', () => $.command.register({ name: 'office-setup', description: `Set up ${BRAND}: two questions, then a starting team for this project` })],
       ['roster', () => enroll($, 'general-purpose', 0)],
       ['meters', () => startGauge(gaugeIo($))],
       ['instructions', () => refreshTab($, brief, true)],
@@ -459,7 +500,7 @@ export const register: Register = (on, options) => {
       // A frame that is still running (a slow agent list) is not stacked on.
       if (isFraming) return
       isFraming = true
-      void onFrame($, frames).finally(() => { isFraming = false })
+      void onFrame($, frames, brief).finally(() => { isFraming = false })
     })
 
     const all = [...failed, ...(await runEach([['agent list', () => reconcile($)]]))]
@@ -503,6 +544,12 @@ export const register: Register = (on, options) => {
     if (e.reason === 'clear' || e.reason === 'resume') await resetRecap(recapIo($))
     await forgetKnow(knowIo($))
     return next(e)
+  })
+
+  on('command.run', { command: 'office-setup' }, async $ => {
+    await openPanes(paneIo($), true)
+    void restartOnboard(await onboardIo($, brief)).catch(() => undefined) // the question box is not waited for
+    return { text: `${BRAND} setup is on the Office tab: two questions, then a starting team for this project.` }
   })
 
   on('command.run', { command: 'office-demo' }, async $ => {
@@ -643,7 +690,8 @@ export const register: Register = (on, options) => {
   on('prompt.context', async ($, e, next) => {
     const r = await next(e)
     const entries = (await loadMemory(memoryIo($))).slice(-RECALL)
-    return { ...r, blocks: [...r.blocks, { name: 'clawdMemory', text: memoryBlock(entries) }] }
+    const profile = profileBlock((await $.store.get(PROFILE_KEY).catch(() => undefined)) as Profile | undefined) // who the person is, from setup
+    return { ...r, blocks: [...r.blocks, { name: 'clawdMemory', text: memoryBlock(entries) }, ...(profile ? [{ name: PROFILE_BLOCK, text: profile }] : [])] }
   })
 
   on('turn.start', async ($, e, next) => {
@@ -676,6 +724,7 @@ export const register: Register = (on, options) => {
       await askAgain(paneIo($))
       const now = await $.clock.now()
       await setBoss($, b => withTurnEnd(turnEndBoss(b, e.reason, now), e))
+      void onboardIo($, brief).then(onboardTurnEnd).catch(() => undefined) // setup's answers that waited for the turn to end
       // The point Claude Code compacts at can move with the model: read again, never waited for. The record of the button follows it.
       void noteThreshold(gaugeIo($)).then(() => keepCoffeeRecord(coffeeDebugIo($), 'turn'))
       // An edit Claude just made shows in the Settings tab, marked as waiting for the next session.

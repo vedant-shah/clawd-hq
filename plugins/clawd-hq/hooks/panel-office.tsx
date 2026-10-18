@@ -10,6 +10,7 @@ import { effortLabel } from './usage'
 import { stepCount } from './steps'
 import { overlay } from './pixels'
 import { knowSection } from './panel-know'
+import { onboardSection } from './panel-onboard'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import type { Employee } from '../types'
@@ -164,6 +165,7 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
     <kit.Box flexDirection="column" gap={1}>
       {clawdCard(ctx)}
       {knowSection(kit, data, actions)}
+      {onboardSection(kit, data.onboard, { choose: actions.choose })}
       {floor(ctx)}
       {artifactDesk(ctx)}
     </kit.Box>

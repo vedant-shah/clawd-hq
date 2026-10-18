@@ -4,6 +4,7 @@ import type { ClawdActions } from './clawd-edit'
 import type { ConfigField } from './configs'
 import type { BriefPart, BriefingOptions } from './instructions'
 import type { KnowActions } from './know-check'
+import type { OnboardButton, OnboardCard } from './onboard-types'
 
 export type PanelData = {
   staff: Employee[]
@@ -24,6 +25,8 @@ export type PanelData = {
   brief: ClawdBrief
   /** The plugin's on/off configs and voice file path as this load of the plugin got them. */
   options: BriefingOptions
+  /** The setup step drawn under Clawd's card; none, or a finished one, draws nothing. */
+  onboard?: OnboardCard
 }
 
 export type PanelActions = KnowActions & ClawdActions & {
@@ -43,4 +46,6 @@ export type PanelActions = KnowActions & ClawdActions & {
   setConfig: (field: ConfigField, value: boolean) => unknown
   /** ▼ (1) or ▲ (-1) pressed under a file's box in Settings: its window moves about 10 lines. */
   scrollClawd: (part: BriefPart, dir: 1 | -1) => unknown
+  /** A button on the setup card pressed: the whole button, so a role choice carries its label. */
+  choose: (button: OnboardButton) => unknown
 }

@@ -126,10 +126,11 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   })
   // What the engine answers for the session's start; a test moves it as a new session would.
   // `threshold` is where Claude Code compacts by itself: told only to a call that asks for the breakdown, as the engine does; unset, auto-compact is off.
-  const session = { startedAt: 0, threshold: undefined as number | undefined }
+  // `loaded` is the agents and skills the breakdown lists (setup reads them); unset, it lists none, as before.
+  const session = { startedAt: 0, threshold: undefined as number | undefined, loaded: {} as Record<string, unknown> }
   on('session.usage', (_$, e) => {
     const isBreakdown = (e as { breakdown?: string }).breakdown !== undefined
-    const breakdown = isBreakdown ? { breakdown: { autoCompactThreshold: session.threshold, isAutoCompactEnabled: session.threshold !== undefined } } : {}
+    const breakdown = isBreakdown ? { breakdown: { autoCompactThreshold: session.threshold, isAutoCompactEnabled: session.threshold !== undefined, ...session.loaded } } : {}
     return { value: { startedAt: session.startedAt, context: { window: 1_000_000, ...breakdown }, rateLimits: [] } } as never
   })
   // A compaction asked for by the plugin: what it was asked, and how it ends. `skip`: a hook's veto; `error`: a call that rejects; `hold`: one that waits.

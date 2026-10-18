@@ -3,7 +3,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { SKILLS_NOTE, onboardSection } from '../hooks/panel-onboard'
-import { OFFER_ASK, OFFER_LINE } from '../hooks/onboard-cards'
+import { OFFER_LINE } from '../hooks/onboard-cards'
 import type { OnboardButton, OnboardCard } from '../hooks/onboard-types'
 import { ROLES } from '../hooks/onboard-types'
 import { kitOf } from '../hooks/panel-kit'
@@ -51,7 +51,7 @@ const TEAM = {
 const btn = (action: OnboardButton['action'], label: string, isPrimary?: true): OnboardButton => (isPrimary ? { action, label, isPrimary } : { action, label })
 
 const CARDS: Record<string, OnboardCard> = {
-  offer: { step: 'offer', lines: [OFFER_LINE, OFFER_ASK], buttons: [btn('start', 'Start', true), btn('later', 'Later'), btn('skip', 'Skip')] },
+  offer: { step: 'offer', lines: [OFFER_LINE], buttons: [btn('start', 'Start', true), btn('later', 'Later'), btn('skip', 'Skip')] },
   intro: { step: 'intro', lines: ['I am Clawd. I run your team and hand work to specialists.', 'First I will look around this folder.'], buttons: [btn('yes', 'Yes', true), btn('no', 'No')] },
   scan: { step: 'scan', lines: [], buttons: [] },
   fallback: { step: 'scan', lines: ['I could not tell what you do here. Which fits best?'], buttons: ROLES.map(r => btn('changeRole', r)) },
@@ -82,9 +82,8 @@ test('the start card offers Start, Later and Skip, and says what Clawd does with
     const ui = await draw($, surface, CARDS.offer)
     const all = await textsOf(ui)
     expect(all).toContain(OFFER_LINE)
-    expect(all).toContain(OFFER_ASK)
+    expect(all).not.toMatch(/Want me to set up a starting team/)
     expect(OFFER_LINE).toMatch(/Tell me what you need/)
-    expect(OFFER_ASK).toMatch(/Want me to set up a starting team/)
     expect(all.join('\n')).not.toMatch(/Opus|\$0\.20|costs about/)
     expect(await labelsOf(ui)).toEqual(['Start', 'Later', 'Skip'])
     await ui.press({ key: 'onboard-later' })

@@ -1,5 +1,16 @@
 import { expect, test } from 'claude-code/testing'
-import { RECAP_AFTER_MS, RECAP_CHARS, RECAP_MIN_TURNS, RECAP_PROMPT, isRecapDue, recapLine } from '../hooks/recap'
+import { RECAP_AFTER_MS, RECAP_CHARS, RECAP_MIN_TURNS, RECAP_PROMPT, isRecapDue, recapLine, splitRecap } from '../hooks/recap'
+
+test('a recap splits at the sentence that starts with Next, and only there', () => {
+  expect(splitRecap('Designing your new TV home screen. Next, check the updated mock once the agent finishes.')).toEqual({
+    head: 'Designing your new TV home screen.',
+    next: 'check the updated mock once the agent finishes.',
+  })
+  expect(splitRecap('Fixed it. NEXT: add tests.')).toEqual({ head: 'Fixed it.', next: 'add tests.' })
+  expect(splitRecap('Next: add tests.')).toEqual({ head: '', next: 'add tests.' })
+  expect(splitRecap('Fixing the next screen, next to the menu.')).toEqual({ head: 'Fixing the next screen, next to the menu.', next: undefined })
+  expect(splitRecap('Fixed the login bug.')).toEqual({ head: 'Fixed the login bug.', next: undefined })
+})
 
 const MIN = 60_000
 const quiet = { isOn: true, isBusy: false, idleSince: 1_000, now: 1_000 + 3 * MIN, turns: 3, lastFor: 0 }

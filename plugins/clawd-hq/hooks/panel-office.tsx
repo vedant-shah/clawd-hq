@@ -8,6 +8,7 @@ import { AMBER, GREEN, RED, givenName, hash } from './office'
 import { atWork, deskWords, modelLabel, recentFailures, statusOf, titled, workLine } from './panel-model'
 import { effortLabel } from './usage'
 import { stepCount } from './steps'
+import { splitRecap } from './recap'
 import { overlay } from './pixels'
 import { knowSection } from './panel-know'
 import { onboardSection } from './panel-onboard'
@@ -62,12 +63,22 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
         {!boss.isBusy && boss.recap !== undefined && (
           <Box key="recap" marginTop={kit.isTerminal ? 1 : 0} flexDirection="column">
             <Text bold dimColor>WHERE WE LEFT OFF</Text>
-            <Text wrap="wrap">{boss.recap}</Text>
+            {recapParts(kit, boss.recap)}
           </Box>
         )}
       </Box>
     </Box>
   )
+}
+
+/** The recap's lines: what we are on, then the next step on its own line with "Next:" in bold; one line when there is no next step. */
+function recapParts(kit: Kit, recap: string) {
+  const { Text } = kit
+  const { head, next } = splitRecap(recap)
+  return [
+    head !== '' && <Text key="head" wrap="wrap">{head}</Text>,
+    next !== undefined && <Text key="next" wrap="wrap"><Text bold>Next:</Text>{` ${next}`}</Text>,
+  ]
 }
 
 /** How far along a specialist says it is: a small bar and "Step 2 of 5", drawn only once it has reported a plan; never a guess before. */

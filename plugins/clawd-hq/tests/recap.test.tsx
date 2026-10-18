@@ -45,7 +45,9 @@ test('after three turns and three quiet minutes, Clawd\'s card says where things
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await ui.find({ type: 'Text', text: /^WHERE WE LEFT OFF$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^Login bug fixed and tested\. Next: review the pull request\.$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Login bug fixed and tested\.$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Next:$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Next: review the pull request\.$/ })).toBeDefined()
     expect(await ui.find({ key: 'resume' })).toBeUndefined()
     await ui.unmount()
   }

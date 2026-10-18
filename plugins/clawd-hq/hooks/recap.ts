@@ -45,6 +45,16 @@ export function recapLine(text: string): string | undefined {
   return fit(text.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' '), RECAP_CHARS) || undefined
 }
 
+/** A sentence that starts with "Next," or "Next:" (any case), at the start of the text or after a sentence end. */
+const NEXT_SENTENCE = /(?:^|(?<=[.!?]\s))next[,:]\s*/i
+
+/** The recap in two parts for the card: what we are on, and the next step, which is drawn on its own line. */
+export function splitRecap(text: string): { head: string; next: string | undefined } {
+  const at = NEXT_SENTENCE.exec(text)
+  if (at === null) return { head: text, next: undefined }
+  return { head: text.slice(0, at.index).trim(), next: text.slice(at.index + at[0].length).trim() }
+}
+
 // ---- Asking for one: the counts below belong to this session, the calls come in as `io` ----
 
 /** Whether the recap may be made here, Clawd's turns this session, and the turn count the last one was asked at. */

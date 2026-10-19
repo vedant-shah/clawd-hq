@@ -31,7 +31,7 @@ async function rowOf($: Engine, surface: 'terminal' | 'desktop') {
 test('the step tool is registered with the demo and remember tools', async ($, on) => {
   const { tools } = host(on)
   await $.session.start(START)
-  expect(tools).toEqual(['demo', 'remember', 'step'])
+  expect(tools).toEqual(['demo', 'remember', 'step', 'team_pick'])
 })
 
 test('every hire\'s brief carries the line that asks for steps, whatever its type', async ($, on) => {
@@ -183,7 +183,8 @@ test('the step tool is registered in front, not behind a search', async ($, on) 
   const { toolSpecs } = host(on)
   await $.session.start(START)
   expect(toolSpecs.find(t => t.name === 'step')?.isDeferred).toBe(false)
-  expect(toolSpecs.filter(t => t.name !== 'step').every(t => t.isDeferred === undefined)).toBe(true)
+  expect(toolSpecs.find(t => t.name === 'team_pick')?.isDeferred).toBe(false) // the scout has no search tool to find it with
+  expect(toolSpecs.filter(t => t.name !== 'step' && t.name !== 'team_pick').every(t => t.isDeferred === undefined)).toBe(true)
 })
 
 test('after a report the row shows a small bar and the count: line glyphs on the terminal, a thin image elsewhere', async ($, on) => {

@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import type { CompleteRequest, Helper, PastUse, ProjectFacts } from '../hooks/onboard-types'
+import type { CompleteRequest, Helper, PastUse, ProjectFacts, ScoutCheck, ScoutReport } from '../hooks/onboard-types'
 import { parseReply, pickTeam, teamFrom } from '../hooks/team'
 import { candidateList } from '../hooks/team-rules'
 
@@ -22,20 +22,28 @@ const helpers: Helper[] = [
   helper('shadcn', { kind: 'skill', isOwn: true, plugin: undefined, source: 'user' }), helper('pptx', { kind: 'skill' }),
 ]
 const use: PastUse = { agents: { 'claude-code-guide': 3 }, skills: {}, files: 4, skipped: 0 }
-const cands = candidateList(helpers, use, facts)
+const cands = candidateList(helpers, use)
+const CORE = ['clawd-hq:core-planner', 'clawd-hq:core-builder', 'clawd-hq:core-reviewer', 'clawd-hq:core-researcher']
+const ownOnly = <T extends { name: string }>(picks: readonly T[]) => picks.filter(p => !p.name.startsWith('clawd-hq:'))
 
 type Reply = string | undefined | Error
-/** A fake io: each model call takes the next canned reply; every request is kept. */
-const fakeIo = (replies: Reply[]) => {
+/** A fake io: each model call takes the next canned reply; every request is kept. The scout answers `scout` (nothing, by default). */
+const fakeIo = (replies: Reply[], scout: ScoutReport | undefined | Error = undefined) => {
   const asked: CompleteRequest[] = []
+  const scouted: Array<{ brief: string; check: ScoutCheck }> = []
   const queue = [...replies]
   return {
-    asked,
+    asked, scouted, cwd: '/repo',
     complete: async (req: CompleteRequest) => {
       asked.push(req)
       const next = queue.shift()
       if (next instanceof Error) throw next
       return next
+    },
+    spawnScout: async (brief: string, check: ScoutCheck) => {
+      scouted.push({ brief, check })
+      if (scout instanceof Error) throw scout
+      return scout
     },
   }
 }
@@ -72,7 +80,7 @@ test('the receipts come from facts, never from the model\'s own words', async ()
   ])
   const team = await pickTeam(fakeIo([sneaky]), facts, use, helpers, undefined)
   expect(JSON.stringify(team)).not.toContain('SECRET-MODEL-WORDS')
-  expect(team.picks.map(p => [p.name, p.receipt])).toEqual([
+  expect(ownOnly(team.picks).map(p => [p.name, p.receipt])).toEqual([
     ['ecc:architect', 'from the ecc plugin'],
     ['ecc:tdd-guide', 'used 42× here · fits: tests found (vitest.config.ts)'],
     ['ecc:code-reviewer', 'used 43× here · named in your instructions'],
@@ -122,28 +130,29 @@ test('twelve picks are cut to the seat limits and to eight in all, in the order 
   expect(team.empty).toEqual(['Find out'])
 })
 
-test('an empty seat is listed for the card', async () => {
+test('a core seat nothing fits is filled by Clawd HQ\'s own helper; the Specialist seat stays empty and is listed for the card', async () => {
   const team = await pickTeam(fakeIo([json([{ seat: 'Check', name: 'ecc:code-reviewer' }])]), facts, use, helpers, undefined)
-  expect(team.picks.map(p => p.name)).toEqual(['ecc:code-reviewer'])
-  expect(team.empty).toEqual(['Plan', 'Make', 'Find out', 'Specialist'])
+  expect(team.picks.map(p => [p.seat, p.name, p.kind])).toEqual([
+    ['Plan', CORE[0]!, 'agent'], ['Make', CORE[1]!, 'agent'], ['Check', 'ecc:code-reviewer', 'agent'], ['Find out', CORE[3]!, 'agent'],
+  ])
+  expect(team.picks.filter(p => p.name.startsWith('clawd-hq:')).every(p => /Clawd HQ/.test(p.receipt) && /nothing installed/i.test(p.receipt))).toBe(true)
+  expect(team.empty).toEqual(['Specialist'])
 })
 
-test('an Opus error, no answer, bad JSON or only unknown names each hand the same question to Haiku', async () => {
+test('an Opus error, no answer, bad JSON or only unknown names each fall to the rules after the one Opus call', async () => {
   for (const first of [new Error('api_error'), undefined, 'not json at all', json([{ seat: 'Plan', name: 'ecc:nobody' }])]) {
     const io = fakeIo([first, good])
     const team = await pickTeam(io, facts, use, helpers, undefined)
-    expect(io.asked.map(r => r.model)).toEqual(['opus', 'haiku'])
-    expect(io.asked[1]!.prompt).toBe(io.asked[0]!.prompt)
-    expect(io.asked[1]!.maxTokens).toBe(2000)
-    expect(team.by).toBe('haiku')
-    expect(team.picks).toHaveLength(7)
+    expect(io.asked.map(r => r.model)).toEqual(['opus'])
+    expect(team.by).toBe('rules')
+    expect(team.picks.length).toBeGreaterThan(0)
   }
 })
 
-test('when both models fail, the rules pick the team', async () => {
-  const io = fakeIo([new Error('overloaded'), '{"picks": []}'])
+test('when Opus fails, the rules pick the team', async () => {
+  const io = fakeIo([new Error('overloaded')])
   const team = await pickTeam(io, facts, use, helpers, undefined)
-  expect(io.asked.map(r => r.model)).toEqual(['opus', 'haiku'])
+  expect(io.asked.map(r => r.model)).toEqual(['opus'])
   expect(team.by).toBe('rules')
   expect(team.picks.map(p => `${p.seat}:${p.name}`)).toEqual([
     'Plan:ecc:planner', 'Plan:ecc:architect', 'Make:ecc:tdd-guide', 'Check:ecc:code-reviewer', 'Check:ecc:security-reviewer',
@@ -156,7 +165,70 @@ test('with nothing installed or used there is nothing to ask a model about', asy
   const io = fakeIo([good])
   const team = await pickTeam(io, facts, { agents: {}, skills: {}, files: 0, skipped: 0 }, [], undefined)
   expect(io.asked).toHaveLength(0)
-  expect(team).toEqual({ picks: [], empty: ['Plan', 'Make', 'Check', 'Find out', 'Specialist'], by: 'rules' })
+  expect(io.scouted).toHaveLength(0)
+  expect(team.by).toBe('rules')
+  expect(team.picks.map(p => [p.seat, p.name])).toEqual([['Plan', CORE[0]], ['Make', CORE[1]], ['Check', CORE[2]], ['Find out', CORE[3]]])
+  expect(team.empty).toEqual(['Specialist'])
+})
+
+// ---- the scout ----
+
+const scoutSays = (picks: unknown[], reads: string[] = ['/repo/package.json']): ScoutReport => ({ picks: { picks }, reads })
+
+test('the scout is asked first; its picks become the team, with its reasons on the card, and Opus is never called', async () => {
+  const io = fakeIo([good], scoutSays([
+    { seat: 'Plan', name: 'ecc:planner', reason: 'The README lists a roadmap.', evidence: 'package.json' },
+    { seat: 'Make', name: 'tdd-guide', reason: 'Tests run with vitest.', evidence: '/repo/package.json' },
+    { seat: 'Check', name: 'ecc:code-reviewer', reason: 'Cites a file it never opened.', evidence: 'README.md' },
+  ]))
+  const team = await pickTeam(io, facts, use, helpers, 'Tool or plugin builder')
+  expect(io.asked).toHaveLength(0)
+  expect(io.scouted).toHaveLength(1)
+  expect(team.by).toBe('scout')
+  expect(ownOnly(team.picks).map(p => [p.seat, p.name, p.receipt])).toEqual([
+    ['Plan', 'ecc:planner', 'The README lists a roadmap. (package.json)'],
+    ['Make', 'ecc:tdd-guide', 'Tests run with vitest. (package.json)'],
+    ['Check', 'ecc:code-reviewer', 'used 43× here · named in your instructions'], // its reason named a file the scout never opened: facts instead
+  ])
+})
+
+test('the brief the scout gets holds the full candidate list, and its check sends bad names back', async () => {
+  const io = fakeIo([], scoutSays([{ seat: 'Plan', name: 'ecc:planner' }]))
+  await pickTeam(io, facts, use, helpers, undefined)
+  const [{ brief, check }] = io.scouted as [{ brief: string; check: ScoutCheck }]
+  expect(brief).toContain('ecc:python-reviewer')
+  expect(brief).toContain('/repo')
+  expect(check(scoutSays([{ seat: 'Plan', name: 'ecc:planner' }]).picks, [])).toBeUndefined()
+  expect(check({ picks: [{ seat: 'Plan', name: 'ecc:nobody' }] }, [])).toMatch(/ecc:nobody/)
+  expect(check({ nope: 1 }, [])).toEqual(expect.any(String))
+})
+
+test('a scout that gives nothing, fails, or names nobody on the list falls to the one Opus call', async () => {
+  for (const scout of [undefined, new Error('could not start'), scoutSays([{ seat: 'Plan', name: 'ecc:nobody' }]), { picks: 'garbage', reads: [] }] as const) {
+    const io = fakeIo([good], scout)
+    const team = await pickTeam(io, facts, use, helpers, undefined)
+    expect(io.scouted).toHaveLength(1)
+    expect(io.asked.map(r => r.model)).toEqual(['opus'])
+    expect(team.by).toBe('opus')
+    expect(team.picks).toHaveLength(7)
+  }
+})
+
+test('with a scout and Opus both failing, the rules pick and the core four fill what they leave', async () => {
+  const io = fakeIo([undefined])
+  const team = await pickTeam(io, facts, use, helpers, undefined)
+  expect(io.scouted).toHaveLength(1)
+  expect(io.asked.map(r => r.model)).toEqual(['opus'])
+  expect(team.by).toBe('rules')
+  expect(ownOnly(team.picks).length).toBeGreaterThan(0)
+  expect(team.picks.map(p => p.seat)).toEqual(expect.arrayContaining(['Plan', 'Make', 'Check', 'Find out']))
+})
+
+test('the scout\'s team is cut to the seat limits like any other, and core seats it left empty are filled', async () => {
+  const io = fakeIo([], scoutSays([{ seat: 'Check', name: 'ecc:code-reviewer' }, { seat: 'Check', name: 'ecc:security-reviewer' }, { seat: 'Check', name: 'ecc:silent-failure-hunter' }]))
+  const team = await pickTeam(io, facts, use, helpers, undefined)
+  expect(team.picks.filter(p => p.seat === 'Check').map(p => p.name)).toEqual(['ecc:code-reviewer', 'ecc:security-reviewer'])
+  expect(team.picks.map(p => p.seat)).toEqual(['Plan', 'Make', 'Check', 'Check', 'Find out'])
 })
 
 test('a huge reply is not read', () => {

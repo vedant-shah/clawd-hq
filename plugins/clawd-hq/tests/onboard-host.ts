@@ -51,12 +51,13 @@ type Box = { mode: 'answer' | 'deny' | 'throw'; answers: Record<string, string> 
 
 /** Everything setup calls, answered and recorded. `opus` and `haiku` are the team answers (undefined: no answer). */
 export function onboardHost(on: On, store: Record<string, unknown> = {}) {
-  const h = host(on, [], store)
+  const agentList: unknown[] = [] // the agents the engine lists; a started scout joins it, as it would
+  const h = host(on, agentList, store)
   for (const [path, text] of Object.entries(PROJECT)) h.files.set(path, text)
   h.session.loaded = LOADED
   const models = { opus: OPUS_TEAM as string | undefined, haiku: undefined as string | undefined, workflow: WORKFLOW_REPLY as string | undefined }
   const box: Box = { mode: 'answer', answers: { [RUN_Q]: 'Yes (Recommended)', [QUIET_Q]: 'No' } }
-  const calls = { models: [] as Array<{ model: string; prompt: string }>, boxes: 0, asked: [] as Array<{ question: string; labels: string[] }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], registered: [] as Array<{ name: string; skills?: readonly string[] }>, configSets: [] as unknown[] }
+  const calls = { models: [] as Array<{ model: string; prompt: string }>, boxes: 0, asked: [] as Array<{ question: string; labels: string[] }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, configSets: [] as unknown[], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
   const children = (dir: string) => {
     const prefix = `${dir.replace(/\/+$/, '')}/`
     const names = new Map<string, boolean>()
@@ -70,7 +71,14 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     return [...names].map(([name, isDir]) => ({ name, kind: isDir ? 'dir' : 'file', size: isDir ? 0 : (h.files.get(`${prefix}${name}`) ?? '').length }))
   }
   on('fs.list', (_$, e) => ({ value: children((e as { path: string }).path) }) as never)
-  on('fs.stat', (_$, e) => ({ value: { kind: 'file', size: (h.files.get((e as { path: string }).path) ?? '').length, mtimeMs: 0, isLink: false } }) as never)
+  // `links`: a path that really lands somewhere else, as a symbolic link would. A path asked to resolve lands where it is, if it is a file here or the folder of some.
+  const links: Record<string, string> = {}
+  on('fs.stat', (_$, e) => {
+    const { path, resolve } = e as { path: string; resolve: boolean }
+    const isThere = h.files.has(path) || path === CWD || [...h.files.keys()].some(p => p.startsWith(`${path.replace(/\/+$/, '')}/`))
+    const real = links[path] ?? (isThere ? path : undefined)
+    return { value: { kind: 'file', size: (h.files.get(path) ?? '').length, mtimeMs: 0, isLink: links[path] !== undefined, ...(resolve && real !== undefined ? { realPath: real } : {}) } } as never
+  })
   on('fs.ancestors', (_$, e) => ({ value: (e as { names: string[] }).names.flatMap(name => (h.files.has(`${CWD}/${name}`) ? [{ dir: CWD, name, content: h.files.get(`${CWD}/${name}`), parts: [] }] : [])) }) as never)
   on('env.get', (_$, e) => ({ value: (e as { name: string }).name === 'HOME' ? HOME : undefined }) as never)
   on('model.complete', (_$, e) => {
@@ -80,13 +88,21 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     return { value: text === undefined ? { isAnswered: false, reason: 'error' } : { isAnswered: true, text, usage: {} } } as never
   })
   on('tool.call', (_$, e) => {
+    // What reached the tools: the calls the plugin let through (a rewritten input shows as it was rewritten).
+    if ((e as { tool: string }).tool !== 'AskUserQuestion') calls.tools.push({ tool: (e as { tool: string }).tool, agentId: (e as { agentId?: string }).agentId, input: e as Record<string, unknown> })
     if ((e as { tool: string }).tool !== 'AskUserQuestion') return { result: 'ok' } as never
     calls.boxes += 1
     for (const q of (e as { questions?: Array<{ question: string; options: Array<{ label: string }> }> }).questions ?? []) calls.asked.push({ question: q.question, labels: q.options.map(o => o.label) })
     if (box.mode === 'throw') throw new Error('no question box here')
     return (box.mode === 'deny' ? { deny: 'not available' } : { result: { answers: box.answers } }) as never
   })
-  on('agent.register', (_$, e) => (calls.registered.push(e as never), { value: { agent: `clawd-hq:${(e as { name: string }).name}` } }) as never)
+  // The scout: `mode` 'deny' refuses its start (setup falls to Opus); 'script' starts it and runs `script` as the scout would, with the id it was given (the test makes the scout's calls through its own engine).
+  const scout = {
+    mode: 'deny' as 'deny' | 'script' | 'silent', id: 'sc1', spawned: [] as Array<{ prompt: string; subagentType?: string }>,
+    script: async (_id: string): Promise<void> => undefined,
+    /** The scout's definition, as the plugin registered it at session start. */
+    get registered() { return h.agentSpecs.filter(s => s.name === 'scout') },
+  }
   on('command.list', () => ({ value: [{ name: 'ecc:tdd-workflow', description: 'Writes tests first, then the code.', source: 'plugin' }] }) as never)
   on('prompt.fill', (_$, e) => (calls.fills.push((e as { text: string }).text), { isFilled: true }) as never)
   on('prompt.submit', (_$, e) => (calls.sent.push((e as { text: string }).text), { text: (e as { text: string }).text }) as never)
@@ -94,11 +110,25 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   on('config.list', () => ({ value: [] }) as never)
   on('config.set', (_$, e) => (calls.configSets.push(e), { value: (e as { value: unknown }).value }) as never)
   on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
+  on('agent.spawn', (_$, e) => {
+    // A start the plugin makes itself reaches the host in the Agent tool's own spelling (`subagent_type`); a hire in the event's (`subagentType`).
+    const spawn = e as { prompt: string; subagentType?: string; subagent_type?: string }
+    const type = spawn.subagentType ?? spawn.subagent_type
+    if (type !== 'clawd-hq:scout') return { model: 'claude-opus-5-5', agentId: 'a1' }
+    scout.spawned.push({ prompt: spawn.prompt, subagentType: type })
+    if (scout.mode === 'deny') return { deny: 'no scout in this host' } as never
+    agentList.push({ id: scout.id, type: 'clawd-hq:scout', description: 'Look around the project', status: 'running' })
+    // The scout works on its own, after its start has returned.
+    if (scout.mode === 'script') void (async () => { await realWait(30); await scout.script(scout.id) })()
+    return { model: 'claude-sonnet-5-5', agentId: scout.id }
+  })
   on('agent.offer', () => ({ isOffered: true }) as never)
-  return { ...h, models, box, calls }
+  return { ...h, models, box, calls, scout, links }
 }
 export type OnboardHost = ReturnType<typeof onboardHost>
+
+/** Real time passing, for work that starts on its own after a call returns (the scout's moves). The mock clock is not moved. */
+export const realWait = (ms: number) => new Promise<void>(done => (globalThis as unknown as { setTimeout: (fn: () => void, ms: number) => void }).setTimeout(done, ms))
 
 /** Lets background work run a round at a time without moving the clock. */
 export const settle = async (h: OnboardHost, rounds = 60) => { for (let i = 0; i < rounds; i += 1) await h.clock.advance(0) }

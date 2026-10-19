@@ -91,7 +91,7 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   expect(toasts.some(t => /for the CEO|DynamoDB|Launch Friday/.test(t))).toBe(false)
   // No command opens a desk, and no tool files a question on one.
   expect(commands).toEqual(['office', 'office-demo', 'office-setup'])
-  expect(tools).toEqual(['demo', 'remember', 'step'])
+  expect(tools).toEqual(['demo', 'remember', 'step', 'team_pick'])
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     const text = JSON.stringify(await ui.drawn())

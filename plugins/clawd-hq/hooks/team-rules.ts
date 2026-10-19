@@ -18,8 +18,8 @@ export type Candidate = {
   readonly isNamed: boolean
   readonly isOwn: boolean
 }
-/** A seat and a name, before the limits and the list are checked. */
-export type RawPick = { readonly seat: Seat; readonly name: string }
+/** A seat and a name, before the limits and the list are checked. `reason` is the scout's own words, kept only when they rest on a file it opened. */
+export type RawPick = { readonly seat: Seat; readonly name: string; readonly reason?: string }
 
 /** Always on, never on a seat. */
 export const BUILTINS: ReadonlySet<string> = new Set(['general-purpose', 'Explore', 'Plan', 'statusline-setup'])
@@ -120,7 +120,7 @@ function onePerId(list: readonly Candidate[]): readonly Candidate[] {
 }
 
 /** Everything the model may pick from: no field cut and no seat cut, only built-in agents, skills that need the person, tools and obvious noise left out. */
-export function candidateList(helpers: readonly Helper[], use: PastUse, facts: ProjectFacts): readonly Candidate[] {
+export function candidateList(helpers: readonly Helper[], use: PastUse): readonly Candidate[] {
   const installed = helpers.map(h => fromHelper(h, use)).filter(c => isAllowed(c.id) && (isKept(c) || !isNoise(c)))
   const known = new Set(helpers.flatMap(h => [idOf(h), h.name, bare(h.name)]))
   return onePerId([...installed, ...notOnDisk(use, known)].filter(c => !wantsPerson(c) && !isHandTool(c)))

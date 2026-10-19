@@ -114,6 +114,9 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const commands: string[] = []
   const tools: string[] = []
   on('command.register', (_$, e) => (commands.push((e as { name: string }).name), { value: undefined }) as never)
+  /** The agent types the plugin defined, as it gave them: its setup scout at session start, and the skill hires setup makes. */
+  const agentSpecs: Array<{ name: string; skills?: readonly string[] }> = []
+  on('agent.register', (_$, e) => (agentSpecs.push(e as never), { value: { agent: `clawd-hq:${(e as { name: string }).name}` } }) as never)
   /** The same registrations with the placement each asked for. */
   const toolSpecs: Array<{ name: string; isDeferred?: boolean }> = []
   on('tool.register', (_$, e) => {
@@ -149,5 +152,5 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   /** The plugin closing a pane: the ids it asked for, then the same as the person's close. */
   const closed: string[] = []
   on('ui.close', (_$, e) => (closed.push((e as { id: string }).id), closePane((e as { id: string }).id), { value: undefined }) as never)
-  return { clock, opened, closed, toasts, session, compacts, compact, panes, closePane, fail, front, focus, files, disk, saved, kv, commands, tools, toolSpecs }
+  return { clock, opened, closed, toasts, session, compacts, compact, panes, closePane, fail, front, focus, files, disk, saved, kv, commands, tools, toolSpecs, agentSpecs }
 }

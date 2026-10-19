@@ -70,8 +70,8 @@ export const TEAM_LIMIT = 8
 /** One hire. `receipt` is built from facts only ("used 12× here", "named in CLAUDE.md"). */
 export type Pick = { readonly seat: Seat; readonly name: string; readonly kind: 'agent' | 'skill'; readonly receipt: string }
 
-/** Who chose the team: Opus first, then Haiku, then the rules. */
-export type TeamBy = 'opus' | 'haiku' | 'rules'
+/** Who chose the team: the scout first, then one Opus call, then the rules. */
+export type TeamBy = 'scout' | 'opus' | 'rules'
 /** The starting team, kept at `team:<folder>` with the skill hires made from it. */
 export type Team = { readonly picks: readonly Pick[]; readonly empty: readonly Seat[]; readonly by: TeamBy }
 
@@ -154,6 +154,10 @@ export type CompleteRequest = {
   readonly effort?: 'low' | 'medium' | 'high'
   readonly timeoutMs: number
 }
+/** What the scout sent through its pick tool (untrusted: checked against the candidate list) and the files it opened, as absolute paths. */
+export type ScoutReport = { readonly picks: unknown; readonly reads: readonly string[] }
+/** Judges the scout's picks as it sends them: the plain problem to send back to it, or `undefined` when they are usable. */
+export type ScoutCheck = (picks: unknown, reads: readonly string[]) => string | undefined
 /** `mtimeMs` is filled for session files (`.jsonl`) only, from a stat of each. */
 export type FsListEntry = { readonly name: string; readonly isDir: boolean; readonly size?: number; readonly mtimeMs?: number }
 /** The agents and skills the engine says are loaded, from `$.session.usage({ breakdown })`. */
@@ -186,6 +190,8 @@ export type OnboardIo = {
   /** Agent type to its blurb, as the `agent.offer` hook keeps them. */
   readonly blurbs: () => Readonly<Record<string, string>>
   readonly complete: (req: CompleteRequest) => Promise<string | undefined>
+  /** Starts the scout with the brief and waits for its picks; `undefined` when it could not start, ran out of time or sent nothing the check accepted. */
+  readonly spawnScout: (brief: string, check: ScoutCheck) => Promise<ScoutReport | undefined>
   /**
    * One question in Claude Code's own question box (`$.ui.ask`: a mod's direct AskUserQuestion call is refused by the host),
    * resolving to the label chosen or text typed under Other; `undefined` when it was dismissed or could not open.

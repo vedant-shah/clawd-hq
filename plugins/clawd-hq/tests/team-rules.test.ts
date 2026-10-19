@@ -38,7 +38,7 @@ test('a helper for a language the project does not use stays a candidate: the li
     helper('kotlin-reviewer', { about: 'Reviews Kotlin and Android code.' }),
     helper('go-build', { about: 'Fixes Go builds.' }),
     helper('code-reviewer', { about: 'Reviews code.' }),
-  ], use(), pythonProject)
+  ], use())
   expect(ids(list)).toEqual(['ecc:kotlin-reviewer', 'ecc:go-build', 'ecc:code-reviewer'])
 })
 
@@ -55,7 +55,7 @@ test('the list drops noise and built-ins but always keeps what was used, named o
     helper('general-purpose', { plugin: undefined, source: 'built-in' }),
     helper('Explore', { plugin: undefined, source: 'built-in' }),
     helper('clawd-hq:make-shadcn', { plugin: undefined }),
-  ], use(), facts())
+  ], use())
   // `loop` was used, but a tool by name is the person's to run by hand; `pdf` is theirs, so it stays.
   // `python-reviewer` stays although the project is TypeScript: the team pick sees every helper.
   expect(ids(list)).toEqual(['ecc:planner', 'pdf', 'ecc:python-reviewer', 'ecc:django-reviewer'])
@@ -68,7 +68,7 @@ test('a tool by name is dropped when used, kept when the person owns it or names
     skill('pptx', { uses: 2, isNamed: true }),
     skill('schedule', { uses: 1, plugin: undefined, source: 'built in' }),
     skill('deck-maker', { uses: 3, about: 'Makes .pptx files from notes.' }),
-  ], use({ skills: { 'ecc:aside': 4 } }), facts())
+  ], use({ skills: { 'ecc:aside': 4 } }))
   expect(ids(list)).toEqual(['ecc:pptx', 'ecc:deck-maker'])
 })
 
@@ -76,7 +76,6 @@ test('a candidate\'s id carries its plugin, and its past use is counted by that 
   const list = candidateList(
     [helper('planner', { uses: 1 }), helper('ecc:code-reviewer'), skill('tdd-workflow'), skill('mine', { isOwn: true, plugin: undefined, source: 'user' })],
     use({ agents: { 'ecc:code-reviewer': 40, 'code-reviewer': 3, planner: 6 }, skills: { 'ecc:tdd-workflow': 2, mine: 5 } }),
-    facts(),
   )
   expect(list.map(c => [c.id, c.kind, c.uses, c.source])).toEqual([
     ['ecc:planner', 'agent', 6, 'ecc'],
@@ -90,7 +89,7 @@ test('helpers used here but not installed join the list with a short description
   const list = candidateList([helper('planner')], use({
     agents: { 'claude-code-guide': 3, 'general-purpose': 9, Explore: 4, 'clawd-hq:make': 2, 'ecc:planner': 1, 'bad name; drop table': 2 },
     skills: { 'mystery-skill': 1 },
-  }), facts())
+  }))
   expect(ids(list)).toEqual(['ecc:planner', 'claude-code-guide', 'mystery-skill'])
   const guide = list[1]!
   expect(guide.uses).toBe(3)
@@ -99,19 +98,19 @@ test('helpers used here but not installed join the list with a short description
 })
 
 test('odd keys in the past-use record never count as use', () => {
-  const list = candidateList([helper('constructor', { plugin: undefined }), helper('toString', { plugin: undefined })], use({ agents: { toString: 'many' as unknown as number } }), facts())
+  const list = candidateList([helper('constructor', { plugin: undefined }), helper('toString', { plugin: undefined })], use({ agents: { toString: 'many' as unknown as number } }))
   expect(list.map(c => c.uses)).toEqual([0, 0])
 })
 
 test('one id appears once, the agent first', () => {
-  const list = candidateList([skill('planner'), helper('planner')], use(), facts())
+  const list = candidateList([skill('planner'), helper('planner')], use())
   expect(list.map(c => [c.id, c.kind])).toEqual([['ecc:planner', 'agent']])
 })
 
 test('a description is cut to one plain line', () => {
-  const [c] = candidateList([helper('planner', { about: 'Plans\nthings well. And more.' + 'x'.repeat(400) })], use(), facts())
+  const [c] = candidateList([helper('planner', { about: 'Plans\nthings well. And more.' + 'x'.repeat(400) })], use())
   expect(c!.about).toBe('Plans things well.')
-  const [long] = candidateList([helper('planner', { about: 'y'.repeat(400) })], use(), facts())
+  const [long] = candidateList([helper('planner', { about: 'y'.repeat(400) })], use())
   expect(long!.about.length).toBeLessThanOrEqual(160)
 })
 
@@ -145,12 +144,12 @@ test('a skill that needs the person is never a candidate, even when used, named 
     skill('stress-test', { about: 'Interviews the user about a design.', uses: 2 }),
     skill('ecc:plan', { about: 'Restate requirements and wait for the user to confirm.' }),
     helper('planner'),
-  ], use({ skills: { 'grill-me': 4 } }), facts())
+  ], use({ skills: { 'grill-me': 4 } }))
   expect(ids(list)).toEqual(['ecc:plan', 'ecc:planner'])
 })
 
 test('an agent is not dropped by the interview rule, only skills', () => {
-  const list = candidateList([helper('requirements-bot', { about: 'Asks the user clarifying questions.' })], use(), facts())
+  const list = candidateList([helper('requirements-bot', { about: 'Asks the user clarifying questions.' })], use())
   expect(ids(list)).toEqual(['ecc:requirements-bot'])
 })
 
@@ -163,7 +162,7 @@ const pluginAuthoring = () => skill('plugin-authoring', {
 })
 
 test('a built-in skill that fits the project stays a candidate even though its description names a slash command', () => {
-  const list = candidateList([pluginAuthoring(), helper('planner')], use(), modFacts())
+  const list = candidateList([pluginAuthoring(), helper('planner')], use())
   expect(ids(list)).toContain('plugin-authoring')
   expect(list.find(c => c.id === 'plugin-authoring')?.source).toBe('built in')
   expect(receiptOf(list.find(c => c.id === 'plugin-authoring')!, projectSignals(modFacts()), modFacts().deps)).toBe('fits: Claude Code mod')
@@ -176,7 +175,7 @@ test('a built-in skill that is a tool is noise by name; one that fits the projec
     skill('pptx', { plugin: undefined, source: 'built in', about: 'Makes slide decks.' }),
     skill('schedule', { plugin: undefined, source: 'built in', about: 'Create a cron job.' }),
     pluginAuthoring(),
-  ], use(), noMod)
+  ], use())
   expect(ids(list)).toEqual(['plugin-authoring'])
   expect(rulePick([cand('loop', { kind: 'skill', uses: 3, plugin: undefined, source: 'built in', about: 'Run a prompt on a recurring interval.' })], noMod)).toEqual([])
 })
@@ -192,7 +191,7 @@ test('an installed planner fills the Plan seat ahead of skills that only talk ab
     skill('ecc:plan', { uses: 2, about: 'Restate requirements and create a step-by-step plan.' }),
     helper('planner', { about: 'Expert planning specialist for complex features.' }),
     pluginAuthoring(),
-  ], use(), modFacts())
+  ], use())
   const picks = rulePick(list, modFacts())
   expect(picks.find(p => p.seat === 'Plan')).toEqual({ seat: 'Plan', name: 'ecc:planner' })
   expect(picks.map(p => p.name)).not.toContain('grill-me')

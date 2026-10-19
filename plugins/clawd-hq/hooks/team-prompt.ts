@@ -36,18 +36,27 @@ export function projectSummary(facts: ProjectFacts): string {
 }
 
 /** "a tool or plugin builder", from one short line of the role; the tested wording when there is none. */
-function whoFor(role: string | undefined): string {
+export function whoFor(role: string | undefined): string {
   const line = (role ?? '').split('\n')[0]?.trim().slice(0, ROLE_CHARS) ?? ''
   const text = line ? line.charAt(0).toLowerCase() + line.slice(1) : DEFAULT_ROLE
   return `${/^[aeiou]/i.test(text) ? 'an' : 'a'} ${text}`
 }
 
-const candidateLine = (c: Candidate) => `${c.id} · ${c.kind} · ${c.source} · ${c.about}`
+export const candidateLine = (c: Candidate) => `${c.id} · ${c.kind} · ${c.source} · ${c.about}`
 
-function pastUseText(cands: readonly Candidate[]): string {
+export function pastUseText(cands: readonly Candidate[]): string {
   const used = [...cands].filter(c => c.uses > 0).sort((a, b) => b.uses - a.uses)
   return used.map(c => `${c.id} used ${c.uses}x`).join('; ') || 'nothing used yet (no past sessions with helpers)'
 }
+
+/** The seats and the rules for filling them, the same words for the one-call question and for the scout's brief. */
+export const SEAT_RULES = `Fill these seats, using ONLY names from the candidate list below, copied exactly:
+- Plan: up to 2 (planning / architecture)
+- Make: 1 (building / testing)
+- Check: up to 2 (review / quality / security)
+- Find out: 1 (exploring code / looking things up / research)
+- Specialist: up to 3 helpers that fit THIS project's particular tech or needs
+Maximum 8 picks in total. Do not pick the same name twice. The built-in helpers general-purpose, Explore and Plan are always on and must not be picked. Leave a seat empty if nothing fits. Prefer helpers that fit this project and that the person already uses.`
 
 export type TeamAsk = { readonly facts: ProjectFacts; readonly use: PastUse; readonly cands: readonly Candidate[]; readonly role: string | undefined }
 
@@ -61,13 +70,7 @@ ${projectSummary(facts)}
 PAST USE IN THIS PROJECT (from Claude Code session history): ${pastUseText(cands)}
 ${use.files ? '' : '(No past sessions exist for this project.)'}
 
-Fill these seats, using ONLY names from the candidate list below, copied exactly:
-- Plan: up to 2 (planning / architecture)
-- Make: 1 (building / testing)
-- Check: up to 2 (review / quality / security)
-- Find out: 1 (exploring code / looking things up / research)
-- Specialist: up to 3 helpers that fit THIS project's particular tech or needs
-Maximum 8 picks in total. Do not pick the same name twice. The built-in helpers general-purpose, Explore and Plan are always on and must not be picked. Leave a seat empty if nothing fits. Prefer helpers that fit this project and that the person already uses.
+${SEAT_RULES}
 
 CANDIDATES (name · agent|skill · source · what it does):
 ${cands.map(candidateLine).join('\n')}

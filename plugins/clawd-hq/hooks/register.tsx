@@ -10,7 +10,10 @@ import type { ArtifactAnswer, ArtifactIo } from './artifacts'
 import { loadMemory, remember, rememberCall, saveBoxAnswer, saveMemory } from './memory-io'
 import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
-import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MEM_TOOL, RECALL, STEP_TOOL } from './constants'
+import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MEM_TOOL, RECALL, STEP_TOOL, TEAM_TOOL } from './constants'
+import { createScoutBox } from './scout-box'
+import { NOT_SCOUT_DENY, SCOUT_CRASH_DENY, runScout, scoutCall, spawnTypeOf } from './scout-run'
+import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, TEAM_PICK_SPEC } from './scout-spec'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { applyPayroll, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
 import { checkOnboard, chooseOnboard, isSetupBusy, onboardTurnEnd, restartOnboard, savedOf, startOnboard } from './onboard'
@@ -81,6 +84,8 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 
 // The project the session runs in: payroll is kept per project.
 let cwd = ''
+/** The setup scout (hooks/scout-run.ts): the files it opens and the picks it sends. It is no hire, so it stays off the books. */
+const scoutBox = createScoutBox()
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
@@ -183,7 +188,7 @@ async function specialistOf($: EngineInterface, id: string): Promise<Employee | 
 async function reconcile($: EngineInterface) {
   const [agents, list, now] = [await $.agent.list(), await read($, staff), await $.clock.now()]
   for (const a of agents) {
-    if (!list.some(e => e.id === a.id) && endOfStatus(a.status) === undefined) await hireFromList($)(a)
+    if (!list.some(e => e.id === a.id) && a.type !== SCOUT_TYPE && endOfStatus(a.status) === undefined) await hireFromList($)(a)
   }
   for (const e of list) {
     const status = agents.find(a => a.id === e.id)?.status
@@ -318,6 +323,7 @@ const onboardIo = async ($: EngineInterface, opts: BriefingOptions): Promise<Onb
     ancestors: async name => ancestorPaths(await $.fs.ancestors({ names: [name] })),
     breakdown: async () => breakdownOf(await $.session.usage({ breakdown: 'summary' })), commands: async () => commandsOf(await $.command.list()),
     complete: async req => answerText(await $.model.complete(req)),
+    spawnScout: (brief, check) => runScout(scoutBox, { spawn: async prompt => (await $.agent.spawn({ subagentType: SCOUT_TYPE, description: 'Look around the project', prompt })).agentId ?? (await $.agent.list()).find(a => a.type === SCOUT_TYPE && !scoutBox.isScout(a.id))?.id, after: (ms, fn) => $.clock.after(ms, fn) }, brief, check, SCOUT_TIMEOUT_MS),
     ask: q => $.ui.ask(q.question, { options: q.options.map(o => o.label), header: q.header }).catch(() => undefined), // a mod's own AskUserQuestion call is refused: "that is $.ui.ask"
     setToggle: async (field, value) => (await setToggle(configIo($), field, value)) === undefined, options: async () => ({ chiefOfStaff: opts.isOn, quietChat: opts.isQuiet }),
     registerHire: ({ name, description, prompt, skills }) => $.agent.register({ name, description, prompt, skills }).then(() => true, () => false),
@@ -488,6 +494,8 @@ export const register: Register = (on, options) => {
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
       ['remember tool', () => $.tool.register(REMEMBER_SPEC)],
       ['step tool', () => $.tool.register(STEP_SPEC)],
+      ['team pick tool', () => $.tool.register(TEAM_PICK_SPEC)],
+      ['setup scout', () => $.agent.register(SCOUT_SPEC)],
       ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames; answers left waiting applied
       ['skill hires', async () => rehire(await onboardIo($, brief))], // the engine forgets registered agents each session
       ['/office-setup', () => $.command.register({ name: 'office-setup', description: `Set up ${BRAND}: two questions, then a starting team for this project` })],
@@ -563,6 +571,7 @@ export const register: Register = (on, options) => {
 
   // Instruction-aware: remember what each agent type is for, put it on the books, and keep laid-off types off the listing.
   on('agent.offer', async ($, e, next) => {
+    if (e.agent === SCOUT_TYPE) return { isOffered: false } // the plugin's own: never offered to the chat, never on the books
     const blurb = oneLine(e.description, BLURB_CHARS)
     // The engine offers every agent type at the same moment when a session starts. Their writes go one at a time:
     // the state refuses a write that lost the race too often, and the hook was then skipped for that type.
@@ -585,6 +594,7 @@ export const register: Register = (on, options) => {
   }
 
   on('agent.spawn', async ($, e, next) => {
+    if (spawnTypeOf(e) === SCOUT_TYPE) { const r = await next(e); if (r.agentId) scoutBox.mark(r.agentId); return r } // marked before anyone else hears of it: no brief notes, no desk
     // A resumed run keeps its first brief (the engine takes no change to it) and its place on the books: no hire is counted again.
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     const { effort, prompt } = parseEffort(e.prompt)
@@ -639,6 +649,12 @@ export const register: Register = (on, options) => {
     // The running tally of agent and skill use (hooks/use-tally.ts): names and counts only, for what session files are too big to show. Never waited for.
     if (isCountedTool(tool)) void (async () => recordUse({ get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value) }, cwd, await $.session.id(), tool, input))().catch(() => undefined)
     if (isEditTurn && isShippedWrite(tool, input)) return { deny: SHIPPED_DENY } as never
+    // The setup scout reads inside the project and sends its picks (hooks/scout-guard.ts and scout-run.ts); a search is cut to file names. Anyone else is turned away from its tool.
+    if (id !== undefined && scoutBox.isScout(id)) {
+      const s = await scoutCall(scoutBox, { real: async path => (await $.fs.stat(path, { resolve: true })).realPath }, cwd, id, tool, input)
+      return ('run' in s ? next({ ...e, ...s.run } as never) : s) as never
+    }
+    if (tool === TEAM_TOOL) return { deny: NOT_SCOUT_DENY } as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
     if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
 
@@ -677,7 +693,10 @@ export const register: Register = (on, options) => {
     } finally {
       await update($, staff, l => edit(l, id, one => (one.mood === 'working' ? { ...one, mood: 'thinking' } : one)))
     }
-  }).catch((_$, e, next) => (!next.called && guardOnCrash(isEditTurn, String(e.tool), e as unknown as Record<string, unknown>) === 'deny' ? { deny: SHIPPED_DENY } as never : next(e)))
+  }).catch((_$, e, next) => {
+    if (!next.called && e.agentId !== undefined && scoutBox.isScout(e.agentId)) return { deny: SCOUT_CRASH_DENY } as never // fails closed
+    return !next.called && guardOnCrash(isEditTurn, String(e.tool), e as unknown as Record<string, unknown>) === 'deny' ? { deny: SHIPPED_DENY } as never : next(e)
+  })
 
   // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
   // An edit request from the Settings tab carries a note of its own: the file to edit, and what must not be touched.
@@ -712,6 +731,7 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) {
+      scoutBox.finish(e.agentId) // a scout that ends with no picks sent ends the wait; anyone else is no scout, and nothing happens
       const asker = (await read($, staff)).find(one => one.id === e.agentId)
       // Key choices the agent made itself go into the project's memory. Its questions stay in its report, for Clawd.
       if (asker && !asker.id.startsWith(DEMO)) {

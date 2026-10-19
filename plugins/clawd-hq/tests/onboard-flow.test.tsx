@@ -47,11 +47,12 @@ for (const surface of SURFACES) {
     expect(h.saved.get(SOURCES_KEY)).toMatchObject({ agents: ['plugin'], skills: ['plugin'] })
     tab = await office($, surface)
     expect(tab.joined).toContain('Software engineer')
-    expect(tab.joined).toMatch(/Starting team \(4\) · Parked 1/)
+    expect(tab.joined).toMatch(/Starting team \(5\) · Parked 1/) // the four picks, and the shipped Researcher in the Find out seat nothing filled
+    expect(tab.joined).toContain('clawd-hq:core-researcher')
     expect(tab.joined).toContain('ecc:planner')
     expect(tab.joined).not.toContain('MODEL WORDS')
     expect(tab.joined).not.toContain('legal:review-contract') // parked by hand: no candidate
-    expect(tab.labels).toEqual(['Change', 'Yes', 'No', 'Hire this team', 'Adjust in People'])
+    expect(tab.labels).toEqual(['Change', 'Hire this team', 'Adjust in People']) // no empty core seat, so no skills.sh search is offered
     // Hire: the rest is parked on top of what was parked by hand, the skill is hired, the skill not installed is reported.
     await press($, h, surface, 'onboard-hire')
     const payroll = h.saved.get(`payroll:${CWD}`) as { laidOff: string[]; isReviewed: boolean }
@@ -204,32 +205,25 @@ test('Change on the team card picks another role without a second Opus call', as
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
 })
 
-test('an empty seat: Yes puts a skills.sh search in the prompt box, never sent and never fetched by the mod', async ($, on) => {
+test('a seat nothing installed fits is filled by Clawd HQ\'s own helper, so no skills.sh search is offered, and nothing is sent or fetched', async ($, on) => {
   const h = onboardHost(on)
   await open($, h, 'terminal')
   await press($, h, 'terminal', 'onboard-start')
-  expect((await office($, 'terminal')).joined).toContain('Search skills.sh for a Find out helper?')
-  await press($, h, 'terminal', 'onboard-searchYes')
-  expect(h.calls.fills).toHaveLength(1)
-  expect(h.calls.fills[0]).toMatch(/skills\.sh.*Find out.*do not install/)
+  const tab = await office($, 'terminal')
+  expect(tab.joined).toContain('Find out clawd-hq:core-researcher')
+  expect(tab.joined).toContain('Clawd HQ\'s own Researcher · nothing installed fits')
+  expect(tab.joined).not.toContain('Search skills.sh for a')
+  expect(h.calls.fills).toEqual([])
   expect(h.calls.sent).toEqual([])
   expect(h.calls.fetches).toEqual([])
-  const tab = await office($, 'terminal')
-  expect(tab.joined).not.toContain('Search skills.sh for a')
-  expect(tab.labels).toEqual(['Change', 'Hire this team', 'Adjust in People'])
 })
 
-test('Opus gives no answer: Haiku picks the team; neither does: the rules do, and the card still shows a team', async ($, on) => {
+test('Opus gives no answer: the rules pick, and the card still shows a team (no Haiku step any more)', async ($, on) => {
   const h = onboardHost(on)
   h.models.opus = undefined
-  h.models.haiku = JSON.stringify({ picks: [{ seat: 'Plan', name: 'ecc:planner' }] })
   await open($, h, 'terminal')
   await press($, h, 'terminal', 'onboard-start')
-  expect(h.calls.models.map(m => m.model)).toEqual(['opus', 'haiku'])
-  expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('haiku')
-  h.models.haiku = undefined
-  await $.command.run({ command: 'office-setup', args: '' } as never)
-  await settle(h)
+  expect(h.calls.models.map(m => m.model)).toEqual(['opus'])
   expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('rules')
   expect((await office($, 'terminal')).labels).toContain('Hire this team')
 })

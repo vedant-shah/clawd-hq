@@ -113,11 +113,19 @@ test("Clawd's card says All clear in an empty office, has no button of its own, 
     const dot = await ui.find({ type: 'Text', text: /^●$/ })
     expect(dot?.text).toBe('●')
     expect(dot?.props.color).toBe(GREEN)
-    // What Clawd says comes first, right under his name; the status line sits below it.
+    // The status sits on the top row, beside his name; what Clawd says comes after it, with no status line below the bubble.
     const lines = await ui.findAll({ type: 'Text' })
-    const [saidAt, statusAt] = [lines.findIndex(t => t.props.italic === true), lines.findIndex(t => /^All clear$/.test(String(t.text)))]
-    expect(saidAt).toBeGreaterThan(-1)
-    expect(saidAt).toBeLessThan(statusAt)
+    const [titleAt, dotAt, statusAt, saidAt] = [
+      lines.findIndex(t => /Chief of Staff/.test(String(t.text))),
+      lines.findIndex(t => /^●$/.test(String(t.text))),
+      lines.findIndex(t => /^All clear$/.test(String(t.text))),
+      lines.findIndex(t => t.props.italic === true),
+    ]
+    expect(titleAt).toBeGreaterThan(-1)
+    expect(titleAt).toBeLessThan(dotAt)
+    expect(dotAt).toBeLessThan(statusAt)
+    expect(statusAt).toBeLessThan(saidAt)
+    expect((await ui.find({ key: 'clawd-head' }))?.props.flexDirection).toBe('row')
     // Room between his name, his words and the status where there is room to give; a terminal line is too dear.
     expect((await ui.find({ key: 'clawd-lines' }))?.props.gap).toBe(surface === 'terminal' ? 0 : 1)
     expect(await ui.find({ type: 'Text', text: /Chief of Staff/ })).toBeDefined()

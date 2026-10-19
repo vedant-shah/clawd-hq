@@ -48,16 +48,19 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
     <Box borderStyle="round" borderDimColor paddingX={1} flexDirection={isStacked ? 'column' : 'row'} gap={2} alignItems={isStacked ? 'flex-start' : 'center'}>
       <Box flexShrink={0}>{sprite('clawd', drawn, { scale: 4, like, alt: lookAlt(look) })}</Box>
       <Box key="clawd-lines" flexDirection="column" flexShrink={1} flexGrow={1} gap={kit.isTerminal ? 0 : 1}>
-        <Text bold>Clawd <Text dimColor>Chief of Staff</Text></Text>
+        {/* His name on the top row, with his status to its right; on a narrow pane the status wraps under the name, never cut. */}
+        <Box key="clawd-head" flexDirection="row" flexWrap="wrap" justifyContent="space-between" columnGap={1}>
+          <Text bold>Clawd <Text dimColor>Chief of Staff</Text></Text>
+          <Box flexDirection="row" columnGap={1} flexShrink={1}>
+            <Text color={TONE[status.tone]}>●</Text>
+            <Text bold wrap="wrap">{status.text}</Text>
+          </Box>
+        </Box>
         {/* The main chat's model and effort, muted like a specialist's; nothing while the model is unknown. */}
         {chatModel !== '' && <Text key="clawd-model" dimColor wrap="wrap">{chatModel}</Text>}
-        {/* What he says comes first, under his name; the status line sits below it. */}
+        {/* What he says sits in its bubble under the model line. */}
         <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>
-        </Box>
-        <Box flexDirection="row" columnGap={1}>
-          <Text color={TONE[status.tone]}>●</Text>
-          <Text bold wrap="wrap">{status.text}</Text>
         </Box>
         {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
         {!boss.isBusy && boss.recap !== undefined && (

@@ -18,19 +18,29 @@ test('the person speaking wipes the waiting hand-back but leaves a standing chec
   expect(b.turns).toBe(4)
 })
 
-test('a standing checkpoint survives a plain turn, and a turn with work or a new hire ends it', () => {
+test('a standing checkpoint survives a plain turn, and a turn that edits files or a new hire ends it', () => {
   const standing = boss({ turns: 6, isCheckpoint: true })
   expect(withTurnEnd(standing, answered('Plain words.')).isCheckpoint).toBe(true)
-  const worked = withTurnEnd(withToolUsed(standing, 'Read'), answered())
+  const worked = withTurnEnd(withToolUsed(standing, 'Edit'), answered())
   expect(worked).toMatchObject({ isCheckpoint: false, hasWorked: undefined })
-  expect(withTurnEnd(withToolUsed(standing, 'AskUserQuestion'), answered()).isCheckpoint).toBe(true)
-  expect(withTurnEnd(withToolUsed(standing, 'ToolSearch'), answered()).isCheckpoint).toBe(true)
   expect(withNewWork(standing).isCheckpoint).toBe(false)
 })
 
-test('work in a turn does not stop that turn from reporting a fresh hand-back', () => {
-  const b = withToolUsed(boss({ turns: 5, handedBackAt: 4 }), 'Read')
-  expect(withTurnEnd(b, answered()).isCheckpoint).toBe(true)
+test('only the tools that change files count as work; reading, running and asking do not', () => {
+  for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) expect(withToolUsed(boss(), tool).hasWorked).toBe(true)
+  for (const tool of ['Bash', 'Read', 'Grep', 'Glob', 'TaskStop', 'CronCreate', 'WebFetch', 'Skill', 'AskUserQuestion', 'ToolSearch'])
+    expect(withToolUsed(boss(), tool).hasWorked).toBeUndefined()
+})
+
+test('a turn that edited files is no checkpoint, even when it reports a hand-back', () => {
+  const b = withToolUsed(boss({ turns: 5, handedBackAt: 4 }), 'Write')
+  expect(withTurnEnd(b, answered()).isCheckpoint).toBe(false)
+  expect(withTurnEnd(withToolUsed(boss({ turns: 5 }), 'Write'), answered()).isCheckpoint).toBe(false)
+})
+
+test('a turn that only read or ran commands still closes', () => {
+  expect(withTurnEnd(withToolUsed(boss({ turns: 5, handedBackAt: 4 }), 'Read'), answered()).isCheckpoint).toBe(true)
+  expect(withTurnEnd(withToolUsed(boss({ turns: 5 }), 'Bash'), answered()).isCheckpoint).toBe(true)
 })
 
 test('the turn after a hand-back that ends in an answer closes the piece of work', () => {
@@ -38,8 +48,8 @@ test('the turn after a hand-back that ends in an answer closes the piece of work
   expect(withTurnEnd(boss({ turns: 5, handedBackAt: 4 }), answered()).isCheckpoint).toBe(true)
 })
 
-test('a plain chat reply with no hand-back is no checkpoint', () => {
-  expect(withTurnEnd(boss({ turns: 1 }), answered()).isCheckpoint).toBe(false)
+test('a quiet reply with no hand-back is a checkpoint', () => {
+  expect(withTurnEnd(boss({ turns: 1 }), answered()).isCheckpoint).toBe(true)
 })
 
 test('the turn a hand-back arrived in is not its report: the report is the turn after', () => {

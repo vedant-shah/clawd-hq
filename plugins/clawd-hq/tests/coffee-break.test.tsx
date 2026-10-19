@@ -219,24 +219,40 @@ test('question pending: a question box open in Clawd\'s turn keeps it hidden unt
   expect(await isShown($)).toBe(true)
 })
 
-test('a plain chat reply with no work done is no checkpoint, however large the chat', async ($, on) => {
+test('a quiet reply with no hand-back is a checkpoint once the chat is large', async ($, on) => {
   const h = flowHost(on)
   await say($, 'What does this repo do?')
   await startTurn($, 'm1')
   await endTurn($, 'm1', 'It draws an office for your agents.')
   await measure($, OVER)
   expect(h.hiring.next).toBe('w1')
+  expect(await isShown($)).toBe(true)
+})
+
+test('a quiet reply in a small chat shows nothing', async ($, on) => {
+  flowHost(on)
+  await say($, 'What does this repo do?')
+  await startTurn($, 'm1')
+  await endTurn($, 'm1', 'It draws an office for your agents.')
+  await measure($, 100_000)
   expect(await isShown($)).toBe(false)
 })
 
-test('a specialist that failed or was stopped is not a hand-back', async ($, on) => {
+test('a reply while a specialist is still at work shows nothing', async ($, on) => {
+  const h = flowHost(on)
+  await job($, h).ask()
+  await measure($, OVER)
+  expect(await isShown($)).toBe(false)
+})
+
+test('a specialist that failed or was stopped: Clawd\'s quiet report of it still closes the piece of work', async ($, on) => {
   const h = flowHost(on)
   const work = job($, h)
   await work.ask()
   await $.turn.complete({ reason: 'error', answer: '', turnId: 'w-turn', agentId: 'w1', isAborted: false } as never)
   await work.report('It failed.')
   await measure($, OVER)
-  expect(await isShown($)).toBe(false)
+  expect(await isShown($)).toBe(true)
 })
 
 test('plain chat keeps it: hidden while Clawd answers, back after a reply with no tools', async ($, on) => {
@@ -272,31 +288,32 @@ test('a resumed specialist takes it away too', async ($, on) => {
   expect(await isShown($)).toBe(false)
 })
 
-for (const tool of ['Read', 'Bash', 'Edit']) {
+for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
   test(`a turn in which Clawd used ${tool} himself takes it away, and later plain chat does not bring it back`, async ($, on) => {
     const h = flowHost(on)
     await atCheckpoint($, h)
-    await say($, 'Look at the file')
-    await startTurn($, 'm3', 'Look at the file')
+    await say($, 'Change the file')
+    await startTurn($, 'm3', 'Change the file')
     await $.tool.call({ tool } as never)
-    await endTurn($, 'm3', 'I looked.')
+    await endTurn($, 'm3', 'I changed it.')
     expect(await isShown($)).toBe(false)
     await startTurn($, 'm4', 'Thanks')
     await endTurn($, 'm4', 'You are welcome.')
-    expect(await isShown($)).toBe(false)
+    expect(await isShown($)).toBe(true) // a later quiet turn is a new checkpoint
   })
 }
 
-test('a turn with only a question box or a tool search keeps it', async ($, on) => {
-  const h = flowHost(on)
-  await atCheckpoint($, h)
-  await say($, 'Ask me something')
-  await startTurn($, 'm3', 'Ask me something')
-  await $.tool.call({ tool: 'ToolSearch' } as never)
-  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Which?' }] } as never)
-  await endTurn($, 'm3', 'Thanks for choosing.')
-  expect(await isShown($)).toBe(true)
-})
+for (const tool of ['Read', 'Bash', 'Grep', 'Glob', 'TaskStop', 'CronCreate', 'WebFetch', 'Skill', 'ToolSearch', 'AskUserQuestion']) {
+  test(`a turn in which Clawd used ${tool} keeps it`, async ($, on) => {
+    const h = flowHost(on)
+    await atCheckpoint($, h)
+    await say($, 'Look into it')
+    await startTurn($, 'm3', 'Look into it')
+    await $.tool.call({ tool, questions: [{ question: 'Which?' }] } as never)
+    await endTurn($, 'm3', 'I looked.')
+    expect(await isShown($)).toBe(true)
+  })
+}
 
 test('a notification, a peer message or a slash command does not take the checkpoint away', async ($, on) => {
   const h = flowHost(on)

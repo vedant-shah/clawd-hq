@@ -1,6 +1,7 @@
 // When a piece of work has closed, pure: the coffee break button is offered only at such a checkpoint, never between the steps of a job.
-// A specialist handing its work back starts it; Clawd's own turn that reports it closes it, even if it ends with a question; the person's
-// new work ends it (a specialist hired or resumed, or a turn in which Clawd used tools himself); plain chat does not. Clawd's card (the boss) keeps the marks.
+// A checkpoint is Clawd's turn ending while no hand-back waits for its report and the turn edited no files. A specialist handing its work
+// back holds it off until Clawd has reported it (even if the report ends with a question). New work ends it: a specialist hired or resumed,
+// or a turn in which Clawd edited files himself. Reading, searching, running commands and plain chat do not. Clawd's card (the boss) keeps the marks.
 //
 // Which turn reports a hand-back? The one that starts after it. But a background job's notification can also JOIN a turn already running
 // (Clawd waiting at a question box while a second specialist finishes), or be heard before the specialist's own end: then that turn is the
@@ -37,28 +38,25 @@ export function withNotice(b: Boss, isIntoTurn: boolean): Boss {
 export const withPersonSpoke = (b: Boss, kind?: string): Boss =>
   ({ ...b, handedBackAt: undefined, carriedAt: undefined, spokeBy: kind ?? 'none' })
 
-/** Tools that are no work: Clawd asking the person something, or looking for a tool. */
-const IDLE_TOOLS = new Set(['AskUserQuestion', 'ToolSearch'])
+/** The only tools that are work: the ones that change files. */
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
-/** Clawd used a tool himself: that turn is work, unless the tool only asks or searches. */
-export const withToolUsed = (b: Boss, tool: string): Boss => (IDLE_TOOLS.has(tool) || b.hasWorked ? b : { ...b, hasWorked: true })
+/** Clawd used a tool himself: that turn is work only if the tool edits files. */
+export const withToolUsed = (b: Boss, tool: string): Boss => (!EDIT_TOOLS.has(tool) || b.hasWorked ? b : { ...b, hasWorked: true })
 
 /** A specialist was hired or resumed: new work has started, and the checkpoint is over. */
 export const withNewWork = (b: Boss): Boss => ({ ...b, handedBackAt: undefined, isCheckpoint: false })
 
 /**
- * Clawd's turn ended. It closes a piece of work when a specialist handed work back in an earlier turn (the turn it arrived in is not
- * the report: the report is a turn that started after it) and the turn ended in an answer. A report that ends with a plain-text
- * question ("what next?") still counts; an open question box keeps the turn busy, so the button waits for it elsewhere.
- * A turn that is not that leaves no checkpoint standing.
+ * Clawd's turn ended. It is a checkpoint when no hand-back still waits for its report (a hand-back heard in this very turn, or not yet
+ * carried, is reported by a later one), Clawd edited no files in it, and it ended in an answer. A report that ends with a plain-text
+ * question still counts; an open question box keeps the turn busy, so the button waits for it elsewhere. A checkpoint that stands lasts
+ * through any turn that edits nothing, whatever way it ended.
  */
 export function withTurnEnd(b: Boss, end: { reason: string }): Boss {
-  const isReport = b.handedBackAt !== undefined && b.turns > b.handedBackAt
-  // A standing checkpoint lasts through plain chat; a turn in which Clawd worked himself ends it. A fresh one needs a report.
-  const isStanding = b.isCheckpoint === true
-  const isClosed = isStanding ? !b.hasWorked : isReport && end.reason === 'answer'
-  const next = isClosed || !isStanding ? { ...b, isCheckpoint: isClosed } : { ...b, isCheckpoint: false, handedBackAt: undefined }
-  return { ...next, hasWorked: undefined }
+  const isWaiting = b.handedBackAt !== undefined && b.turns <= b.handedBackAt
+  const isClosed = !b.hasWorked && !isWaiting && (end.reason === 'answer' || b.isCheckpoint === true)
+  return { ...b, isCheckpoint: isClosed, hasWorked: undefined }
 }
 
 /** A prompt that is the person's own message to Clawd: not from a notification, a peer or a schedule, and not a slash command. */

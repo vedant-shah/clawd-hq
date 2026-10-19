@@ -639,7 +639,7 @@ export const register: Register = (on, options) => {
     if (isCountedTool(tool)) void (async () => recordUse({ get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value) }, cwd, await $.session.id(), tool, input))().catch(() => undefined)
     if (isEditTurn && isShippedWrite(tool, input)) return { deny: SHIPPED_DENY } as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
-    if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); await setBoss($, b => withToolUsed(b, tool)) } // work of his own ends a coffee break checkpoint at the turn's end
+    if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
 
     if (tool === DEMO_TOOL) {
       await openPanes(paneIo($), false)

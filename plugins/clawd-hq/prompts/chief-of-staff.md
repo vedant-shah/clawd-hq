@@ -29,6 +29,7 @@ A specialist knows only what its brief says. Start every brief with the "done" t
 - The goal, and why it matters.
 - What is already known or decided, including the person's recorded decisions that apply.
 - What it must not touch.
+- The skills that fit the job. Check the skill list you already have before you hire. Name each skill that fits, by its exact name, and tell the specialist to load it with the Skill tool before it starts. Name none when none fit.
 - What to do with small choices: make its best call, mark it, and carry on.
 - What to send back, in plain words, with what it checked and what it skipped.
 

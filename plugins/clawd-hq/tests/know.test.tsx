@@ -48,7 +48,9 @@ function office(on: On, replies: Array<() => unknown> = [() => answered(NOTE)]) 
   on('prompt.submit', (_$, e) => ({ text: (e as { text: string }).text }) as never)
   on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
   on('tool.call', () => ({ result: 'ok' }) as never)
-  return { ...h, asked, reads, rows, hold, gate }
+  const fills: Array<{ text: string; mode: string }> = []
+  on('prompt.fill', (_$, e) => (fills.push({ text: (e as { text: string }).text, mode: (e as { mode: string }).mode }),{ isFilled: true }) as never)
+  return { ...h, asked, reads, rows, hold, gate, fills }
 }
 
 const hire = ($: Engine, prompt = 'Fix the login bug.') => $.agent.spawn({ prompt, description: 'Fix login', subagentType: 'ecc:tdd-guide' } as never)
@@ -398,7 +400,7 @@ test('a note has its own section under a YOU SHOULD KNOW heading, between Clawd\
     expect((await ui.find({ type: 'Text', text: /^HEADS UP$/ }))?.props.color).toBe(AMBER)
     expect((await ui.find({ type: 'Text', text: /^· Tester$/ }))?.props.dimColor).toBe(true)
     expect(all.findIndex(t => /THE FLOOR|AT WORK/.test(t))).toBeGreaterThan(line)
-    for (const key of ['know-more', 'know-knew', 'know-dismiss']) expect(await ui.find({ key })).toBeDefined()
+    for (const key of ['know-more', 'know-discuss', 'know-dismiss']) expect(await ui.find({ key })).toBeDefined()
     expect(await ui.find({ key: 'know-got-it' })).toBeUndefined()
     expect(all.some(t => /more notes? waiting|more waiting/.test(t))).toBe(false)
     // The title and the explanation wait behind Learn more.
@@ -425,21 +427,37 @@ test('Learn more opens the title and explanation with Got it; Got it takes the n
   await ui.unmount()
 })
 
-test('Knew this already saves the note as known and takes it off', async ($, on) => {
-  const { saved } = await withNotes($, on, [reply(1)])
-  const ui = await office$($, 'desktop')
-  await ui.press({ key: 'know-knew' })
-  expect(saved.get('know:knew:/repo')).toEqual(['Note 1 matters.'])
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
-  await ui.unmount()
-})
-
 test('Dismiss takes the note off without saving it as known', async ($, on) => {
   const { saved } = await withNotes($, on, [reply(1)])
   const ui = await office$($, 'desktop')
   await ui.press({ key: 'know-dismiss' })
   expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
   expect(saved.get('know:knew:/repo')).toBeUndefined()
+  await ui.unmount()
+})
+
+test('Ask Clawd fills the prompt box with the line and the longer version, sends nothing, takes the note off and starts the back-off over', async ($, on) => {
+  const { saved, fills } = await withNotes($, on, [() => answered(NOTE)])
+  saved.set('know:backoff:/repo', { ignored: 1, skipLeft: 0 })
+  const ui = await office$($, 'terminal')
+  await ui.press({ key: 'know-discuss' })
+  expect(fills).toEqual([{
+    text: 'Clawd raised this: "The Tester says all tests pass, but the last test run failed.". The last run ended with 3 failures. Ask for a new run. Let\'s discuss: is this a real concern here, and what should we do about it?',
+    mode: 'append',
+  }])
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
+  expect(saved.get('know:knew:/repo')).toBeUndefined()
+  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 0, skipLeft: 0 })
+  await ui.unmount()
+})
+
+test('Ask Clawd shows with or without Learn more opened, first of the dim buttons, and on a note with no explanation', async ($, on) => {
+  await withNotes($, on, [reply(1)])
+  const ui = await office$($, 'desktop')
+  const keys = async () => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label)).slice(0, 3)
+  expect(await keys()).toEqual(['Learn more', 'Ask Clawd', 'Dismiss'])
+  await ui.press({ key: 'know-more' })
+  expect(await keys()).toEqual(['Got it', 'Ask Clawd', 'Dismiss'])
   await ui.unmount()
 })
 
@@ -450,6 +468,7 @@ test('a note with no explanation has no Learn more', async ($, on) => {
     expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
     expect(await ui.find({ key: 'know-more' })).toBeUndefined()
     expect(await ui.find({ key: 'know-dismiss' })).toBeDefined()
+    expect(await ui.find({ key: 'know-discuss' })).toBeDefined()
     await ui.unmount()
   }
 })

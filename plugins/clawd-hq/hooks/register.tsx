@@ -299,6 +299,7 @@ const knowIo = ($: EngineInterface): KnowIo => ({
   complete: ask => $.model.complete(ask),
   card: async (): Promise<KnowState> => ({ ...KNOW0, ...(await read($, know)) }),
   setCard: fn => update($, know, s => fn({ ...KNOW0, ...s })),
+  fillPrompt: text => $.prompt.fill({ text, mode: 'append' }),
 })
 
 // ---- Setup (hooks/onboard.ts): built per use, so the clock, home folder, agent lists and payroll are read as they are now ----

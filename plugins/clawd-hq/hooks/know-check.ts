@@ -36,6 +36,8 @@ export type KnowIo = {
   messages: (agentId?: string) => Promise<readonly SessionMessage[] | { deny: string }>
   complete: (ask: { model: string; system: string; prompt: string; maxTokens: number; timeoutMs: number }) => Promise<ModelCompleteResult>
   card: () => Promise<KnowState>
+  /** Puts text after what is in the person's prompt box; never sends it. */
+  fillPrompt: (text: string) => Promise<unknown>
   setCard: (fn: (s: KnowState) => KnowState) => Promise<unknown>
 }
 
@@ -49,7 +51,7 @@ export type Handback = {
   usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
 }
 
-export type KnowActions = { knowMore: () => unknown; knowGotIt: () => unknown; knowKnew: () => unknown; knowDismiss: () => unknown }
+export type KnowActions = { knowMore: () => unknown; knowDiscuss: () => unknown; knowGotIt: () => unknown; knowDismiss: () => unknown }
 
 /** The project folder the session runs in: the lists and the log are its own. */
 let folder = ''
@@ -231,17 +233,23 @@ async function pressed(io: KnowIo, fn: (s: KnowState) => KnowState) {
   await setBackoff(io, BACKOFF0)
 }
 
-async function knewIt(io: KnowIo) {
+/** The person's own opener about the note: its line, its longer version when there is one, and the question to talk over. */
+export const discussText = (note: Pick<KnowNote, 'line' | 'explain'>) =>
+  [`Clawd raised this: "${note.line}".`, note.explain, "Let's discuss: is this a real concern here, and what should we do about it?"]
+    .filter(part => part !== undefined && part !== '').join(' ')
+
+/** Fills the prompt box for the person to send (never sends), then takes the note off like Dismiss. */
+async function discuss(io: KnowIo) {
   const { note } = await io.card()
-  if (note) await change(io, 'knew', knew => keepLast(knew, note.line, KNEW_KEEP))
+  if (note) await io.fillPrompt(discussText(note))
   await pressed(io, withoutNote)
 }
 
 export function knowActions(io: KnowIo): KnowActions {
   return {
     knowMore: () => pressed(io, withOpened),
+    knowDiscuss: () => discuss(io),
     knowGotIt: () => pressed(io, withoutNote),
-    knowKnew: () => knewIt(io),
     knowDismiss: () => pressed(io, withoutNote),
   }
 }

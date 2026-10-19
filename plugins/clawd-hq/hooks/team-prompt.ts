@@ -51,11 +51,11 @@ export function pastUseText(cands: readonly Candidate[]): string {
 
 /** The seats and the rules for filling them, the same words for the one-call question and for the scout's brief. */
 export const SEAT_RULES = `Fill these seats, using ONLY names from the candidate list below, copied exactly:
-- Plan: up to 2 (planning / architecture)
-- Make: 1 (building / testing)
-- Check: up to 2 (review / quality / security)
-- Find out: 1 (exploring code / looking things up / research)
-- Specialist: up to 3 helpers that fit THIS project's particular tech or needs
+- Plan: up to 2. A helper that turns a request into a step plan or design before code is written. Not a reviewer and not a builder.
+- Make: 1. The main helper that writes and changes the project's code or content, ideally test-first. It must write. Not a skill that only runs, starts or deploys the app, and not a build-error or type-error fixer: those are Specialist picks at most.
+- Check: up to 2. Helpers that review finished work: code review, security, quality. Prefer one matched to the project's language or framework. Match the language exactly: no TypeScript reviewer for plain JavaScript, no Python reviewer without Python.
+- Find out: 1. A helper that looks things up: it reads the codebase, docs or the web. Pick the one that fits what this project most needs to find out, such as library docs for a project on an old or fast-moving API, or web research for a non-code project. A general code explorer is only right when nothing more specific fits.
+- Specialist: up to 3. Helpers for this project's particular tech or line of work, from what you see in its files. Leave a place empty rather than fill it badly.
 Maximum 8 picks in total. Do not pick the same name twice. The built-in helpers general-purpose, Explore and Plan are always on and must not be picked. Leave a seat empty if nothing fits. Prefer helpers that fit this project and that the person already uses.`
 
 export type TeamAsk = { readonly facts: ProjectFacts; readonly use: PastUse; readonly cands: readonly Candidate[]; readonly role: string | undefined }

@@ -53,7 +53,8 @@ function reasonOf(entry: Entry, folder: string, opened: ReadonlySet<string>): st
   if (reason === '' || reason.length > REASON_CHARS || file === undefined || root === undefined) return undefined
   if (!opened.has(keyOf(file)) || !isInside(root, file)) return undefined
   const shown = file === root ? file : file.slice(root.length + 1)
-  return shown.length <= PATH_CHARS ? `${reason} (${shown})` : reason
+  // The path is untrusted text too: one with control, escape or direction marks in it, or one too long, is left off.
+  return shown.length <= PATH_CHARS && oneLine(shown) === shown ? `${reason} (${shown})` : reason
 }
 
 /** One entry as a pick, or the problem with its name; an entry that is not a seat and a name is skipped without a word. */

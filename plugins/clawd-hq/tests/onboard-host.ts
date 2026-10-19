@@ -71,10 +71,22 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     return [...names].map(([name, isDir]) => ({ name, kind: isDir ? 'dir' : 'file', size: isDir ? 0 : (h.files.get(`${prefix}${name}`) ?? '').length }))
   }
   on('fs.list', (_$, e) => ({ value: children((e as { path: string }).path) }) as never)
+  // The engine puts a relative path under its own working folder, which on a test is not the project. Here a path that ends like one of the
+  // project's files or folders (and is not under the project, the home folder or the system's) is taken for that file or folder.
+  const projectPath = (given: string) => {
+    if (given.startsWith(CWD) || given.startsWith(HOME) || given.startsWith('/etc')) return given
+    const rels = [...h.files.keys()].filter(k => k.startsWith(`${CWD}/`)).flatMap(k => {
+      const parts = k.slice(CWD.length + 1).split('/')
+      return parts.map((_, i) => parts.slice(0, i + 1).join('/'))
+    })
+    const best = rels.filter(rel => given === rel || given.endsWith(`/${rel}`)).sort((a, b) => b.length - a.length)[0]
+    return best === undefined ? given : `${CWD}/${best}`
+  }
   // `links`: a path that really lands somewhere else, as a symbolic link would. A path asked to resolve lands where it is, if it is a file here or the folder of some.
   const links: Record<string, string> = {}
   on('fs.stat', (_$, e) => {
-    const { path, resolve } = e as { path: string; resolve: boolean }
+    const { path: given, resolve } = e as { path: string; resolve: boolean }
+    const path = projectPath(given)
     const isThere = h.files.has(path) || path === CWD || [...h.files.keys()].some(p => p.startsWith(`${path.replace(/\/+$/, '')}/`))
     const real = links[path] ?? (isThere ? path : undefined)
     return { value: { kind: 'file', size: (h.files.get(path) ?? '').length, mtimeMs: 0, isLink: links[path] !== undefined, ...(resolve && real !== undefined ? { realPath: real } : {}) } } as never
@@ -123,7 +135,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     return { model: 'claude-sonnet-5-5', agentId: scout.id }
   })
   on('agent.offer', () => ({ isOffered: true }) as never)
-  return { ...h, models, box, calls, scout, links }
+  return { ...h, models, box, calls, scout, links, agentList }
 }
 export type OnboardHost = ReturnType<typeof onboardHost>
 

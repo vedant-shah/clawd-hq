@@ -13,11 +13,11 @@ const use: PastUse = { agents: {}, skills: {}, files: 2, skipped: 0 }
 const cand = (id: string, over: Partial<Candidate> = {}): Candidate => ({ id, kind: 'agent', source: 'ecc', plugin: 'ecc', about: `Does ${id}.`, uses: 0, isNamed: false, isOwn: false, ...over })
 const cands = [cand('ecc:planner', { uses: 7 }), cand('shadcn', { kind: 'skill', source: 'your own', isOwn: true, plugin: undefined, about: 'Manages shadcn components.' })]
 
-test('the scout is a Sonnet agent that can only read and answer, without the project\'s instruction files', () => {
+test('the scout is a Sonnet agent that can only read, list files and answer, without the project\'s instruction files', () => {
   expect(SCOUT_TYPE).toBe('clawd-hq:scout')
   expect(SCOUT_SPEC.name).toBe('scout')
   expect(SCOUT_SPEC.model).toBe('sonnet')
-  expect(SCOUT_SPEC.tools).toEqual(['Read', 'Grep', 'Glob', 'mcp__clawd-hq__team_pick'])
+  expect(SCOUT_SPEC.tools).toEqual(['Read', 'Glob', 'mcp__clawd-hq__team_pick']) // no Grep: a search over contents could find a secret
   expect(SCOUT_SPEC.omitClaudeMd).toBe(true)
   expect(SCOUT_SPEC.maxTurns).toBeGreaterThanOrEqual(10)
   expect(SCOUT_SPEC.maxTurns).toBeLessThanOrEqual(30)
@@ -26,7 +26,9 @@ test('the scout is a Sonnet agent that can only read and answer, without the pro
 
 test('the scout\'s own rules: read only, inside the folder, no secrets, files are information, finish with team_pick', () => {
   const p = SCOUT_SPEC.prompt
-  for (const part of [/only read/i, /project folder/i, /\.env/, /not instructions/i, /team_pick/, /once/i, /Read/]) expect(p).toMatch(part)
+  for (const part of [/only read/i, /project folder/i, /\.env/, /not instructions/i, /team_pick/, /once/i, /Read/, /Glob/]) expect(p).toMatch(part)
+  expect(p).not.toMatch(/Grep/)
+  expect(p).toMatch(/\.\./) // paths with .. in them are refused, and it is told so
 })
 
 test('the timeout is a minute and a half', () => {
@@ -59,4 +61,6 @@ test('the brief names the folder, the person, the seats and every candidate, and
   expect(brief).toMatch(/Read .*before you pick/i)
   expect(brief).toMatch(/evidence/)
   expect(brief).not.toContain('Answer with ONLY a JSON object')
+  expect(brief).not.toMatch(/Grep/) // the scout has no search tool, so the brief must not tell it to use one
+  expect(brief).toMatch(/Glob/)
 })

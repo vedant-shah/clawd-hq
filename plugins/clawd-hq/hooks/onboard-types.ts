@@ -67,7 +67,10 @@ export const SEATS: readonly Seat[] = ['Plan', 'Make', 'Check', 'Find out', 'Spe
 export const SEAT_LIMITS: Readonly<Record<Seat, number>> = { Plan: 2, Make: 1, Check: 2, 'Find out': 1, Specialist: 3 }
 export const TEAM_LIMIT = 8
 
-/** One hire. `receipt` is built from facts only ("used 12× here", "named in CLAUDE.md"). */
+/**
+ * One hire. `receipt` is the reason on the card: the scout's own sentence when it rests on a file the scout opened
+ * ("Tests run with vitest. (package.json)"), else built from facts only ("used 12× here", "named in CLAUDE.md").
+ */
 export type Pick = { readonly seat: Seat; readonly name: string; readonly kind: 'agent' | 'skill'; readonly receipt: string }
 
 /** Who chose the team: the scout first, then one Opus call, then the rules. */

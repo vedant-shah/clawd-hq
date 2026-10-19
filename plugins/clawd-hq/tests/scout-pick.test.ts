@@ -82,6 +82,20 @@ test('only the first forty entries are looked at', () => {
   expect(scoutPicks(report(many), cands, FOLDER).picks).toEqual([])
 })
 
+test('the file shown beside a reason must be a clean one-line path; one with control, escape or direction marks is left off (the reason stays)', () => {
+  const odd = ['src/a‮b.ts', 'src/a⁦b.ts', 'src/a\u001b[31mb.ts', 'src/a\nb.ts', 'src/a\tb.ts', 'src/a​b.ts', 'src/a  b.ts', 'src/a⁩b.ts']
+  const r = scoutPicks(report(odd.map(file => pick('Plan', 'ecc:planner', { reason: 'It has a plan.', evidence: file })), odd.map(file => `/home/me/shop/${file}`)), cands, FOLDER)
+  expect(r.picks.map(p => p.reason)).toEqual(odd.map(() => 'It has a plan.'))
+  const clean = scoutPicks(report([pick('Plan', 'ecc:planner', { reason: 'It has a plan.', evidence: 'src/my file.ts' })], ['/home/me/shop/src/my file.ts']), cands, FOLDER)
+  expect(clean.picks[0]?.reason).toBe('It has a plan. (src/my file.ts)')
+})
+
+test('a path too long to show leaves the reason without it', () => {
+  const long = `src/${'d/'.repeat(40)}file.ts`
+  const r = scoutPicks(report([pick('Plan', 'ecc:planner', { reason: 'It has a plan.', evidence: long })], [`/home/me/shop/${long}`]), cands, FOLDER)
+  expect(r.picks[0]?.reason).toBe('It has a plan.')
+})
+
 test('Windows-style spellings of a file the scout read still match', () => {
   const r = scoutPicks(report([pick('Make', 'ecc:tdd-guide', { reason: 'Uses vitest.', evidence: 'src\\app.ts' })], ['C:/work/shop/src/app.ts']), cands, 'C:\\work\\shop')
   expect(r.picks[0]?.reason).toBe('Uses vitest. (src/app.ts)')

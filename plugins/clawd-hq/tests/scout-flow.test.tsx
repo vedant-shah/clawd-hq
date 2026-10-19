@@ -30,7 +30,9 @@ function moves($: Engine, h: OnboardHost, steps: ReadonlyArray<[string, Record<s
 }
 /** Lets the scout's script run (it starts a moment after its start returns, in real time) and everything that follows it. */
 const more = async (h: OnboardHost) => { await settle(h, 300); await realWait(120); await settle(h, 300) }
-const toolsSeen = (h: OnboardHost) => h.calls.tools.map(t => `${t.tool}${t.agentId ? '@' + t.agentId : ''}`)
+/** The ids the plugin asked the engine to stop (TaskStop calls). */
+const stopsOf = (h: OnboardHost) => h.calls.tools.filter(t => t.tool === 'TaskStop').map(t => String(t.input.task_id))
+const toolsSeen =(h: OnboardHost) => h.calls.tools.map(t => `${t.tool}${t.agentId ? '@' + t.agentId : ''}`)
 
 const GOOD_PICKS = [
   { seat: 'Plan', name: 'planner', reason: 'CLAUDE.md asks for a plan before a big change.', evidence: 'CLAUDE.md' },
@@ -38,14 +40,14 @@ const GOOD_PICKS = [
   { seat: 'Make', name: 'ecc:tdd-workflow', reason: 'No tests yet, so tests come first.', evidence: `${CWD}/package.json` },
 ]
 const LOOK_AROUND: ReadonlyArray<[string, Record<string, unknown>]> = [
-  ['Glob', { pattern: '**/*.ts' }], ['Read', { file_path: 'package.json' }], ['Read', { file_path: 'CLAUDE.md' }], ['Grep', { pattern: 'express', output_mode: 'content' }],
+  ['Glob', { pattern: '**/*.ts' }], ['Read', { file_path: 'package.json' }], ['Read', { file_path: 'CLAUDE.md' }], ['Glob', { pattern: '*', path: 'src' }],
 ]
 
 test('at session start the scout is registered as a Sonnet agent that can only read, and the pick tool is registered for it', async ($, on) => {
   const h = onboardHost(on)
   await open($, h)
   expect(h.scout.registered).toHaveLength(1)
-  expect(h.scout.registered[0]).toMatchObject({ name: 'scout', model: 'sonnet', omitClaudeMd: true, tools: ['Read', 'Grep', 'Glob', TEAM] })
+  expect(h.scout.registered[0]).toMatchObject({ name: 'scout', model: 'sonnet', omitClaudeMd: true, tools: ['Read', 'Glob', TEAM] })
   expect(h.tools).toContain('team_pick')
   expect(h.toolSpecs.find(t => t.name === 'team_pick')?.isDeferred).toBe(false)
   expect(h.calls.registered).toEqual([]) // hires are only for skills
@@ -74,7 +76,7 @@ test('Start with a scout: it is started on its own type with the full list, look
   expect(spawn?.prompt).toContain('ecc:code-reviewer · agent')
   expect(spawn?.prompt).toContain('The project folder is: /repo')
   expect(spawn?.prompt).not.toContain(BRIEF_NOTE) // no hire notes: it is not a hire
-  expect(calls.map(c => c.tool)).toEqual(['Glob', 'Read', 'Read', 'Grep', TEAM])
+  expect(calls.map(c => c.tool)).toEqual(['Glob', 'Read', 'Read', 'Glob', TEAM])
   expect(calls.map(c => c.answer.deny)).toEqual([undefined, undefined, undefined, undefined, undefined])
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(0)
   expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('scout')
@@ -100,25 +102,40 @@ test('the scout is not a hire: it never appears at a desk, and its reads are not
   await ui.unmount()
 })
 
-test('the scout\'s reads are guarded: secrets, outside the folder, links that lead out, and every other tool are refused; a search returns file names only', async ($, on) => {
+test('the scout\'s reads are guarded: secrets, outside the folder, .. paths, links that lead out, Grep and every other tool are refused', async ($, on) => {
   const h = onboardHost(on)
   h.files.set(`${CWD}/.env`, 'KEY=1')
+  h.files.set(`${CWD}/prod.env`, 'KEY=2')
   h.files.set(`${CWD}/notes.txt`, 'a link')
   h.links[`${CWD}/notes.txt`] = '/home/me/.ssh/id_rsa'
   const calls = moves($, h, [
-    ['Read', { file_path: '.env' }], ['Read', { file_path: '/etc/passwd' }], ['Read', { file_path: 'notes.txt' }], ['Read', { file_path: 'missing.md' }],
-    ['Glob', { pattern: '../**/*' }], ['Grep', { pattern: 'KEY', path: '/home/me' }], ['Bash', { command: 'cat .env' }], ['Write', { file_path: 'a.txt', content: 'x' }],
-    ['Read', { file_path: 'package.json' }], ['Grep', { pattern: 'express', output_mode: 'content', '-n': true }], [TEAM, { picks: GOOD_PICKS.slice(0, 1) }],
+    ['Read', { file_path: '.env' }], ['Read', { file_path: 'prod.env' }], ['Read', { file_path: '/etc/passwd' }], ['Read', { file_path: 'notes.txt' }], ['Read', { file_path: 'missing.md' }],
+    ['Read', { file_path: 'src/../package.json' }], ['Glob', { pattern: '../**/*' }], ['Glob', { pattern: '*', path: 'src/..' }], ['Grep', { pattern: 'KEY' }],
+    ['Bash', { command: 'cat .env' }], ['Write', { file_path: 'a.txt', content: 'x' }],
+    ['Read', { file_path: 'package.json' }], ['Glob', { pattern: '*' }], [TEAM, { picks: GOOD_PICKS.slice(0, 1) }],
   ])
   await open($, h)
   await press($, h, 'terminal', 'onboard-start')
   await more(h)
-  expect(calls.map(c => (c.answer.deny ? 'refused' : 'ran'))).toEqual(['refused', 'refused', 'refused', 'refused', 'refused', 'refused', 'refused', 'refused', 'ran', 'ran', 'ran'])
-  expect(calls.slice(0, 8).every(c => /^Refused by Clawd HQ: /.test(c.answer.deny ?? ''))).toBe(true)
-  // Only the calls that passed reached the tools, and the search was cut down to file names.
-  const reached = h.calls.tools.filter(t => t.agentId === 'sc1')
-  expect(reached.map(t => t.tool)).toEqual(['Read', 'Grep'])
-  expect(reached[1]?.input).toMatchObject({ pattern: 'express', output_mode: 'files_with_matches' })
+  expect(calls.map(c => (c.answer.deny ? 'refused' : 'ran'))).toEqual([...Array(11).fill('refused'), 'ran', 'ran', 'ran'])
+  expect(calls.slice(0, 11).every(c => /^Refused by Clawd HQ: /.test(c.answer.deny ?? ''))).toBe(true)
+  // Only the calls that passed reached the tools.
+  expect(h.calls.tools.filter(t => t.agentId === 'sc1').map(t => t.tool)).toEqual(['Read', 'Glob'])
+})
+
+test('a scout the plugin has not marked yet, which the engine lists by its type, is guarded from its first call and never hired', async ($, on) => {
+  const h = onboardHost(on)
+  h.files.set(`${CWD}/.env`, 'KEY=1')
+  await open($, h)
+  h.agentList.push({ id: 'sc9', type: 'clawd-hq:scout', description: 'Look around the project', status: 'running' })
+  const call = (input: Record<string, unknown>) => $.tool.call({ tool: 'Read', ...input, agentId: 'sc9' } as never) as Promise<{ deny?: string }>
+  expect((await call({ file_path: '.env' })).deny).toMatch(/^Refused by Clawd HQ/)
+  expect((await call({ file_path: 'package.json' })).deny).toBeUndefined()
+  await frames(h, 17)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'desk-sc9' })).toBeUndefined()
+  expect((await ui.findAll({ type: 'Text' })).map(t => String(t.text)).join('\n')).not.toMatch(/scout/i)
+  await ui.unmount()
 })
 
 test('the pick tool is for the scout alone: the main chat and other agents are told so', async ($, on) => {
@@ -138,6 +155,7 @@ test('a scout that sends names nobody has is told and may try again; the second 
   expect(calls[1]?.answer.deny).toMatch(/ecc:nobody.*not on the candidate list/)
   expect(calls[2]?.answer.deny).toBeUndefined()
   expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('scout')
+  expect(stopsOf(h)).toEqual([]) // it sent its picks: nothing to stop
 })
 
 test('a scout that sends nothing usable three times is finished, and Opus picks instead', async ($, on) => {
@@ -149,6 +167,7 @@ test('a scout that sends nothing usable three times is finished, and Opus picks 
   await more(h)
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
   expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('opus')
+  expect(stopsOf(h)).toEqual(['sc1']) // the scout is stopped, not left to run on
 })
 
 test('a scout that says nothing for a minute and a half is given up on: Opus picks, and the scout is refused from then on', async ($, on) => {
@@ -166,6 +185,7 @@ test('a scout that says nothing for a minute and a half is given up on: Opus pic
   await more(h)
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
   expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('opus')
+  expect(stopsOf(h)).toEqual(['sc1'])
   const late = (await $.tool.call({ tool: 'Read', file_path: 'package.json', agentId: 'sc1' } as never)) as { deny?: string }
   expect(late.deny).toMatch(/^Refused by Clawd HQ/)
 })

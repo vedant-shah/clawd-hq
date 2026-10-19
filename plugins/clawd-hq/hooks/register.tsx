@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, Mood, Payroll } from '../types'
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
@@ -10,9 +10,14 @@ import type { ArtifactAnswer, ArtifactIo } from './artifacts'
 import { loadMemory, remember, rememberCall, saveBoxAnswer, saveMemory } from './memory-io'
 import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
-import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MEM_TOOL, RECALL, STEP_TOOL, TEAM_TOOL } from './constants'
+import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MEM_TOOL, RECALL, STEP_TOOL } from './constants'
+import { ownToolAnswer } from './own-tools'
+import type { OwnToolIo } from './own-tools'
+import { blank, smallRow } from './quiet-rows'
+import type { Resolve } from './quiet-rows'
 import { createScoutBox } from './scout-box'
-import { NOT_SCOUT_DENY, SCOUT_CRASH_DENY, runScout, scoutCall, spawnTypeOf } from './scout-run'
+import { SCOUT_CRASH_DENY, runScout, scoutRoute, spawnTypeOf } from './scout-run'
+import type { RouteIo, ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, TEAM_PICK_SPEC } from './scout-spec'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { applyPayroll, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
@@ -86,6 +91,9 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 let cwd = ''
 /** The setup scout (hooks/scout-run.ts): the files it opens and the picks it sends. It is no hire, so it stays off the books. */
 const scoutBox = createScoutBox()
+const scoutHost = ($: EngineInterface): ScoutHost => ({ spawn: a => $.agent.spawn(a), list: () => $.agent.list(), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn) })
+const scoutRouteIo = ($: EngineInterface): RouteIo => ({
+  real: async path => (await $.fs.stat(path, { resolve: true })).realPath, isHired: async id => (await read($, staff)).some(one => one.id === id), typeOf: async id => (await $.agent.list()).find(a => a.id === id)?.type })
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
@@ -187,9 +195,7 @@ async function specialistOf($: EngineInterface, id: string): Promise<Employee | 
  */
 async function reconcile($: EngineInterface) {
   const [agents, list, now] = [await $.agent.list(), await read($, staff), await $.clock.now()]
-  for (const a of agents) {
-    if (!list.some(e => e.id === a.id) && a.type !== SCOUT_TYPE && endOfStatus(a.status) === undefined) await hireFromList($)(a)
-  }
+  for (const a of agents) if (!list.some(e => e.id === a.id) && a.type !== SCOUT_TYPE && endOfStatus(a.status) === undefined) await hireFromList($)(a) // the scout is no hire
   for (const e of list) {
     const status = agents.find(a => a.id === e.id)?.status
     const seen = status !== undefined && status !== e.engine ? markEngine(e, status, now) : e
@@ -277,6 +283,12 @@ const artifactIo = ($: EngineInterface): ArtifactIo => ({
   check: i => $.tool.check(i as never), list: i => $.tool.call({ tool: 'Artifact', ...i }) as never,
 })
 
+/** The office's own tools (hooks/own-tools.ts): the tour, remember, and the step report. */
+const ownToolIo = ($: EngineInterface): OwnToolIo => ({
+  tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
+  remember: (id, input) => rememberCall(memoryIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
+})
+
 /** The step tool (hooks/steps.ts): only a specialist at work here reports. */
 const stepIo = ($: EngineInterface): StepIo => ({
   isAtWork: async id => { const one = await specialistOf($, id); return one !== undefined && isActive(one) },
@@ -323,7 +335,7 @@ const onboardIo = async ($: EngineInterface, opts: BriefingOptions): Promise<Onb
     ancestors: async name => ancestorPaths(await $.fs.ancestors({ names: [name] })),
     breakdown: async () => breakdownOf(await $.session.usage({ breakdown: 'summary' })), commands: async () => commandsOf(await $.command.list()),
     complete: async req => answerText(await $.model.complete(req)),
-    spawnScout: (brief, check) => runScout(scoutBox, { spawn: async prompt => (await $.agent.spawn({ subagentType: SCOUT_TYPE, description: 'Look around the project', prompt })).agentId ?? (await $.agent.list()).find(a => a.type === SCOUT_TYPE && !scoutBox.isScout(a.id))?.id, after: (ms, fn) => $.clock.after(ms, fn) }, brief, check, SCOUT_TIMEOUT_MS),
+    spawnScout: (brief, check) => runScout(scoutBox, scoutHost($), brief, check, SCOUT_TIMEOUT_MS),
     ask: q => $.ui.ask(q.question, { options: q.options.map(o => o.label), header: q.header }).catch(() => undefined), // a mod's own AskUserQuestion call is refused: "that is $.ui.ask"
     setToggle: async (field, value) => (await setToggle(configIo($), field, value)) === undefined, options: async () => ({ chiefOfStaff: opts.isOn, quietChat: opts.isQuiet }),
     registerHire: ({ name, description, prompt, skills }) => $.agent.register({ name, description, prompt, skills }).then(() => true, () => false),
@@ -440,19 +452,8 @@ const demoIo = ($: EngineInterface): DemoIo => ({
   after: (ms, fn) => $.clock.after(ms, fn),
 })
 
-/** A row drawn as nothing. */
-function blank($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0]) {
-  const { Text } = $.ui.resolve(e)
-  return <Text>{''}</Text>
-}
-
-/** A small row as its look says: drawn as it is, as nothing, or dimmed. */
-async function smallRow($: EngineInterface, e: Parameters<EngineInterface['ui']['resolve']>[0], look: ReturnType<typeof rowLook>, draw: () => Promise<RenderElement>): Promise<RenderElement> {
-  if (look === 'show') return draw()
-  if (look === 'hide') return blank($, e)
-  const { Text } = $.ui.resolve(e)
-  return <Text dimColor>{await draw()}</Text>
-}
+/** The drawing table of a render event, handed to the quiet rows (hooks/quiet-rows.tsx) as a closure. */
+const resolver = ($: EngineInterface): Resolve => e => $.ui.resolve(e)
 
 export const register: Register = (on, options) => {
   let timer: Timer | undefined
@@ -649,38 +650,23 @@ export const register: Register = (on, options) => {
     // The running tally of agent and skill use (hooks/use-tally.ts): names and counts only, for what session files are too big to show. Never waited for.
     if (isCountedTool(tool)) void (async () => recordUse({ get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value) }, cwd, await $.session.id(), tool, input))().catch(() => undefined)
     if (isEditTurn && isShippedWrite(tool, input)) return { deny: SHIPPED_DENY } as never
-    // The setup scout reads inside the project and sends its picks (hooks/scout-guard.ts and scout-run.ts); a search is cut to file names. Anyone else is turned away from its tool.
-    if (id !== undefined && scoutBox.isScout(id)) {
-      const s = await scoutCall(scoutBox, { real: async path => (await $.fs.stat(path, { resolve: true })).realPath }, cwd, id, tool, input)
-      return ('run' in s ? next({ ...e, ...s.run } as never) : s) as never
-    }
-    if (tool === TEAM_TOOL) return { deny: NOT_SCOUT_DENY } as never
+    // The setup scout reads inside the project and sends its picks, guarded from its first call (hooks/scout-run.ts); anyone else is turned away from its tool.
+    const scouted = await scoutRoute(scoutBox, scoutRouteIo($), cwd, id, tool, input)
+    if (scouted) return ('run' in scouted ? next({ ...e, ...scouted.run } as never) : scouted) as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
     if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
-
-    if (tool === DEMO_TOOL) {
-      await openPanes(paneIo($), false)
-      await startDemo(demoIo($))
-      return { result: `The ${BRAND} tour is playing in the side panel for about a minute. If the panel is not visible, the user can type /office.` } as never
-    }
-
-    if (tool === MEM_TOOL) return { result: await rememberCall(memoryIo($), id, input) } as never
-
-    // A specialist's own report of how far along it is. Only one at work here counts; any other call is ignored.
-    if (tool === STEP_TOOL) return await reportStep(stepIo($), id, input) as never
-
+    const own = await ownToolAnswer(ownToolIo($), tool, id, input) // the tour, remember, and a specialist's step report
+    if (own) return own as never
     // What the person answers in Clawd's question box is saved as their decision, each question with its own answer.
     if (tool === 'AskUserQuestion' && id === undefined) {
       const ran = await next(e)
       for (const { question, said } of boxAnswers(input, ran)) await saveBoxAnswer(memoryIo($), question, said)
       return ran
     }
-
     if (id === undefined) {
       if (tool !== 'Agent' && tool !== 'Task') await setBoss($, b => ({ ...b, activity: sentenceOf(tool, input) }))
       return next(e)
     }
-
     // An id no spawn announced and the engine does not list is no one of ours: no hire, no revival.
     const known = (await read($, staff)).find(one => one.id === id)
     const listed = known ? undefined : (await $.agent.list()).find(one => one.id === id)
@@ -688,11 +674,7 @@ export const register: Register = (on, options) => {
     if (listed) await hireFromList($)(listed)
     else await signOfLife($, id)
     await update($, staff, l => edit(l, id, one => withTool(one, sentenceOf(tool, input))))
-    try {
-      return await next(e)
-    } finally {
-      await update($, staff, l => edit(l, id, one => (one.mood === 'working' ? { ...one, mood: 'thinking' } : one)))
-    }
+    try { return await next(e) } finally { await update($, staff, l => edit(l, id, one => (one.mood === 'working' ? { ...one, mood: 'thinking' } : one))) }
   }).catch((_$, e, next) => {
     if (!next.called && e.agentId !== undefined && scoutBox.isScout(e.agentId)) return { deny: SCOUT_CRASH_DENY } as never // fails closed
     return !next.called && guardOnCrash(isEditTurn, String(e.tool), e as unknown as Record<string, unknown>) === 'deny' ? { deny: SHIPPED_DENY } as never : next(e)
@@ -767,16 +749,13 @@ export const register: Register = (on, options) => {
       // Most rows are the person's own or already in full: nothing is read for them.
       if (!isQuiet() || p.isExpanded || (!p.task && !p.from)) return next(e)
       if (!isHandback({ isExpanded: p.isExpanded, originKind: p.origin.kind, text: p.text, task: p.task, from: p.from }, await read($, staff))) return next(e)
-      return blank($, e)
+      return blank(resolver($), e)
     })
-
-    on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => (isQuiet() && isNoUpdate(e.props.text) ? blank($, e) : next(e)))
-
+    on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => (isQuiet() && isNoUpdate(e.props.text) ? blank(resolver($), e) : next(e)))
     // Small rows: the office's own bookkeeping calls are hidden or dimmed (hooks/quiet.ts says which). Errors always show.
-    on('ui.render', { component: 'ToolUse' }, async ($, e, next) => (isQuiet() ? smallRow($, e, rowLook(e.props, await read($, staff)), () => next(e)) : next(e)))
-    on('ui.render', { component: 'ToolResult' }, async ($, e, next) => (isQuiet() ? smallRow($, e, rowLook(e.props, await read($, staff)), () => next(e)) : next(e)))
-
-    on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => (isQuiet() && isBackgroundHint(e.props.kind) ? blank($, e) : next(e)))
+    on('ui.render', { component: 'ToolUse' }, async ($, e, next) => (isQuiet() ? smallRow(resolver($), e, rowLook(e.props, await read($, staff)), () => next(e)) : next(e)))
+    on('ui.render', { component: 'ToolResult' }, async ($, e, next) => (isQuiet() ? smallRow(resolver($), e, rowLook(e.props, await read($, staff)), () => next(e)) : next(e)))
+    on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => (isQuiet() && isBackgroundHint(e.props.kind) ? blank(resolver($), e) : next(e)))
   }
 
   // ---- The four office panes, one per host tab: drawn by panel.tsx from a snapshot of the state ----

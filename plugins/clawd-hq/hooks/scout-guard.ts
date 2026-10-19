@@ -1,6 +1,7 @@
 // The scout's guard, pure: the scout may read inside the project folder and nothing else, and never a secret.
 // The spelling is judged here; `guardScout` then asks where the path really lands (a link inside the folder can lead out of it).
-// Best effort on names: a secret under an odd name is not caught, which is why Grep only ever returns file names.
+// The scout has Read and Glob only: Glob returns names, and a name is judged before it is opened. Grep is refused, because a
+// search over contents could surface a secret under any name. Best effort on names: a secret under an odd name is not caught.
 import { TEAM_TOOL } from './constants'
 
 /** What a scout's call may do: be refused with a plain reason, or run (with these fields set over its own). */
@@ -13,12 +14,16 @@ const deny = (why: string): ScoutVerdict => ({ deny: `${REFUSED}${why}` })
 const OUTSIDE = 'the scout may only look inside the project folder.'
 const SECRET = 'that looks like a secret (keys, credentials, .env files, browser data), and the scout never opens those.'
 const NOT_THERE = 'that is not a file or folder inside the project.'
-const ONLY_READS = 'the scout only reads. It may use Read, Grep, Glob and team_pick.'
+const DOTS = 'a path with .. in it is not allowed; name the file from the project folder down.'
+const NO_FOLDER = 'the project folder is not known.'
+const ONLY_READS = 'the scout only reads. It may use Read, Glob and team_pick.'
 
 // ---- Paths ----
 
 const slashes = (p: string) => p.replace(/\\/g, '/')
 const hasDrive = (p: string) => /^[A-Za-z]:/.test(p)
+/** Whether a path, in either slash, has a `..` segment (two dots inside a name do not count). */
+const hasDots = (p: string) => slashes(p).split('/').includes('..')
 
 /** The path against the folder as one absolute spelling, dots folded; `undefined` for one that cannot be placed (`~`, a network path, drive-relative, empty). */
 export function resolveIn(folder: string, path: string): string | undefined {
@@ -42,14 +47,16 @@ export function isInside(folder: string, path: string): boolean {
 
 // ---- Secrets ----
 
+/** File names (the last part of a path), judged without regard to case. The words are kept in the name wherever they fall. */
 const SECRET_FILE = new RegExp([
-  '^\\.env',
-  '\\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx|tfstate|keychain|keychain-db)$',
-  '^id_(rsa|dsa|ecdsa|ed25519)(\\.pub)?$',
+  '\\.env',
+  '\\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx|tfstate|tfvars|enc|keychain|keychain-db)$',
+  '(secret|credential|token|password)',
+  '^id_',
+  '_history$',
   '^adbkey',
-  '^\\.(npmrc|pypirc|netrc|pgpass|htpasswd|git-credentials)$',
-  '^\\.?credentials?(\\.(json|ya?ml|txt|xml|ini|toml))?$',
-  '^secrets?\\.(json|ya?ml|env|txt|toml|ini)$',
+  '^\\.(npmrc|yarnrc|pypirc|netrc|pgpass|htpasswd|git-credentials|dockercfg|boto|vault_pass)',
+  '^(wp-config\\.php|database\\.yml|google-services\\.json|googleservice-info\\.plist)$',
   'service-account[^/]*\\.json$',
   '^settings\\.local\\.json$',
   '^(cookies(\\.sqlite)?|login data|logins\\.json|key[34]\\.db|local state|web data)$',
@@ -70,40 +77,41 @@ export function isSecretPath(path: string): boolean {
 
 // ---- The call ----
 
-/** The path in an input field, resolved; a missing or odd field is `undefined`. */
-const placed = (folder: string, v: unknown): string | undefined => (typeof v === 'string' ? resolveIn(folder, v) : undefined)
-
-/** A path that may be looked at: inside the folder and no secret. */
-function allowed(folder: string, path: string | undefined): ScoutVerdict | string {
+/** A path that may be looked at: no `..`, placeable, inside the folder and no secret. Returns the folded path, or the refusal. */
+function allowed(folder: string, raw: unknown): ScoutVerdict | string {
+  if (typeof raw !== 'string') return deny(NOT_THERE)
+  if (hasDots(raw)) return deny(DOTS)
+  const path = resolveIn(folder, raw)
   if (path === undefined) return deny(NOT_THERE)
   if (!isInside(folder, path)) return deny(OUTSIDE)
   return isSecretPath(path) ? deny(SECRET) : path
 }
 
+/** What the real-path check looks up: the folded path, and the scout's own spelling when it is a different string. */
+const lookups = (path: string, raw: string): readonly string[] => (raw.trim() === path ? [path] : [path, raw.trim()])
+
 /** A glob pattern that climbs out of the folder or starts at the root, a home folder or a drive. */
 const isEscaping = (pattern: unknown): boolean =>
-  typeof pattern !== 'string' || pattern.trim() === '' || /^(~|[\\/]|[A-Za-z]:)/.test(pattern.trim()) || slashes(pattern).split('/').includes('..')
+  typeof pattern !== 'string' || pattern.trim() === '' || /^(~|[\\/]|[A-Za-z]:)/.test(pattern.trim()) || hasDots(pattern)
 
 function readCall(folder: string, input: Record<string, unknown>): ScoutVerdict {
-  const path = allowed(folder, placed(folder, input.file_path))
-  return typeof path === 'string' ? { run: {}, check: [path], read: path } : path
+  const path = allowed(folder, input.file_path)
+  return typeof path === 'string' ? { run: {}, check: lookups(path, String(input.file_path)), read: path } : path
 }
 
-function searchCall(folder: string, tool: 'Glob' | 'Grep', input: Record<string, unknown>): ScoutVerdict {
-  const isGrep = tool === 'Grep'
-  const { pattern } = input
-  if (typeof pattern !== 'string' || pattern === '') return deny('a search needs a pattern.')
-  if (!isGrep && isEscaping(pattern)) return deny(OUTSIDE)
-  if (isGrep && input.glob !== undefined && isEscaping(input.glob)) return deny(OUTSIDE)
-  const path = input.path === undefined ? folder : allowed(folder, placed(folder, input.path))
-  // Only the names of the files that match come back, so a secret the search happens to match is never shown.
-  return typeof path === 'string' ? { run: isGrep ? { output_mode: 'files_with_matches' } : {}, check: [path] } : path
+function globCall(folder: string, input: Record<string, unknown>): ScoutVerdict {
+  if (typeof input.pattern !== 'string' || input.pattern === '') return deny('a search needs a pattern.')
+  if (isEscaping(input.pattern)) return deny(OUTSIDE)
+  if (input.path === undefined) return { run: {}, check: [folder] }
+  const path = allowed(folder, input.path)
+  return typeof path === 'string' ? { run: {}, check: lookups(path, String(input.path)) } : path
 }
 
 /** What the scout's call may do, judged by spelling alone. */
 export function checkScoutCall(tool: string, input: Record<string, unknown>, folder: string): ScoutVerdict {
+  if (folder.trim() === '') return deny(NO_FOLDER)
   if (tool === 'Read') return readCall(folder, input)
-  if (tool === 'Glob' || tool === 'Grep') return searchCall(folder, tool, input)
+  if (tool === 'Glob') return globCall(folder, input)
   return tool === TEAM_TOOL ? { run: {}, check: [] } : deny(ONLY_READS)
 }
 
@@ -120,7 +128,7 @@ export async function guardScout(io: RealIo, tool: string, input: Record<string,
     const root = (await io.real(folder)) ?? folder
     for (const path of verdict.check) {
       const landed = await io.real(path)
-      const judged = allowed(root, landed === undefined ? undefined : resolveIn(root, landed))
+      const judged = allowed(root, landed)
       if (typeof judged !== 'string') return judged
     }
     return verdict

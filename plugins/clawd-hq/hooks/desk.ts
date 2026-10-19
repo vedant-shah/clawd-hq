@@ -115,10 +115,12 @@ export type Effort = (typeof EFFORTS)[number]
 /** Added to the Agent tool's description, so Clawd sizes every hire to the job. */
 export const STAFFING_NOTE =
   '\n\nClawd HQ staffing: you are Clawd, the chief of staff, and you size every hire to the job. ' +
-  'Set `model`: `haiku` for lookups, searches and mechanical edits, such as: search many files and report back; summarise a long log or test output; count or list things; run the tests and report what failed; update a README sentence or a code comment; rename text across files. ' +
+  'Set `model`: `haiku` for jobs with a clear spec that a check can prove: lookups, searches, counting; summarising a log or test output; running tests and reporting what failed; wording, comment and README edits; and small code edits where the brief names the file and the exact change and a test shows it worked, such as renaming text across files, moving or removing a line, or changing a string. ' +
+  'Tell haiku to do the job itself and not hand it on, and give it the file, the exact change and the exact check that means done. ' +
+  'Not `haiku`: unclear specs, judgment calls, design across several files, debugging when the cause is unknown, security. ' +
+  'A job that only reads and reports starts at `haiku` unless it needs judgment. ' +
   '`sonnet` for routine implementation, tests and reviews; ' +
   '`opus` for architecture, hard debugging, security and anything ambiguous. ' +
-  'A job that only reads and reports starts at `haiku`, unless it needs judgment. Code changes stay on `sonnet` or `opus`; a comment or text-only edit is `haiku` work. ' +
   'Start `prompt` with one line `[effort: low|medium|high|xhigh|max]`: low for lookups, medium by default, high for design and debugging, ' +
   'xhigh or max only for the hardest problems. The office removes that line before the agent reads its brief and applies the effort to every request it makes.'
 

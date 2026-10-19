@@ -92,10 +92,10 @@ export function doneLine(one: Employee, now: number): { when: string; took: stri
  * person are not counted here: they reach the person in Clawd's question box.
  */
 export function statusOf(isBusy: boolean, working: number, failed: string[]): { tone: 'clear' | 'busy' | 'alert'; text: string } {
-  // How many are at work is told by the section below, not here: working only decides between "Free to talk" and "All clear".
+  // How many are at work is told by the section below, not here: working only decides between "Free" and "All clear".
   if (failed[0] !== undefined) return { tone: 'alert', text: `${failed[0]} failed${failed.length > 1 ? ` +${failed.length - 1}` : ''}` }
-  if (isBusy) return { tone: 'busy', text: 'Working on your request' }
-  return { tone: 'clear', text: working > 0 ? 'Free to talk' : 'All clear' }
+  if (isBusy) return { tone: 'busy', text: 'Working' }
+  return { tone: 'clear', text: working > 0 ? 'Free' : 'All clear' }
 }
 
 // ---- Decisions ----

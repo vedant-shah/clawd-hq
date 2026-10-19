@@ -177,7 +177,7 @@ test('Clawd\'s card says what he is doing with a coloured dot and no at-work cou
   // Clawd is between turns with one specialist at work: he is free to talk.
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /^Free to talk$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Free$/ })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe(GREEN)
     expect(await ui.find({ type: 'Text', text: /at work$/ })).toBeUndefined()
     expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
@@ -190,7 +190,7 @@ test('Clawd\'s card says what he is doing with a coloured dot and no at-work cou
   await $.turn.start({ text: 'Plan the scoring API', turnId: 't1' } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /^Working on your request$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Working$/ })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe(AMBER)
     await ui.unmount()
   }
@@ -718,9 +718,9 @@ test('a specialist\'s turn starting is not Clawd\'s: his card stays free to talk
   await $.turn.start({ text: '', turnId: 'r2', agentId: 'a1' } as never)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(await ui.find({ type: 'Text', text: /^Free to talk$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Free$/ })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^●$/ }))?.props.color).toBe(GREEN)
-    expect(await ui.find({ type: 'Text', text: /^Working on your request$/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^Working$/ })).toBeUndefined()
     await ui.unmount()
   }
 })

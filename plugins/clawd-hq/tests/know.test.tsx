@@ -393,7 +393,7 @@ test('a note has its own section under a YOU SHOULD KNOW heading, between Clawd\
     const [heading, tag, who, line] = [all.indexOf('YOU SHOULD KNOW'), all.indexOf('HEADS UP'), all.indexOf('· Tester'), all.indexOf('The Tester says all tests pass, but the last test run failed.')]
     expect(heading).toBeGreaterThan(all.findIndex(t => /Chief of Staff/.test(t)))
     // Nothing of the note is on Clawd's card: his words and status come before the heading.
-    expect(all.findIndex(t => /All clear|Free to talk|Working on your request/.test(t))).toBeLessThan(heading)
+    expect(all.findIndex(t => /All clear|Free|Working/.test(t))).toBeLessThan(heading)
     expect([tag, who, line]).toEqual([heading + 1, heading + 2, heading + 3])
     expect((await ui.find({ type: 'Text', text: /^HEADS UP$/ }))?.props.color).toBe(AMBER)
     expect((await ui.find({ type: 'Text', text: /^· Tester$/ }))?.props.dimColor).toBe(true)

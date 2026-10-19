@@ -97,9 +97,9 @@ test('a finished row says when, how long it took and the tokens; a failure says 
 
 test('Clawd\'s status line says what he is doing and never repeats the at-work count; a failure comes first, and questions are never counted', () => {
   expect(statusOf(false, 0, [])).toEqual({ tone: 'clear', text: 'All clear' })
-  expect(statusOf(false, 2, [])).toEqual({ tone: 'clear', text: 'Free to talk' })
-  expect(statusOf(true, 1, [])).toEqual({ tone: 'busy', text: 'Working on your request' })
-  expect(statusOf(true, 0, [])).toEqual({ tone: 'busy', text: 'Working on your request' })
+  expect(statusOf(false, 2, [])).toEqual({ tone: 'clear', text: 'Free' })
+  expect(statusOf(true, 1, [])).toEqual({ tone: 'busy', text: 'Working' })
+  expect(statusOf(true, 0, [])).toEqual({ tone: 'busy', text: 'Working' })
   expect(statusOf(false, 2, ['Reviewer'])).toEqual({ tone: 'alert', text: 'Reviewer failed' })
   expect(statusOf(true, 0, ['Reviewer', 'Tester'])).toEqual({ tone: 'alert', text: 'Reviewer failed +1' })
   for (const s of [statusOf(false, 3, []), statusOf(true, 3, []), statusOf(false, 3, ['Reviewer'])]) expect(s.text).not.toMatch(/no one|at work|\d/)

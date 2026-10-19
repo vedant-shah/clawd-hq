@@ -39,31 +39,6 @@ const KNOWN_ABOUT: Readonly<Record<string, string>> = {
 // ---- The noise filter (rules.mjs) ----
 
 const TOOL_NAME = /^(strategic-compact|loop|loop-.*|schedule|aside|checkpoint|pptx|docx|xlsx|pdf|commit|pr|prp-commit|prp-pr|pm2|jira|jira-integration|configure-ecc|config-gc|update-config|keybindings-help|fewer-permission-prompts|init|setup-claude|save-session|resume-session|sessions|projects|prune|promote|cost-report|cost-tracking|terminal-opener|terminal-ops|clipboard.*|explain-usage|find-skills|skill-creator|skill-create|skill-health|skill-stocktake|skill-scout|skill-comply|hookify.*|instinct-.*|learn|learn-eval|evolve|continuous-learning.*|consolidate-memory|import-memory|unified-.*|email-ops|messages-ops|google-workspace.*|x-api|crosspost|frontend-slides|video-editing|videodb|remotion-video-creation|manim-video|ui-demo|fal-ai-media|ecc-guide|ck|team-builder|dmux-workflows|nanoclaw-repl|token-budget-advisor|context-budget|harness-audit|workspace-surface-audit|agent-sort|rules-distill|ecc-tools-cost-audit|multi-.*|epic-.*|ito-.*|dashboard-builder)$/
-const TOOL_DESC = /\.(pptx|docx|xlsx|pdf)\b|\bslash command|settings\.json|\bcron\b|on a recurring interval|\bclipboard\b|\bslides?\b|\bvideo\b/i
-const LANG_WORDS: Readonly<Record<string, string>> = {
-  python: 'Python', django: 'Python', fastapi: 'Python', flask: 'Python', pytorch: 'Python', php: 'PHP', laravel: 'PHP', rails: 'Ruby',
-  ruby: 'Ruby', java: 'Java', springboot: 'Java', quarkus: 'Java', jpa: 'Java', kotlin: 'Kotlin', android: 'Kotlin', swift: 'Swift',
-  swiftui: 'Swift', ios: 'Swift', rust: 'Rust', go: 'Go', golang: 'Go', cpp: 'C++', 'c++': 'C++', csharp: 'C#', dotnet: 'C#',
-  fsharp: 'F#', dart: 'Dart', flutter: 'Dart', perl: 'Perl', angular: 'Angular', vue: 'Vue', nuxt: 'Vue', svelte: 'Svelte',
-  nestjs: 'NestJS', react: 'React', nextjs: 'React', 'react-native': 'React', kubernetes: 'K8s', mysql: 'MySQL', redis: 'Redis',
-  clickhouse: 'ClickHouse', harmonyos: 'Harmony', compose: 'Kotlin',
-}
-const EXT_LANG: Readonly<Record<string, string>> = {
-  ts: 'TypeScript', tsx: 'TypeScript', js: 'JavaScript', jsx: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript', py: 'Python',
-  php: 'PHP', go: 'Go', rs: 'Rust', vue: 'Vue', svelte: 'Svelte', swift: 'Swift', kt: 'Kotlin', java: 'Java', rb: 'Ruby',
-  dart: 'Dart', cs: 'C#', cpp: 'C++', cc: 'C++', hpp: 'C++', pl: 'Perl',
-}
-const MANIFEST_LANG: ReadonlyArray<readonly [RegExp, readonly string[]]> = [
-  [/^tsconfig\.json$/, ['TypeScript', 'JavaScript']], [/^package\.json$/, ['JavaScript']],
-  [/^(pyproject\.toml|requirements[^/]*\.txt|setup\.py)$/, ['Python']], [/^go\.mod$/, ['Go']], [/^Cargo\.toml$/, ['Rust']],
-  [/^pubspec\.yaml$/, ['Dart']], [/^Gemfile$/, ['Ruby']], [/^composer\.json$/, ['PHP']], [/^pom\.xml$/, ['Java']],
-]
-const DEP_LANG: Readonly<Record<string, string>> = {
-  react: 'React', next: 'React', 'react-native': 'React', vue: 'Vue', nuxt: 'Vue', svelte: 'Svelte', '@angular/core': 'Angular', '@nestjs/core': 'NestJS',
-}
-/** A language counts for the project with at least this many files and this share of its code files. */
-const MIN_FILES = 5
-const MIN_SHARE = 0.15
 
 const own = <T>(map: Readonly<Record<string, T>>, key: string): T | undefined => (Object.hasOwn(map, key) ? map[key] : undefined)
 const bare = (id: string) => id.replace(/^.*:/, '')
@@ -74,8 +49,8 @@ const firstSentence = (text: string) => (text.replace(/\s+/g, ' ').trim().split(
 const depNames = (deps: readonly string[]) =>
   deps.flatMap(d => d.replace(/^[^\s:]*\.(json|toml|txt|lock):\s*/i, '').split(/[\s,]+/)).filter(Boolean).map(d => d.toLowerCase())
 
-/** A skill that runs a tool or the harness, not a kind of work: decks, loops, settings, session care. */
-export const isToolLike = (name: string, about: string) => TOOL_NAME.test(bare(name)) || TOOL_DESC.test(about)
+/** A skill that runs a tool or the harness, not a kind of work: decks, loops, settings, session care. Judged by its name only. */
+export const isToolLike = (name: string) => TOOL_NAME.test(bare(name))
 
 // A skill that works by talking to the person (interviewing, quizzing, asking questions) is something they run, not a background hire.
 // The rule is narrow on purpose: the verb must be aimed at "me", "you" or "the user", so a skill that only mentions users stays.
@@ -87,40 +62,15 @@ const ASKS_QUESTIONS = /\bask(?:s|ing)?\s+(?:me|the\s+user)(?:\s+[\w-]+){0,2}\s+
 export const needsPerson = (name: string, about: string) =>
   tokens(bare(name)).has(GRILL_NAME) || TALKS_AT.test(about) || ASKS_QUESTIONS.test(about)
 
-const isToolByName = (c: Candidate) => c.kind === 'skill' && TOOL_NAME.test(bare(c.id))
-/** A tool-like skill by name always; by its description only when the project shows no sign of needing it (a mod project needs a skill that makes mods). */
-const isToolSkill = (c: Candidate, hasFit: boolean) => isToolByName(c) || (c.kind === 'skill' && !hasFit && TOOL_DESC.test(c.about))
-
-/** The project's languages and frameworks, from its file counts, manifests and dependencies. */
-export function projectTech(facts: ProjectFacts): ReadonlySet<string> {
-  const byLang = Object.entries(facts.fileTypes).reduce<Readonly<Record<string, number>>>((acc, [ext, n]) => {
-    const lang = own(EXT_LANG, ext.replace(/^\./, '').toLowerCase())
-    return lang ? { ...acc, [lang]: (acc[lang] ?? 0) + count(n) } : acc
-  }, {})
-  const total = Object.values(byLang).reduce((a, b) => a + b, 0) || 1
-  const fromFiles = Object.entries(byLang).filter(([, n]) => n >= MIN_FILES && n / total >= MIN_SHARE).map(([lang]) => lang)
-  const entries = facts.outline.map(line => line.trim())
-  const fromManifests = MANIFEST_LANG.flatMap(([re, langs]) => (entries.some(e => re.test(e)) ? langs : []))
-  const fromDeps = depNames(facts.deps).flatMap(d => own(DEP_LANG, d) ?? [])
-  return new Set([...fromFiles, ...fromManifests, ...fromDeps])
-}
-
-const langsIn = (words: ReadonlySet<string>) => [...words].flatMap(w => own(LANG_WORDS, w) ?? [])
-
-/** Made for a language the project does not use: by a word in its name, or by its description naming only others. */
-export function isWrongLanguage(id: string, about: string, tech: ReadonlySet<string>): boolean {
-  if (langsIn(tokens(bare(id))).some(lang => !tech.has(lang))) return true
-  const words = tokens(about)
-  const hits = langsIn(words)
-  return hits.length > 0 && ![...tech].some(t => hits.includes(t) || words.has(t.toLowerCase()))
-}
+/** A tool-like skill, by its name. Its description does not count: a skill that makes mods is still a fit for a mod project. */
+const isToolByName = (c: Candidate) => c.kind === 'skill' && isToolLike(c.id)
 
 // ---- The candidate list (build3.mjs) ----
 
 const idOf = (h: Helper) => (h.name.includes(':') || !h.plugin ? h.name : `${h.plugin}:${h.name}`)
 const isAllowed = (id: string) => !BUILTINS.has(id) && !OWN_HIRE.test(id)
 const isKept = (c: Candidate) => c.uses > 0 || c.isNamed || c.isOwn
-const isNoise = (c: Candidate, tech: ReadonlySet<string>, hasFit: boolean) => isToolSkill(c, hasFit) || isWrongLanguage(c.id, c.about, tech)
+const isNoise = (c: Candidate) => isToolByName(c)
 /**
  * Never a hire, however much it was used, named or owned: the person has to be there for it.
  * A skill that is a tool by its name (compact, pptx, loop) is the person's to run by hand, so using it is no reason to hire it; only their own or a named one stays.
@@ -171,10 +121,7 @@ function onePerId(list: readonly Candidate[]): readonly Candidate[] {
 
 /** Everything the model may pick from: no field cut and no seat cut, only built-in agents, skills that need the person, tools and obvious noise left out. */
 export function candidateList(helpers: readonly Helper[], use: PastUse, facts: ProjectFacts): readonly Candidate[] {
-  const tech = projectTech(facts)
-  const [signals, deps] = [projectSignals(facts), depNames(facts.deps)]
-  const hasFit = (c: Candidate) => fitOf(c, signals, deps) !== undefined
-  const installed = helpers.map(h => fromHelper(h, use)).filter(c => isAllowed(c.id) && (isKept(c) || !isNoise(c, tech, hasFit(c))))
+  const installed = helpers.map(h => fromHelper(h, use)).filter(c => isAllowed(c.id) && (isKept(c) || !isNoise(c)))
   const known = new Set(helpers.flatMap(h => [idOf(h), h.name, bare(h.name)]))
   return onePerId([...installed, ...notOnDisk(use, known)].filter(c => !wantsPerson(c) && !isHandTool(c)))
 }
@@ -284,7 +231,7 @@ export function rulePick(cands: readonly Candidate[], facts: ProjectFacts): read
   const signals = projectSignals(facts)
   const deps = depNames(facts.deps)
   const tellKinds = tellKindsOf(facts)
-  const list = cands.filter(c => !wantsPerson(c)).map(c => ranked(c, signals, deps, tellKinds)).filter(r => !isToolSkill(r.c, r.hasFit))
+  const list = cands.filter(c => !wantsPerson(c)).map(c => ranked(c, signals, deps, tellKinds)).filter(r => !isToolByName(r.c))
     .sort((a, b) => b.score - a.score || a.c.id.localeCompare(b.c.id))
   const core = CORE_SEATS.flatMap(seat => seatPicks(seat, list))
   const taken = new Set(core.map(p => p.name))

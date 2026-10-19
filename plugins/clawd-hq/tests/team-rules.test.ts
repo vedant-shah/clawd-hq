@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { Helper, PastUse, ProjectFacts } from '../hooks/onboard-types'
-import { BUILTINS, candidateList, isToolLike, isWrongLanguage, needsPerson, projectSignals, projectTech, receiptOf, rulePick } from '../hooks/team-rules'
+import { BUILTINS, candidateList, isToolLike, needsPerson, projectSignals, receiptOf, rulePick } from '../hooks/team-rules'
 import type { Candidate } from '../hooks/team-rules'
 
 const facts = (over: Partial<ProjectFacts> = {}): ProjectFacts => ({
@@ -25,34 +25,21 @@ const ids = (list: readonly Candidate[]) => list.map(c => c.id)
 
 // ---- The noise filter ----
 
-test('tool-like skills are noise, by name or by what they say they do', () => {
-  for (const name of ['pptx', 'loop', 'strategic-compact', 'skill-creator', 'hookify-list', 'epic-sync']) expect(isToolLike(name, 'Helps.')).toBe(true)
-  expect(isToolLike('deck-maker', 'Makes .pptx files from notes.')).toBe(true)
-  expect(isToolLike('cron-thing', 'Runs a prompt on a recurring interval.')).toBe(true)
-  for (const name of ['planner', 'tdd-workflow', 'code-review', 'shadcn']) expect(isToolLike(name, 'Helps build things.')).toBe(false)
+test('tool-like skills are noise by their name only, not by what their description says', () => {
+  for (const name of ['pptx', 'loop', 'strategic-compact', 'skill-creator', 'hookify-list', 'epic-sync']) expect(isToolLike(name)).toBe(true)
+  expect(isToolLike('deck-maker')).toBe(false)
+  expect(isToolLike('cron-thing')).toBe(false)
+  for (const name of ['planner', 'tdd-workflow', 'code-review', 'shadcn', 'plugin-authoring']) expect(isToolLike(name)).toBe(false)
 })
 
-test('the project\'s languages come from file counts, manifests and dependencies', () => {
-  const ts = projectTech(facts())
-  for (const lang of ['TypeScript', 'JavaScript']) expect(ts.has(lang)).toBe(true)
-  expect(ts.has('Python')).toBe(false)
-  const py = projectTech(facts({ fileTypes: { py: 40 }, outline: ['pyproject.toml'], deps: [] }))
-  expect(py.has('Python')).toBe(true)
-  expect(projectTech(facts({ deps: ['react', 'next'] })).has('React')).toBe(true)
-  // A handful of files is not a language of the project.
-  expect(projectTech(facts({ fileTypes: { '.ts': 200, '.py': 3 } })).has('Python')).toBe(false)
-})
-
-test('a helper for a language the project does not use is the wrong language, by name or by its description', () => {
-  const tech = projectTech(facts())
-  expect(isWrongLanguage('ecc:python-reviewer', 'Reviews code.', tech)).toBe(true)
-  expect(isWrongLanguage('ecc:go-build', 'Fixes builds.', tech)).toBe(true)
-  expect(isWrongLanguage('ecc:code-reviewer', 'Reviews code.', tech)).toBe(false)
-  expect(isWrongLanguage('ecc:typescript-reviewer', 'Reviews TypeScript code.', tech)).toBe(false)
-  expect(isWrongLanguage('ecc:patterns', 'Idiomatic Django and FastAPI patterns.', tech)).toBe(true)
-  // A description that names the project's own language as well stays.
-  expect(isWrongLanguage('ecc:api', 'REST patterns for Python and TypeScript.', tech)).toBe(false)
-  expect(isWrongLanguage('ecc:python-reviewer', 'Reviews code.', projectTech(facts({ fileTypes: { '.py': 50 } })))).toBe(false)
+test('a helper for a language the project does not use stays a candidate: the list has no language filter', () => {
+  const pythonProject = facts({ fileTypes: { '.py': 40 }, outline: ['pyproject.toml'], deps: [], tells: [] })
+  const list = candidateList([
+    helper('kotlin-reviewer', { about: 'Reviews Kotlin and Android code.' }),
+    helper('go-build', { about: 'Fixes Go builds.' }),
+    helper('code-reviewer', { about: 'Reviews code.' }),
+  ], use(), pythonProject)
+  expect(ids(list)).toEqual(['ecc:kotlin-reviewer', 'ecc:go-build', 'ecc:code-reviewer'])
 })
 
 // ---- The candidate list ----
@@ -70,7 +57,8 @@ test('the list drops noise and built-ins but always keeps what was used, named o
     helper('clawd-hq:make-shadcn', { plugin: undefined }),
   ], use(), facts())
   // `loop` was used, but a tool by name is the person's to run by hand; `pdf` is theirs, so it stays.
-  expect(ids(list)).toEqual(['ecc:planner', 'pdf', 'ecc:django-reviewer'])
+  // `python-reviewer` stays although the project is TypeScript: the team pick sees every helper.
+  expect(ids(list)).toEqual(['ecc:planner', 'pdf', 'ecc:python-reviewer', 'ecc:django-reviewer'])
   for (const name of BUILTINS) expect(ids(list)).not.toContain(name)
 })
 
@@ -181,7 +169,7 @@ test('a built-in skill that fits the project stays a candidate even though its d
   expect(receiptOf(list.find(c => c.id === 'plugin-authoring')!, projectSignals(modFacts()), modFacts().deps)).toBe('fits: Claude Code mod')
 })
 
-test('a built-in skill that is a tool is still noise: by name always, by description when the project shows no need', () => {
+test('a built-in skill that is a tool is noise by name; one that fits the project stays, whatever its description says', () => {
   const noMod = facts({ tells: [], outline: ['src/', 'package.json'], deps: [] })
   const list = candidateList([
     skill('loop', { plugin: undefined, source: 'built in', about: 'Run a prompt on a recurring interval.' }),
@@ -189,7 +177,7 @@ test('a built-in skill that is a tool is still noise: by name always, by descrip
     skill('schedule', { plugin: undefined, source: 'built in', about: 'Create a cron job.' }),
     pluginAuthoring(),
   ], use(), noMod)
-  expect(ids(list)).toEqual([])
+  expect(ids(list)).toEqual(['plugin-authoring'])
   expect(rulePick([cand('loop', { kind: 'skill', uses: 3, plugin: undefined, source: 'built in', about: 'Run a prompt on a recurring interval.' })], noMod)).toEqual([])
 })
 

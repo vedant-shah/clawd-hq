@@ -53,7 +53,7 @@ test('one Opus call with the tested settings, and its good answer becomes the te
   const [req] = io.asked
   expect({ ...req!, prompt: '' }).toEqual({ model: 'opus', prompt: '', maxTokens: 2000, effort: 'medium', timeoutMs: 60000 })
   expect(req!.prompt).toContain('ecc:planner · agent · ecc · Does planner work.')
-  expect(req!.prompt).not.toContain('ecc:python-reviewer')
+  expect(req!.prompt).toContain('ecc:python-reviewer')
   expect(req!.prompt).not.toContain('ecc:pptx')
   expect(team.by).toBe('opus')
   expect(team.picks.map(p => [p.seat, p.name, p.kind])).toEqual([
@@ -100,8 +100,9 @@ test('names not on the list, built-ins and repeats are dropped', () => {
     { seat: 'Find out', name: 'Explore' }, { seat: 'Check', name: 'ecc:made-up-reviewer' }, { seat: 'Check', name: 'ecc:python-reviewer' },
     { seat: 'Specialist', name: 'ecc:pptx' }, { seat: 'Make', name: 'ecc:tdd-guide' },
   ], cands, facts, 'opus')
-  expect(team.picks.map(p => p.name)).toEqual(['ecc:planner', 'ecc:tdd-guide'])
-  expect(team.empty).toEqual(['Check', 'Find out', 'Specialist'])
+  // `ecc:python-reviewer` is on the list (no language filter), so it takes the Check seat; `ecc:pptx` is a tool and is not.
+  expect(team.picks.map(p => p.name)).toEqual(['ecc:planner', 'ecc:tdd-guide', 'ecc:python-reviewer'])
+  expect(team.empty).toEqual(['Find out', 'Specialist'])
 })
 
 test('twelve picks are cut to the seat limits and to eight in all, in the order given', () => {

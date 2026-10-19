@@ -1,5 +1,5 @@
-/** `lost`: still running by the engine's word, but silent too long; a third way a run ends, neither a win nor a failure. */
-export type Mood = 'arriving' | 'working' | 'thinking' | 'done' | 'failed' | 'lost'
+/** `lost`: still running by the engine's word, but silent too long; a third way a run ends, neither a win nor a failure. `stopped`: ended on purpose (killed), a calm end that is neither a win nor a failure. */
+export type Mood = 'arriving' | 'working' | 'thinking' | 'done' | 'failed' | 'lost' | 'stopped'
 
 /** What ended a run: a stop signal from the agent itself, the engine's agent list (a guess), or too long without a sign of life (a guess). */
 export type EndedBy = 'signal' | 'engine' | 'stale'

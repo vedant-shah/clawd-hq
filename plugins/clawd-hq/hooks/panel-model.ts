@@ -84,6 +84,7 @@ export function doneLine(one: Employee, now: number): { when: string; took: stri
   if (one.mood === 'lost') return { when, took: `Lost contact after ${ago(ended - (one.lastSeen ?? one.startedAt))}`, isFailed: false, isLost: true }
   const span = ago(ended - one.startedAt)
   if (one.mood === 'failed') return { when, took: `Failed after ${span}`, isFailed: true, isLost: false }
+  if (one.mood === 'stopped') return { when, took: `Stopped after ${span}`, isFailed: false, isLost: false }
   return { when, took: `took ${span}${one.tokens ? ` · ${tokensLabel(one.tokens)} tokens` : ''}`, isFailed: false, isLost: false }
 }
 

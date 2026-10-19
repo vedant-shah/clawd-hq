@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { AgentStatus } from 'claude-code'
-import { MAX_STAFF, QUIET_MS, STALE_MS, endOfStatus, endRun, hire, markEngine, restart, touch, verdict, withSaid, withStep, withTool } from '../hooks/staff-model'
-import type { Employee } from '../types'
+import { MAX_STAFF, QUIET_MS, STALE_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, restart, touch, verdict, withSaid, withStep, withTool } from '../hooks/staff-model'
+import type { Boss, Employee } from '../types'
 
 const MIN = 60_000
 const emp = (over: Partial<Employee>): Employee => ({
@@ -84,13 +84,20 @@ test('an engine status change to a running one is a sign of life; a change to an
 
 test('the engine status maps every status to how it ends a run', () => {
   expect(Object.fromEntries(STATUSES.map(s => [s, endOfStatus(s)]))).toEqual({
-    pending: undefined, running: undefined, waiting: undefined, idle: 'done', completed: 'done', failed: 'failed', killed: 'failed',
+    pending: undefined, running: undefined, waiting: undefined, idle: 'done', completed: 'done', failed: 'failed', killed: 'stopped',
   })
+})
+
+test('a stop on purpose leaves Clawd alone: no sorry, no failure count, and a calm toast', () => {
+  const b = { wins: 1, fails: 2, oopsUntil: 0, proudUntil: 0, lastTitle: '' } as unknown as Boss
+  expect(finishedBoss(b, 'stopped', 100, 'Tester')).toBe(b)
+  expect(finishedText('stopped', '', 'Tester', emp({ description: 'Build' }), 1_000)).toBe('Tester stopped: Build')
+  expect(finishedBoss(b, 'failed', 100, 'Tester')).toMatchObject({ fails: 3, oopsUntil: 110 })
 })
 
 test('an engine status ends a run only after the specialist has been quiet for 15 seconds', () => {
   const one = emp({ startedAt: 0, lastSeen: 100_000 })
-  for (const [status, mood] of [['completed', 'done'], ['idle', 'done'], ['failed', 'failed'], ['killed', 'failed']] as const) {
+  for (const [status, mood] of [['completed', 'done'], ['idle', 'done'], ['failed', 'failed'], ['killed', 'stopped']] as const) {
     expect(verdict(one, status, 100_000 + QUIET_MS)).toBeUndefined()
     expect(verdict(one, status, 100_000 + QUIET_MS + 1)).toEqual({ mood, how: 'engine' })
   }

@@ -62,15 +62,21 @@ export function endRun(one: Employee, mood: Mood, how: EndedBy, now: number, tic
   return { ...one, ...cheer, mood, activity: undefined, said: undefined, ...NO_PROGRESS, endedAt: now, endedBy: how }
 }
 
-/** Clawd's card after a run ended with a win or a failure: proud or sorry for a while, with who it was and the new count. */
-export const finishedBoss = (b: Boss, mood: Mood, t: number, label: string): Boss => (mood === 'done'
-  ? { ...b, proudUntil: t + 10, oopsUntil: 0, lastTitle: label, wins: b.wins + 1 }
-  : { ...b, oopsUntil: t + 10, proudUntil: 0, lastTitle: label, fails: b.fails + 1 })
+/** Clawd's card after a run ended with a win or a failure: proud or sorry for a while, with who it was and the new count. A stop on purpose changes nothing. */
+export const finishedBoss = (b: Boss, mood: Mood, t: number, label: string): Boss => {
+  if (mood === 'stopped') return b
+  return mood === 'done'
+    ? { ...b, proudUntil: t + 10, oopsUntil: 0, lastTitle: label, wins: b.wins + 1 }
+    : { ...b, oopsUntil: t + 10, proudUntil: 0, lastTitle: label, fails: b.fails + 1 }
+}
 
-/** The toast for a run that ended with a win or a failure. */
-export const finishedText = (mood: Mood, prop: string, label: string, e: Employee, now: number): string => (mood === 'done'
-  ? `${prop} ${label} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
-  : `🤕 ${label} could not finish: ${e.description || e.type}`)
+/** The toast for a run that ended with a win, a stop on purpose, or a failure. */
+export const finishedText = (mood: Mood, prop: string, label: string, e: Employee, now: number): string => {
+  if (mood === 'stopped') return `${label} stopped: ${e.description || e.type}`
+  return mood === 'done'
+    ? `${prop} ${label} finished: ${e.description || e.type} (${ago(now - e.startedAt)}, ${e.tools} tools)`
+    : `🤕 ${label} could not finish: ${e.description || e.type}`
+}
 
 /** A progress report (the step tool's) reaches a specialist only while its run is going; one that ended meanwhile is left as it was. A report is a sign of life. */
 export const withReport = (one: Employee, r: StepReport, now: number): Employee => (isActive(one) ? touch(withProgress(one, r), now) : one)
@@ -93,10 +99,11 @@ export function withStep(one: Employee, u: StepUsage, model: string, now: number
   return { ...one, model: model || one.model, context: input + output, peakInput, outTokens, tokens: peakInput + outTokens, lastSeen: now }
 }
 
-/** How the engine's status for an agent ends its time at a desk: undefined while it is still going. */
+/** How the engine's status for an agent ends its time at a desk: undefined while it is still going. A killed run was stopped on purpose, not failed. */
 export function endOfStatus(status: AgentStatus): Mood | undefined {
   if (status === 'completed' || status === 'idle') return 'done'
-  return status === 'failed' || status === 'killed' ? 'failed' : undefined
+  if (status === 'killed') return 'stopped'
+  return status === 'failed' ? 'failed' : undefined
 }
 
 /** The engine's status moved: a move to a running one is a sign of life, a move to an ended one is not. */

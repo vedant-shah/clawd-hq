@@ -28,7 +28,7 @@ async function floorOf($: Eng, surface: 'terminal' | 'desktop') {
 /** The Log pane's rows of one surface: [when, took] lines. */
 async function logLines($: Eng, surface: 'terminal' | 'desktop') {
   const ui = await mountLog($, surface)
-  const lines = (await ui.findAll({ type: 'Text', text: /took|Failed after|Lost contact/ })).map(t => String(t.text))
+  const lines = (await ui.findAll({ type: 'Text', text: /took|Failed after|Stopped after|Lost contact/ })).map(t => String(t.text))
   await ui.unmount()
   return lines
 }
@@ -100,7 +100,7 @@ test('a resumed specialist with nothing to ask is Working from its first model s
   for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
 })
 
-for (const [status, text] of [['idle', /took/], ['completed', /took/], ['failed', /Failed after/], ['killed', /Failed after/]] as const) {
+for (const [status, text] of [['idle', /took/], ['completed', /took/], ['failed', /Failed after/], ['killed', /Stopped after/]] as const) {
   test(`a specialist the engine reports as ${status} is sent home within a few frames even if no stop was seen`, async ($, on) => {
     const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
     const { clock } = host(on, agents)

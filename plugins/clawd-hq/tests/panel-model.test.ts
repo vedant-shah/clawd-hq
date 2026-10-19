@@ -12,6 +12,16 @@ const emp = (over: Partial<Employee>): Employee => ({
 })
 const mem = (over: Partial<Memory>): Memory => ({ id: 'M1', kind: 'decision', text: 'Use Postgres', by: 'CEO', at: 0, source: 'desk', ...over })
 
+test('a specialist stopped on purpose reads as stopped, not failed: calm line, no red, and Clawd does not report it as a failure', () => {
+  const stopped = emp({ mood: 'stopped', startedAt: 0, endedAt: 90_000 })
+  const failed = emp({ id: 'a2', mood: 'failed', startedAt: 0, endedAt: 90_000 })
+  expect(doneLine(stopped, 100_000)).toMatchObject({ isFailed: false, isLost: false })
+  expect(doneLine(stopped, 100_000).took).toMatch(/^Stopped after /)
+  expect(doneLine(failed, 100_000)).toMatchObject({ isFailed: true })
+  expect(recentFailures([stopped, failed], 100_000, 10 * MIN).map(e => e.id)).toEqual(['a2'])
+  expect(statusOf(false, 0, recentFailures([stopped], 100_000, 10 * MIN).map(e => e.id))).toEqual({ tone: 'clear', text: 'All clear' })
+})
+
 test('tokens read as 850, 22K or 1.2M', () => {
   expect(tokensLabel(850)).toBe('850')
   expect(tokensLabel(22_400)).toBe('22K')

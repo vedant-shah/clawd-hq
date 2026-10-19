@@ -590,7 +590,7 @@ export const register: Register = (on, options) => {
     await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
     if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
-    const sent = e.workflow ? e.prompt : prompt + recallNote((await loadMemory(memoryIo($))).slice(-RECALL)) + BRIEF_NOTE
+    const sent = e.workflow ? e.prompt : prompt + recallNote(await loadMemory(memoryIo($))) + BRIEF_NOTE
     const r = await next({ ...e, prompt: sent })
     if (r.agentId) {
       keepBrief(r.agentId, sent)

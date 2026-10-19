@@ -6,6 +6,7 @@ export const BRIEF_NOTE =
   '\n\n(Office note from Clawd HQ: if you reach a decision or question only the user can settle, do not stall. ' +
   'Make your best call, carry on, and end your final report with one line per item: ' +
   '`QUESTION: <question> | <option> / <option> | recommend: <option>`. ' +
+  'Do the work yourself: do not hire or start other agents or subagents. If the job needs more hands, say so in your report and Clawd will staff it. ' +
   'Clawd, the chief of staff, reads these and asks the user only what needs the user. ' +
   'For each key choice you made yourself that later work should follow (a library, a schema, an interface, a convention), add `DECIDED: <choice> — <why>`. ' +
   'The user watches your progress live. As you work, start each step with one short sentence in everyday words that says what you are doing now, ' +
@@ -178,7 +179,8 @@ export function memoryBlock(entries: Memory[]): string {
     (entries.length ? `\n\nWhat the project remembers:\n${memoryLines(entries)}` : '\n\nNothing is settled yet.')
 }
 
-/** Added to an agent's brief: the decisions it must work within. */
+/** Added to an agent's brief: the user's decisions only, which it must work within. Agents' notes are left out. */
 export function recallNote(entries: Memory[]): string {
-  return entries.length ? `\n\n(Settled for this project; follow the user\'s decisions and do not reopen them:\n${memoryLines(entries)})` : ''
+  const decisions = entries.filter(m => m.kind === 'decision')
+  return decisions.length ? `\n\n(Settled for this project; follow the user\'s decisions and do not reopen them:\n${memoryLines(decisions)})` : ''
 }

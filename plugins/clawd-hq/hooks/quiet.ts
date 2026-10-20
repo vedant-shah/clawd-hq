@@ -26,6 +26,16 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 /** A message that asks for something is never filler: a question, or a request for permission, approval or shutdown. */
 const ASKS = /\?|\b(permission|approv|shut ?down)/i
 
+/** The line the transcript folds several finished background agents into. */
+const MERGED_AGENTS_DONE = /^\d+ background agents completed\.?$/i
+
+/**
+ * That merged line, when it is plainly a success. It names no task of its own, so it cannot be checked against the specialists the
+ * office hired; it is hidden whoever they were. Only the engine's own notification stamp counts, and a status that is not "completed" is shown.
+ */
+const isMergedAgentsDone = (row: ChatRow): boolean =>
+  row.originKind === 'task-notification' && MERGED_AGENTS_DONE.test(row.text.trim()) && (row.task?.status === undefined || row.task.status === 'completed')
+
 /**
  * A row that only hands work back to Clawd: the "finished" notice of a job that ended well (a specialist the office
  * hired, or a background shell or monitor it did not), or a message from a teammate the office hired by name. Clawd
@@ -34,6 +44,7 @@ const ASKS = /\?|\b(permission|approv|shut ?down)/i
  */
 export function isHandback(row: ChatRow, staff: Employee[]): boolean {
   if (row.isExpanded) return false
+  if (isMergedAgentsDone(row)) return true
   if (row.task) {
     if (row.originKind !== 'task-notification' || row.task.status !== 'completed') return false
     if (staff.some(one => one.id === row.task!.id)) return true

@@ -78,6 +78,19 @@ test('a finished notice of a background job the office did not hire is hidden wh
   expect(await drawn($, 'UserMessage', notice({ text: 'Compacted: kept the plan', task: { id: 'shell-9', status: 'completed', type: 'compaction' } }))).toContain('ENGINE')
 })
 
+test('the merged "N background agents completed" line is hidden on every surface; a failure or the full view is not', async ($, on) => {
+  await office($, on)
+  const merged = (over: Record<string, unknown> = {}) => notice({ text: '2 background agents completed', task: undefined, ...over })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    expect(isHidden(await drawn($, 'UserMessage', merged(), surface))).toBe(true)
+    expect(isHidden(await drawn($, 'UserMessage', merged({ task: { status: 'completed' } }), surface))).toBe(true)
+  }
+  expect(await drawn($, 'UserMessage', merged({ text: '2 background agents failed' }))).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', merged({ task: { status: 'failed' } }))).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', merged({ isExpanded: true }))).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', merged({ origin: { kind: 'composer' } }))).toContain('ENGINE')
+})
+
 test('the plugin\'s step calls, tool-loading rows and the background hint are hidden, call and result alike', async ($, on) => {
   await office($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -127,6 +140,7 @@ test('with the quiet chat setting off, nothing in the chat is hidden', { options
   expect(await drawn($, 'ToolProgress', { tool_use_id: 't1', kind: 'background_hint', hint: 'x' })).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', notice({ task: { id: 'shell-9', status: 'completed' } }))).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', notice())).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', notice({ text: '2 background agents completed', task: undefined }))).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', fromJudge())).toContain('ENGINE')
   expect(await drawn($, 'AssistantMessage', { text: '[no update]', isFirstOfReply: true })).toContain('ENGINE')
 })
@@ -137,6 +151,7 @@ test('with Clawd not running the chat, nothing in the chat is hidden either', { 
   expect(isDim(await drawn($, 'ToolUse', tool('TodoWrite')))).toBe(false)
   expect(await drawn($, 'UserMessage', notice({ task: { id: 'shell-9', status: 'completed' } }))).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', notice())).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', notice({ text: '2 background agents completed', task: undefined }))).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', fromJudge())).toContain('ENGINE')
   expect(await drawn($, 'AssistantMessage', { text: '[no update]', isFirstOfReply: true })).toContain('ENGINE')
 })

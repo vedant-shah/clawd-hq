@@ -95,6 +95,27 @@ test('a message from a teammate the office hired by name is a hand-back; one fro
   expect(isHandback(row({ originKind: 'unclassified', from: { name: 'Another project' } }), staff)).toBe(false)
 })
 
+test('the merged "N background agents completed" line is hidden, whoever the tasks in it were', () => {
+  // The merged row names no task of its own, so it cannot be checked against the specialists the office hired.
+  expect(isHandback(row({ text: '2 background agents completed' }), staff)).toBe(true)
+  expect(isHandback(row({ text: '12 background agents completed' }), [])).toBe(true)
+  expect(isHandback(row({ text: '3 Background Agents Completed', task: { status: 'completed' } }), staff)).toBe(true)
+})
+
+test('the merged line is shown whenever it is not plainly a success, the full view, or the notification the engine stamped', () => {
+  // A failure or a stop; a status that is not "completed"; a line that does not say "completed".
+  expect(isHandback(row({ text: '2 background agents failed' }), staff)).toBe(false)
+  expect(isHandback(row({ text: '2 background agents completed', task: { status: 'failed' } }), staff)).toBe(false)
+  expect(isHandback(row({ text: '2 background agents completed', task: { status: 'killed' } }), staff)).toBe(false)
+  expect(isHandback(row({ text: '2 background agents completed, 1 failed' }), staff)).toBe(false)
+  expect(isHandback(row({ text: '2 background agents' }), staff)).toBe(false)
+  // The full view, and words the person typed or another party sent.
+  expect(isHandback(row({ text: '2 background agents completed', isExpanded: true }), staff)).toBe(false)
+  for (const originKind of ['composer', 'peer', 'channel', 'unclassified', 'scheduled-trigger']) {
+    expect(isHandback(row({ text: '2 background agents completed', originKind }), staff)).toBe(false)
+  }
+})
+
 test('a message with a stamp of where it came from is never hidden, even under a teammate\'s name', () => {
   for (const originKind of ['peer', 'peer-send-message', 'channel', 'composer', 'bridge', 'sdk', 'scheduled-trigger', 'task-notification']) {
     expect(isHandback(row({ originKind, from: { name: 'judge' } }), staff)).toBe(false)

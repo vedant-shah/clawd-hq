@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, LeftItem, Memory, Mood, Payroll } from '../types'
+import type { Artifact, Badge, Boss, Employee, Fx, KnowState, LeftItem, Memory, Payroll } from '../types'
 import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart, leftToolUsed, leftTurnStart, leftWatch, type LeftIo } from './left-io'
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
@@ -31,7 +31,7 @@ import type { OnboardCard, OnboardIo, Profile } from './onboard-types'
 import type { PayrollIo } from './payroll'
 import { ROWS_KEY, setToggle } from './configs'
 import type { ConfigField, ConfigIo } from './configs'
-import { BRAND, labelOf, roleOf } from './office'
+import { BRAND, labelOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { contextOf, noteRequest, noteThreshold, startGauge } from './usage'
@@ -64,7 +64,9 @@ import { isCountedTool } from './usage-count'
 import { recordUse } from './use-tally'
 import { scrolled } from './scroll-window'
 import { DEMO_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
-import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict, withReport, withSaid, withStep, withTool } from './staff-model'
+import { hire, withReport, withSaid, withStep, withTool } from './staff-model'
+import { clockOut, hireListed, newHire, reconcile, signOfLife, specialistOf } from './run-io'
+import type { RunIo } from './run-io'
 import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine, reasonOf, runEach, startNote } from './state'
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
@@ -119,51 +121,12 @@ async function enrollNow($: EngineInterface, type: string, jobs: number) {
   await $.store.set('roster', next)
 }
 
-async function newHire($: EngineInterface, id: string, type: string, description: string, name?: string) {
-  const [now, t] = [await $.clock.now(), await read($, tick)]
-  const fresh = freshHire({ id, type, description, name }, now, t)
-  if ((await read($, staff)).some(e => e.id === id)) {
-    await update($, staff, list => hire(list, fresh))
-    return
-  }
-  await enroll($, type, id.startsWith(DEMO) ? 0 : 1)
-  await update($, staff, list => hire(list, fresh))
-  const role = roleOf(type, (await read($, blurbs))[type] ?? '')
-  await setBoss($, b => ({ ...b, activity: role.hello, waveUntil: t + 6, hires: b.hires + 1 }))
-}
-
-/**
- * Ends one specialist's run. The check sits inside the write, so two signals for one stop (turn.complete,
- * SubagentStop, the reconcile) end it once; a guess from the engine or the clock also checks it is still quiet.
- */
-async function clockOut($: EngineInterface, id: string, mood: Mood, how: EndedBy = 'signal') {
-  const [now, t] = [await $.clock.now(), await read($, tick)]
-  let ended: Employee | undefined
-  await update($, staff, l => {
-    ended = undefined
-    return edit(l, id, one => {
-      if (!isActive(one) || (how !== 'signal' && quietFor(one, now) <= QUIET_MS)) return one
-      ended = one
-      return endRun(one, mood, how, now, t)
-    })
-  })
-  const e = ended as Employee | undefined
-  // Lost contact is neither a win nor a failure: no toast, no cheer.
-  if (!e || mood === 'lost') return
-  const blurb = (await read($, blurbs))[e.type] ?? ''
-  const [role, label] = [roleOf(e.type, blurb), labelOf(e, blurb)]
-  await setBoss($, b => finishedBoss(b, mood, t, label))
-  $.ui.toast(finishedText(mood, role.prop, label, e, now))
-}
-
-/** Any sign of life from a specialist (a tool call, a model step): it is heard from now, and a finished one is back at work. */
-async function signOfLife($: EngineInterface, id: string, activity?: string) {
-  const [now, t] = [await $.clock.now(), await read($, tick)]
-  await update($, staff, l => edit(l, id, one => {
-    const back = touch(restart(one, now, t), now)
-    return activity === undefined ? back : { ...back, activity }
-  }))
-}
+/** The books of specialists (hooks/run-io.ts): who is at work, hired, heard from or gone. */
+const runIo = ($: EngineInterface): RunIo => ({
+  now: () => $.clock.now(), tick: () => read($, tick), staff: () => read($, staff), changeStaff: fn => update($, staff, fn),
+  blurbs: () => read($, blurbs), enroll: (type, jobs) => enroll($, type, jobs), setBoss: fn => setBoss($, fn),
+  toast: text => void $.ui.toast(text), agents: () => $.agent.list(),
+})
 
 /** A resumed specialist is at work again, on a new run; one the books lost (from before a reload) joins them, not counted as a hire. */
 async function rejoin<R extends { agentId?: string }>($: EngineInterface, r: R, e: { subagentType: string; description: string; name?: string; resume?: { agentId: string } }, said?: Effort) {
@@ -173,38 +136,9 @@ async function rejoin<R extends { agentId?: string }>($: EngineInterface, r: R, 
   // The level it was hired with (or the follow-up's new one) goes on; the books are the copy that outlives a reload.
   const level = resumedEffort(said, [r.agentId, e.resume?.agentId], await read($, staff), efforts)
   if (level) { efforts.set(r.agentId, level); await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, effort: level }))) }
-  await signOfLife($, r.agentId)
+  await signOfLife(runIo($), r.agentId)
   await showStatus($)
   return r
-}
-
-/** An agent the engine lists that no spawn announced (it started before this mod loaded) joins the books. */
-const hireFromList = ($: EngineInterface) => (a: { id: string; type: string; description: string; name?: string }) => newHire($, a.id, a.type, a.description, a.name)
-
-/** The specialist of this id on the books. One the engine lists that no spawn has announced yet (its first call can beat the hire) joins first. */
-async function specialistOf($: EngineInterface, id: string): Promise<Employee | undefined> {
-  const known = (await read($, staff)).find(one => one.id === id)
-  if (known) return known
-  const listed = (await $.agent.list()).find(one => one.id === id)
-  if (!listed) return undefined
-  await hireFromList($)(listed)
-  return (await read($, staff)).find(one => one.id === id)
-}
-
-/**
- * The engine's own list catches agents spawned before this mod loaded and stops nobody saw; the clock catches
- * runs that went silent. Only silence ends a run (see verdict), so a long step is never cut short.
- */
-async function reconcile($: EngineInterface) {
-  const [agents, list, now] = [await $.agent.list(), await read($, staff), await $.clock.now()]
-  for (const a of agents) if (!list.some(e => e.id === a.id) && a.type !== SCOUT_TYPE && endOfStatus(a.status) === undefined) await hireFromList($)(a) // the scout is no hire
-  for (const e of list) {
-    const status = agents.find(a => a.id === e.id)?.status
-    const seen = status !== undefined && status !== e.engine ? markEngine(e, status, now) : e
-    if (seen !== e) await update($, staff, l => edit(l, e.id, one => markEngine(one, status!, now)))
-    const end = verdict(seen, status, now)
-    if (end) await clockOut($, e.id, end.mood, end.how)
-  }
 }
 
 async function showStatus($: EngineInterface) {
@@ -299,7 +233,7 @@ const ownToolIo = ($: EngineInterface): OwnToolIo => ({
 
 /** The step tool (hooks/steps.ts): only a specialist at work here reports. */
 const stepIo = ($: EngineInterface): StepIo => ({
-  isAtWork: async id => { const one = await specialistOf($, id); return one !== undefined && isActive(one) },
+  isAtWork: async id => { const one = await specialistOf(runIo($), id); return one !== undefined && isActive(one) },
   record: async (id, report) => { const now = await $.clock.now(); await update($, staff, l => edit(l, id, one => withReport(one, report, now))) },
 })
 
@@ -359,7 +293,7 @@ const onboardIo = async ($: EngineInterface, opts: BriefingOptions): Promise<Onb
 async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions) {
   const [list, f, b, t0] = [await read($, staff), await getFx($), await getBoss($), await read($, tick)]
   if (frames % 8 === 0) {
-    await reconcile($)
+    await reconcile(runIo($))
     const isDrawn = (await $.session.surfaces().catch(() => [])).length > 0 // the desktop attaches after session start
     if (isDrawn && !(await read($, onboard))) void onboardIo($, opts).then(checkOnboard).catch(() => undefined) // slow steps never hold a frame
   }
@@ -455,7 +389,7 @@ const coffeeDebugIo = ($: EngineInterface): CoffeeDebugIo => ({
 const demoIo = ($: EngineInterface): DemoIo => ({
   show: view => raise(paneIo($), view), showLog: isOpen => showLog($, isOpen),
   boss: () => getBoss($), setBoss: fn => setBoss($, fn), tick: () => read($, tick), now: () => $.clock.now(),
-  hire: (id, type, description) => newHire($, id, type, description), finish: (id, mood) => clockOut($, id, mood),
+  hire: (id, type, description) => newHire(runIo($), id, type, description), finish: (id, mood) => clockOut(runIo($), id, mood),
   editStaff: (id, fn) => update($, staff, l => edit(l, id, fn)),
   dropStandIns: () => update($, staff, l => l.filter(e => !e.id.startsWith(DEMO))),
   setDemo: demo => setFx($, f => ({ ...f, demo })), showStatus: () => showStatus($),
@@ -526,7 +460,7 @@ export const register: Register = (on, options) => {
       void onFrame($, frames, brief).finally(() => { isFraming = false })
     })
 
-    const all = [...failed, ...(await runEach([['agent list', () => reconcile($)]]))]
+    const all = [...failed, ...(await runEach([['agent list', () => reconcile(runIo($))]]))]
     if (all.length > 0) $.ui.toast(startNote(all))
     // Office is asked to the front on every surface; a refusal is tried once more after the first reply (hooks/panes.ts).
     void openAtStart(paneIo($))
@@ -537,7 +471,7 @@ export const register: Register = (on, options) => {
 
   // The agent's own stop signal, beside turn.complete: whichever comes first ends the run, the second finds it ended.
   on('classic.SubagentStop', async ($, e, next) => {
-    await clockOut($, e.agent_id, 'done')
+    await clockOut(runIo($), e.agent_id, 'done')
     return next(e)
   })
 
@@ -618,7 +552,7 @@ export const register: Register = (on, options) => {
     if (r.agentId) {
       keepBrief(r.agentId, sent)
       if (effort) efforts.set(r.agentId, effort)
-      await newHire($, r.agentId, e.subagentType, e.description, e.name)
+      await newHire(runIo($), r.agentId, e.subagentType, e.description, e.name)
       await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), model: one.model || r.model })))
       await showStatus($)
     }
@@ -631,7 +565,7 @@ export const register: Register = (on, options) => {
     if (!e.agentId) void noteRequest(gaugeIo($), e.model, e.effort)
     const me = e.agentId ? (await read($, staff)).find(one => one.id === e.agentId) : undefined
     // A request is a sign of life, and a resumed specialist's first can come before any tool call.
-    if (me) await signOfLife($, me.id, THINKING)
+    if (me) await signOfLife(runIo($), me.id, THINKING)
     const effort = e.agentId ? efforts.get(e.agentId) ?? me?.effort : undefined
     const result = yield* next(effort ? { ...e, effort } : e)
     const [u, said] = [result.usage, narrationOf(result.answer ?? '')]
@@ -685,8 +619,8 @@ export const register: Register = (on, options) => {
     const known = (await read($, staff)).find(one => one.id === id)
     const listed = known ? undefined : (await $.agent.list()).find(one => one.id === id)
     if (!known && !listed) return next(e)
-    if (listed) await hireFromList($)(listed)
-    else await signOfLife($, id)
+    if (listed) await hireListed(runIo($), listed)
+    else await signOfLife(runIo($), id)
     await update($, staff, l => edit(l, id, one => withTool(one, sentenceOf(tool, input))))
     try { return await next(e) } finally { await update($, staff, l => edit(l, id, one => (one.mood === 'working' ? { ...one, mood: 'thinking' } : one))) }
   }).catch((_$, e, next) => {
@@ -740,7 +674,7 @@ export const register: Register = (on, options) => {
         if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
         void leftAnswer(leftIo($), e, by)
       }
-      await clockOut($, e.agentId, e.reason === 'answer' ? 'done' : 'failed')
+      await clockOut(runIo($), e.agentId, e.reason === 'answer' ? 'done' : 'failed')
       await showStatus($)
     } else {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)

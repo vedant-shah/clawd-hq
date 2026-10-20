@@ -275,6 +275,74 @@ test('a title with control characters or a runaway length is drawn as one short 
   expect(title.length).toBeLessThanOrEqual(80)
 })
 
+// ---- Hide: a dim button on each row takes the page off this project's desk, kept across sessions; the page on claude.ai stays ----
+const hideKey = (url: string) => `artifact-hide-${url}`
+
+test('each row has a dim Hide button; pressing it takes that page off the desk on both surfaces, and the store', async ($, on) => {
+  const { saved, clock } = session(on, input => answer(String(input.url)))
+  await $.session.start(START)
+  await publish($, { url: link(1), title: 'One' })
+  await publish($, { url: link(2), title: 'Two' })
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect((await ui.findAll({ type: 'Button', text: 'Hide' })).length).toBe(2)
+    await ui.unmount()
+  }
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  await ui.press({ key: hideKey(link(2)) })
+  await settle(clock)
+  await ui.unmount()
+  const { links, words } = await seen($)
+  expect(links).toEqual([link(1)])
+  expect(words).toContain('ARTIFACTS · 1')
+  expect(saved.get('artifacts:/repo')).toEqual([expect.objectContaining({ url: link(1) })])
+})
+
+test('hiding does not call the Artifact tool, and hiding the last page takes the section away', async ($, on) => {
+  const calls: unknown[] = []
+  session(on, input => (calls.push(input), answer(String(input.url))))
+  await $.session.start(START)
+  await publish($, { url: link(1), title: 'One' })
+  const before = calls.length
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
+  await ui.press({ key: hideKey(link(1)) })
+  await ui.unmount()
+  expect(calls.length).toBe(before)
+  expect((await seen($)).text).not.toMatch(/ARTIFACT/)
+})
+
+test('a hidden page stays hidden in the next session, and the next page of the older ones takes its place', async ($, on) => {
+  const { clock } = session(on, input => answer(String(input.url)))
+  await $.session.start(START)
+  for (let n = 1; n <= 7; n += 1) await publish($, { url: link(n), title: `Page ${n}` })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  await ui.press({ key: hideKey(link(7)) })
+  await settle(clock)
+  await ui.unmount()
+  const now = await seen($)
+  expect(now.links).toEqual([6, 5, 4, 3, 2, 1].map(link))
+  expect(now.words).toContain('ARTIFACTS · 6')
+  await $.session.start(OTHER)
+  await $.session.start(START)
+  expect((await seen($)).links).toEqual([6, 5, 4, 3, 2, 1].map(link))
+})
+
+test('a hidden page that is published or opened again comes back', async ($, on) => {
+  const { clock } = session(on, input => (input.action === 'open' ? { result: 'Opened', text: 'Opened' } : answer(String(input.url))))
+  await $.session.start(START)
+  await publish($, { url: link(1), title: 'One' })
+  await publish($, { url: link(2), title: 'Two' })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  await ui.press({ key: hideKey(link(1)) })
+  await ui.press({ key: hideKey(link(2)) })
+  await settle(clock)
+  await ui.unmount()
+  expect((await seen($)).text).not.toMatch(/ARTIFACT/)
+  await publish($, { url: link(1), title: 'One again' })
+  await publish($, { action: 'open', url: link(2), title: 'Two' })
+  expect((await seen($)).links).toEqual([link(2), link(1)])
+})
+
 /** Lets the save that a call started without waiting land. */
 const settle = (clock: { advance: (ms: number) => Promise<unknown> }) => clock.advance(1)
 const OTHER = { cwd: '/other', surface: 'terminal', isInteractive: true } as never

@@ -152,15 +152,25 @@ export async function keepArtifact(io: ArtifactIo, folder: string, input: Record
   const call = artifactCall(input, ran)
   if (!call) return
   const at = await io.now()
-  await inLine(async () => {
+  await commit(io, folder, list => (call.isDelete ? withoutArtifact(list, call.link) : withArtifact(list, call.link, call.title, at)))
+}
+
+/** The Hide button: the page leaves this project's desk and the saved list. Publishing or opening it again brings it back. The page on claude.ai is not touched. */
+export function hideArtifact(io: ArtifactIo, folder: string, url: string) {
+  return commit(io, folder, list => withoutArtifact(list, url))
+}
+
+/** One change to the desk's list, made on the list as it stands when its turn comes, then saved under the folder. */
+function commit(io: ArtifactIo, folder: string, fn: (list: Artifact[]) => Artifact[]) {
+  return inLine(async () => {
     // The session moved to another project while the call ran: this page is not that project's, so it is dropped.
     if (io.folder() !== folder) return
-    const next = await io.change(list => (call.isDelete ? withoutArtifact(list, call.link) : withArtifact(list, call.link, call.title, at)))
+    const next = await io.change(fn)
     if (!folder) return
     try {
       await io.save(folder, next)
     } catch {
-      // The page stays in this session's list; the person hears of it once.
+      // The change stays in this session's list; the person hears of it once.
       io.warnOnce('Could not save the artifact list. It is kept for this session only.')
     }
   })

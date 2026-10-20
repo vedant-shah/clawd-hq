@@ -5,7 +5,7 @@ import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, M
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
 import { resumedEffort } from './resume-effort'
-import { cleanArtifacts, keepArtifact, sweepArtifacts } from './artifacts'
+import { cleanArtifacts, hideArtifact, keepArtifact, sweepArtifacts } from './artifacts'
 import type { ArtifactAnswer, ArtifactIo } from './artifacts'
 import { loadMemory, remember, rememberCall, saveBoxAnswer, saveMemory } from './memory-io'
 import type { MemoryIo } from './memory-io'
@@ -402,6 +402,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     resetClawd: async part => clawdActions(await clawdIo($, opts)).resetClawd(part),
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
     forget: id => saveMemory(memoryIo($), list => list.filter(x => x.id !== id)),
+    hideArtifact: url => hideArtifact(artifactIo($), cwd, url),
     layOff: type => setLaidOff(payrollIo($), type, true),
     hire: type => setLaidOff(payrollIo($), type, false),
     settlePayroll: isLayoff => applyPayroll(payrollIo($), isLayoff),

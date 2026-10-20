@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { ARTIFACT_KEEP, ARTIFACT_SHOWN, LIST_INPUT, LIST_LIMIT, TITLE_CHARS, listedLinks, listedPages, withoutGone, artifactCall, artifactsShown, cleanArtifacts, isArtifactLink, since, withArtifact, withoutArtifact, keepArtifact, sweepArtifacts } from '../hooks/artifacts'
+import { ARTIFACT_KEEP, ARTIFACT_SHOWN, LIST_INPUT, LIST_LIMIT, TITLE_CHARS, listedLinks, listedPages, withoutGone, artifactCall, artifactsShown, cleanArtifacts, isArtifactLink, since, withArtifact, withoutArtifact, keepArtifact, hideArtifact, sweepArtifacts } from '../hooks/artifacts'
 import type { ArtifactIo } from '../hooks/artifacts'
 import type { Artifact } from '../types'
 
@@ -245,6 +245,32 @@ test('a list that cannot be saved stays in the session and the person hears of i
   await keepArtifact(d.io, '/proj', { title: 'Plan' }, { text: `Created ${PLAIN}` })
   expect(d.list.length).toBe(1)
   expect(d.warned).toEqual(['Could not save the artifact list. It is kept for this session only.'])
+})
+
+test('hiding a page takes it off the desk and the saved list; a page that is not there changes nothing', async () => {
+  const d = desk([{ url: PLAIN, title: 'Plan', at: 1 }, { url: CODE, title: 'Other', at: 2 }])
+  await hideArtifact(d.io, '/proj', CODE)
+  expect(d.list).toEqual([{ url: PLAIN, title: 'Plan', at: 1 }])
+  expect(d.saved).toEqual([['/proj', d.list]])
+  await hideArtifact(d.io, '/proj', 'https://claude.ai/artifact/nothere')
+  expect(d.list).toEqual([{ url: PLAIN, title: 'Plan', at: 1 }])
+})
+
+test('a hide pressed after the session moved to another project is dropped, and one that cannot be saved is told once', async () => {
+  const moved = desk([{ url: PLAIN, title: 'Plan', at: 1 }], { folder: '/other' })
+  await hideArtifact(moved.io, '/proj', PLAIN)
+  expect([moved.list.length, moved.saved]).toEqual([1, []])
+  const stuck = desk([{ url: PLAIN, title: 'Plan', at: 1 }], { save: async () => { throw new Error('full') } })
+  await hideArtifact(stuck.io, '/proj', PLAIN)
+  expect(stuck.list).toEqual([])
+  expect(stuck.warned).toEqual(['Could not save the artifact list. It is kept for this session only.'])
+})
+
+test('a hidden page that is published or opened again comes back at the top', async () => {
+  const d = desk([{ url: PLAIN, title: 'Plan', at: 1 }])
+  await hideArtifact(d.io, '/proj', PLAIN)
+  await keepArtifact(d.io, '/proj', { action: 'open', url: PLAIN, title: 'Plan' }, { text: 'Opened' })
+  expect(d.list).toEqual([{ url: PLAIN, title: 'Plan', at: 100 }])
 })
 
 test('the sweep removes the pages the answer left out, and saves', async () => {

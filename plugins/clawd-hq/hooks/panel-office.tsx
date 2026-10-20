@@ -153,9 +153,9 @@ function floor(ctx: Ctx) {
   )
 }
 
-/** The pages Claude made in this project, newest first: each title a link that opens it, with how long ago. None, no section. */
-function artifactDesk({ kit, data }: Ctx) {
-  const { Box, Text, Link } = kit
+/** The pages Claude made in this project, newest first: each title a link that opens it, with how long ago and a dim Hide button. None, no section. */
+function artifactDesk({ kit, data, actions }: Ctx) {
+  const { Box, Text, Link, Button } = kit
   const { rows, older } = artifactsShown(data.artifacts)
   if (rows.length === 0) return null
   return (
@@ -166,6 +166,7 @@ function artifactDesk({ kit, data }: Ctx) {
         <Box key={`artifact-${one.url}`} flexDirection="row" columnGap={1}>
           <Box flexShrink={1}><Text wrap="wrap"><Link href={one.url}>{one.title}</Link></Text></Box>
           <Box flexShrink={0}><Text dimColor wrap="wrap">{since(data.now - one.at)}</Text></Box>
+          <Button key={`artifact-hide-${one.url}`} plain dimColor label="Hide" onPress={() => actions.hideArtifact(one.url)} />
         </Box>
       ))}
       {older > 0 && <Text dimColor>{older === 1 ? '1 older artifact' : `${older} older artifacts`}</Text>}

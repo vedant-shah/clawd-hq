@@ -32,6 +32,8 @@ export type PanelData = {
 export type PanelActions = KnowActions & ClawdActions & {
   setFind: (tab: 'decisions' | 'people', text: string) => unknown
   forget: (id: string) => unknown
+  /** The Hide button on an artifact row: that page leaves this project's desk (not claude.ai) until it is published or opened again. */
+  hideArtifact: (url: string) => unknown
   layOff: (type: string) => unknown
   hire: (type: string) => unknown
   /** The person's answer to the payroll review: lay off what the project has no use for, or keep everyone. */

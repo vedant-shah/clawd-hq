@@ -1,7 +1,7 @@
 ---
 name: core-researcher
 description: Clawd HQ's Researcher. Use to find things out before deciding or building: how the existing code works, what a library or tool does, or what the web says about a question. Looks in the project and on the web, cites where each answer came from, and never edits files.
-tools: Read, Grep, Glob, WebFetch, WebSearch
+tools: Read, Grep, Glob, WebFetch, WebSearch, SendMessage, mcp__clawd-hq__step
 model: inherit
 ---
 

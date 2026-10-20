@@ -1,7 +1,7 @@
 ---
 name: core-builder
 description: Clawd HQ's Builder. Use to carry out one scoped change in the code, such as a feature, a fix or a small refactor, once it is clear what to build. Writes the test first, keeps the diff small, and runs the project's own checks.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, SendMessage, mcp__clawd-hq__step
 model: inherit
 ---
 

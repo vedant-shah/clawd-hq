@@ -1,7 +1,7 @@
 ---
 name: core-reviewer
 description: Clawd HQ's Reviewer. Use right after code is written or changed, to find real problems before it is committed: bugs, failures that happen silently, and security holes, ranked by how bad they are. Reads the change and runs tests; never edits files.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, SendMessage, mcp__clawd-hq__step
 disallowedTools: Edit, Write, NotebookEdit
 model: inherit
 ---

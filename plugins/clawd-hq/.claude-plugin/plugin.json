@@ -44,7 +44,7 @@
     "leftUndone": {
       "type": "boolean",
       "title": "Left undone check",
-      "description": "On (default): after a turn of Clawd's own that used five tools or more, a small model sets your request against his final report and lists what you asked for that was not done, in the Left undone section of the Office tab. It uses a little of your plan. Off: that check is not made. The other two sources (deferring sentences in answers and unfinished-work lines written into files) are read on this machine and are not affected.",
+      "description": "On (default): after a turn of Clawd's own that used five tools or more, a small model sets your request against his final report and lists at most one thing you explicitly asked for that was not done, in the Left undone section of the Office tab; it stays silent when in doubt. It uses a little of your plan. Off: that check is not made. The other source (TODO, skipped-test and not-implemented markers written into code files) is read on this machine and is not affected.",
       "required": false,
       "default": true
     }

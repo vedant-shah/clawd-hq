@@ -2,9 +2,10 @@ import { expect, test } from 'claude-code/testing'
 import { LEFT_KEEP, LEFT_SHOWN, cleanLeft, isSimilar, leftShown, noteOf, promptOf, withLeft } from '../hooks/left-list'
 import { CHECK_PROMPT, CHECK_TOOLS, checkAsk, parseUndone } from '../hooks/left-check'
 import type { LeftItem } from '../types'
+import { MUST_NOT_FLAG } from './left-false'
 
-const item = (over: Partial<LeftItem> = {}): LeftItem => ({ id: 'l1', text: 'Add rate limiting', source: 'answer', by: 'Clawd', at: 10, ...over })
-const fresh = (text: string, over: Record<string, unknown> = {}) => ({ text, source: 'answer' as const, by: 'Clawd', ...over })
+const item = (over: Partial<LeftItem> = {}): LeftItem => ({ id: 'l1', text: 'Add rate limiting', source: 'check', by: 'Clawd', at: 10, ...over })
+const fresh = (text: string, over: Record<string, unknown> = {}) => ({ text, source: 'check' as const, by: 'Clawd', ...over })
 
 test('new items go on top, newest first, each with an id and the time', () => {
   const first = withLeft([], [fresh('Add rate limiting')], 100)
@@ -37,23 +38,24 @@ test('the same note in the same file is one item even when its line moved; the s
   expect(other.map(i => i.file)).toEqual(['src/b.ts', 'src/a.ts'])
 })
 
-test('only the newest 30 are kept', () => {
+test('only the newest 10 are kept', () => {
   let list: LeftItem[] = []
   for (let n = 0; n < LEFT_KEEP + 5; n += 1) list = withLeft(list, [fresh(`Distinct job number ${n} about thing${n}x`)], n)
   expect(list.length).toBe(LEFT_KEEP)
   expect(list[0]!.text).toContain(`number ${LEFT_KEEP + 4} `)
-  expect(LEFT_KEEP).toBe(30)
+  expect(LEFT_KEEP).toBe(10)
 })
 
-test('the panel draws the newest few and counts the rest', () => {
-  const list = Array.from({ length: 11 }, (_, n) => item({ id: `l${n}`, text: `Job ${n}` }))
-  expect(leftShown(list)).toEqual({ rows: list.slice(0, LEFT_SHOWN), more: 3 })
+test('the panel draws the newest 3 and counts the rest', () => {
+  const list = Array.from({ length: 7 }, (_, n) => item({ id: `l${n}`, text: `Job ${n}` }))
+  expect(LEFT_SHOWN).toBe(3)
+  expect(leftShown(list)).toEqual({ rows: list.slice(0, LEFT_SHOWN), more: 4 })
   expect(leftShown(list.slice(0, 2))).toEqual({ rows: list.slice(0, 2), more: 0 })
+  expect(leftShown([])).toEqual({ rows: [], more: 0 })
 })
 
 test('the note under an item names its source, and for a file the file and line', () => {
-  expect(noteOf(item())).toBe('Answer · Clawd')
-  expect(noteOf(item({ source: 'check', by: 'Clawd' }))).toBe('Second check · Clawd')
+  expect(noteOf(item())).toBe('Second check · Clawd')
   expect(noteOf(item({ source: 'file', by: 'Builder', file: 'src/a.ts', line: 12 }))).toBe('File · src/a.ts:12 · Builder')
   expect(noteOf(item({ source: 'file', by: 'Builder', file: 'src/a.ts' }))).toBe('File · src/a.ts · Builder')
 })
@@ -73,9 +75,28 @@ test('a list read back from the store is cleaned: bad entries go, text is one cl
   const clean = cleanLeft(raw)
   expect(clean.map(i => i.id)).toEqual(['a', 'e', 'g'])
   expect(clean[1]).toEqual(expect.objectContaining({ text: 'Two lines here', file: 'src/a.ts', line: 3 }))
-  expect(clean[2]).toEqual({ id: 'g', text: 'Add rate limiting', source: 'answer', by: 'Clawd', at: 10 })
+  expect(clean[2]).toEqual({ id: 'g', text: 'Add rate limiting', source: 'check', by: 'Clawd', at: 10 })
   for (const odd of [undefined, null, 7, 'x', {}]) expect(cleanLeft(odd)).toEqual([])
   expect(cleanLeft(Array.from({ length: 50 }, (_, n) => item({ id: `i${n}`, text: `Unique job ${n} thing${n}z` }))).length).toBe(LEFT_KEEP)
+})
+
+test('on load, what an earlier version saved and this one no longer lists is dropped: answer items, files that are not code, files outside the project', () => {
+  const old = [
+    { id: 'a1', text: "I'll do that later", source: 'answer', by: 'Clawd', at: 9 },
+    { id: 'a2', text: 'whether a TODO you write shows up with the right line', source: 'answer', by: 'Clawd', at: 9 },
+    { id: 'f1', text: '- It keeps a "Left undone" list on the Office tab', source: 'file', by: 'Generalist', at: 8, file: 'README.md', line: 69 },
+    { id: 'f2', text: 'TODO: from a note', source: 'file', by: 'Generalist', at: 8, file: 'docs/plan.mdx', line: 2 },
+    { id: 'f3', text: 'TODO: in the docs folder', source: 'file', by: 'Generalist', at: 8, file: 'docs/example.ts', line: 2 },
+    { id: 'f4', text: 'TODO: full local path', source: 'file', by: 'Generalist', at: 8, file: '/Users/me/project/src/a.ts', line: 2 },
+    { id: 'f5', text: 'TODO: outside', source: 'file', by: 'Generalist', at: 8, file: '../other/a.ts', line: 2 },
+    { id: 'f6', text: 'TODO: no file', source: 'file', by: 'Generalist', at: 8 },
+    { id: 'k1', text: 'Add the tests', source: 'check', by: 'Clawd', at: 7 },
+    { id: 'f7', text: 'TODO: real one', source: 'file', by: 'Builder', at: 6, file: 'src/a.ts', line: 4 },
+  ]
+  expect(cleanLeft(old).map(i => i.id)).toEqual(['k1', 'f7'])
+  expect(cleanLeft(old.slice(0, 7))).toEqual([])
+  // Loading again changes nothing more.
+  expect(cleanLeft(cleanLeft(old))).toEqual(cleanLeft(old))
 })
 
 // ---- Source 3: the second check ----
@@ -101,8 +122,26 @@ test('a long request or report is cut before it is sent', () => {
   expect(ask.prompt.length).toBeLessThan(10_000)
 })
 
+test('the question is strict: only what the person explicitly asked for in this request that the report shows was not done or only partly done; empty when in doubt; one item at most', () => {
+  const p = CHECK_PROMPT
+  expect(p).toMatch(/explicitly asked/i)
+  expect(p).toMatch(/this request/i)
+  expect(p).toMatch(/not done|only partly|partly done/i)
+  for (const ignored of ['suggestions', 'next steps', 'things to check later', 'for the person to test', 'descriptions']) expect(p).toContain(ignored)
+  expect(p).toMatch(/in doubt[^.]*empty/i)
+  expect(p).toMatch(/at most 1 item|at most one item/i)
+  expect(p).not.toMatch(/at most 3/i)
+  expect(p).toContain('{"undone": []}')
+})
+
+test('the six items that were all false are shown to the model as data, never as work to list, and the question tells it to leave descriptions out', () => {
+  const ask = checkAsk('Add a Left undone list', `Done. ${MUST_NOT_FLAG.join('\n')}`)
+  for (const text of MUST_NOT_FLAG) expect(ask.prompt).toContain(text.slice(0, 40))
+  expect(CHECK_PROMPT).toMatch(/descriptions? of (?:what|the)/i)
+})
+
 test('the reply is read as JSON, in a fence or with words around it; each item is cleaned and checked', () => {
-  expect(parseUndone('{"undone":["Add the tests","Write the docs"]}')).toEqual(['Add the tests', 'Write the docs'])
+  expect(parseUndone('{"undone":["Add the tests","Write the docs"]}')).toEqual(['Add the tests'])
   expect(parseUndone('Here you go:\n```json\n{"undone": ["Add the tests."]}\n```')).toEqual(['Add the tests.'])
   expect(parseUndone('{"undone":[]}')).toEqual([])
   expect(parseUndone('{"undone":["  Two\\nlines\\u0007  here  "]}')).toEqual(['Two lines here'])
@@ -119,11 +158,10 @@ test('model text is untrusted: links, shell pipes, keys and runaway lines are re
   expect(parseUndone(JSON.stringify({ undone: [...bad, 'Add tests for `parse`'] }))).toEqual(['Add tests for parse'])
 })
 
-test('at most three items are kept, each at most 160 characters cut at a word with no mark, and repeats once', () => {
+test('at most one item is kept, at most 160 characters cut at a word with no mark', () => {
   const four = JSON.stringify({ undone: ['One a', 'Two b', 'Three c', 'Four d'] })
-  expect(parseUndone(four)).toEqual(['One a', 'Two b', 'Three c'])
+  expect(parseUndone(four)).toEqual(['One a'])
   const [long] = parseUndone(JSON.stringify({ undone: [`Finish ${'the wiring '.repeat(25)}`] }))
   expect(long!.length).toBeLessThanOrEqual(160)
   expect(long).not.toMatch(/…|\.\.\.$/)
-  expect(parseUndone(JSON.stringify({ undone: ['Same', 'same.'] }))).toEqual(['Same'])
 })

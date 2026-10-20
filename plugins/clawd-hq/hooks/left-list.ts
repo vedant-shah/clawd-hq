@@ -3,15 +3,16 @@
 import type { LeftItem } from '../types'
 import { fit } from './desk'
 import { plainText } from './know'
+import { isProjectCode } from './left-scan'
 
-/** DECIDED: the newest 30 are kept per project — enough to see what piled up, few enough that the list stays a list. */
-export const LEFT_KEEP = 30
-/** The Office tab draws the newest this many; the rest are counted. */
-export const LEFT_SHOWN = 8
+/** DECIDED: the newest 10 are kept per project — the list is rare by design, and a long one would only be noise. */
+export const LEFT_KEEP = 10
+/** DECIDED: the Office tab draws the newest 3; the rest are counted. */
+export const LEFT_SHOWN = 3
 /** An item's text is one line of at most this many characters, cut at a word with no mark. */
 export const LEFT_TEXT = 200
 
-const SOURCES: ReadonlySet<string> = new Set<LeftItem['source']>(['answer', 'file', 'check'])
+const SOURCES: ReadonlySet<string> = new Set<LeftItem['source']>(['file', 'check'])
 /** Two items are the same when this share of their words is shared. */
 const SAME_SHARE = 0.7
 const WORDS = (text: string) => new Set(text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean))
@@ -44,7 +45,7 @@ export function leftShown(list: readonly LeftItem[]): { rows: LeftItem[]; more: 
   return { rows: list.slice(0, LEFT_SHOWN), more: Math.max(0, list.length - LEFT_SHOWN) }
 }
 
-const SOURCE_NAME: Record<LeftItem['source'], string> = { answer: 'Answer', file: 'File', check: 'Second check' }
+const SOURCE_NAME: Record<LeftItem['source'], string> = { file: 'File', check: 'Second check' }
 
 /** The dim note under an item: where it came from, for a file the file and line, and who left it. */
 export function noteOf(item: LeftItem): string {
@@ -61,16 +62,24 @@ export function promptOf(item: LeftItem): string {
 const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0
 const line = (text: unknown, max: number) => (typeof text === 'string' ? fit(plainText(text), max) : '')
 
-/** A list read back from the store, which anyone can edit: only well-formed items survive, as one clean line each, once each, the newest 30. */
+/**
+ * A list read back from the store, which anyone can edit: only well-formed items survive, as one clean line each, once each,
+ * the newest 10. DECIDED: this is also how an older version's list is cleaned, on every load, with no version number to keep
+ * — the rule is the same each time, so a second load changes nothing. Items that came from an answer (that source is gone),
+ * and file items that are not in a code file inside the project (a README, a docs/ note, a full local path), are dropped;
+ * the store is rewritten without them the next time the list changes.
+ */
 export function cleanLeft(raw: unknown): LeftItem[] {
   if (!Array.isArray(raw)) return []
   const kept: LeftItem[] = []
   for (const one of raw as Array<Partial<LeftItem> | null>) {
     if (one === null || typeof one !== 'object' || typeof one.id !== 'string' || !SOURCES.has(String(one.source))) continue
     if (typeof one.at !== 'number' || !Number.isFinite(one.at)) continue
-    const [text, by, file] = [line(one.text, LEFT_TEXT), line(one.by, 40), line(one.file, 200)]
-    if (text === '' || by === '' || kept.some(k => isSame(k, { text, source: 'answer', by, file: file || undefined }))) continue
-    kept.push({ id: one.id.slice(0, 40), text, source: one.source!, by, at: one.at, ...(file === '' ? {} : { file }), ...(file !== '' && isCount(one.line) ? { line: one.line } : {}) })
+    const source = one.source!
+    const [text, by, file] = [line(one.text, LEFT_TEXT), line(one.by, 40), source === 'file' ? line(one.file, 200) : '']
+    if (text === '' || by === '' || (source === 'file' && !isProjectCode(file))) continue
+    if (kept.some(k => isSame(k, { text, source, by, file: file || undefined }))) continue
+    kept.push({ id: one.id.slice(0, 40), text, source, by, at: one.at, ...(file === '' ? {} : { file }), ...(file !== '' && isCount(one.line) ? { line: one.line } : {}) })
   }
   return kept.slice(0, LEFT_KEEP)
 }

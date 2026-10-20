@@ -1,93 +1,122 @@
-// Left undone, the scanners (pure): a deferring sentence in a final answer, and an unfinished-work line in the text a
-// file tool wrote. Both are conservative on purpose: a missed item costs less than a list that cries wolf.
+// Left undone, the scanner (pure): unfinished-work lines in the text a file tool newly wrote, in a code file. It is strict
+// on purpose: a marker counts only as code does, never as prose. A TODO, FIXME or XXX must open a real comment of the
+// file's language; a skipped test or a not-implemented throw must be code, outside any string or comment.
 import { fit } from './desk'
 import { looksSecret, plainText } from './know'
 
-/** A sentence from an answer is cut at a word to this many characters. */
-export const ANSWER_MAX = 200
 /** A line from a file is cut at a word to this many characters. */
 export const FILE_MAX = 160
-/** At most this many items come out of one answer, and out of one file change. */
-const ANSWER_ITEMS = 3
+/** At most this many items come out of one file change. */
 const FILE_ITEMS = 5
 
-/** The file tools whose newly written text is looked at. */
-export const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] as const
+/** The file tools whose newly written text is looked at. A notebook is no code file, so it is not one of them. */
+export const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit'] as const
 
-// ---- Deferring sentences in an answer ----
+// How a language opens a comment: double slash and slash-star (slash), hash, double dash (dash), and the markup opener (html).
+export type Language = 'slash' | 'hash' | 'dash' | 'html'
 
-/** Phrases that put work off. Each is narrow: a bare "skipped" or "for now" is not enough, and the speaker is "I" or "we". */
-const DEFERS: readonly RegExp[] = [
-  /\b(?:I|we)(?:'ll|’ll| will)\b(?!\s+(?:let you know|report|tell you|update you|get back|come back with))[^.!?\n]{0,80}\blater\b/i,
-  /\b(?:left|leave|leaving|saved|deferred?|kept|put)\b[^.!?\n]{0,40}\bfor (?:later|a later (?:pass|step|time|date)|next time|a follow-?up)\b/i,
-  /\bnot (?:been )?(?:done|finished|implemented|completed|built|handled|tested|wired(?: up)?) yet\b/i,
-  /\b(?:I|we)(?:'ve| have)? (?:skipped|left out)\b/i,
-  /\b(?:I|we) (?:did not|didn['’]t) (?:run|get to|finish|test)\b/i,
-  /\b(?:I|we) (?:have not|haven['’]t) (?:run|done|tested|finished)\b/i,
-  /\bout of scope for now\b/i,
-  /\byou (?:may|might) want to (?:add|fix|handle|test|run|check|review|update|configure|set|verify|consider|tighten|clean|remove|move|migrate|write|wire|implement|finish)\b/i,
-  /\bnext steps? (?:would be|will be|is to|are to)\b/i,
-  /\bTODO\b(?!\s+(?:list|comments?|items?|app|file))/,
-]
+/**
+ * DECIDED: these extensions are programming languages; nothing else is read (not .md, .mdx, .txt, .rst, data or config files,
+ * notebooks, or files with no extension) — prose and data are where a "TODO" is a word, not a marker.
+ */
+const LANGUAGE_OF: Readonly<Record<string, Language>> = Object.fromEntries([
+  ...['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'java', 'kt', 'kts', 'swift', 'go', 'rs', 'c', 'h', 'cpp', 'cc', 'cxx', 'hpp', 'cs', 'scala', 'dart', 'php', 'vue', 'svelte', 'groovy'].map(e => [e, 'slash']),
+  ...['py', 'rb', 'sh', 'bash', 'zsh', 'pl', 'r', 'ex', 'exs'].map(e => [e, 'hash']),
+  ...['sql', 'lua', 'hs'].map(e => [e, 'dash']),
+  ...['html', 'htm'].map(e => [e, 'html']),
+])
+export const CODE_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(LANGUAGE_OF))
 
-/** A negation or a clean-up in front of the marker: "nothing was skipped", "I removed the TODO", "no TODO is left". */
-const NEGATED = /\b(?:no|nothing|none|never|without|removed|resolved|fixed|cleared|deleted|dropped|addressed|not)\b[^.!?\n]{0,30}\b(?:TODO|skipped|left|deferred)\b/i
-
-const FENCED = /```[\s\S]*?(?:```|$)/g
-const BULLET = /^\s*(?:[-*+•]|\d+[.)])\s+/
-const MARKDOWN = /\*\*|__|`/g
-/** A sentence ends at . ! or ? followed by a space and the start of the next one. */
-const SENTENCE_END = /(?<=[.!?])\s+(?=[A-Z0-9"'(])/
-
-/** The lines of an answer that are the answer's own words: no code blocks, no quoted lines. */
-function ownLines(answer: string): string[] {
-  return answer.replace(FENCED, '\n').split(/\r?\n/).filter(line => !line.trimStart().startsWith('>'))
+/** The comment language of a code file by its extension, or nothing when it is not one. */
+export function languageOf(path: string): Language | undefined {
+  const name = path.split(/[\\/]/).pop() ?? ''
+  const dot = name.lastIndexOf('.')
+  return dot <= 0 ? undefined : LANGUAGE_OF[name.slice(dot + 1).toLowerCase()]
 }
 
-/** Words that put work off, found in the sentences of a final answer: at most three, once each, each cut at a word with no mark. */
-export function deferredIn(answer: string): string[] {
-  const found: string[] = []
-  for (const line of ownLines(answer)) {
-    for (const part of line.replace(BULLET, '').split(SENTENCE_END)) {
-      const sentence = fit(plainText(part).replace(MARKDOWN, ''), ANSWER_MAX)
-      if (sentence.length < 10 || sentence.endsWith('?') || looksSecret(sentence)) continue
-      if (!DEFERS.some(re => re.test(sentence)) || NEGATED.test(sentence) || found.includes(sentence)) continue
-      found.push(sentence)
+/** Folders whose files are documentation or other people's code, whatever their extension. */
+const SKIPPED_DIRS: ReadonlySet<string> = new Set(['docs', 'doc', 'node_modules'])
+
+/**
+ * Whether a path, given from the project folder, is a code file worth reading: a programming language's extension, not under
+ * docs/ or node_modules/, and not outside the project (an absolute path or one that climbs out of it).
+ */
+export function isProjectCode(relative: string): boolean {
+  const parts = relative.split(/[\\/]/)
+  const isOutside = relative.startsWith('/') || relative.startsWith('\\') || /^[A-Za-z]:/.test(relative) || parts.includes('..')
+  return !isOutside && languageOf(relative) !== undefined && !parts.slice(0, -1).some(p => SKIPPED_DIRS.has(p.toLowerCase()))
+}
+
+const TOKENS: Readonly<Record<Language, readonly string[]>> = { slash: ['//', '/*'], hash: ['#'], dash: ['--'], html: ['<!--'] }
+const QUOTES = new Set(['"', "'", '`'])
+
+/** The line split where its first comment opens: the code before it (strings left in), and the comment's text after its token. */
+function split(line: string, lang: Language): { code: string; comment?: string } {
+  if (lang === 'slash' && /^\s*\*(?!\/)/.test(line)) return { code: '', comment: line.replace(/^\s*\*/, '') } // inside a block comment
+  let quote: string | undefined
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]!
+    if (quote !== undefined) {
+      if (ch === '\\') i += 1
+      else if (ch === quote) quote = undefined
+    } else if (QUOTES.has(ch)) quote = ch
+    else {
+      const token = TOKENS[lang].find(t => line.startsWith(t, i))
+      if (token !== undefined) return { code: line.slice(0, i), comment: line.slice(i + token.length) }
     }
   }
-  return found.slice(0, ANSWER_ITEMS)
+  return { code: line }
 }
 
-// ---- Unfinished-work lines in what a file tool wrote ----
+const MARKER = /^[\s*]*((?:TODO|FIXME|XXX)\b.*)$/
+/** What closes a block or markup comment after the note. */
+const COMMENT_END = /\s*(?:\*\/\}?|-->)\s*\}?\s*$/
+/** Skipped-test calls and not-implemented throws. A match counts only in the code part of a line (before any comment) and outside a string. */
+const SKIP_CALLS = /\b(?:it|test|describe)\.skip\s*\(|\bx(?:it|describe)\s*\(|@pytest\.mark\.skip\b|\bt\.Skip\(/
+const NOT_DONE = /\bthrow\s+new\s+\w*Error\(\s*['"`]not implemented|\braise\s+NotImplementedError\b|\bthrow\s+new\s+NotImplemented(?:Error|Exception)\b/i
+
+/** Whether `index` lies inside a quoted string of the line. */
+function inString(line: string, index: number): boolean {
+  let quote: string | undefined
+  for (let i = 0; i < index; i += 1) {
+    const ch = line[i]!
+    if (quote !== undefined) {
+      if (ch === '\\') i += 1
+      else if (ch === quote) quote = undefined
+    } else if (QUOTES.has(ch)) quote = ch
+  }
+  return quote !== undefined
+}
+
+/** A match of `re` in `code` that is not inside a string. */
+function codeMatch(code: string, re: RegExp): boolean {
+  const found = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`)
+  return [...code.matchAll(found)].some(m => !inString(code, m.index ?? 0))
+}
+
+/** The line as it should be shown, or nothing when it is no unfinished-work line. */
+function unfinishedText(line: string, lang: Language): string | undefined {
+  const { code, comment } = split(line, lang)
+  const marker = comment === undefined ? undefined : MARKER.exec(comment)
+  if (marker) return marker[1]!.replace(COMMENT_END, '').trim()
+  return codeMatch(code, SKIP_CALLS) || codeMatch(code, NOT_DONE) ? line.trim() : undefined
+}
 
 /** An unfinished-work line: what to show, and its line in the text it was found in (1 is the first). */
 export type FileHit = { text: string; line: number }
-
-const COMMENT_TODO = /(?:\/\/|#|\/\*+|\*|<!--|--|;)\s*((?:TODO|FIXME)\b.*)$/
-const SKIPPED_TEST = /\b(?:it|test|describe)\.skip\s*\(|\bx(?:it|describe)\s*\(|@pytest\.mark\.skip\b|\bt\.Skip\(/
-const NOT_DONE = /\bnot implemented\b|\bNotImplementedError\b/i
-/** What closes a block or markup comment after the note. */
-const COMMENT_END = /\s*(?:\*\/\}?|-->)\s*\}?\s*$/
-
-/** The line as it should be shown, or nothing when it is no unfinished-work line. */
-function unfinishedText(line: string): string | undefined {
-  const todo = COMMENT_TODO.exec(line)
-  if (todo) return todo[1]!.replace(COMMENT_END, '').trim()
-  return SKIPPED_TEST.test(line) || NOT_DONE.test(line) ? line.trim() : undefined
-}
 
 /**
  * The unfinished-work lines of `newText` that `oldText` did not already have. A line the old text had (compared trimmed, once
  * for each time it had it) is not new. Lines with a key or token are left out; at most five come back, each once.
  */
-export function unfinishedLines(oldText: string, newText: string): FileHit[] {
+export function unfinishedLines(oldText: string, newText: string, lang: Language): FileHit[] {
   const had = new Map<string, number>()
   for (const line of oldText.split(/\r?\n/)) had.set(line.trim(), (had.get(line.trim()) ?? 0) + 1)
   const hits: FileHit[] = []
   newText.split(/\r?\n/).forEach((raw, index) => {
     const seen = had.get(raw.trim()) ?? 0
     if (seen > 0) { had.set(raw.trim(), seen - 1); return }
-    const found = unfinishedText(raw)
+    const found = unfinishedText(raw, lang)
     const text = found === undefined ? '' : fit(plainText(found), FILE_MAX)
     if (text !== '' && !looksSecret(text) && !hits.some(h => h.text === text)) hits.push({ text, line: index + 1 })
   })
@@ -101,7 +130,6 @@ function pairsOf(tool: string, input: Record<string, unknown>, before: string): 
   const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
   if (tool === 'Write') return str(input.content) === undefined ? [] : [{ before, after: input.content as string }]
   if (tool === 'Edit') return str(input.new_string) === undefined ? [] : [{ before: str(input.old_string) ?? '', after: input.new_string as string }]
-  if (tool === 'NotebookEdit') return str(input.new_source) === undefined || input.edit_mode === 'delete' ? [] : [{ before: '', after: input.new_source as string }]
   if (tool !== 'MultiEdit' || !Array.isArray(input.edits)) return []
   return (input.edits as unknown[]).flatMap(one => {
     const edit = (one ?? {}) as Record<string, unknown>
@@ -109,8 +137,10 @@ function pairsOf(tool: string, input: Record<string, unknown>, before: string): 
   })
 }
 
-/** The unfinished-work lines one call to a file tool wrote. `before` is the file as it was, which only a Write compares against. */
+/** The unfinished-work lines one call to a file tool wrote, in a code file. `before` is the file as it was, which only a Write compares against. */
 export function linesWritten(tool: string, input: Record<string, unknown>, before: string): FileHit[] {
-  const all = pairsOf(tool, input, before).flatMap(p => unfinishedLines(p.before, p.after))
+  const lang = typeof input.file_path === 'string' ? languageOf(input.file_path) : undefined
+  if (lang === undefined) return []
+  const all = pairsOf(tool, input, before).flatMap(p => unfinishedLines(p.before, p.after, lang))
   return all.filter((h, at) => all.findIndex(o => o.text === h.text) === at).slice(0, FILE_ITEMS)
 }

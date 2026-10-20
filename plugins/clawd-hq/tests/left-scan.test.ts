@@ -1,81 +1,53 @@
 import { expect, test } from 'claude-code/testing'
-import { ANSWER_MAX, FILE_MAX, deferredIn, linesWritten, unfinishedLines } from '../hooks/left-scan'
+import { CODE_EXTENSIONS, FILE_MAX, FILE_TOOLS, isProjectCode, languageOf, linesWritten, unfinishedLines } from '../hooks/left-scan'
+import type { Language } from '../hooks/left-scan'
 
-// ---- Source 1: deferring sentences in an answer ----
+// The only source left in the scanner: real code markers in the text a file tool newly wrote, in a code file. Never prose.
 
-test('the deferring phrases are found, one sentence each', () => {
-  const found: Array<[string, string]> = [
-    ["I'll wire up the retry logic later.", "I'll wire up the retry logic later."],
-    ['The migration is left for later.', 'The migration is left for later.'],
-    ['Token refresh is not done yet.', 'Token refresh is not done yet.'],
-    ['I skipped the end-to-end tests.', 'I skipped the end-to-end tests.'],
-    ["I didn't run the linter.", "I didn't run the linter."],
-    ['Docs are out of scope for now.', 'Docs are out of scope for now.'],
-    ['You may want to add rate limiting.', 'You may want to add rate limiting.'],
-    ['The next step would be to add pagination.', 'The next step would be to add pagination.'],
-    ['TODO: handle the empty state.', 'TODO: handle the empty state.'],
-    ['I left the caching for a follow-up.', 'I left the caching for a follow-up.'],
+const hits = (text: string, before = '', lang: Language = 'slash') => unfinishedLines(before, text, lang).map(h => [h.line, h.text])
+
+test('only files of a programming language count; prose, data and files with no extension do not', () => {
+  const code: Array<[string, Language]> = [
+    ['/p/a.ts', 'slash'], ['/p/a.tsx', 'slash'], ['/p/a.js', 'slash'], ['/p/a.mjs', 'slash'], ['/p/A.java', 'slash'], ['/p/a.go', 'slash'], ['/p/a.rs', 'slash'], ['/p/a.swift', 'slash'],
+    ['/p/a.py', 'hash'], ['/p/a.rb', 'hash'], ['/p/a.sh', 'hash'], ['/p/a.sql', 'dash'], ['/p/a.lua', 'dash'], ['/p/a.html', 'html'], ['/p/a.vue', 'slash'],
   ]
-  for (const [answer, sentence] of found) expect([answer, deferredIn(answer)]).toEqual([answer, [sentence]])
+  for (const [path, lang] of code) expect([path, languageOf(path)]).toEqual([path, lang])
+  for (const path of ['/p/README.md', '/p/a.mdx', '/p/notes.txt', '/p/guide.rst', '/p/data.json', '/p/c.yml', '/p/n.ipynb', '/p/Makefile', '/p/.gitignore', '/p/a', '/p/ts', '/p/a.ts.md', '']) {
+    expect([path, languageOf(path)]).toEqual([path, undefined])
+  }
+  expect(languageOf('/p/A.TS')).toBe('slash')
+  expect(CODE_EXTENSIONS.has('md')).toBe(false)
+  expect([...CODE_EXTENSIONS].every(e => e === e.toLowerCase())).toBe(true)
 })
 
-test('only the deferring sentence of a longer answer is returned, from a list too', () => {
-  const answer = ['Built the panel and it draws on both surfaces.', '', '- Added the button', '- I skipped the desktop check for now', '', 'All 12 tests pass.'].join('\n')
-  expect(deferredIn(answer)).toEqual(['I skipped the desktop check for now'])
+test('a path from the project folder is read only when it is a code file inside the project, not under docs/ or node_modules/', () => {
+  for (const ok of ['src/a.ts', 'a.py', 'tests/a.test.ts', 'packages/x/src/b.go']) expect([ok, isProjectCode(ok)]).toEqual([ok, true])
+  for (const no of ['README.md', 'docs/plan.ts', 'src/docs/x.ts', 'node_modules/x/index.js', 'doc/a.py', '/abs/src/a.ts', '../other/a.ts', 'src/../../a.ts', 'C:\\x\\a.ts', 'src/notes.txt', 'Makefile']) {
+    expect([no, isProjectCode(no)]).toEqual([no, false])
+  }
+  expect(isProjectCode('src/docs.ts')).toBe(true)
 })
 
-test('false positives stay out: negations, past cleanup, other subjects, questions, quotes and code', () => {
-  const quiet = [
-    'All tests pass and nothing was skipped.',
-    'I removed the TODO comments from the file.',
-    'No TODO is left in the diff.',
-    'The loop skipped hidden files by design.',
-    'The TODO list now shows three items.',
-    'I will report back once it is done.',
-    "Let me know if you'd like changes later.",
-    'The report will come later today from the Builder.',
-    'You may want to see the diff in the Settings tab.',
-    'Should I do the docs later?',
-    'The next step is done and merged.',
-    'It works for now and for later.',
-    'Resolved the FIXME in the parser.',
-    'The tests were not skipped.',
-    'We have no skipped tests.',
-    'I fixed the thing that was not working yet again.',
-    '',
-    '   ',
-  ]
-  for (const answer of quiet) expect([answer, deferredIn(answer)]).toEqual([answer, []])
-  expect(deferredIn('> I skipped the tests for now.\n\nDone.')).toEqual([])
-  expect(deferredIn('Here is the snippet:\n```\n// I will do the rest later\nTODO: later\n```\nDone.')).toEqual([])
-})
-
-test('at most three are kept from one answer, and a runaway sentence is cut at a word with no mark', () => {
-  const many = ['I skipped A.', 'I skipped B.', 'I skipped C.', 'I skipped D.'].join(' ')
-  expect(deferredIn(many)).toEqual(['I skipped A.', 'I skipped B.', 'I skipped C.'])
-  const long = `I skipped ${'the very long thing '.repeat(40)}entirely.`
-  const [one] = deferredIn(long)
-  expect(one!.length).toBeLessThanOrEqual(ANSWER_MAX)
-  expect(one).not.toMatch(/[….]{2,}$|…$/)
-  expect(deferredIn('I skipped A. I skipped A.')).toEqual(['I skipped A.'])
-})
-
-test('control characters and hidden marks are taken out of a sentence', () => {
-  expect(deferredIn('I skipped the\u0007 checks​ for now.')).toEqual(['I skipped the checks for now.'])
-})
-
-// ---- Source 2: unfinished-work lines written into files ----
-
-const hits = (text: string, before = '') => unfinishedLines(before, text).map(h => [h.line, h.text])
-
-test('TODO and FIXME comments are found in the comment styles of the common languages', () => {
+test('TODO, FIXME and XXX are found inside a comment token of the file\'s language', () => {
   expect(hits('const a = 1 // TODO: handle empty list')).toEqual([[1, 'TODO: handle empty list']])
-  expect(hits('x = 1\n# FIXME retry on 500')).toEqual([[2, 'FIXME retry on 500']])
   expect(hits('/* TODO tidy up */')).toEqual([[1, 'TODO tidy up']])
-  expect(hits(' * TODO document the options')).toEqual([[1, 'TODO document the options']])
-  expect(hits('-- TODO add an index')).toEqual([[1, 'TODO add an index']])
-  expect(hits('<!-- TODO replace the logo -->')).toEqual([[1, 'TODO replace the logo']])
+  expect(hits(' * FIXME document the options')).toEqual([[1, 'FIXME document the options']])
   expect(hits('{/* FIXME wrap on narrow panes */}')).toEqual([[1, 'FIXME wrap on narrow panes']])
+  expect(hits('// XXX this is a hack')).toEqual([[1, 'XXX this is a hack']])
+  expect(hits('x = 1\n# FIXME retry on 500', '', 'hash')).toEqual([[2, 'FIXME retry on 500']])
+  expect(hits('x = 1  # TODO later', '', 'hash')).toEqual([[1, 'TODO later']])
+  expect(hits('-- TODO add an index', '', 'dash')).toEqual([[1, 'TODO add an index']])
+  expect(hits('<!-- TODO replace the logo -->', '', 'html')).toEqual([[1, 'TODO replace the logo']])
+})
+
+test('a marker outside a comment, in another language\'s comment, in a string, or in a word is not a hit', () => {
+  const quiet: Array<[string, Language]> = [
+    ['const todo = []', 'slash'], ['const TODOS = 3', 'slash'], ['const XXXL = 3', 'slash'], ["const x = 'TODO'", 'slash'], ['document.title = "FIXME"', 'slash'],
+    ['const s = "// TODO: not a comment"', 'slash'], ["const s = '/* FIXME */'", 'slash'], ['const s = `see # TODO`', 'slash'], ['print("# TODO: not a comment")', 'hash'],
+    ['# TODO in the wrong language', 'slash'], ['// TODO in the wrong language', 'hash'], ['// TODO in the wrong language', 'dash'], ['# TODO in the wrong language', 'html'],
+    ['Left undone checks TODO and FIXME comments', 'slash'], ['The TODO list is long', 'hash'], ['we need to TODO this', 'slash'],
+  ]
+  for (const [line, lang] of quiet) expect([line, hits(line, '', lang)]).toEqual([line, []])
 })
 
 test('skipped tests are found in each test tool\'s spelling', () => {
@@ -85,15 +57,17 @@ test('skipped tests are found in each test tool\'s spelling', () => {
   expect(hits("it.skip('does x', () => {})")[0]![1]).toBe("it.skip('does x', () => {})")
 })
 
-test('not-implemented lines are found', () => {
+test('not-implemented throws are found; the words "not implemented" in prose, comments and strings are not', () => {
   expect(hits("  throw new Error('Not implemented')")).toEqual([[1, "throw new Error('Not implemented')"]])
-  expect(hits('    raise NotImplementedError')).toEqual([[1, 'raise NotImplementedError']])
-  expect(hits('// export is not implemented for csv')[0]![0]).toBe(1)
+  expect(hits('  throw new NotImplementedError()')).toEqual([[1, 'throw new NotImplementedError()']])
+  expect(hits('    raise NotImplementedError', '', 'hash')).toEqual([[1, 'raise NotImplementedError']])
+  expect(hits('    raise NotImplementedError("later")', '', 'hash').length).toBe(1)
+  const quiet = ['// export is not implemented for csv', "const msg = 'not implemented'", 'let notImplemented = true', 'Not implemented yet is shown in grey', "const s = \"throw new Error('Not implemented')\"", '// raise NotImplementedError']
+  for (const line of quiet) expect([line, hits(line)]).toEqual([line, []])
 })
 
 test('ordinary code and words near the markers are not hits', () => {
-  const quiet = ['const todo = []', 'const TODOS = 3', "it('works', () => {})", "test('skips blank lines', () => {})", 'function skipped() {}', 'xit_code = 1', 'let implemented = true',
-    'the list is implemented', "const x = 'TODO'", 'document.title = "FIXME"']
+  const quiet = ["it('works', () => {})", "test('skips blank lines', () => {})", 'function skipped() {}', 'xit_code = 1', 'let implemented = true', "const s = \"it.skip('x')\"", '@pytest.mark.skipif(cond)']
   for (const line of quiet) expect([line, hits(line)]).toEqual([line, []])
 })
 
@@ -101,32 +75,40 @@ test('only lines that are new count: what the old text already had is not read a
   const before = 'a()\n// TODO: old one\nb()'
   expect(hits('a()\n// TODO: old one\nb()\n// TODO: new one', before)).toEqual([[4, 'TODO: new one']])
   expect(hits('  // TODO: old one', before)).toEqual([])
-  // The same line twice where the old text had it once: one is new.
   expect(hits('// TODO: old one\n// TODO: old one', '// TODO: old one')).toEqual([[2, 'TODO: old one']])
 })
 
 test('a line with a key or token is left out, and a long line is cut at a word with no mark', () => {
   expect(hits('// TODO: rotate sk-abcdefghijklmnopqrstuvwxyz123456')).toEqual([])
-  const [hit] = unfinishedLines('', `// TODO: ${'word '.repeat(80)}`)
+  const [hit] = unfinishedLines('', `// TODO: ${'word '.repeat(80)}`, 'slash')
   expect(hit!.text.length).toBeLessThanOrEqual(FILE_MAX)
   expect(hit!.text).not.toMatch(/…|\.\.\.$/)
 })
 
 test('at most five are kept from one change, and a repeated line once', () => {
   const many = Array.from({ length: 8 }, (_, n) => `// TODO: item ${n}`).join('\n')
-  expect(unfinishedLines('', many).map(h => h.line)).toEqual([1, 2, 3, 4, 5])
+  expect(unfinishedLines('', many, 'slash').map(h => h.line)).toEqual([1, 2, 3, 4, 5])
   expect(hits('// TODO: same\nx()\n// TODO: same')).toEqual([[1, 'TODO: same']])
 })
 
-test('what each file tool writes: Write is its content against the old file, Edit its new text against its old, MultiEdit each edit, a notebook its cell', () => {
+test('the file tools are Edit, Write and MultiEdit; a notebook is no code file', () => {
+  expect([...FILE_TOOLS]).toEqual(['Edit', 'Write', 'MultiEdit'])
+})
+
+test('what each file tool writes: Write is its content against the old file, Edit its new text against its old, MultiEdit each edit', () => {
   const edit = { file_path: '/p/a.ts', old_string: '// TODO: keep\nx()', new_string: '// TODO: keep\nx()\n// TODO: add' }
   expect(linesWritten('Edit', edit, '').map(h => h.text)).toEqual(['TODO: add'])
   const multi = { file_path: '/p/a.ts', edits: [{ old_string: 'a', new_string: 'a // TODO: one' }, { old_string: 'b', new_string: "it.skip('x', f)" }] }
   expect(linesWritten('MultiEdit', multi, '').map(h => h.text)).toEqual(['TODO: one', "it.skip('x', f)"])
   expect(linesWritten('Write', { file_path: '/p/a.ts', content: '// TODO: keep\n// TODO: add' }, '// TODO: keep').map(h => [h.line, h.text])).toEqual([[2, 'TODO: add']])
-  expect(linesWritten('NotebookEdit', { notebook_path: '/p/n.ipynb', new_source: '# TODO: plot it', edit_mode: 'insert' }, '').map(h => h.text)).toEqual(['TODO: plot it'])
-  expect(linesWritten('NotebookEdit', { notebook_path: '/p/n.ipynb', new_source: '# TODO: plot it', edit_mode: 'delete' }, '')).toEqual([])
-  for (const odd of [{}, { content: 5 }, { edits: 'x' }, { edits: [null, 3, {}] }]) expect(linesWritten('Write', odd as never, '')).toEqual([])
+  expect(linesWritten('Write', { file_path: '/p/a.py', content: 'def f():\n    # FIXME: slow\n    pass' }, '').map(h => h.text)).toEqual(['FIXME: slow'])
+})
+
+test('a file that is not code gives nothing, whatever it says; neither does a notebook, a bad input or another tool', () => {
+  const prose = '- It keeps a "Left undone" list: `TODO` and `FIXME` comments, skipped tests (`it.skip`, `@pytest.mark.skip`) and "not implemented" lines.\n// TODO: even a comment-looking line\n# TODO: and this'
+  for (const path of ['/p/README.md', '/p/docs/plan.mdx', '/p/notes.txt', '/p/guide.rst', '/p/data.json']) expect([path, linesWritten('Write', { file_path: path, content: prose }, '')]).toEqual([path, []])
+  expect(linesWritten('NotebookEdit', { notebook_path: '/p/n.ipynb', new_source: '# TODO: plot it', edit_mode: 'insert' }, '')).toEqual([])
+  for (const odd of [{}, { file_path: '/p/a.ts', content: 5 }, { file_path: '/p/a.ts', edits: 'x' }, { file_path: '/p/a.ts', edits: [null, 3, {}] }]) expect(linesWritten('Write', odd as never, '')).toEqual([])
   expect(linesWritten('Edit', { file_path: '/p/a.ts' } as never, '')).toEqual([])
   expect(linesWritten('Bash', { command: '// TODO: no' } as never, '')).toEqual([])
 })

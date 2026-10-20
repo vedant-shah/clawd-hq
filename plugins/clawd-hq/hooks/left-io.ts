@@ -6,7 +6,7 @@ import { fit } from './desk'
 import { CHECK_MAX_TOKENS, CHECK_MODEL, CHECK_TIMEOUT_MS, checkAsk, leftStart as resetCheck, parseUndone, takeCheck } from './left-check'
 import { cleanLeft, promptOf, withLeft } from './left-list'
 import type { FreshItem } from './left-list'
-import { deferredIn, linesWritten } from './left-scan'
+import { isProjectCode, linesWritten } from './left-scan'
 import type { FileHit } from './left-scan'
 import { plainText } from './know'
 import { side } from './side-ask'
@@ -65,64 +65,62 @@ export function leftActions(io: LeftIo): LeftActions {
   }
 }
 
-// ---- Source 1: the final answer ----
-
-async function fromAnswer(io: LeftIo, folder: string, e: { reason: string; answer: string }, by: string) {
-  if (e.reason !== 'answer') return
-  await add(io, folder, deferredIn(e.answer).map((text): FreshItem => ({ text, source: 'answer', by })))
+/**
+ * A specialist handed its report back. Nothing is read from an answer any more (phrase matching listed descriptions of the
+ * work as if they were unfinished work); this stays so register.tsx's call to it still holds, and does nothing.
+ */
+export function leftAnswer(_io: LeftIo, _e: { reason: string; answer: string }, _by: string): Promise<void> {
+  return Promise.resolve()
 }
 
-/** A specialist handed its report back: the deferring sentences in it join the list under its name. Never throws. */
-export async function leftAnswer(io: LeftIo, e: { reason: string; answer: string }, by: string) {
-  await fromAnswer(io, io.folder(), e, by).catch(() => undefined)
-}
-
-// ---- Source 2: unfinished-work lines written into files ----
+// ---- Source 1: unfinished-work lines written into code files ----
 
 /** A file tool's call as the hook hears it: the tool, who made it, and its input. */
 export type WriteCall = { tool: string; agentId?: string } & Record<string, unknown>
 
-const pathOf = (call: WriteCall) => [call.file_path, call.notebook_path].find((p): p is string => typeof p === 'string' && p !== '')
+const pathOf = (call: WriteCall) => (typeof call.file_path === 'string' && call.file_path !== '' ? call.file_path : undefined)
 
-/** The path as shown: from the project folder when it lies inside it. */
-function shownPath(path: string, folder: string): string {
-  const inside = folder !== '' && path.startsWith(`${folder}/`) ? path.slice(folder.length + 1) : path
-  return fit(plainText(inside), 200)
+/** The path from the project folder, when the file lies inside it and is a code file outside docs/ and node_modules/; otherwise nothing. */
+function codePath(path: string, folder: string): string | undefined {
+  const root = folder.replace(/[\\/]+$/, '')
+  const relative = root !== '' && path.startsWith(`${root}/`) ? fit(plainText(path.slice(root.length + 1)), 200) : undefined
+  return relative !== undefined && isProjectCode(relative) ? relative : undefined
 }
 
-/** The line a hit landed on: a Write knows it; an edit's is found by looking for the text in the file as it is now. A notebook's cell has none. */
+/** The line a hit landed on: a Write knows it; an edit's is found by looking for the text in the file as it is now. */
 function lineOf(tool: string, hit: FileHit, now: string | undefined): number | undefined {
   if (tool === 'Write') return hit.line
-  const at = tool === 'NotebookEdit' || now === undefined ? -1 : now.split(/\r?\n/).findIndex(line => line.includes(hit.text))
+  const at = now === undefined ? -1 : now.split(/\r?\n/).findIndex(line => line.includes(hit.text))
   return at < 0 ? undefined : at + 1
 }
 
-async function fromFile(io: LeftIo, call: WriteCall, path: string, before: string) {
-  const folder = io.folder()
+async function fromFile(io: LeftIo, call: WriteCall, path: string, file: string, before: string) {
   const hits = linesWritten(call.tool, call, before)
   if (hits.length === 0) return
   const [by, now] = [call.agentId === undefined ? 'Clawd' : await io.byOf(call.agentId), call.tool === 'Write' ? undefined : await io.read(path).catch(() => undefined)]
-  const file = shownPath(path, folder)
-  await add(io, folder, hits.map((hit): FreshItem => {
+  await add(io, io.folder(), hits.map((hit): FreshItem => {
     const line = lineOf(call.tool, hit, now)
     return { text: hit.text, source: 'file', by, file, ...(line === undefined ? {} : { line }) }
   }))
 }
 
 /**
- * Wraps one call to a file tool. A Write is read against the file as it was; once the call has gone through (a refusal or an
- * error counts for nothing), the lines it wrote are looked at, not waited for. The tool's own answer is returned as it came.
+ * Wraps one call to a file tool. Only a code file inside the project is looked at. A Write is read against the file as it was;
+ * once the call has gone through (a refusal or an error counts for nothing), the lines it wrote are looked at, not waited for.
+ * The tool's own answer is returned as it came.
  */
 export async function leftWatch<R>(io: LeftIo, call: WriteCall, run: () => Promise<R>): Promise<R> {
   const path = pathOf(call)
-  const before = path !== undefined && call.tool === 'Write' ? await io.read(path).catch(() => '') : ''
+  const file = path === undefined ? undefined : codePath(path, io.folder())
+  if (path === undefined || file === undefined) return run()
+  const before = call.tool === 'Write' ? await io.read(path).catch(() => '') : ''
   const ran = await run()
   const answer = (ran ?? {}) as { deny?: unknown; isError?: unknown }
-  if (path !== undefined && answer.deny === undefined && !answer.isError) void fromFile(io, call, path, before).catch(() => undefined)
+  if (answer.deny === undefined && !answer.isError) void fromFile(io, call, path, file, before).catch(() => undefined)
   return ran
 }
 
-// ---- Source 3: the second check, and the end of Clawd's own turn ----
+// ---- Source 2: the strict second check, and the end of Clawd's own turn ----
 
 /** The one question to the small model; what it lists joins the list. Whatever goes wrong, nothing is added. */
 async function runCheck(io: LeftIo, folder: string, job: { request: string; report: string }) {
@@ -133,11 +131,11 @@ async function runCheck(io: LeftIo, folder: string, job: { request: string; repo
 }
 
 /**
- * Clawd's own turn ended: its answer is read for deferring sentences, and, when `isCheckOn` and the turn used five tools or
- * more without handing work to a specialist, a check joins the line of background questions to the model. Never throws.
+ * Clawd's own turn ended. When `isCheckOn` and the turn used five tools or more without handing work to a specialist, a check
+ * of his final report joins the line of background questions to the model. His answer is judged only by that check. Never throws.
  */
-export async function leftOwnTurn(io: LeftIo, e: { reason: string; answer: string }, isCheckOn: boolean) {
+export function leftOwnTurn(io: LeftIo, e: { reason: string; answer: string }, isCheckOn: boolean): Promise<void> {
   const [folder, job] = [io.folder(), takeCheck(e)]
   if (isCheckOn && job) side.queue(() => runCheck(io, folder, job).catch(() => undefined))
-  await fromAnswer(io, folder, e, 'Clawd').catch(() => undefined)
+  return Promise.resolve()
 }

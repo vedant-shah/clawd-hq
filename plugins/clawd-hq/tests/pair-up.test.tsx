@@ -44,6 +44,18 @@ test('specialists hired with the same PAIR-UP goal are one card: their names joi
   }
 })
 
+test('the cards on the floor are one line apart, on both surfaces', async ($, on) => {
+  office(on)
+  await hire($, 'author', brief('author'))
+  await hire($, 'critic', brief('critic'))
+  await hire($, 'judge', brief('judge', null))
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect((await ui.find({ key: 'floor-rows' }))?.props).toMatchObject({ flexDirection: 'column', gap: 1 })
+    await ui.unmount()
+  }
+})
+
 test('three specialists read "A, B & C"', async ($, on) => {
   office(on)
   for (const name of ['author', 'critic', 'judge']) await hire($, name, brief(name))

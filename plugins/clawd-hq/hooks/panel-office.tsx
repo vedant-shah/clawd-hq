@@ -151,7 +151,7 @@ function floor(ctx: Ctx) {
   return (
     <Box flexDirection="column">
       <Text bold dimColor>{`AT WORK · ${working.length}`}</Text>
-      <Box key="floor-rows" flexDirection="column">{floorSlots(ctx.data.staff).map(slot => (slot.kind === 'pair' ? pairDesk(ctx.kit, ctx.data, slot.group) : deskRow(slot.one, ctx)))}</Box>
+      <Box key="floor-rows" flexDirection="column" gap={1}>{floorSlots(ctx.data.staff).map(slot => (slot.kind === 'pair' ? pairDesk(ctx.kit, ctx.data, slot.group) : deskRow(slot.one, ctx)))}</Box>
     </Box>
   )
 }

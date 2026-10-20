@@ -40,6 +40,13 @@
       "description": "On (default): after each specialist hands its work back, and after any turn of Clawd's own that used six tools or more, a small model reads the steps and the report and may leave one short note on Clawd's card when something matters, such as a claim no step backs up or a test that failed. Checks are made only while one of the office tabs is open. It uses a little of your plan. While it is on and an office tab is open, Claude Code's own \"You should know\" note above the prompt box stays quiet. Off: no checks are made, and Claude Code's own note works as usual.",
       "required": false,
       "default": true
+    },
+    "leftUndone": {
+      "type": "boolean",
+      "title": "Left undone check",
+      "description": "On (default): after a turn of Clawd's own that used five tools or more, a small model sets your request against his final report and lists what you asked for that was not done, in the Left undone section of the Office tab. It uses a little of your plan. Off: that check is not made. The other two sources (deferring sentences in answers and unfinished-work lines written into files) are read on this machine and are not affected.",
+      "required": false,
+      "default": true
     }
   }
 }

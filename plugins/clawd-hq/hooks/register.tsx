@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, Memory, Mood, Payroll } from '../types'
+import type { Artifact, Badge, Boss, EndedBy, Employee, Fx, KnowState, LeftItem, Memory, Mood, Payroll } from '../types'
+import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart, leftToolUsed, leftTurnStart, leftWatch, type LeftIo } from './left-io'
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
 import { resumedEffort } from './resume-effort'
@@ -76,6 +77,7 @@ const payroll = atom({ plugin: 'clawd-hq', key: 'payroll' } as const, PAYROLL0)
 const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory[])
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
+const leftUndone = atom({ plugin: 'clawd-hq', key: 'leftUndone' } as const, [] as LeftItem[])
 const know = atom({ plugin: 'clawd-hq', key: 'know' } as const, KNOW0)
 const clawdBrief = atom({ plugin: 'clawd-hq', key: 'brief' } as const, BRIEF0)
 const onboard = atom({ plugin: 'clawd-hq', key: 'onboard' } as const, null as OnboardCard | null)
@@ -283,6 +285,12 @@ const artifactIo = ($: EngineInterface): ArtifactIo => ({
   check: i => $.tool.check(i as never), list: i => $.tool.call({ tool: 'Artifact', ...i }) as never,
 })
 
+/** Left undone (hooks/left-io.ts): work put off, kept per project folder. The Do it now button reuses the heads-up card's prompt fill. */
+const leftIo = ($: EngineInterface): LeftIo => ({
+  folder: () => cwd, now: () => $.clock.now(), change: fn => update($, leftUndone, fn), save: (folder, list) => $.store.set(`leftUndone:${folder}`, list),
+  read: path => $.fs.read(path), complete: ask => $.model.complete(ask), fillPrompt: text => knowIo($).fillPrompt(text), byOf: id => memoryIo($).byOf(id),
+})
+
 /** The office's own tools (hooks/own-tools.ts): the tour, remember, and the step report. */
 const ownToolIo = ($: EngineInterface): OwnToolIo => ({
   tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
@@ -373,7 +381,7 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
   return {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
-    artifacts: await read($, artifacts), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
+    artifacts: await read($, artifacts), leftUndone: await read($, leftUndone), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
     brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options, onboard: await setupCard($),
   }
 }
@@ -413,6 +421,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     scrollClawd: async (part, dir) => { const text = (await read($, clawdBrief))[part]?.text ?? ''; await setFx($, f => ({ ...f, scroll: scrolled(f.scroll, part, text, dir) })) },
     choose: async button => { void chooseOnboard(await onboardIo($, opts), button) }, // a step can wait on the question box or a model: the press does not
     ...knowActions(knowIo($)),
+    ...leftActions(leftIo($)),
   }
 }
 
@@ -494,6 +503,7 @@ export const register: Register = (on, options) => {
       ['decisions', async () => { const recalled = await loadMemory(memoryIo($)); await update($, memory, () => recalled) }],
       // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
+      ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${cwd}`)); await update($, leftUndone, () => items) }],
       ['remember tool', () => $.tool.register(REMEMBER_SPEC)],
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['team pick tool', () => $.tool.register(TEAM_PICK_SPEC)],
@@ -644,6 +654,9 @@ export const register: Register = (on, options) => {
     return ran
   })
 
+  // Unfinished-work lines Claude or a specialist writes into files (TODO, a skipped test, "not implemented") join Left undone.
+  for (const tool of FILE_TOOLS) on('tool.call', { tool: tool as 'Edit' }, ($, e, next) => leftWatch(leftIo($), e as never, () => next(e))) // MultiEdit is no declared tool name, but the engine runs one if a build has it
+
   on('tool.call', async ($, e, next) => {
     const tool = String(e.tool)
     const input = e as unknown as Record<string, unknown>
@@ -655,7 +668,7 @@ export const register: Register = (on, options) => {
     const scouted = await scoutRoute(scoutBox, scoutRouteIo($), cwd, id, tool, input)
     if (scouted) return ('run' in scouted ? next({ ...e, ...scouted.run } as never) : scouted) as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
-    if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
+    if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); leftToolUsed(tool); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
     const own = await ownToolAnswer(ownToolIo($), tool, id, input) // the tour, remember, and a specialist's step report
     if (own) return own as never
     // What the person answers in Clawd's question box is saved as their decision, each question with its own answer.
@@ -684,6 +697,7 @@ export const register: Register = (on, options) => {
   // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
   // An edit request from the Settings tab carries a note of its own: the file to edit, and what must not be touched.
   on('prompt.submit', async ($, e, next) => {
+    leftAsked(e)
     if (isPersonMessage(e)) await setBoss($, b => withPersonSpoke(b, e.origin?.kind)) // what closed before it is behind us: the coffee break button waits for the next checkpoint
     else if (isNotification(e)) await setBoss($, b => withNotice(b, e.turnId !== undefined)) // a job's notification starts or joins a turn: which one reports a hand-back
     if (brief.isKnowOn) await knowPrompt(knowIo($), e as { text: string })
@@ -707,6 +721,7 @@ export const register: Register = (on, options) => {
     // Work goes on, so a recap of the pause before it is out of date.
     noteRecapTurn()
     knowTurnStart(e.text ?? '')
+    leftTurnStart()
     isEditTurn = editPartOf(e.text ?? '') !== undefined
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, recap: undefined, activity: e.text ? READING_BRIEF : 'Back at it' }))
     return next(e)
@@ -723,11 +738,13 @@ export const register: Register = (on, options) => {
         for (const text of parseChoices(e.answer ?? '')) await remember(memoryIo($), { kind: 'choice', text, by, source: 'report' })
         // After each hand-back, a check of the work against its report; a note may join Clawd's card.
         if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
+        void leftAnswer(leftIo($), e, by)
       }
       await clockOut($, e.agentId, e.reason === 'answer' ? 'done' : 'failed')
       await showStatus($)
     } else {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)
+      void leftOwnTurn(leftIo($), e, brief.isLeftOn)
       isEditTurn = false
       await askAgain(paneIo($))
       const now = await $.clock.now()

@@ -63,6 +63,21 @@ export type Artifact = {
   at: number
 }
 
+/** One piece of work Claude or a specialist left unfinished in this project (hooks/left-list.ts). */
+export type LeftItem = {
+  id: string
+  /** Untrusted text, one line. */
+  text: string
+  /** Where it was found: a deferring sentence in an answer, an unfinished-work line written into a file, or the second model check. */
+  source: 'answer' | 'file' | 'check'
+  /** Who left it: Clawd, or the specialist's name. */
+  by: string
+  at: number
+  /** For a file: the path as shown, and the line when it is known. */
+  file?: string
+  line?: number
+}
+
 export type Payroll = { laidOff: string[]; isReviewed: boolean; stacks: string[] }
 
 /** An agent type's place on the books, kept across sessions. */
@@ -202,6 +217,7 @@ declare module 'claude-code' {
       memory: Memory[]
       gauge: Gauge
       artifacts: Artifact[]
+      leftUndone: LeftItem[]
       know: KnowState
       brief: ClawdBrief
       /**

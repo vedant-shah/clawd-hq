@@ -3,7 +3,7 @@
 import type { BriefingOptions } from './instructions'
 import { savedKey, savedNow, useSaved } from './toggle-store'
 
-export type ConfigField = 'chiefOfStaff' | 'quietChat' | 'recap' | 'youShouldKnow'
+export type ConfigField = 'chiefOfStaff' | 'quietChat' | 'recap' | 'youShouldKnow' | 'leftUndone'
 
 /** A config as its row shows it: the name only (what each does is in the README). */
 export type ConfigToggle = {
@@ -17,6 +17,7 @@ export const TOGGLES: readonly ConfigToggle[] = [
   { field: 'quietChat', title: 'Quiet chat', isOn: o => o.isQuiet },
   { field: 'recap', title: 'Recap', isOn: o => o.isRecapOn },
   { field: 'youShouldKnow', title: 'You should know', isOn: o => o.isKnowOn },
+  { field: 'leftUndone', title: 'Left undone check', isOn: o => o.isLeftOn },
 ]
 
 /** A press applies at once (hooks/toggle-store.ts); where the settings list the row, the engine may also reload the plugin. */

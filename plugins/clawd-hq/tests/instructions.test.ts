@@ -40,10 +40,10 @@ test('with no edits the briefing is byte for byte what the old file gave, quiet 
 })
 
 test('the options are on by default, with no voice file of the person\'s own', () => {
-  expect(optionsOf({})).toEqual({ isOn: true, voiceFile: '', isRecapOn: true, isQuiet: true, isKnowOn: true })
-  expect(optionsOf({ chiefOfStaff: false, voiceFile: '  /me/voice.md ', recap: false, quietChat: false, youShouldKnow: false })).toEqual({ isOn: false, voiceFile: '/me/voice.md', isRecapOn: false, isQuiet: false, isKnowOn: false })
+  expect(optionsOf({})).toEqual({ isOn: true, voiceFile: '', isRecapOn: true, isQuiet: true, isKnowOn: true, isLeftOn: true })
+  expect(optionsOf({ chiefOfStaff: false, voiceFile: '  /me/voice.md ', recap: false, quietChat: false, youShouldKnow: false, leftUndone: false })).toEqual({ isOn: false, voiceFile: '/me/voice.md', isRecapOn: false, isQuiet: false, isKnowOn: false, isLeftOn: false })
   // A value of the wrong kind counts as unset.
-  expect(optionsOf({ chiefOfStaff: 'no', voiceFile: 7, recap: 0, quietChat: 'off', youShouldKnow: 'no' })).toEqual({ isOn: true, voiceFile: '', isRecapOn: true, isQuiet: true, isKnowOn: true })
+  expect(optionsOf({ chiefOfStaff: 'no', voiceFile: 7, recap: 0, quietChat: 'off', youShouldKnow: 'no', leftUndone: 'off' })).toEqual({ isOn: true, voiceFile: '', isRecapOn: true, isQuiet: true, isKnowOn: true, isLeftOn: true })
 })
 
 test('a bare session and a teammate are not briefed; every other session is', () => {

@@ -11,6 +11,7 @@ import { stepCount } from './steps'
 import { splitRecap } from './recap'
 import { overlay } from './pixels'
 import { knowSection } from './panel-know'
+import { leftSection } from './panel-left'
 import { onboardSection } from './panel-onboard'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -182,6 +183,7 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
       {knowSection(kit, data, actions)}
       {onboardSection(kit, data.onboard, { choose: actions.choose })}
       {floor(ctx)}
+      {leftSection(kit, data, actions)}
       {artifactDesk(ctx)}
     </kit.Box>
   )

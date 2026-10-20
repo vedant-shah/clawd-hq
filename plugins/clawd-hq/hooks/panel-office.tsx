@@ -10,6 +10,8 @@ import { effortLabel } from './usage'
 import { stepCount } from './steps'
 import { splitRecap } from './recap'
 import { overlay } from './pixels'
+import { floorSlots } from './pair-up'
+import { pairDesk } from './panel-pair'
 import { knowSection } from './panel-know'
 import { leftSection } from './panel-left'
 import { onboardSection } from './panel-onboard'
@@ -149,7 +151,7 @@ function floor(ctx: Ctx) {
   return (
     <Box flexDirection="column">
       <Text bold dimColor>{`AT WORK · ${working.length}`}</Text>
-      <Box key="floor-rows" flexDirection="column">{working.map(one => deskRow(one, ctx))}</Box>
+      <Box key="floor-rows" flexDirection="column">{floorSlots(ctx.data.staff).map(slot => (slot.kind === 'pair' ? pairDesk(ctx.kit, ctx.data, slot.group) : deskRow(slot.one, ctx)))}</Box>
     </Box>
   )
 }

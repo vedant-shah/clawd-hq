@@ -6,6 +6,7 @@ import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart,
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
 import { resumedEffort } from './resume-effort'
+import { parsePairUp } from './pair-up'
 import { cleanArtifacts, hideArtifact, keepArtifact, sweepArtifacts } from './artifacts'
 import type { ArtifactAnswer, ArtifactIo } from './artifacts'
 import { loadMemory, remember, rememberCall, saveBoxAnswer, saveMemory } from './memory-io'
@@ -543,7 +544,9 @@ export const register: Register = (on, options) => {
     if (spawnTypeOf(e) === SCOUT_TYPE) { const r = await next(e); if (r.agentId) scoutBox.mark(r.agentId); return r } // marked before anyone else hears of it: no brief notes, no desk
     // A resumed run keeps its first brief (the engine takes no change to it) and its place on the books: no hire is counted again.
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
-    const { effort, prompt } = parseEffort(e.prompt)
+    // A pair-up member's `PAIR-UP: <goal>` line (hooks/pair-up.ts) comes off the same way, right after it.
+    const { effort, prompt: unEffort } = parseEffort(e.prompt)
+    const { goal, prompt } = parsePairUp(unEffort)
     await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
     if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
@@ -553,7 +556,8 @@ export const register: Register = (on, options) => {
       keepBrief(r.agentId, sent)
       if (effort) efforts.set(r.agentId, effort)
       await newHire(runIo($), r.agentId, e.subagentType, e.description, e.name)
-      await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), model: one.model || r.model })))
+      const pair = goal !== undefined && !e.workflow ? { goal, at: await $.clock.now() } : undefined // a workflow keeps its script's prompt, so its line was never taken off
+      await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), ...(pair ? { pair } : {}), model: one.model || r.model })))
       await showStatus($)
     }
     return r

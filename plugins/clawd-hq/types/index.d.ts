@@ -41,6 +41,8 @@ export type Employee = {
   stepNote?: string
   /** Where the progress came from: the step tool's report, which stands, or a "Step N of M" in the specialist's own words. */
   stepBy?: 'tool' | 'words'
+  /** Set when Clawd hired it as one of a pair-up (a `PAIR-UP: <goal>` first line in its brief): the job's goal and when it was hired. Members with the same goal hired close together share one card. */
+  pair?: { goal: string; at: number }
 }
 
 /** One thing Clawd remembers for this project: a decision the user made, or a key choice an agent came back with. */

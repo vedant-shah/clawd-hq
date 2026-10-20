@@ -2,7 +2,9 @@
 import { avatarFor, compactIcon, tinyIcon } from './avatars'
 import { givenName } from './office'
 import { AMBER } from './office'
-import { doneLine, doneThisSession, titled } from './panel-model'
+import { finishedSlots } from './pair-up'
+import { doneLine, titled } from './panel-model'
+import { pairDone } from './panel-pair'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import type { Employee } from '../types'
@@ -34,13 +36,13 @@ function row(one: Employee, { Box, Text, sprite, isTerminal }: Kit, data: PanelD
 
 export function logTab(kit: Kit, data: PanelData, actions: PanelActions) {
   const { Box, Text, Button } = kit
-  const done = doneThisSession(data.staff, data.gauge.startedAt)
+  const done = finishedSlots(data.staff, data.gauge.startedAt)
   return (
     <Box flexDirection="column" gap={1}>
       <Button key="settings-back" plain label="‹ Back" onPress={() => actions.showLog(false)} />
       {done.length === 0 && <Text dimColor wrap="wrap">Nothing has finished yet this session.</Text>}
       {done.length > 0 && <Text bold dimColor>{`FINISHED THIS SESSION · ${done.length}`}</Text>}
-      {done.slice(0, MAX_ROWS).map(one => row(one, kit, data))}
+      {done.slice(0, MAX_ROWS).map(slot => (slot.kind === 'pair' ? pairDone(kit, data, slot.group) : row(slot.one, kit, data)))}
       {done.length > MAX_ROWS && <Text dimColor>{`Showing ${MAX_ROWS} of ${done.length}`}</Text>}
     </Box>
   )

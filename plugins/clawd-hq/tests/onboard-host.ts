@@ -161,4 +161,4 @@ export async function press($: Engine, h: OnboardHost, surface: Surface, key: st
   await settle(h)
 }
 
-export const saveOf = (h: OnboardHost) => h.saved.get(`onboard:${CWD}`) as { step: string; role?: string; at: number } | undefined
+export const saveOf = (h: OnboardHost) => h.saved.get(`onboard:${CWD}`) as { step: string; role?: string; at: number; failures?: number } | undefined

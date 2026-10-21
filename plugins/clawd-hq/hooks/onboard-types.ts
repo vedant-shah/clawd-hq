@@ -7,11 +7,15 @@
  */
 export type OnboardStep = 'scan' | 'team' | 'workflow' | 'done'
 
-/** Setup's place, kept per project at `onboard:<folder>`, so a restart part way resumes or retries. */
+/**
+ * Setup's place, kept per project at `onboard:<folder>`, so a restart part way resumes or retries. `at` is when the place was last
+ * saved (a run under two minutes old may still be working). `failures` counts runs that stopped; it goes when a run finishes.
+ */
 export type OnboardSave = {
   readonly step: OnboardStep
   readonly role?: string
   readonly at: number
+  readonly failures?: number
 }
 
 /** One agent or skill the person has installed. `about` is the first sentence of its description. */
@@ -77,15 +81,7 @@ export type Team = { readonly picks: readonly Pick[]; readonly empty: readonly S
 /** Who the person is, kept on the whole machine at `profile`. */
 export type Profile = { readonly role?: string; readonly workflow?: readonly string[]; readonly at: number }
 
-/** The roles setup guesses from, and the guess with whether the evidence was thin. */
-export const ROLES: readonly string[] = [
-  'Software engineer',
-  'Web developer',
-  'Data / ML',
-  'Mobile developer',
-  'Tool or plugin builder',
-  'Writer or researcher',
-]
+/** The role setup guesses, and whether the evidence was thin (a thin guess picks the team but is not kept as who the person is). */
 export type RoleGuess = { readonly role: string; readonly isThin: boolean }
 
 /** The most steps the workflow card shows, and the most characters of instructions read for it. */

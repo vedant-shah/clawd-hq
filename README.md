@@ -36,18 +36,18 @@ The office opens on the Office tab when a session starts, in the terminal and in
 
 ## First-time setup
 
-The first time you open a project that has no saved setup, setup runs by itself. It asks no questions. Clawd runs the chat and the chat is quiet, because both switches are on by default; you change them in the Settings tab. When setup is done, the Office tab shows one small card, for example "Set up your team for this project: Planner, Builder, Reviewer, Researcher. Change it in People or Settings, or run /office-setup again." Its one dim button, Dismiss, takes it away. To run setup again, type `/office-setup`. To stop it from ever running by itself, turn off "Automatic setup" in the Settings tab; `/office-setup` still works then.
+The first time you open a project that has no saved setup, setup runs by itself. It asks no questions. Clawd runs the chat and the chat is quiet, because both switches are on by default; you change them in the Settings tab. When setup is done, the Office tab shows one small card, for example "Set up your team for this project: Planner, Builder, Reviewer, Researcher. Change it in People or Settings, or run /office-setup again." Its one dim button, Dismiss, takes it away. To run setup again, type `/office-setup`. To stop it from ever running by itself, turn off "Automatic setup" in the Settings tab; nothing then starts or resumes by itself, and `/office-setup` still works. A whole setup uses roughly $0.15 of your plan per project. What goes out is described in the steps below.
 
 Setup goes in this order:
 
 1. It looks quietly around the project. It reads the list of files, the README, your instruction files such as `CLAUDE.md`, and the lists of packages the project depends on. It also lists the agents and skills you have installed. If it cannot tell what kind of work you do here, it takes the best guess, "Software engineer" when nothing points elsewhere.
 2. It reads your past sessions in this project. This is on by default, and the reading happens on this computer. It keeps only the names of the agents and skills that were used and how many times, never what was said or done. Turn off "Automatic setup" to avoid this step, because nothing is read until you type `/office-setup`. Step 3 says where the counts go next.
-3. It picks a starting team. A read-only scout looks around the project first. If it gives nothing usable, one call to Opus picks the team instead, which costs about $0.20 of your plan. That call carries the project summary, the README, your instruction files, the names of the helpers you have installed and the counts from step 2. If Opus gives no usable answer, simple built-in rules pick the team. Clawd HQ's own Planner, Builder, Reviewer and Researcher fill any seat nothing installed fits.
-4. It hires the team. The agents that are not on the team are parked, so Clawd stops offering them. One tap in the People tab brings any of them back. Skills cannot be hidden, so every skill stays available. The skills on the team are set up as hires.
-5. It reads up to five steps that describe how you like to work. Haiku writes them from your instruction files, both the ones for all your projects and the ones in this project, and they are kept in mind for later sessions. No card asks you to confirm them.
+3. It picks a starting team. A read-only Sonnet scout looks around the project first; it can only read files, never secrets or anything outside the project. Only if it gives nothing usable does one call to Opus pick the team instead. That call carries the project summary, the README, your instruction files, the names of the helpers you have installed and the counts from step 2. If Opus gives no usable answer, simple built-in rules pick the team. Clawd HQ's own Planner, Builder, Reviewer and Researcher fill any seat nothing installed fits.
+4. It hires the team. The agents that are not on the team are parked, so Clawd stops offering them. One tap in the People tab brings any of them back. Skills cannot be hidden, so every skill stays available. The skills on the team are set up as hires. The card says how many helpers were set aside, which skills were left out because they are not installed under that name, and anything that could not be saved or added.
+5. It reads up to five steps that describe how you like to work. A Haiku call over your instruction files writes them from your instruction files, both the ones for all your projects and the ones in this project, and they are kept in mind for later sessions. No card asks you to confirm them.
 6. Last, it shows the small card described above. Nothing is ever sent for you, and nothing is put in your prompt box.
 
-If setup stops part way, the card says why and how to try again. The place it reached is saved, so the next session carries on from there.
+If setup stops part way, the card says why. The place it reached is saved, and the next session tries once more by itself, unless a run saved in the last two minutes may still be working. If that second try fails too, nothing starts by itself again: type `/office-setup`. A guess at what you do that rests on very little evidence picks the team but is not saved as your role.
 
 ## What this plugin changes
 
@@ -84,7 +84,7 @@ Clawd's instructions also reach scripted runs (`claude -p` and the Agent SDK), b
 | Recap on Clawd's card (`recap`) | On | Off: no recap is made, and the model is never asked for one. |
 | You should know (`youShouldKnow`) | On | Off: finished work is not checked, no notes appear in the Office tab, and Claude Code's own "You should know" works as usual. |
 | Left undone check (`leftUndone`) | On | Off: the model check of a long turn is not made. The other source of the Left undone list (code markers written into files) is read on this machine and is not affected. |
-| Automatic setup (`autoSetup`) | On | Off: setup never starts by itself in a project. Type `/office-setup` to run it when you want it. |
+| Automatic setup (`autoSetup`) | On | Off: setup never starts or resumes by itself in a project, even one left half done. Type `/office-setup` to run it when you want it. A whole setup uses roughly $0.15 of your plan. |
 | Your own voice file (`voiceFile`) | Empty | The full path of a text file that sets how Clawd sounds, in place of his built-in voice. It changes his tone only, never his rules. It is read when a session starts, and a file over 8000 characters is not used. When it is set, it wins over your own copy from the Settings tab, and the tab shows and edits this file instead. |
 
 ## Development

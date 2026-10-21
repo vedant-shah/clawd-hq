@@ -1,6 +1,5 @@
 import { expect, test } from 'claude-code/testing'
 import type { PastUse, ProjectFacts } from '../hooks/onboard-types'
-import { ROLES } from '../hooks/onboard-types'
 import { guessRole, projectFacts } from '../hooks/scan'
 import { fakeScan } from './scan-fake'
 
@@ -123,6 +122,8 @@ test('thin evidence: few code files, no instruction files and no past use', () =
   expect(guessRole(facts({ codeFiles: 4 }), { ...none, files: 1 }).isThin).toBe(false)
   expect(guessRole(facts({ codeFiles: 5 }), none).isThin).toBe(false)
 })
+
+const ROLES = ['Software engineer', 'Web developer', 'Data / ML', 'Mobile developer', 'Tool or plugin builder', 'Writer or researcher']
 
 test('every guess comes from the fixed list', () => {
   for (const f of [facts({}), facts({ deps: ['next'] }), facts({ fileTypes: { '.swift': 9 } }), facts({ codeFiles: 0, fileTypes: { '.md': 9 } })]) {

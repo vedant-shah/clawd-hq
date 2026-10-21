@@ -51,7 +51,7 @@
     "autoSetup": {
       "type": "boolean",
       "title": "Automatic setup",
-      "description": "On (default): the first time the office opens in a project with no saved setup, setup runs by itself, with no questions. It looks quietly around the project, picks a starting team, hires it and keeps how you like to work in mind, then leaves one small card on the Office tab saying what was set up. A few model calls go out, one to Opus to pick the team. Off: nothing runs by itself; type /office-setup to run setup when you want it.",
+      "description": "On (default): the first time the office opens in a project with no saved setup, setup runs by itself, with no questions. It looks quietly around the project, picks a starting team, hires it and keeps how you like to work in mind, then leaves one small card on the Office tab saying what was set up. It uses your plan, about $0.15 per project: a read-only Sonnet scout reads the project to pick the team, an Opus call picks it instead only if the scout gives nothing usable, and a Haiku call reads your instruction files for how you like to work. Off: nothing runs by itself, not even a setup left half done; type /office-setup to run or finish it when you want.",
       "required": false,
       "default": true
     }

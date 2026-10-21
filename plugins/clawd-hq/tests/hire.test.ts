@@ -122,6 +122,7 @@ test('a broken payroll save does not stop the hires', async () => {
   const io = { ...fakeIo({ breakdownSkills: ['marketing:seo-audit', 'copywriting'] }), savePayroll: async () => { throw new Error('disk') } }
   const report = await hireTeam(io, team)
   expect(report.parked).toBe(0)
+  expect(report.isParkFailed).toBe(true) // said, so the card can tell the person nothing was set aside
   expect(report.hired).toHaveLength(2)
 })
 

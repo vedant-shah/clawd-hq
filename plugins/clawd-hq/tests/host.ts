@@ -62,13 +62,13 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
     files.set((e as { path: string }).path, (e as { text: string }).text)
     return { value: undefined } as never
   })
-  /** The plugin's store, in memory and seeded from `store`. `isWriteFailing` is a store that refuses a write; `held` is a write that waits until it settles. */
+  /** The plugin's store, in memory and seeded from `store`. `isWriteFailing` is a store that refuses a write, `failKeys` the keys alone that it refuses; `held` is a write that waits until it settles. */
   const saved = new Map<string, unknown>(Object.entries(store))
-  const kv = { isWriteFailing: false, held: undefined as Promise<void> | undefined }
+  const kv = { isWriteFailing: false, held: undefined as Promise<void> | undefined, failKeys: new Set<string>() }
   on('store.get', (_$, e) => ({ value: saved.get((e as { key: string }).key) }) as never)
   on('store.set', async (_$, e) => {
     await kv.held
-    if (kv.isWriteFailing) throw new Error('the store refused the write')
+    if (kv.isWriteFailing || kv.failKeys.has((e as { key: string }).key)) throw new Error('the store refused the write')
     saved.set((e as { key: string }).key, (e as { value: unknown }).value)
     return { value: undefined } as never
   })

@@ -22,6 +22,8 @@ export type HireReport = {
   readonly dropped: readonly string[]
   /** Hires the engine would not register. */
   readonly failed: readonly string[]
+  /** The list of parked agents could not be saved, so none were parked. */
+  readonly isParkFailed?: true
 }
 /** The team as kept at `team:<folder>`, with the hires made from it. */
 export type SavedTeam = Team & { readonly hires?: readonly HireSpec[] }
@@ -109,7 +111,7 @@ export async function hireTeam(io: HireIo, team: Team): Promise<HireReport> {
   const isParked = await io.savePayroll(parkedList).then(() => true, () => false)
   await io.set(teamKey(io.cwd), { ...team, hires } satisfies SavedTeam).catch(() => undefined)
   const { hired, failed } = await register(io, hires)
-  return { parked: isParked ? parkedList.length : 0, hired, dropped, failed }
+  return { parked: isParked ? parkedList.length : 0, hired, dropped, failed, ...(isParked ? {} : { isParkFailed: true as const }) }
 }
 
 // ---- Rehire ----

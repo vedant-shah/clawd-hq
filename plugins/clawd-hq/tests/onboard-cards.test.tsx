@@ -3,7 +3,7 @@
 // The drawing is mounted in a pane of the test's own, on both surfaces the test kit mounts, from fake OnboardCard data.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { DONE_HEAD, DONE_TAIL, doneCard, failedCard, scanCard, teamNames, QUIET } from '../hooks/onboard-cards'
+import { DONE_HEAD, DONE_TAIL, doneCard, failedCard, hireNote, scanCard, teamNames, QUIET } from '../hooks/onboard-cards'
 import type { OnboardButton, OnboardCard, Team } from '../hooks/onboard-types'
 import { onboardSection } from '../hooks/panel-onboard'
 import { kitOf } from '../hooks/panel-kit'
@@ -81,11 +81,28 @@ test('a note on the after-card is kept for the draw', () => {
   expect(doneCard(['Planner']).note).toBeUndefined()
 })
 
-test('a stopped setup says why and how to try again, with Dismiss', () => {
-  const card = failedCard('the store refused the write')
-  expect(card.step).toBe('failed')
-  expect(card.lines).toEqual(['Setup stopped: the store refused the write. Run /office-setup to try again.'])
-  expect(card.buttons).toEqual([{ action: 'dismiss', label: 'Dismiss' }])
+test('a first stop says why and that it tries once more next session; a stop after that needs /office-setup; both have Dismiss', () => {
+  const first = failedCard('the store refused the write', 1)
+  expect(first.step).toBe('failed')
+  expect(first.lines).toEqual(['Setup stopped: the store refused the write. It tries once more next session, or run /office-setup to try now.'])
+  expect(first.buttons).toEqual([{ action: 'dismiss', label: 'Dismiss' }])
+  const later = failedCard('the store refused the write', 2)
+  expect(later.lines).toEqual(['Setup stopped: the store refused the write. Run /office-setup to try again.'])
+  expect(later.buttons).toEqual([{ action: 'dismiss', label: 'Dismiss' }])
+})
+
+const REPORT = { parked: 0, hired: [], dropped: [], failed: [] }
+
+test('what setup set aside and could not do is told in plain words, and nothing when all went well', () => {
+  expect(hireNote(REPORT, 0)).toBeUndefined()
+  expect(hireNote(REPORT, 12)).toBe('12 other helpers were set aside; bring them back in People.')
+  expect(hireNote(REPORT, 1)).toBe('1 other helper was set aside; bring it back in People.')
+  expect(hireNote({ ...REPORT, dropped: ['old-notes', 'x'] }, 0)).toBe('Left out, not installed under that name: old-notes, x.')
+  expect(hireNote({ ...REPORT, failed: ['clawd-hq:tdd'] }, 0)).toBe('Claude Code would not add: clawd-hq:tdd.')
+  expect(hireNote({ ...REPORT, isParkFailed: true }, 5)).toBe('Could not save the list of helpers set aside, so none were.')
+  expect(hireNote({ ...REPORT, dropped: ['a'], failed: ['b'] }, 2)).toBe(
+    '2 other helpers were set aside; bring them back in People. Left out, not installed under that name: a. Claude Code would not add: b.',
+  )
 })
 
 test('the after-card draws its two lines and one dim Dismiss, and the press says dismiss', async ($, on) => {
@@ -132,7 +149,7 @@ test('the stopped card draws the reason and Dismiss', async ($, on) => {
   quiet(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
-    const ui = await draw($, surface, failedCard('no model answered'))
+    const ui = await draw($, surface, failedCard('no model answered', 2))
     expect(await textsOf(ui)).toContain('Setup stopped: no model answered. Run /office-setup to try again.')
     expect((await buttonsOf(ui)).map(b => String(b.props.label))).toEqual(['Dismiss'])
     await ui.unmount()
@@ -169,7 +186,7 @@ test('every card draws only the Text props the older desktop engine takes, and e
   quiet(on)
   await $.session.start(START)
   const odd: string[] = []
-  const cards = { scan: scanCard(), done: doneCard(['Planner', 'Builder', 'Reviewer'], 'A note that is long enough to wrap onto a second line.'), failed: failedCard('a long reason that goes on and on') }
+  const cards = { scan: scanCard(), done: doneCard(['Planner', 'Builder', 'Reviewer'], 'A note that is long enough to wrap onto a second line.'), failed: failedCard('a long reason that goes on and on', 1) }
   for (const surface of SURFACES) {
     for (const [name, card] of Object.entries(cards)) {
       const ui = await draw($, surface, card)

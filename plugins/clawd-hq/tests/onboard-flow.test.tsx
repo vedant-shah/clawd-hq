@@ -14,6 +14,9 @@ const DESKTOP_START = { cwd: CWD, surface: null, isInteractive: false } as never
 const DESKTOP = { surface: 'desktop', clientId: 'desktop:default' } as never
 const HAND_PARKED = { laidOff: ['legal:review-contract'], isReviewed: false, stacks: [] }
 const KEY = `onboard:${CWD}`
+/** A saved place left long ago (the test clock starts at 1 second), so no other run can be working on it. */
+const OLD = -1_000_000
+const MINUTE = 60_000
 
 /** A session as each surface starts it: the terminal draws at once, the desktop app attaches a moment later. */
 async function open($: Engine, h: OnboardHost, surface: Surface) {
@@ -116,7 +119,7 @@ for (const surface of SURFACES) {
   }
 
   test(`${surface}: an old offer or question left in a project counts as never set up, so setup runs`, async ($, on) => {
-    const h = onboardHost(on, { [KEY]: { step: 'intro', pending: [{ field: 'quietChat', value: false }], at: 1 } })
+    const h = onboardHost(on, { [KEY]: { step: 'intro', pending: [{ field: 'quietChat', value: false }], at: OLD } })
     await open($, h, surface)
     expect(opusCalls(h)).toHaveLength(1)
     expect(saveOf(h)?.step).toBe('done')
@@ -164,7 +167,18 @@ test('thin evidence: no role is asked; the team is picked for the best guess, an
   const tab = await office($, 'terminal')
   expect(tab.labels).toEqual(['Dismiss'])
   expect(tab.joined).not.toMatch(/Which fits best/)
-  expect(saveOf(h)).toMatchObject({ step: 'done', role: 'Software engineer' })
+  // A thin guess picks the team but is not written down as who the person is: not in the setup record, not in the profile.
+  expect(opusCalls(h)).toHaveLength(1)
+  expect(saveOf(h)?.step).toBe('done')
+  expect(saveOf(h)?.role).toBeUndefined()
+  expect((h.saved.get('profile') as { role?: string } | undefined)?.role).toBeUndefined()
+})
+
+test('a thin guess does not replace the role an earlier setup saved in the profile', async ($, on) => {
+  const h = onboardHost(on, { profile: { role: 'Writer or researcher', at: 1 } })
+  for (const path of [...h.files.keys()]) if (path.startsWith(`${CWD}/`)) h.files.delete(path)
+  await open($, h, 'terminal')
+  expect(h.saved.get('profile')).toMatchObject({ role: 'Writer or researcher' })
 })
 
 test('Opus gives no answer: the rules pick, and the card still shows a team', async ($, on) => {
@@ -201,7 +215,7 @@ const SAVED_TEAM = {
 }
 
 test('setup left at the team step resumes in the next session: the saved team is hired, with no second Opus call', async ($, on) => {
-  const h = onboardHost(on, { [KEY]: { step: 'team', role: 'Software engineer', at: 1 }, [`team:${CWD}`]: SAVED_TEAM })
+  const h = onboardHost(on, { [KEY]: { step: 'team', role: 'Software engineer', at: OLD }, [`team:${CWD}`]: SAVED_TEAM })
   await open($, h, 'terminal')
   expect(opusCalls(h)).toHaveLength(0)
   expect(saveOf(h)?.step).toBe('done')
@@ -210,14 +224,14 @@ test('setup left at the team step resumes in the next session: the saved team is
 })
 
 test('setup left at the scan step starts over in the next session', async ($, on) => {
-  const h = onboardHost(on, { [KEY]: { step: 'scan', at: 1 } })
+  const h = onboardHost(on, { [KEY]: { step: 'scan', at: OLD } })
   await open($, h, 'terminal')
   expect(opusCalls(h)).toHaveLength(1)
   expect(saveOf(h)?.step).toBe('done')
 })
 
 test('setup left at the workflow step finishes with the saved team', async ($, on) => {
-  const h = onboardHost(on, { [KEY]: { step: 'workflow', role: 'Software engineer', at: 1 }, [`team:${CWD}`]: SAVED_TEAM })
+  const h = onboardHost(on, { [KEY]: { step: 'workflow', role: 'Software engineer', at: OLD }, [`team:${CWD}`]: SAVED_TEAM })
   await open($, h, 'terminal')
   expect(opusCalls(h)).toHaveLength(0)
   expect(saveOf(h)?.step).toBe('done')
@@ -247,7 +261,7 @@ test('a step that fails shows a stopped card with how to try again, and /office-
   h.kv.isWriteFailing = true // the store refuses
   await open($, h, 'terminal')
   let tab = await office($, 'terminal')
-  expect(tab.joined).toMatch(/Setup stopped: .*Run \/office-setup to try again\./)
+  expect(tab.joined).toMatch(/Setup stopped: .*next session.*\/office-setup/)
   expect(tab.labels).toEqual(['Dismiss'])
   h.kv.isWriteFailing = false
   await $.command.run({ command: 'office-setup', args: '' } as never)
@@ -265,13 +279,116 @@ test('the headless run, with nothing drawn, saves nothing', async ($, on) => {
   expect(h.calls.models).toEqual([])
 })
 
-test('the payroll waits while setup is not done, and only then', () => {
+test('the payroll waits while setup is not done and can still go on by itself, and only then', () => {
   expect(isSetupBusy(undefined, true)).toBe(true)
   expect(isSetupBusy({ step: 'scan', at: 1 }, true)).toBe(true)
-  expect(isSetupBusy({ step: 'team', at: 1 }, false)).toBe(true)
   expect(isSetupBusy({ step: 'workflow', at: 1 }, true)).toBe(true)
+  expect(isSetupBusy({ step: 'team', at: 1, failures: 1 }, true)).toBe(true) // one more try is coming
   expect(isSetupBusy({ step: 'done', at: 1 }, true)).toBe(false)
-  expect(isSetupBusy(undefined, false)).toBe(false) // never set up, and nothing will start by itself
+  // Nothing goes on by itself with the switch off, or after the retry failed: no reason to wait.
+  expect(isSetupBusy(undefined, false)).toBe(false)
+  expect(isSetupBusy({ step: 'team', at: 1 }, false)).toBe(false)
+  expect(isSetupBusy({ step: 'team', at: 1, failures: 2 }, true)).toBe(false)
+})
+
+// ---- The off switch, a run that may still be working, and a retry that failed ----
+
+for (const step of ['scan', 'team', 'workflow']) {
+  test(`with Automatic setup off a part-way record (${step}) is never resumed by itself, and /office-setup still runs it`, { options: { autoSetup: false } }, async ($, on) => {
+    const record = { step, role: 'Software engineer', at: OLD }
+    const h = onboardHost(on, { [KEY]: record, [`team:${CWD}`]: SAVED_TEAM })
+    await open($, h, 'terminal')
+    await frames(h, 30)
+    expect(h.calls.models).toEqual([])
+    expect(h.calls.registered).toEqual([])
+    expect(saveOf(h)).toEqual(record)
+    expect((await office($, 'terminal')).setup).toEqual([])
+    await $.command.run({ command: 'office-setup', args: '' } as never)
+    await settle(h)
+    expect(saveOf(h)?.step).toBe('done')
+    expect((await office($, 'terminal')).labels).toEqual(['Dismiss'])
+  })
+}
+
+test('a part-way record saved under two minutes ago is left alone (another run is likely working), and is picked up once it is older', async ($, on) => {
+  const h = onboardHost(on, { [KEY]: { step: 'scan', at: 500 } })
+  await open($, h, 'terminal')
+  expect(h.calls.models).toEqual([])
+  expect(saveOf(h)?.at).toBe(500)
+  await h.clock.advance(MINUTE) // about a minute and a half old: still within the window
+  await frames(h, 9)
+  expect(h.calls.models).toEqual([])
+  await h.clock.advance(MINUTE) // now past two minutes
+  await frames(h, 9)
+  expect(opusCalls(h)).toHaveLength(1)
+  expect(saveOf(h)?.step).toBe('done')
+})
+
+test('an automatic run does not overlap an explicit /office-setup that is already working', async ($, on) => {
+  const h = onboardHost(on)
+  h.scout.mode = 'silent'
+  await open($, h, 'terminal') // the automatic run is waiting on the scout
+  await $.command.run({ command: 'office-setup', args: '' } as never)
+  await settle(h)
+  expect(h.scout.spawned).toHaveLength(1)
+})
+
+/** The team's own key refuses a write, so the step after the scan fails; the setup record itself saves fine. */
+const failTeam = (h: OnboardHost) => h.kv.failKeys.add(`team:${CWD}`)
+
+test('a failed run counts one failure and says it tries once more next session; the retry that fails says only /office-setup helps', async ($, on) => {
+  const h = onboardHost(on)
+  failTeam(h)
+  await open($, h, 'terminal')
+  expect(saveOf(h)).toMatchObject({ failures: 1 })
+  expect((await office($, 'terminal')).joined).toMatch(/Setup stopped: .*once more next session.*\/office-setup/)
+  // The next session retries once by itself (the record is old by then) and it fails again.
+  h.saved.set(KEY, { ...saveOf(h), at: OLD })
+  await $.session.end(CLEAR)
+  await open($, h, 'terminal')
+  expect(saveOf(h)).toMatchObject({ failures: 2 })
+  const tab = await office($, 'terminal')
+  expect(tab.joined).toMatch(/Setup stopped: .*Run \/office-setup to try again\./)
+  expect(tab.joined).not.toMatch(/next session/)
+})
+
+test('after the retry failed nothing starts by itself again, in any later session', async ($, on) => {
+  const h = onboardHost(on, { [KEY]: { step: 'scan', at: OLD, failures: 2 } })
+  await open($, h, 'terminal')
+  await frames(h, 30)
+  expect(h.calls.models).toEqual([])
+  expect((await office($, 'terminal')).setup).toEqual([])
+  expect(saveOf(h)).toMatchObject({ failures: 2 })
+})
+
+test('/office-setup runs after the retry failed, and a run that finishes clears the failures', async ($, on) => {
+  const h = onboardHost(on, { [KEY]: { step: 'scan', at: OLD, failures: 2 } })
+  await open($, h, 'terminal')
+  await $.command.run({ command: 'office-setup', args: '' } as never)
+  await settle(h)
+  expect(saveOf(h)?.step).toBe('done')
+  expect(saveOf(h)?.failures).toBeUndefined()
+})
+
+// ---- What the card says it set aside ----
+
+test('the card says how many helpers were set aside, which skills were left out, and nothing else when all went well', async ($, on) => {
+  const h = onboardHost(on, { [`payroll:${CWD}`]: HAND_PARKED })
+  await open($, h, 'terminal')
+  const { joined } = await office($, 'terminal')
+  expect(joined).toContain('1 other helper was set aside; bring it back in People.')
+  expect(joined).toContain('Left out, not installed under that name: old-notes.')
+  expect(joined).not.toMatch(/Could not save|would not add/)
+})
+
+test('a payroll that cannot be saved is said on the card, not swallowed, and nothing is claimed set aside', async ($, on) => {
+  const h = onboardHost(on)
+  h.kv.failKeys.add(`payroll:${CWD}`)
+  await open($, h, 'terminal')
+  const { joined } = await office($, 'terminal')
+  expect(joined).toMatch(/Could not save the list of helpers set aside/)
+  expect(joined).not.toMatch(/set aside; bring/)
+  expect(saveOf(h)?.step).toBe('done')
 })
 
 const MANY = Array.from({ length: 20 }, (_, i) => `ecc:go-agent-${i}`)

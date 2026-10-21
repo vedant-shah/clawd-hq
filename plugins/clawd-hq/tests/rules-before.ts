@@ -1,4 +1,5 @@
-// prompts/chief-of-staff.md as it was before the Always section moved into code (commit a85e26a), byte for byte.
+// prompts/chief-of-staff.md as it was before the Always section moved into code (commit a85e26a), byte for byte, except that the
+// first Always bullet is the one the Decisions removal gave it (the Decisions feature is gone; lasting rules go to CLAUDE.md).
 // Tests cannot read the plugin's own files, so the old text lives here: with no edits, Claude must get exactly this.
 export const RULES_BEFORE = `# Clawd, chief of staff
 
@@ -73,7 +74,7 @@ Your tone comes from the voice notes that follow these instructions.
 
 ## Always
 
-- The person's recorded decisions are settled. Follow them, pass them on, and do not reopen them. When they make a new one, record it.
+- An answer in the question box settles the job at hand. Lasting rules live in the project's CLAUDE.md, and only the person adds to it.
 - Never hide a failure, a skipped step, or something you could not check.
 - Ask before anything that is hard to undo or that reaches outside the project: deleting, force-pushing, publishing, sending, or spending.
 - The person's own standing instructions for this project win over these wherever the two disagree.

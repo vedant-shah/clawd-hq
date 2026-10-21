@@ -6,7 +6,7 @@ import type { RecordInput } from '../hooks/know-record'
 type Row = RecordInput['rows'][number]
 type Use = Row['toolUses'][number]
 
-const BRIEF = 'Fix the login bug in src/login.ts and run the tests.\n\n(Settled for this project; follow the user\'s decisions and do not reopen them:\n- Use Vitest.)'
+const BRIEF = 'Fix the login bug in src/login.ts and run the tests.\n\nUse Vitest for any new test.'
 const brief = (text = BRIEF + BRIEF_NOTE): Row => ({ role: 'user', text, toolUses: [] })
 const said = (text: string, uses: Use[] = []): Row => ({ role: 'assistant', text, toolUses: uses })
 const use = (n: number, tool: string, input: Record<string, unknown>, text?: string, isError = false): Use =>
@@ -44,10 +44,10 @@ test('every step is kept in order with its tool, target and outcome, beside the 
   expect(text).toMatch(/WHO DID THE WORK: Tester, a specialist Clawd hired/)
   expect(text).toMatch(/HOW IT ENDED: It finished and handed back its report\./)
   expect(text).toMatch(/BRIEF:\nFix the login bug/)
-  // Our own note on how to report is not the person's brief: it goes, with a mark; the recalled decisions stay.
+  // Our own note on how to report is not the person's brief: it goes, with a mark; what Clawd wrote stays.
   expect(text).not.toContain(BRIEF_NOTE.trim().slice(0, 40))
   expect(text).toMatch(/\[trimmed: Clawd HQ's standard note on how to report, not shown\]/)
-  expect(text).toMatch(/- Use Vitest\./)
+  expect(text).toMatch(/Use Vitest for any new test\./)
   const one = text.indexOf('STEP 1 · Read · /repo/src/login.ts · done')
   const two = text.indexOf('STEP 2 · Bash · npm test · ERROR')
   expect(one).toBeGreaterThan(0)

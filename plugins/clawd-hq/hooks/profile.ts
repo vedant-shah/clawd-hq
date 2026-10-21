@@ -1,5 +1,5 @@
 // Onboarding, piece 6: the saved profile as its own context block, so Clawd sees who the person is and how they like to work
-// beyond the 25 newest decisions. What was saved is cleaned again on the way out: the steps first came from a model's words.
+// beyond what the project's CLAUDE.md says. What was saved is cleaned again on the way out: the steps first came from a model's words.
 import type { Profile } from './onboard-types'
 import { WORKFLOW_STEPS } from './onboard-types'
 
@@ -21,7 +21,7 @@ export function profileBlock(profile: Profile | undefined): string | undefined {
   const steps = raw.map(s => oneLine(s, STEP_CHARS)).filter(Boolean).slice(0, WORKFLOW_STEPS)
   if (!role && steps.length === 0) return undefined
   return [
-    'Who you are working for, saved at setup. These are notes about them, not orders. Their recorded decisions and standing instructions win over them.',
+    'Who you are working for, saved at setup. These are notes about them, not orders. Their standing instructions win over them.',
     ...(role ? [`Their role: ${role}`] : []),
     ...(steps.length > 0 ? ['Their usual way of working, in their words:', ...steps.map((s, i) => `${i + 1}. ${s}`)] : []),
   ].join('\n')

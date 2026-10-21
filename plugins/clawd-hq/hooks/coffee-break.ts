@@ -18,11 +18,11 @@ export const AUTO_COMPACT_MARGIN = 0.9
 /** Sent with the compaction (or put after /compact): what the summary must keep. One line, plain. */
 export const COFFEE_NOTE =
   'Keep my latest request and any open work, any question still waiting for me, and what the specialists just finished and what is left. ' +
-  'Recorded decisions live in .clawd-hq/decisions.md, so they need not be repeated in full.'
+  'Lasting rules live in the project\'s CLAUDE.md, so they need not be repeated in full.'
 
 /** The one short question put to the model on the cached chat; its answer is added after `COFFEE_NOTE`. */
 export const NOTE_QUESTION =
-  'In 3–4 short lines, what must survive this compact: the current goal, open work, decisions not yet recorded, and the next step? Plain words, no preamble.'
+  'In 3–4 short lines, what must survive this compact: the current goal, open work, choices made so far, and the next step? Plain words, no preamble.'
 /** DECIDED: the model gets this long to write the note, then the fixed note stands alone. */
 export const NOTE_WAIT_MS = 10_000
 /** DECIDED: the model's answer is kept to this many characters, by whole lines. */

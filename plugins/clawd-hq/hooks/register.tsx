@@ -3,16 +3,16 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Artifact, Badge, Boss, Employee, Fx, KnowState, LeftItem, Memory, Payroll, RuleOffer } from '../types'
 import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart, leftToolUsed, leftTurnStart, leftWatch, type LeftIo } from './left-io'
-import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
+import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, oneLine, parseChoices, parseEffort } from './desk'
 import type { Effort } from './desk'
 import { resumedEffort } from './resume-effort'
 import { parsePairUp } from './pair-up'
 import { cleanArtifacts, hideArtifact, keepArtifact, sweepArtifacts } from './artifacts'
 import type { ArtifactAnswer, ArtifactIo } from './artifacts'
-import { loadMemory, remember, rememberCall, saveBoxAnswer, saveMemory } from './memory-io'
+import { loadMemory, remember, saveBoxAnswer, saveMemory } from './memory-io'
 import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
-import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, MEM_TOOL, RECALL, STEP_TOOL } from './constants'
+import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, STEP_TOOL } from './constants'
 import { ownToolAnswer } from './own-tools'
 import type { OwnToolIo } from './own-tools'
 import { blank, smallRow } from './quiet-rows'
@@ -64,7 +64,7 @@ import type { StepIo } from './steps'
 import { isCountedTool } from './usage-count'
 import { recordUse } from './use-tally'
 import { scrolled } from './scroll-window'
-import { DEMO_SPEC, OFFER_RULE_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
+import { DEMO_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
 import { offerRule, ruleActions } from './rule-io'
 import type { RuleIo } from './rule-io'
 import { hire, withReport, withSaid, withStep, withTool } from './staff-model'
@@ -240,10 +240,10 @@ const ruleIo = ($: EngineInterface): RuleIo => ({
   setDone: fn => setFx($, f => ({ ...f, ruleDone: fn(f.ruleDone) })), after: (ms, fn) => $.clock.after(ms, fn),
 })
 
-/** The office's own tools (hooks/own-tools.ts): the tour, remember, the offer of a lasting rule, and the step report. */
+/** The office's own tools (hooks/own-tools.ts): the tour, the offer of a lasting rule, and the step report. */
 const ownToolIo = ($: EngineInterface): OwnToolIo => ({
   tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
-  remember: (id, input) => rememberCall(memoryIo($), id, input), offerRule: (id, input) => offerRule(ruleIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
+  offerRule: (id, input) => offerRule(ruleIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
 })
 
 /** The step tool (hooks/steps.ts): only a specialist at work here reports. */
@@ -451,7 +451,6 @@ export const register: Register = (on, options) => {
       // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
       ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${cwd}`)); await update($, leftUndone, () => items) }],
-      ['remember tool', () => $.tool.register(REMEMBER_SPEC)],
       ['offer rule tool', () => $.tool.register(OFFER_RULE_SPEC)],
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['team pick tool', () => $.tool.register(TEAM_PICK_SPEC)],
@@ -563,7 +562,7 @@ export const register: Register = (on, options) => {
     await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
     if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
-    const sent = e.workflow ? e.prompt : prompt + recallNote(await loadMemory(memoryIo($))) + BRIEF_NOTE
+    const sent = e.workflow ? e.prompt : prompt + BRIEF_NOTE
     const r = await next({ ...e, prompt: sent })
     if (r.agentId) {
       keepBrief(r.agentId, sent)
@@ -658,12 +657,11 @@ export const register: Register = (on, options) => {
   // While ours is on and an office tab is open, Claude Code's own "You should know" stays quiet; every other side question passes.
   on('model.fork', async ($, e, next) => (brief.isKnowOn && isBuiltinKnow(next.origin) && (await isWatching(knowIo($))) ? { value: QUIET_FORK } : next(e)))
 
-  // Clawd's standing orders and the project's memory ride at the top of every conversation.
+  // Who the person is, from setup, rides at the top of every conversation.
   on('prompt.context', async ($, e, next) => {
     const r = await next(e)
-    const entries = (await loadMemory(memoryIo($))).slice(-RECALL)
-    const profile = profileBlock((await $.store.get(PROFILE_KEY).catch(() => undefined)) as Profile | undefined) // who the person is, from setup
-    return { ...r, blocks: [...r.blocks, { name: 'clawdMemory', text: memoryBlock(entries) }, ...(profile ? [{ name: PROFILE_BLOCK, text: profile }] : [])] }
+    const profile = profileBlock((await $.store.get(PROFILE_KEY).catch(() => undefined)) as Profile | undefined)
+    return profile ? { ...r, blocks: [...r.blocks, { name: PROFILE_BLOCK, text: profile }] } : r
   })
 
   on('turn.start', async ($, e, next) => {

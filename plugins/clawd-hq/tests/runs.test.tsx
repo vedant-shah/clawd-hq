@@ -336,7 +336,7 @@ function spawner(on: Parameters<typeof host>[0]) {
 }
 const RESUME = (prompt: string, agentId = 't1') => ({ prompt, description: 'Resumed run', subagentType: 'ecc:tdd-guide', resume: { agentId } }) as never
 
-test('a resumed spawn passes the message on as it is: no decisions or reporting note are added a second time', async ($, on) => {
+test('a resumed spawn passes the message on as it is: no reporting note is added a second time', async ($, on) => {
   host(on, [])
   const sent = spawner(on)
   await $.agent.spawn(BUILD)

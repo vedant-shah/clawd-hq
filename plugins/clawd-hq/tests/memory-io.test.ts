@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Memory } from '../types'
-import { loadMemory, remember, rememberCall, saveBoxAnswer, saveMemory } from '../hooks/memory-io'
+import * as memoryIo from '../hooks/memory-io'
+import { loadMemory, remember, saveBoxAnswer, saveMemory } from '../hooks/memory-io'
 import type { MemoryIo } from '../hooks/memory-io'
 
 type Fake = { io: MemoryIo; files: Map<string, string>; kept: Memory[][]; warned: string[]; quips: Array<[string, number]>; retitles: number }
@@ -62,21 +63,14 @@ test('a box answer is saved as the CEO decision and Clawd says so for 8 frames',
   expect(f.quips).toEqual([['On it, boss: “Postgres”', 8]])
 })
 
-test('the remember tool files Clawd\'s call as a decision and an agent\'s as its own choice', async () => {
-  const f = fake()
-  expect(await rememberCall(f.io, undefined, { decision: 'Ship Friday' })).toBe('Recorded in the project memory: Ship Friday')
-  await rememberCall(f.io, 'a1', { decision: 'Use Vitest' })
-  await rememberCall(f.io, 'gone', { decision: 'Odd one' })
-  const list = f.kept.at(-1) ?? []
-  expect(list.map(m => [m.kind, m.by, m.text])).toEqual([['decision', 'CEO', 'Ship Friday'], ['choice', 'Planner', 'Use Vitest'], ['choice', 'agent', 'Odd one']])
-  expect(f.quips.map(q => q[1])).toEqual([10, 10, 10])
-  expect(f.quips[0]?.[0]).toBe('Noted for the record: “Ship Friday”')
+test('the remember tool is gone: nothing files a call of it', () => {
+  expect(memoryIo).not.toHaveProperty('rememberCall')
 })
 
 test('a new decision that supersedes an old one replaces it', async () => {
   const f = fake()
-  await rememberCall(f.io, undefined, { decision: 'Old plan' })
+  await remember(f.io, { kind: 'decision', text: 'Old plan', by: 'CEO', source: 'clawd' })
   const id = f.kept.at(-1)?.[0]?.id ?? ''
-  await rememberCall(f.io, undefined, { decision: 'New plan', supersedes: id })
+  await remember(f.io, { kind: 'decision', text: 'New plan', by: 'CEO', source: 'clawd' }, id)
   expect(f.kept.at(-1)?.map(m => m.text)).toEqual(['New plan'])
 })

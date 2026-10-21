@@ -58,8 +58,8 @@ test('the offer of a lasting rule is dimmed like the other bookkeeping calls, an
   expect(rowLook(call({ tool: 'mcp__other__offer_rule' }), staff)).toBe('show')
 })
 
-test('remember, a message to a hired teammate, and the task list are dimmed, never hidden', () => {
-  expect(rowLook(call({ tool: 'mcp__clawd-hq__remember', input: { decision: 'Scores live in Postgres' } }), staff)).toBe('dim')
+test('a message to a hired teammate and the task list are dimmed, never hidden; the old remember tool is no longer special', () => {
+  expect(rowLook(call({ tool: 'mcp__clawd-hq__remember', input: { decision: 'Scores live in Postgres' } }), staff)).toBe('show')
   for (const tool of ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']) expect(rowLook(call({ tool }), staff)).toBe('dim')
   expect(rowLook(call({ tool: 'SendMessage', input: { to: 'judge', message: 'Score round 2.' } }), staff)).toBe('dim')
   expect(rowLook(call({ tool: 'SendMessage', input: { to: 'Judge', message: 'Score round 2.' } }), staff)).toBe('dim')
@@ -75,7 +75,7 @@ test('a message to anyone else, or one that asks for something, is not dimmed', 
 })
 
 test('a dimmed row that errored or was cut short is drawn in full, and questions and ordinary tools are left alone', () => {
-  for (const tool of ['mcp__clawd-hq__remember', 'TodoWrite', 'SendMessage']) {
+  for (const tool of ['mcp__clawd-hq__offer_rule', 'TodoWrite', 'SendMessage']) {
     const input = { to: 'judge', message: 'ok' }
     expect(rowLook(call({ tool, input, isErrored: true }), staff)).toBe('show')
     expect(rowLook(call({ tool, input, isInterrupted: true }), staff)).toBe('show')

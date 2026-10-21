@@ -102,11 +102,11 @@ test('the plugin\'s step calls, tool-loading rows and the background hint are hi
   expect(isHidden(await drawn($, 'ToolProgress', { tool_use_id: 't1', kind: 'background_hint', hint: '(ctrl+b to run in background)' }))).toBe(true)
 })
 
-test('remember, a message to a hired teammate and the task list are dimmed on every surface, not hidden', async ($, on) => {
+test('the offer of a rule, a message to a hired teammate and the task list are dimmed on every surface, not hidden', async ($, on) => {
   await office($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
-    expect(isDim(await drawn($, 'ToolUse', tool('mcp__clawd-hq__remember'), surface))).toBe(true)
-    expect(isDim(await drawn($, 'ToolResult', result('mcp__clawd-hq__remember'), surface))).toBe(true)
+    expect(isDim(await drawn($, 'ToolUse', tool('mcp__clawd-hq__offer_rule'), surface))).toBe(true)
+    expect(isDim(await drawn($, 'ToolResult', result('mcp__clawd-hq__offer_rule'), surface))).toBe(true)
     expect(isDim(await drawn($, 'ToolUse', tool('SendMessage', { input: { to: 'judge', message: 'Score round 2.' } }), surface))).toBe(true)
     for (const name of ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList']) expect(isDim(await drawn($, 'ToolUse', tool(name), surface))).toBe(true)
   }
@@ -114,7 +114,7 @@ test('remember, a message to a hired teammate and the task list are dimmed on ev
 
 test('errored or interrupted rows, questions, other tools and a message to anyone else are drawn as the engine draws them', async ($, on) => {
   await office($, on)
-  for (const name of ['mcp__clawd-hq__step', 'ToolSearch', 'mcp__clawd-hq__remember', 'TodoWrite']) {
+  for (const name of ['mcp__clawd-hq__step', 'ToolSearch', 'mcp__clawd-hq__offer_rule', 'TodoWrite']) {
     expect(await drawn($, 'ToolUse', tool(name, { isErrored: true }))).toContain('ENGINE')
     expect(await drawn($, 'ToolUse', tool(name, { isInterrupted: true }))).toContain('ENGINE')
     expect(await drawn($, 'ToolResult', result(name, { isErrored: true }))).toContain('ENGINE')

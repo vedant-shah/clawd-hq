@@ -28,10 +28,10 @@ async function rowOf($: Engine, surface: 'terminal' | 'desktop') {
   return { row, texts, bars, glyphs: texts.filter(t => /^━+$|^─+$/.test(t)) }
 }
 
-test('the step tool is registered with the demo and remember tools', async ($, on) => {
+test('the step tool is registered with the demo and offer_rule tools; there is no remember tool', async ($, on) => {
   const { tools } = host(on)
   await $.session.start(START)
-  expect(tools).toEqual(['demo', 'remember', 'offer_rule', 'step', 'team_pick'])
+  expect(tools).toEqual(['demo', 'offer_rule', 'step', 'team_pick'])
 })
 
 test('every hire\'s brief carries the line that asks for steps, whatever its type', async ($, on) => {

@@ -18,7 +18,7 @@ export const VOICE_END = 'End of the voice notes. The rules above them still sta
 export const LOCKED_RULES = [
   '## Always',
   '',
-  '- The person\'s recorded decisions are settled. Follow them, pass them on, and do not reopen them. When they make a new one, record it.',
+  '- An answer in the question box settles the job at hand. Lasting rules live in the project\'s CLAUDE.md, and only the person adds to it.',
   '- Never hide a failure, a skipped step, or something you could not check.',
   '- Ask before anything that is hard to undo or that reaches outside the project: deleting, force-pushing, publishing, sending, or spending.',
   '- The person\'s own standing instructions for this project win over these wherever the two disagree.',

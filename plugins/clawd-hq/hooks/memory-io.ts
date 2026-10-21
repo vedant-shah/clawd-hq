@@ -1,7 +1,7 @@
 // Memory: the project's decisions, a plain file in its .clawd-hq folder, mirrored in state for the pane.
 // What each call may do is an object of closures (the engine's `$` stays in register.tsx).
 import type { Memory } from '../types'
-import { SAVED_CHARS, fit } from './desk'
+import { fit } from './desk'
 import { LOGBOOK_FILE, loadLogbook, saveLogbook, withDecision } from './logbook'
 import type { LogbookIo } from './logbook'
 import { MAX_MEMORY, TITLE_CHARS } from './constants'
@@ -44,13 +44,4 @@ export async function remember(io: MemoryIo, m: Omit<Memory, 'id' | 'at'>, super
 export async function saveBoxAnswer(io: MemoryIo, question: string, said: string) {
   await remember(io, { kind: 'decision', text: `${fit(question, TITLE_CHARS)} → ${said}`, by: 'CEO', source: 'desk' })
   await io.quip(`On it, boss: “${clip(said, 32)}”`, 8)
-}
-
-/** The remember tool: Clawd's own call is the person's decision; a subagent's is its own note, never the user's decision. Returns the tool's answer. */
-export async function rememberCall(io: MemoryIo, agentId: string | undefined, input: Record<string, unknown>): Promise<string> {
-  const decision = fit(String(input.decision ?? ''), SAVED_CHARS)
-  const mine = agentId === undefined ? { kind: 'decision' as const, by: 'CEO' } : { kind: 'choice' as const, by: await io.byOf(agentId) }
-  await remember(io, { ...mine, text: decision, source: 'clawd' }, typeof input.supersedes === 'string' ? input.supersedes : undefined)
-  await io.quip(`Noted for the record: “${clip(decision, 40)}”`, 10)
-  return `Recorded in the project memory: ${decision}`
 }

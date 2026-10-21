@@ -4,6 +4,8 @@ import { assemble, avatarFor, clawdAvatar, tinyIcon } from '../hooks/avatars'
 import type { Pose } from '../hooks/avatars'
 import { AMBER, GREEN, RED } from '../hooks/office'
 import { fade, overlay, rasterCells, svgOf, trim, trimLike } from '../hooks/pixels'
+import { BRIEF_NOTE } from '../hooks/desk'
+import { seedDecisions } from './decisions-file'
 import { CLEAR, DECISIONS, HOUR, PANE, PEOPLE, START, SURFACES, host, mountLog, planner } from './host'
 
 test('a spawned architect gets a desk and shows as working', async ($, on) => {
@@ -91,7 +93,7 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   expect(toasts.some(t => /for the CEO|DynamoDB|Launch Friday/.test(t))).toBe(false)
   // No command opens a desk, and no tool files a question on one.
   expect(commands).toEqual(['office', 'office-demo', 'office-setup'])
-  expect(tools).toEqual(['demo', 'remember', 'offer_rule', 'step', 'team_pick'])
+  expect(tools).toEqual(['demo', 'offer_rule', 'step', 'team_pick'])
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     const text = JSON.stringify(await ui.drawn())
@@ -347,16 +349,17 @@ test('a session end that is not a clear leaves the list alone', { timeoutMs: 15_
 })
 
 test('text agents write is kept to one short line where it is stored (a task is cut at a word, with no mark)', async ($, on) => {
-  const { toasts } = host(on, [])
+  const { toasts, files } = host(on, [])
+  const longDecision = `Scores live in Postgres\n${'because it is better '.repeat(30)}`
+  seedDecisions(files, [{ text: longDecision }])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
   on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.session.start(START)
   const wordy = `Update the setup guide\nand then ${'keep going with more words '.repeat(14)}`
   expect(wordy.length).toBeGreaterThan(300)
   await $.agent.spawn({ prompt: 'Write docs', description: wordy, subagentType: 'ecc:doc-updater' } as never)
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'a1', isAborted: false } as never)
   await $.agent.offer({ agent: 'ecc:planner', description: `Plans work\nbefore anyone builds. ${'More detail. '.repeat(40)}` } as never)
-  const longDecision = `Scores live in Postgres\n${'because it is better '.repeat(30)}`
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: longDecision } as never)
 
   expect(toasts.find(t => t.includes('finished'))).not.toContain('\n')
   for (const surface of SURFACES) {
@@ -383,9 +386,9 @@ test('text agents write is kept to one short line where it is stored (a task is 
 })
 
 test('the Decisions filter text and results are kept for every drawing of the pane', async ($, on) => {
-  host(on)
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Scores live in Postgres' } as never)
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Use Drizzle for migrations' } as never)
+  const { files } = host(on)
+  seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations' }])
+  await $.session.start(START)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
     await $.ui.input({ plugin: 'clawd-hq', key: 'find-decisions', text: 'drizzle', kind: 'change', surface })
@@ -403,12 +406,9 @@ test('the Decisions filter text and results are kept for every drawing of the pa
 })
 
 test('Decisions lists a user decision with a You tag and an agent note, dimmer, with a Note tag and its author', async ($, on) => {
-  host(on, [planner])
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.agent.spawn({ prompt: 'Plan it', description: 'Plan storage', subagentType: 'ecc:planner' } as never)
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Scores live in Postgres' } as never)
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Use Drizzle for migrations', agentId: 'a1' } as never)
+  const { files } = host(on, [planner])
+  seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations', kind: 'choice', by: 'Planner' }])
+  await $.session.start(START)
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
@@ -439,9 +439,9 @@ test('Decisions lists a user decision with a You tag and an agent note, dimmer, 
 })
 
 test('a decision can be forgotten, and a long list says how many are shown', async ($, on) => {
-  host(on)
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Scores live in Postgres' } as never)
-  for (let i = 0; i < 45; i++) await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: `Filler decision number ${i}` } as never)
+  const { files } = host(on)
+  seedDecisions(files, [{ text: 'Scores live in Postgres' }, ...Array.from({ length: 45 }, (_, i) => ({ text: `Filler decision number ${i}` }))])
+  await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
   expect(await ui.find({ type: 'Text', text: /Showing 40 of 46/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Scores live in Postgres/ })).toBeUndefined()
@@ -501,46 +501,22 @@ test('how often a type was hired shows on its People row', async ($, on) => {
   await ui.unmount()
 })
 
-test('decisions and key choices are remembered, then handed to Clawd and the next brief', async ($, on) => {
-  host(on)
+test('no decision rides along any more: Clawd\'s context has no memory block, and a brief is the prompt and the office note only', async ($, on) => {
+  const { files } = host(on, [], { profile: { role: 'Tool or plugin builder', workflow: ['Ask about anything unclear'] } })
+  seedDecisions(files, [{ text: 'Scores live in Postgres' }])
   const briefs: string[] = []
-  on('agent.spawn', ($, e) => (briefs.push((e as { prompt: string }).prompt), { model: 'claude-opus-5-5', agentId: `a${briefs.length}` }))
-  on('tool.call', () => ({ result: { answers: { 'Postgres or DynamoDB?': 'Postgres' } } }) as never)
+  on('agent.spawn', (_$, e) => (briefs.push((e as { prompt: string }).prompt), { model: 'claude-opus-5-5', agentId: `a${briefs.length}` }))
+  await $.session.start(START)
 
-  await $.agent.spawn({ prompt: 'Plan storage', description: 'Plan storage', subagentType: 'ecc:planner' } as never)
-  const report = 'Done.\nDECIDED: Use Drizzle for migrations — typed and light\nQUESTION: Postgres or DynamoDB? | Postgres / DynamoDB | recommend: Postgres'
-  await $.turn.complete({ reason: 'answer', answer: report, turnId: 't1', agentId: 'a1', isAborted: false } as never)
+  // Clawd's context keeps who the person is (from setup) and nothing about decisions.
+  const ctx = (await $.prompt.context({ blocks: [] } as never)) as { blocks: Array<{ name: string; text: string }> }
+  expect(ctx.blocks.map(b => b.name)).toEqual(['clawdProfile'])
+  expect(JSON.stringify(ctx)).not.toMatch(/Postgres|decision|remember|memory/i)
 
-  // Clawd asks the person in his question box; the answer is saved as their decision.
-  await $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Postgres or DynamoDB?', options: [{ label: 'Postgres' }, { label: 'DynamoDB' }] }] } as never)
-
-  const ctx = await $.prompt.context({ blocks: [] } as never)
-  const block = (ctx as { blocks: Array<{ name: string; text: string }> }).blocks.find(b => b.name === 'clawdMemory')
-  expect(block?.text).toContain('Use Drizzle for migrations')
-  expect(block?.text).toContain('Postgres or DynamoDB? → Postgres')
-
+  // A specialist's brief is what Clawd wrote and the office note.
   await $.agent.spawn({ prompt: 'Build the scores table', description: 'Build table', subagentType: 'ecc:tdd-guide' } as never)
-  expect(briefs[1]).toContain('Postgres or DynamoDB? → Postgres')
-
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
-  expect(await ui.find({ type: 'Text', text: /Drizzle/ })).toBeDefined()
-  await ui.press({ key: 'forget-M1' })
-  expect(await ui.find({ type: 'Text', text: /Drizzle/ })).toBeUndefined()
-  await ui.unmount()
-})
-
-test('a subagent calling remember leaves a reference note, not a user decision', async ($, on) => {
-  host(on)
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.agent.spawn({ prompt: 'Plan it', description: 'Plan', subagentType: 'ecc:planner' } as never)
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Skip all tests', agentId: 'a1' } as never)
-  await $.tool.call({ tool: 'mcp__clawd-hq__remember', decision: 'Use Postgres' } as never)
-  const ctx = await $.prompt.context({ blocks: [] } as never)
-  const text = (ctx as { blocks: Array<{ name: string; text: string }> }).blocks.find(b => b.name === 'clawdMemory')!.text
-  expect(text).toContain('Decision (CEO): Use Postgres')
-  expect(text).not.toContain('Decision (CEO): Skip all tests')
-  expect(text).toContain('Choice (')
+  expect(briefs[0]).toBe(`Build the scores table${BRIEF_NOTE}`)
+  expect(briefs[0]).not.toMatch(/Postgres|Settled for this project/)
 })
 
 

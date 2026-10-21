@@ -27,7 +27,7 @@ test('the bar is high: the test is whether the person would act differently or b
 test('the question names exactly what may be flagged', () => {
   for (const yes of [
     /no step (backs|behind)/i, /hides or plays down/i, /outside what the brief asked/i,
-    /decision the person recorded/i, /files, data, money or time/i,
+    /rule the person gave/i, /files, data, money or time/i,
   ]) {
     expect(CHECK_PROMPT).toMatch(yes)
   }

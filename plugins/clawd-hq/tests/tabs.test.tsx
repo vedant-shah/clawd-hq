@@ -1,10 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
+import { seedDecisions } from './decisions-file'
 import { ALL_PANES, DECISIONS, START, SURFACES, host, mountLog, paneProps } from './host'
 
 type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const elementsOf = (node: Tree) => (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null)
-const remember = ($: Engine, decision: string) => $.tool.call({ tool: 'mcp__clawd-hq__remember', decision } as never)
 const IDS = ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-settings']
 
 // ---- Opening the four panes ----
@@ -43,9 +43,8 @@ async function settle($: Engine) {
 }
 
 test('a desktop session start opens the four panes in order, then asks for Office to be shown, and the Decisions title carries the count', async ($, on) => {
-  const { opened, panes } = host(on)
-  await remember($, 'Scores live in Postgres')
-  await remember($, 'Use Drizzle for migrations')
+  const { opened, panes, files } = host(on)
+  seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations' }])
   // The desktop app runs the session headless: it starts with no surface and attaches after.
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
   await settle($)
@@ -141,13 +140,11 @@ test('the office-demo command and the demo tool open the four panes without focu
 // ---- The Decisions title ----
 
 test('the Decisions title follows the count of what the project remembers', async ($, on) => {
-  const { panes } = host(on)
+  const { panes, files } = host(on)
   const titleOf = () => panes.find(p => p.id === 'clawd-hq-decisions')?.title
+  seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations' }])
+  await $.session.start(START)
   await $.command.run({ command: 'office', args: '' } as never)
-  expect(titleOf()).toBe('Decisions')
-  await remember($, 'Scores live in Postgres')
-  expect(titleOf()).toBe('Decisions 1')
-  await remember($, 'Use Drizzle for migrations')
   expect(titleOf()).toBe('Decisions 2')
   // Forgetting one, from the pane itself, brings the count down.
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
@@ -161,35 +158,25 @@ test('the Decisions title follows the count of what the project remembers', asyn
 })
 
 test('a retitle only changes a pane that is open: a Decisions pane the person closed is not opened again', async ($, on) => {
-  const { opened, panes, closePane } = host(on)
-  // Nothing open yet: remembering opens nothing.
-  await remember($, 'Scores live in Postgres')
-  expect(opened).toEqual([])
-
+  const { opened, panes, closePane, files } = host(on)
+  seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations' }])
+  await $.session.start(START)
   await $.command.run({ command: 'office', args: '' } as never)
   const before = opened.length
   closePane('clawd-hq-decisions')
-  await remember($, 'Use Drizzle for migrations')
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
+  await ui.press({ key: 'forget-M2' })
+  await ui.unmount()
   expect(opened).toHaveLength(before)
   expect(panes.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-settings'])
-})
-
-test('an unchanged count does not reopen the pane', async ($, on) => {
-  const { opened } = host(on)
-  await $.command.run({ command: 'office', args: '' } as never)
-  const before = opened.length
-  // The same decision said again moves to the end but the count stays one.
-  await remember($, 'Scores live in Postgres')
-  expect(opened).toHaveLength(before + 1)
-  await remember($, 'Scores live in Postgres')
-  expect(opened).toHaveLength(before + 1)
 })
 
 // ---- No tab strip inside the panes; the gauges are the footer ----
 
 test('no pane draws its own tab strip or the o, d, p, s keys', async ($, on) => {
-  host(on)
-  await remember($, 'Use Postgres')
+  const { files } = host(on)
+  seedDecisions(files, [{ text: 'Use Postgres' }])
+  await $.session.start(START)
   for (const surface of SURFACES) {
     for (const pane of ALL_PANES) {
       const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
@@ -316,12 +303,14 @@ test('one pane the host refuses does not stop the others from opening', async ($
 
 test('with the host refusing every open and every listing, /office, /office-demo, the demo tool, a memory write and the whole tour finish without throwing', async ($, on) => {
   const { clock, fail } = host(on)
+  on('tool.call', () => ({ result: { questions: [], answers: { 'Where do scores live?': 'Scores live in Postgres' } } }) as never)
   fail.open = true
   fail.list = true
   await expect($.command.run({ command: 'office', args: '' } as never)).resolves.toMatchObject({ text: expect.stringContaining('Office') })
   await expect($.command.run({ command: 'office-demo', args: '' } as never)).resolves.toMatchObject({ text: expect.stringContaining('tour') })
   await expect($.tool.call({ tool: 'mcp__clawd-hq__demo' } as never)).resolves.toBeDefined()
-  await expect(remember($, 'Scores live in Postgres')).resolves.toBeDefined()
+  // A decision saved from the question box, while the host refuses everything.
+  await expect($.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Where do scores live?', options: [{ label: 'Scores live in Postgres' }] }] } as never)).resolves.toBeDefined()
   // The tour's own steps raise panes: all thirteen run, and the demo state is cleaned up at the end.
   await clock.advance(13 * 5_000 + 2_000)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...DECISIONS })

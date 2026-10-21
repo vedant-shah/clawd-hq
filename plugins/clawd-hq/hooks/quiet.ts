@@ -59,7 +59,6 @@ export function isHandback(row: ChatRow, staff: Employee[]): boolean {
 
 // ---- Small tool rows: the office's own bookkeeping calls are hidden or dimmed, never an error or a question ----
 const STEP_TOOL = 'mcp__clawd-hq__step'
-const REMEMBER_TOOL = 'mcp__clawd-hq__remember'
 const OFFER_RULE_TOOL = 'mcp__clawd-hq__offer_rule'
 const TOOL_SEARCH = 'ToolSearch'
 const SEND_MESSAGE = 'SendMessage'
@@ -91,7 +90,7 @@ function isToTeammate(input: unknown, staff: Employee[]): boolean {
 export function rowLook(row: ToolRow, staff: Employee[]): RowLook {
   if (row.isErrored || row.isInterrupted) return 'show'
   if (HIDDEN_TOOLS.has(row.tool)) return 'hide'
-  if (row.tool === REMEMBER_TOOL || row.tool === OFFER_RULE_TOOL || TASK_LIST_TOOLS.has(row.tool)) return 'dim'
+  if (row.tool === OFFER_RULE_TOOL || TASK_LIST_TOOLS.has(row.tool)) return 'dim'
   if (row.tool === SEND_MESSAGE && isToTeammate(row.input, staff)) return 'dim'
   return 'show'
 }

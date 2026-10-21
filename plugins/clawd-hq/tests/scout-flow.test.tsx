@@ -4,7 +4,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
 import { PANE, PEOPLE, START } from './host'
-import { CWD, frames, office, onboardHost, press, realWait, settle } from './onboard-host'
+import { CWD, frames, office, onboardHost, realWait, settle } from './onboard-host'
 import type { OnboardHost } from './onboard-host'
 
 const TEAM = 'mcp__clawd-hq__team_pick'
@@ -50,7 +50,7 @@ test('at session start the scout is registered as a Sonnet agent that can only r
   expect(h.scout.registered[0]).toMatchObject({ name: 'scout', model: 'sonnet', omitClaudeMd: true, tools: ['Read', 'Glob', TEAM] })
   expect(h.tools).toContain('team_pick')
   expect(h.toolSpecs.find(t => t.name === 'team_pick')?.isDeferred).toBe(false)
-  expect(h.calls.registered).toEqual([]) // hires are only for skills
+  expect(h.calls.registered.every(r => (r.skills?.length ?? 0) > 0)).toBe(true) // hires are only for skills (setup runs by itself and hires the skill it picks)
 })
 
 test('the scout is hidden from the main chat: not offered, not on the books, not in People', async ($, on) => {
@@ -64,11 +64,10 @@ test('the scout is hidden from the main chat: not offered, not on the books, not
   expect(text).not.toMatch(/scout/i)
 })
 
-test('Start with a scout: it is started on its own type with the full list, looks around, and its picks and reasons make the card; Opus is never called', async ($, on) => {
+test('Setup with a scout: it is started on its own type with the full list, looks around, and its picks and reasons make the team; Opus is never called', async ($, on) => {
   const h = onboardHost(on)
   const calls = moves($, h, [...LOOK_AROUND, [TEAM, { picks: GOOD_PICKS }]])
   await open($, h)
-  await press($, h, 'terminal', 'onboard-start')
   await more(h)
   expect(h.scout.spawned).toHaveLength(1)
   const [spawn] = h.scout.spawned
@@ -80,12 +79,15 @@ test('Start with a scout: it is started on its own type with the full list, look
   expect(calls.map(c => c.answer.deny)).toEqual([undefined, undefined, undefined, undefined, undefined])
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(0)
   expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('scout')
+  // The reasons are kept with the team: the scout's own sentence only where it rests on a file the scout opened.
+  const receipts = (h.saved.get(`team:${CWD}`) as { picks: Array<{ receipt: string }> }).picks.map(p => p.receipt).join('\n')
+  expect(receipts).toContain('CLAUDE.md asks for a plan before a big change. (CLAUDE.md)')
+  expect(receipts).toContain('No tests yet, so tests come first. (package.json)')
+  expect(receipts).not.toContain('The shop API handles logins') // it cites a file the scout never opened: the facts are kept instead
+  expect(receipts).toContain('Clawd HQ\'s own Researcher · nothing installed fits')
+  // The card afterwards names the team in plain words.
   const tab = await office($, 'terminal')
-  expect(tab.joined).toContain('CLAUDE.md asks for a plan before a big change. (CLAUDE.md)')
-  expect(tab.joined).toContain('No tests yet, so tests come first. (package.json)')
-  expect(tab.joined).not.toContain('The shop API handles logins') // it cites a file the scout never opened: the card shows the facts instead
-  expect(tab.joined).toContain('Clawd HQ\'s own Researcher · nothing installed fits')
-  expect(tab.joined).toContain('ecc:planner')
+  expect(tab.joined).toMatch(/Set up your team for this project: Planner, .*Reviewer.*Researcher/)
   expect(h.calls.sent).toEqual([])
 })
 
@@ -93,7 +95,6 @@ test('the scout is not a hire: it never appears at a desk, and its reads are not
   const h = onboardHost(on)
   moves($, h, [...LOOK_AROUND, [TEAM, { picks: GOOD_PICKS }]])
   await open($, h)
-  await press($, h, 'terminal', 'onboard-start')
   await more(h)
   await frames(h, 17) // the engine lists the scout, and the office checks that list
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
@@ -115,7 +116,6 @@ test('the scout\'s reads are guarded: secrets, outside the folder, .. paths, lin
     ['Read', { file_path: 'package.json' }], ['Glob', { pattern: '*' }], [TEAM, { picks: GOOD_PICKS.slice(0, 1) }],
   ])
   await open($, h)
-  await press($, h, 'terminal', 'onboard-start')
   await more(h)
   expect(calls.map(c => (c.answer.deny ? 'refused' : 'ran'))).toEqual([...Array(11).fill('refused'), 'ran', 'ran', 'ran'])
   expect(calls.slice(0, 11).every(c => /^Refused by Clawd HQ: /.test(c.answer.deny ?? ''))).toBe(true)
@@ -150,7 +150,6 @@ test('a scout that sends names nobody has is told and may try again; the second 
   const h = onboardHost(on)
   const calls = moves($, h, [['Read', { file_path: 'package.json' }], [TEAM, { picks: [{ seat: 'Plan', name: 'ecc:nobody' }] }], [TEAM, { picks: GOOD_PICKS.slice(2) }]])
   await open($, h)
-  await press($, h, 'terminal', 'onboard-start')
   await more(h)
   expect(calls[1]?.answer.deny).toMatch(/ecc:nobody.*not on the candidate list/)
   expect(calls[2]?.answer.deny).toBeUndefined()
@@ -163,7 +162,6 @@ test('a scout that sends nothing usable three times is finished, and Opus picks 
   const bad = [TEAM, { picks: [{ seat: 'Plan', name: 'ecc:nobody' }] }] as [string, Record<string, unknown>]
   moves($, h, [bad, bad, bad])
   await open($, h)
-  await press($, h, 'terminal', 'onboard-start')
   await more(h)
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
   expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('opus')
@@ -174,7 +172,6 @@ test('a scout that says nothing for a minute and a half is given up on: Opus pic
   const h = onboardHost(on)
   h.scout.mode = 'silent'
   await open($, h)
-  await press($, h, 'terminal', 'onboard-start')
   await more(h)
   expect(h.scout.spawned).toHaveLength(1)
   expect(h.calls.models).toHaveLength(0) // still waiting, and the card says it is looking
@@ -194,7 +191,6 @@ test('a scout that ends without sending anything hands over to Opus at once, wit
   const h = onboardHost(on)
   h.scout.mode = 'silent'
   await open($, h)
-  await press($, h, 'terminal', 'onboard-start')
   await more(h)
   await $.turn.complete({ reason: 'answer', answer: 'I could not finish.', turnId: 'sc-turn', agentId: 'sc1', isAborted: false } as never)
   await more(h)
@@ -206,7 +202,6 @@ test('with no scout (the start is refused) and no Opus answer, the rules pick an
   const h = onboardHost(on)
   h.models.opus = undefined
   await open($, h)
-  await press($, h, 'terminal', 'onboard-start')
   await more(h)
   const team = h.saved.get(`team:${CWD}`) as { by: string; picks: Array<{ name: string }> }
   expect(team.by).toBe('rules')

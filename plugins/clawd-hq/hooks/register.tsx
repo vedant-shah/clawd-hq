@@ -23,7 +23,7 @@ import type { RouteIo, ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, TEAM_PICK_SPEC } from './scout-spec'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { applyPayroll, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
-import { checkOnboard, chooseOnboard, isSetupBusy, onboardTurnEnd, restartOnboard, savedOf, startOnboard } from './onboard'
+import { checkOnboard, chooseOnboard, isSetupBusy, restartOnboard, savedOf, startOnboard } from './onboard'
 import { ancestorPaths, answerText, breakdownOf, commandsOf, listEntries } from './onboard-adapt'
 import { rehire } from './hire'
 import { PROFILE_BLOCK, profileBlock } from './profile'
@@ -273,17 +273,14 @@ const onboardIo = async ($: EngineInterface, opts: BriefingOptions): Promise<Onb
   return {
     now: () => now, cwd, home: () => home, configDir: () => config || undefined, blurbs: () => known, allAgentTypes: () => types, parked: () => p.laidOff,
     get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value),
-    isShown: async () => (await $.session.surfaces().catch(() => [])).length > 0, isBusy: async () => (await getBoss($)).isBusy,
+    isShown: async () => (await $.session.surfaces().catch(() => [])).length > 0, isAutoOn: () => opts.isAutoOn,
     list: dir => listEntries(dir, d => $.fs.list(d), path => $.fs.stat(path)), read: path => $.fs.read(path).catch(() => undefined), exists: path => $.fs.exists(path),
     ancestors: async name => ancestorPaths(await $.fs.ancestors({ names: [name] })),
     breakdown: async () => breakdownOf(await $.session.usage({ breakdown: 'summary' })), commands: async () => commandsOf(await $.command.list()),
     complete: async req => answerText(await $.model.complete(req)),
     spawnScout: (brief, check) => runScout(scoutBox, scoutHost($), brief, check, SCOUT_TIMEOUT_MS),
-    ask: q => $.ui.ask(q.question, { options: q.options.map(o => o.label), header: q.header }).catch(() => undefined), // a mod's own AskUserQuestion call is refused: "that is $.ui.ask"
-    setToggle: async (field, value) => (await setToggle(configIo($), field, value)) === undefined, options: async () => ({ chiefOfStaff: opts.isOn, quietChat: opts.isQuiet }),
     registerHire: ({ name, description, prompt, skills }) => $.agent.register({ name, description, prompt, skills }).then(() => true, () => false),
     savePayroll: laidOff => savePayroll(payrollIo($), { ...p, laidOff: [...laidOff], isReviewed: true }), // its stacks kept
-    showPeople: () => void raise(paneIo($), 'people'), fill: async text => { await $.prompt.fill({ text, mode: 'append' }) }, toast: text => $.ui.toast(text),
     decide: (question, said) => saveBoxAnswer(memoryIo($), question, said),
     card: () => setupCard($), setCard: async card => { await update($, onboard, () => card ?? null) },
   }
@@ -299,7 +296,7 @@ async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions
     if (isDrawn && !(await read($, onboard))) void onboardIo($, opts).then(checkOnboard).catch(() => undefined) // slow steps never hold a frame
   }
   if (frames % 25 === 0) {
-    if (!isSetupBusy(await savedOf({ cwd, get: async key => (await $.store.get(key)) as never }))) await reviewPayroll(payrollIo($))
+    if (!isSetupBusy(await savedOf({ cwd, get: async key => (await $.store.get(key)) as never }), opts.isAutoOn)) await reviewPayroll(payrollIo($))
     // The model takes its time: the frames go on meanwhile, and a recap that fails is simply not shown.
     void maybeRecap(recapIo($)).catch(() => undefined)
   }
@@ -443,9 +440,9 @@ export const register: Register = (on, options) => {
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['team pick tool', () => $.tool.register(TEAM_PICK_SPEC)],
       ['setup scout', () => $.agent.register(SCOUT_SPEC)],
-      ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames; answers left waiting applied
+      ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames
       ['skill hires', async () => rehire(await onboardIo($, brief))], // the engine forgets registered agents each session
-      ['/office-setup', () => $.command.register({ name: 'office-setup', description: `Set up ${BRAND}: two questions, then a starting team for this project` })],
+      ['/office-setup', () => $.command.register({ name: 'office-setup', description: `Set up ${BRAND} for this project: a starting team, with no questions` })],
       ['roster', () => enroll($, 'general-purpose', 0)],
       ['meters', () => startGauge(gaugeIo($))],
       ['instructions', () => refreshTab($, brief, true)],
@@ -506,8 +503,8 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'office-setup' }, async $ => {
     await openPanes(paneIo($), true)
-    void restartOnboard(await onboardIo($, brief)).catch(() => undefined) // the question box is not waited for
-    return { text: `${BRAND} setup is on the Office tab: two questions, then a starting team for this project.` }
+    void restartOnboard(await onboardIo($, brief)).catch(() => undefined) // the model calls are not waited for
+    return { text: `${BRAND} setup is running for this project. A small card on the Office tab says what was set up.` }
   })
 
   on('command.run', { command: 'office-demo' }, async $ => {
@@ -687,7 +684,6 @@ export const register: Register = (on, options) => {
       await askAgain(paneIo($))
       const now = await $.clock.now()
       await setBoss($, b => withTurnEnd(turnEndBoss(b, e.reason, now), e))
-      void onboardIo($, brief).then(onboardTurnEnd).catch(() => undefined) // setup's answers that waited for the turn to end
       // The point Claude Code compacts at can move with the model: read again, never waited for. The record of the button follows it.
       void noteThreshold(gaugeIo($)).then(() => keepCoffeeRecord(coffeeDebugIo($), 'turn'))
       // An edit Claude just made shows in the Settings tab, marked as waiting for the next session.

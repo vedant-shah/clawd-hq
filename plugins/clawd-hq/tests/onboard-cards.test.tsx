@@ -1,11 +1,11 @@
-// Onboarding, piece 7: the cards. The drawing is mounted in a pane of the test's own (the real pane is wired in piece 8),
-// on both surfaces the test kit mounts, from fake OnboardCard data.
+// Onboarding: the cards. Setup runs by itself, so there are only three: the quiet "looking around" line while it works,
+// the small card afterwards that says what was set up (one dim Dismiss button), and the stopped card with what went wrong.
+// The drawing is mounted in a pane of the test's own, on both surfaces the test kit mounts, from fake OnboardCard data.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { SKILLS_NOTE, onboardSection } from '../hooks/panel-onboard'
-import { OFFER_LINE } from '../hooks/onboard-cards'
-import type { OnboardButton, OnboardCard } from '../hooks/onboard-types'
-import { ROLES } from '../hooks/onboard-types'
+import { DONE_HEAD, DONE_TAIL, doneCard, failedCard, scanCard, teamNames, QUIET } from '../hooks/onboard-cards'
+import type { OnboardButton, OnboardCard, Team } from '../hooks/onboard-types'
+import { onboardSection } from '../hooks/panel-onboard'
 import { kitOf } from '../hooks/panel-kit'
 import type { PanelTools } from '../hooks/panel-kit'
 import { SURFACES, START, host, paneProps } from './host'
@@ -37,35 +37,6 @@ function quiet(on: On) {
   return h
 }
 
-const LONG = 'used 12 times here in this project, named in CLAUDE.md, and listed in the README as the way to plan a change before it is made'
-const TEAM = {
-  picks: [
-    { seat: 'Plan', name: 'ecc:planner', kind: 'agent', receipt: 'used 12× here' },
-    { seat: 'Make', name: 'ecc:tdd-guide', kind: 'agent', receipt: LONG },
-    { seat: 'Find out', name: 'deep-research', kind: 'skill', receipt: 'named in CLAUDE.md' },
-  ],
-  empty: ['Check', 'Specialist'],
-  by: 'opus',
-} as const
-
-const btn = (action: OnboardButton['action'], label: string, isPrimary?: true): OnboardButton => (isPrimary ? { action, label, isPrimary } : { action, label })
-
-const CARDS: Record<string, OnboardCard> = {
-  offer: { step: 'offer', lines: [OFFER_LINE], buttons: [btn('start', 'Start', true), btn('later', 'Later'), btn('skip', 'Skip')] },
-  intro: { step: 'intro', lines: ['I am Clawd. I run your team and hand work to specialists.', 'First I will look around this folder.'], buttons: [btn('yes', 'Yes', true), btn('no', 'No')] },
-  scan: { step: 'scan', lines: [], buttons: [] },
-  fallback: { step: 'scan', lines: ['I could not tell what you do here. Which fits best?'], buttons: ROLES.map(r => btn('changeRole', r)) },
-  team: {
-    step: 'team', lines: [], role: 'Software engineer', team: TEAM as never, parked: 3, searchSeat: 'Check',
-    buttons: [btn('changeRole', 'Change'), btn('hire', 'Hire this team', true), btn('adjust', 'Adjust in People'), btn('searchYes', 'Yes'), btn('searchNo', 'No')],
-  },
-  workflow: {
-    step: 'workflow', lines: ['This is how you seem to work:'], workflow: ['Plan first', 'Write tests', 'Build it', 'Review', 'Commit', 'Sixth step is left out'],
-    buttons: [btn('useWorkflow', 'Use this', true), btn('skipWorkflow', 'Skip')],
-  },
-  first: { step: 'first', lines: ['What is the first thing you want done here?'], suggestion: 'Add tests for the login flow', buttons: [btn('useFirst', 'Use this', true)] },
-}
-
 async function draw($: Engine, surface: (typeof SURFACES)[number], card: OnboardCard | undefined) {
   stage.card = card
   stage.pressed = []
@@ -73,145 +44,97 @@ async function draw($: Engine, surface: (typeof SURFACES)[number], card: Onboard
   return $.ui.mount({ plugin: 'test', surface, ...STAND_IN })
 }
 const textsOf = async (ui: Awaited<ReturnType<typeof draw>>) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
-const labelsOf = async (ui: Awaited<ReturnType<typeof draw>>) => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
+const buttonsOf = async (ui: Awaited<ReturnType<typeof draw>>) => ui.findAll({ type: 'Button' })
 
-test('the start card offers Start, Later and Skip, and says what Clawd does with no cost line', async ($, on) => {
+const pick = (seat: Team['picks'][number]['seat'], name: string, kind: 'agent' | 'skill' = 'agent') => ({ seat, name, kind, receipt: 'r' })
+
+test('the team is told in plain role words, in the card\'s seat order, each role once', () => {
+  const team: Team = {
+    picks: [
+      pick('Plan', 'ecc:planner'), pick('Make', 'clawd-hq:core-builder'), pick('Check', 'ecc:code-reviewer'),
+      pick('Check', 'ecc:security-reviewer'), pick('Find out', 'clawd-hq:core-researcher'), pick('Specialist', 'ecc:tdd-workflow', 'skill'),
+    ],
+    empty: [], by: 'rules',
+  }
+  expect(teamNames(team)).toEqual(['Planner', 'Builder', 'Reviewer', 'Security Guard', 'Researcher', 'Tester'])
+  expect(teamNames({ ...team, picks: [pick('Check', 'a:code-reviewer'), pick('Check', 'b:code-reviewer')] })).toEqual(['Reviewer'])
+  expect(teamNames({ ...team, picks: [] })).toEqual([])
+})
+
+test('the after-card says what was set up, with the names, and offers one Dismiss', () => {
+  const card = doneCard(['Planner', 'Builder', 'Reviewer'])
+  expect(card.step).toBe('done')
+  expect(card.lines).toEqual([`${DONE_HEAD}Planner, Builder, Reviewer.`, DONE_TAIL])
+  expect(card.buttons).toEqual([{ action: 'dismiss', label: 'Dismiss' }])
+  expect(DONE_HEAD).toBe('Set up your team for this project: ')
+  expect(DONE_TAIL).toBe('Change it in People or Settings, or run /office-setup again.')
+})
+
+test('with no team names the after-card still says setup ran and how to run it again', () => {
+  const card = doneCard([])
+  expect(card.lines[0]).toMatch(/Set up this project/)
+  expect(card.lines[1]).toBe(DONE_TAIL)
+})
+
+test('a note on the after-card is kept for the draw', () => {
+  expect(doneCard(['Planner'], 'Claude Code would not add: tdd.').note).toBe('Claude Code would not add: tdd.')
+  expect(doneCard(['Planner']).note).toBeUndefined()
+})
+
+test('a stopped setup says why and how to try again, with Dismiss', () => {
+  const card = failedCard('the store refused the write')
+  expect(card.step).toBe('failed')
+  expect(card.lines).toEqual(['Setup stopped: the store refused the write. Run /office-setup to try again.'])
+  expect(card.buttons).toEqual([{ action: 'dismiss', label: 'Dismiss' }])
+})
+
+test('the after-card draws its two lines and one dim Dismiss, and the press says dismiss', async ($, on) => {
   quiet(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
-    const ui = await draw($, surface, CARDS.offer)
+    const ui = await draw($, surface, doneCard(['Planner', 'Builder']))
     const all = await textsOf(ui)
-    expect(all).toContain(OFFER_LINE)
-    expect(all).not.toMatch(/Want me to set up a starting team/)
-    expect(OFFER_LINE).toMatch(/Tell me what you need/)
-    expect(all.join('\n')).not.toMatch(/Opus|\$0\.20|costs about/)
-    expect(await labelsOf(ui)).toEqual(['Start', 'Later', 'Skip'])
-    await ui.press({ key: 'onboard-later' })
-    expect(stage.pressed.map(b => b.action)).toEqual(['later'])
+    expect(all).toContain(`${DONE_HEAD}Planner, Builder.`)
+    expect(all).toContain(DONE_TAIL)
+    const buttons = await buttonsOf(ui)
+    expect(buttons.map(b => String(b.props.label))).toEqual(['Dismiss'])
+    expect(buttons[0]?.props.dimColor).toBe(true)
+    expect(buttons[0]?.props.plain).toBe(true)
+    await ui.press({ key: 'onboard-dismiss' })
+    expect(stage.pressed.map(b => b.action)).toEqual(['dismiss'])
     await ui.unmount()
   }
 })
 
-test('the intro shows Clawd\'s words with Yes and No', async ($, on) => {
+test('the after-card has no Start, Later, Skip, Yes or No, and no hire, role or search buttons', async ($, on) => {
   quiet(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
-    const ui = await draw($, surface, CARDS.intro)
-    const all = await textsOf(ui)
-    expect(all).toContain('I am Clawd. I run your team and hand work to specialists.')
-    expect(all).toContain('First I will look around this folder.')
-    expect(await labelsOf(ui)).toEqual(['Yes', 'No'])
+    const ui = await draw($, surface, doneCard(['Planner']))
+    expect((await buttonsOf(ui)).map(b => String(b.props.label))).not.toEqual(expect.arrayContaining(['Start']))
+    expect((await ui.findAll({ type: 'Button' })).length).toBe(1)
     await ui.unmount()
   }
 })
 
-test('the scan shows that Clawd is looking around, with no buttons', async ($, on) => {
+test('while setup works the card shows that Clawd is looking around, with no buttons', async ($, on) => {
   quiet(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
-    const ui = await draw($, surface, CARDS.scan)
+    const ui = await draw($, surface, scanCard())
     expect((await textsOf(ui)).some(t => /Looking around/.test(t))).toBe(true)
-    expect(await labelsOf(ui)).toEqual([])
+    expect(await buttonsOf(ui)).toEqual([])
     await ui.unmount()
   }
 })
 
-test('when the evidence is thin, every role is a button and the press says which', async ($, on) => {
+test('the stopped card draws the reason and Dismiss', async ($, on) => {
   quiet(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
-    const ui = await draw($, surface, CARDS.fallback)
-    expect(await labelsOf(ui)).toEqual([...ROLES])
-    await ui.press({ key: 'onboard-changeRole-2' })
-    expect(stage.pressed.map(b => b.label)).toEqual([ROLES[2]])
-    await ui.unmount()
-  }
-})
-
-test('the team card says the role with Change, lists each seat in order with its receipt, and counts the team and the parked', async ($, on) => {
-  quiet(on)
-  await $.session.start(START)
-  for (const surface of SURFACES) {
-    const ui = await draw($, surface, CARDS.team)
-    const all = await textsOf(ui)
-    const joined = all.join('\n')
-    expect(joined).toMatch(/Looks like you're a/)
-    expect(joined).toMatch(/Software engineer/)
-    expect(joined).toMatch(/Starting team \(3\) · Parked 3/)
-    // Seats come in the card's order, and a receipt is never cut.
-    const at = (s: string) => joined.indexOf(s)
-    expect(at('ecc:planner')).toBeGreaterThan(-1)
-    expect(at('ecc:planner')).toBeLessThan(at('ecc:tdd-guide'))
-    expect(at('ecc:tdd-guide')).toBeLessThan(at('deep-research'))
-    expect(all).toContain('used 12× here')
-    expect(all).toContain(LONG)
-    expect(all).toContain(SKILLS_NOTE)
-    expect(SKILLS_NOTE).toMatch(/Skills/)
-    expect(SKILLS_NOTE).toMatch(/agents/)
-    expect(await labelsOf(ui)).toEqual(['Change', 'Yes', 'No', 'Hire this team', 'Adjust in People'])
-    await ui.press({ key: 'onboard-hire' })
-    await ui.press({ key: 'onboard-adjust' })
-    await ui.press({ key: 'onboard-changeRole' })
-    expect(stage.pressed.map(b => b.action)).toEqual(['hire', 'adjust', 'changeRole'])
-    await ui.unmount()
-  }
-})
-
-test('an empty seat is offered a skills.sh search only when the card names one', async ($, on) => {
-  quiet(on)
-  await $.session.start(START)
-  const without: OnboardCard = { ...CARDS.team!, searchSeat: undefined, buttons: CARDS.team!.buttons.filter(b => !b.action.startsWith('search')) }
-  for (const surface of SURFACES) {
-    let ui = await draw($, surface, CARDS.team)
-    expect((await textsOf(ui)).join('\n')).toMatch(/Search skills\.sh for a Check helper\?/)
-    expect((await textsOf(ui)).join('\n')).toMatch(/Specialist/)
-    await ui.press({ key: 'onboard-searchYes' })
-    expect(stage.pressed.map(b => b.action)).toEqual(['searchYes'])
-    await ui.unmount()
-    ui = await draw($, surface, without)
-    expect((await textsOf(ui)).join('\n')).not.toMatch(/skills\.sh/)
-    expect(await labelsOf(ui)).toEqual(['Change', 'Hire this team', 'Adjust in People'])
-    await ui.unmount()
-  }
-})
-
-test('a team with no picks and no parked count still draws, without a Parked part', async ($, on) => {
-  quiet(on)
-  await $.session.start(START)
-  const bare: OnboardCard = { step: 'team', lines: [], role: 'Web developer', team: { picks: [], empty: ['Plan'], by: 'rules' }, buttons: [btn('adjust', 'Adjust in People')] }
-  for (const surface of SURFACES) {
-    const ui = await draw($, surface, bare)
-    const joined = (await textsOf(ui)).join('\n')
-    expect(joined).toMatch(/Starting team \(0\)/)
-    expect(joined).not.toMatch(/Parked/)
-    await ui.unmount()
-  }
-})
-
-test('the workflow card shows at most five numbered steps with Use this and Skip', async ($, on) => {
-  quiet(on)
-  await $.session.start(START)
-  for (const surface of SURFACES) {
-    const ui = await draw($, surface, CARDS.workflow)
-    const all = await textsOf(ui)
-    expect(all).toEqual(expect.arrayContaining(['1. Plan first', '2. Write tests', '3. Build it', '4. Review', '5. Commit']))
-    expect(all.some(t => /Sixth step/.test(t))).toBe(false)
-    expect(await labelsOf(ui)).toEqual(['Use this', 'Skip'])
-    await ui.press({ key: 'onboard-useWorkflow' })
-    expect(stage.pressed.map(b => b.action)).toEqual(['useWorkflow'])
-    await ui.unmount()
-  }
-})
-
-test('the first-job card shows the question, the suggestion and Use this', async ($, on) => {
-  quiet(on)
-  await $.session.start(START)
-  for (const surface of SURFACES) {
-    const ui = await draw($, surface, CARDS.first)
-    const all = await textsOf(ui)
-    expect(all).toContain('What is the first thing you want done here?')
-    expect(all).toContain('Add tests for the login flow')
-    expect(await labelsOf(ui)).toEqual(['Use this'])
+    const ui = await draw($, surface, failedCard('no model answered'))
+    expect(await textsOf(ui)).toContain('Setup stopped: no model answered. Run /office-setup to try again.')
+    expect((await buttonsOf(ui)).map(b => String(b.props.label))).toEqual(['Dismiss'])
     await ui.unmount()
   }
 })
@@ -220,20 +143,20 @@ test('a note is shown plain and dim', async ($, on) => {
   quiet(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
-    const ui = await draw($, surface, { ...CARDS.offer!, note: 'Cannot change that setting from here.' })
+    const ui = await draw($, surface, doneCard(['Planner'], 'Cannot change that setting from here.'))
     expect((await ui.find({ type: 'Text', text: /^Cannot change that setting from here\.$/ }))?.props.dimColor).toBe(true)
     await ui.unmount()
   }
 })
 
-test('with no card, or a finished one, nothing is drawn', async ($, on) => {
+test('with no card, or the quiet one held once setup has nothing to show, nothing is drawn', async ($, on) => {
   quiet(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
-    for (const card of [undefined, { step: 'done', lines: ['x'], buttons: [] }, { step: 'skipped', lines: ['x'], buttons: [] }] as Array<OnboardCard | undefined>) {
+    for (const card of [undefined, QUIET] as Array<OnboardCard | undefined>) {
       const ui = await draw($, surface, card)
       expect(await textsOf(ui)).toEqual([])
-      expect(await labelsOf(ui)).toEqual([])
+      expect(await buttonsOf(ui)).toEqual([])
       await ui.unmount()
     }
   }
@@ -242,12 +165,13 @@ test('with no card, or a finished one, nothing is drawn', async ($, on) => {
 /** The Text props of Claude Code 2.1.295 that the brief allows here; a desktop `bold` also carries a `weight` of the engine's own. */
 const ALLOWED = new Set(['color', 'dimColor', 'bold', 'wrap', 'children', 'key'])
 
-test('every step draws only the Text props the older desktop engine takes, and every long line wraps', async ($, on) => {
+test('every card draws only the Text props the older desktop engine takes, and every long line wraps', async ($, on) => {
   quiet(on)
   await $.session.start(START)
   const odd: string[] = []
+  const cards = { scan: scanCard(), done: doneCard(['Planner', 'Builder', 'Reviewer'], 'A note that is long enough to wrap onto a second line.'), failed: failedCard('a long reason that goes on and on') }
   for (const surface of SURFACES) {
-    for (const [name, card] of Object.entries(CARDS)) {
+    for (const [name, card] of Object.entries(cards)) {
       const ui = await draw($, surface, card)
       for (const t of await ui.findAll({ type: 'Text' })) {
         for (const p of Object.keys(t.props)) if (!ALLOWED.has(p) && !(p === 'weight' && t.props.bold === true)) odd.push(`${name}/${surface}: ${p}`)

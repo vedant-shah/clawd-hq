@@ -1,20 +1,19 @@
-// Onboarding, piece 8: the whole setup flow end to end on the test host, on the terminal and in the desktop app.
-// Offer → Start / Later / Skip → the two questions → quiet scan → (role only when thin) → team → Hire → workflow →
-// first job → done, and `/office-setup` again. Nothing is ever sent for the person and the mod makes no network call.
+// Onboarding: the whole setup flow end to end on the test host, on the terminal and in the desktop app. Setup runs by itself the
+// first time the office opens in a project with no saved setup: quiet scan → team → hire → workflow, then one small card.
+// There are no questions and no offer. `/office-setup` runs the same flow on demand. Nothing is sent and the mod fetches nothing.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { BOX_NOTE, FIRST_LINE, OFFER_LINE, ROLE_LINE, WAIT_NOTE, WORKFLOW_LINE } from '../hooks/onboard-cards'
-import { SOURCES_KEY } from '../hooks/onboard'
-import { TESTS_JOB } from '../hooks/first-job'
-import { ROLES } from '../hooks/onboard-types'
-import { CLEAR, PANE, START, SURFACES } from './host'
-import { CWD, HOME, QUIET_Q, RUN_Q, frames, offerAgents, office, onboardHost, press, saveOf, settle } from './onboard-host'
+import { DONE_HEAD, DONE_TAIL } from '../hooks/onboard-cards'
+import { SOURCES_KEY, isSetupBusy } from '../hooks/onboard'
+import { CLEAR, START, SURFACES } from './host'
+import { CWD, frames, offerAgents, office, onboardHost, press, saveOf, settle } from './onboard-host'
 import type { OnboardHost } from './onboard-host'
 
 type Surface = (typeof SURFACES)[number]
 const DESKTOP_START = { cwd: CWD, surface: null, isInteractive: false } as never
 const DESKTOP = { surface: 'desktop', clientId: 'desktop:default' } as never
 const HAND_PARKED = { laidOff: ['legal:review-contract'], isReviewed: false, stacks: [] }
+const KEY = `onboard:${CWD}`
 
 /** A session as each surface starts it: the terminal draws at once, the desktop app attaches a moment later. */
 async function open($: Engine, h: OnboardHost, surface: Surface) {
@@ -24,136 +23,133 @@ async function open($: Engine, h: OnboardHost, surface: Surface) {
   await frames(h)
 }
 
-const decisionsOf = (h: OnboardHost) => h.files.get(`${CWD}/.clawd-hq/decisions.md`) ?? ''
+const opusCalls = (h: OnboardHost) => h.calls.models.filter(m => m.model === 'opus')
 
 for (const surface of SURFACES) {
-  test(`${surface}: the whole flow, offer to first job, with the question box; nothing is sent and nothing is fetched`, { timeoutMs: 30_000 }, async ($, on) => {
+  test(`${surface}: setup runs by itself, scan to workflow, and leaves one small card; nothing is asked, sent or fetched`, { timeoutMs: 30_000 }, async ($, on) => {
     const h = onboardHost(on, { [`payroll:${CWD}`]: HAND_PARKED })
     await open($, h, surface)
-    // The offer, on Clawd's card.
-    let tab = await office($, surface)
-    expect(tab.joined).toContain(OFFER_LINE)
-    expect(tab.labels).toEqual(['Start', 'Later', 'Skip'])
-    // Start: the question box asks both, one at a time; Yes to running the chat (already on), No to quiet chat.
-    await press($, h, surface, 'onboard-start')
-    expect(h.calls.asked).toEqual([{ question: RUN_Q, labels: ['Yes (Recommended)', 'No'] }, { question: QUIET_Q, labels: ['Yes (Recommended)', 'No'] }])
-    expect(h.saved.get('toggle:quietChat')).toBe(false)
-    expect(h.saved.has('toggle:chiefOfStaff')).toBe(false) // Yes on a switch already on sets nothing
-    expect(decisionsOf(h)).toContain('Yes (Recommended)')
-    expect(decisionsOf(h)).toContain('→ No')
-    // The scan ran quietly, then one Opus call picked the team; the card shows facts, never the model's words.
-    expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
+    // No question box, no fill of the prompt box, no toast about setup.
+    expect(h.calls.tools.filter(t => t.tool === 'AskUserQuestion')).toEqual([])
+    expect(h.calls.fills).toEqual([])
+    expect(h.calls.sent).toEqual([])
+    expect(h.calls.fetches).toEqual([])
+    expect(h.toasts.filter(t => /setup/i.test(t))).toEqual([])
+    // The switches are untouched: both are on by default.
+    expect(h.saved.has('toggle:quietChat')).toBe(false)
+    expect(h.saved.has('toggle:chiefOfStaff')).toBe(false)
+    // The scan ran quietly, then one Opus call picked the team (no scout in this host).
+    expect(opusCalls(h)).toHaveLength(1)
     expect(h.saved.get(`usage:${CWD}`)).toMatchObject({ files: 0 })
     expect(h.saved.get(SOURCES_KEY)).toMatchObject({ agents: ['plugin'], skills: ['plugin'] })
-    tab = await office($, surface)
-    expect(tab.joined).toContain('Software engineer')
-    expect(tab.joined).toMatch(/Starting team \(5\) · Parked 1/) // the four picks, and the shipped Researcher in the Find out seat nothing filled
-    expect(tab.joined).toContain('clawd-hq:core-researcher')
-    expect(tab.joined).toContain('ecc:planner')
-    expect(tab.joined).not.toContain('MODEL WORDS')
-    expect(tab.joined).not.toContain('legal:review-contract') // parked by hand: no candidate
-    expect(tab.labels).toEqual(['Change', 'Hire this team', 'Adjust in People']) // no empty core seat, so no skills.sh search is offered
-    // Hire: the rest is parked on top of what was parked by hand, the skill is hired, the skill not installed is reported.
-    await press($, h, surface, 'onboard-hire')
+    // The hire: the rest is parked on top of what was parked by hand, the skill is hired, the skill not installed is left out.
     const payroll = h.saved.get(`payroll:${CWD}`) as { laidOff: string[]; isReviewed: boolean }
     expect([...payroll.laidOff].sort()).toEqual(['ecc:go-reviewer', 'legal:review-contract'])
     expect(payroll.isReviewed).toBe(true)
     expect(h.calls.registered.map(r => r.skills)).toEqual([['ecc:tdd-workflow']])
     expect((h.saved.get(`team:${CWD}`) as { hires: unknown[] }).hires).toHaveLength(1)
-    // The workflow card, from the instruction files through Haiku.
-    tab = await office($, surface)
-    expect(tab.joined).toContain(WORKFLOW_LINE)
-    expect(tab.joined).toContain('1. Plan the change first.')
-    expect(tab.joined).toMatch(/Hired clawd-hq:tdd-workflow\./)
-    expect(tab.joined).toMatch(/Left out, not installed under that name: old-notes\./)
-    expect(tab.labels).toEqual(['Use this', 'Skip'])
-    await press($, h, surface, 'onboard-useWorkflow')
+    // The workflow is kept in the profile without a card to confirm it.
     expect(h.saved.get('profile')).toMatchObject({ role: 'Software engineer', workflow: ['Plan the change first.', 'Write the tests.', 'Build it.'] })
-    // The first job: Use this fills the prompt box, and nothing is sent.
-    tab = await office($, surface)
-    expect(tab.joined).toContain(FIRST_LINE)
-    expect(tab.joined).toContain(TESTS_JOB)
-    await press($, h, surface, 'onboard-useFirst')
-    expect(h.calls.fills).toEqual([TESTS_JOB])
-    expect(h.calls.sent).toEqual([])
-    expect(h.calls.fetches).toEqual([])
     expect(saveOf(h)?.step).toBe('done')
-    tab = await office($, surface)
-    expect(tab.setup).toEqual([])
-    // Clawd sees who the person is beyond the newest decisions.
+    // One small card on the Office tab, with Dismiss and nothing else.
+    const tab = await office($, surface)
+    expect(tab.joined).toContain(DONE_HEAD)
+    expect(tab.joined).toMatch(/Set up your team for this project: Planner, .*Reviewer/)
+    expect(tab.joined).toContain(DONE_TAIL)
+    expect(tab.joined).not.toContain('MODEL WORDS')
+    expect(tab.labels).toEqual(['Dismiss'])
+    // Clawd sees who the person is.
     const ctx = await $.prompt.context({ blocks: [] } as never)
     expect(JSON.stringify(ctx)).toContain('Their role: Software engineer')
   })
+
+  test(`${surface}: Dismiss takes the card away, and it does not come back in the next session`, async ($, on) => {
+    const h = onboardHost(on)
+    await open($, h, surface)
+    expect((await office($, surface)).labels).toEqual(['Dismiss'])
+    await press($, h, surface, 'onboard-dismiss')
+    expect((await office($, surface)).setup).toEqual([])
+    expect(saveOf(h)?.step).toBe('done')
+    await $.session.end(CLEAR)
+    await open($, h, surface)
+    expect((await office($, surface)).setup).toEqual([])
+    expect(opusCalls(h)).toHaveLength(1) // setup is not run again
+  })
+
+  test(`${surface}: /office-setup runs the same flow again, after it was done`, async ($, on) => {
+    const h = onboardHost(on, { [KEY]: { step: 'done', at: 1 } })
+    await open($, h, surface)
+    expect((await office($, surface)).setup).toEqual([])
+    expect(opusCalls(h)).toHaveLength(0)
+    const r = await $.command.run({ command: 'office-setup', args: '' } as never)
+    expect(JSON.stringify(r)).toMatch(/setup/i)
+    expect(JSON.stringify(r)).not.toMatch(/question/i)
+    await settle(h)
+    expect(opusCalls(h)).toHaveLength(1)
+    expect(h.calls.tools.filter(t => t.tool === 'AskUserQuestion')).toEqual([])
+    expect(saveOf(h)?.step).toBe('done')
+    expect((await office($, surface)).labels).toEqual(['Dismiss'])
+  })
+
+  test(`${surface}: with Automatic setup off nothing runs by itself, and /office-setup still runs setup on demand`, { options: { autoSetup: false } }, async ($, on) => {
+    const h = onboardHost(on)
+    await open($, h, surface)
+    await frames(h, 30)
+    expect(saveOf(h)).toBeUndefined()
+    expect(h.calls.models).toEqual([])
+    expect((await office($, surface)).setup).toEqual([])
+    await $.command.run({ command: 'office-setup', args: '' } as never)
+    await settle(h)
+    expect(opusCalls(h)).toHaveLength(1)
+    expect(saveOf(h)?.step).toBe('done')
+    expect((await office($, surface)).labels).toEqual(['Dismiss'])
+  })
+
+  for (const step of ['skipped', 'first']) {
+    test(`${surface}: a project whose old setup was left at "${step}" is not set up again`, async ($, on) => {
+      const h = onboardHost(on, { [KEY]: { step, pending: [], at: 1 } })
+      await open($, h, surface)
+      await frames(h, 20)
+      expect(h.calls.models).toEqual([])
+      expect((await office($, surface)).setup).toEqual([])
+    })
+  }
+
+  test(`${surface}: an old offer or question left in a project counts as never set up, so setup runs`, async ($, on) => {
+    const h = onboardHost(on, { [KEY]: { step: 'intro', pending: [{ field: 'quietChat', value: false }], at: 1 } })
+    await open($, h, surface)
+    expect(opusCalls(h)).toHaveLength(1)
+    expect(saveOf(h)?.step).toBe('done')
+    expect(h.saved.has('toggle:quietChat')).toBe(false) // the old unapplied answer is dropped
+  })
 }
 
-test('the desktop app: no offer before its view attaches, then the offer without anything typed', async ($, on) => {
+test('the Automatic setup switch saved in the store (a press in Settings) wins: Off means nothing runs by itself', async ($, on) => {
+  const h = onboardHost(on, { 'toggle:autoSetup': false })
+  await open($, h, 'terminal')
+  await frames(h, 20)
+  expect(saveOf(h)).toBeUndefined()
+  expect(h.calls.models).toEqual([])
+})
+
+test('the desktop app: nothing runs before its view attaches, then setup runs by itself', async ($, on) => {
   const h = onboardHost(on)
   await $.session.start(DESKTOP_START)
   await frames(h, 20)
   expect(saveOf(h)).toBeUndefined()
+  expect(h.calls.models).toEqual([])
   await $.session.attach(DESKTOP)
   await frames(h)
-  expect(saveOf(h)?.step).toBe('offer')
-  const tab = await office($, 'desktop')
-  expect(tab.labels).toEqual(['Start', 'Later', 'Skip'])
+  expect(saveOf(h)?.step).toBe('done')
 })
 
-for (const surface of SURFACES) {
-  test(`${surface}: Later hides the offer for this session, and it is back the next`, async ($, on) => {
-    const h = onboardHost(on)
-    await open($, h, surface)
-    await press($, h, surface, 'onboard-later')
-    await frames(h, 20)
-    expect((await office($, surface)).setup).toEqual([])
-    expect(saveOf(h)).toMatchObject({ step: 'offer', later: true })
-    expect(h.calls.boxes).toBe(0)
-    await open($, h, surface)
-    expect((await office($, surface)).labels).toEqual(['Start', 'Later', 'Skip'])
-  })
-
-  test(`${surface}: Skip ends setup with nothing scanned and no model call, and it is not offered again`, async ($, on) => {
-    const h = onboardHost(on)
-    await open($, h, surface)
-    await press($, h, surface, 'onboard-skip')
-    expect(saveOf(h)?.step).toBe('skipped')
-    await open($, h, surface)
-    expect((await office($, surface)).setup).toEqual([])
-    expect(h.calls.models).toEqual([])
-    expect(h.calls.boxes).toBe(0)
-    expect(h.saved.has(`usage:${CWD}`)).toBe(false)
-  })
-
-  test(`${surface}: when the question box is refused, the card asks both questions with Yes and No`, async ($, on) => {
-    const h = onboardHost(on)
-    h.box.mode = surface === 'terminal' ? 'deny' : 'throw'
-    await open($, h, surface)
-    await press($, h, surface, 'onboard-start')
-    let tab = await office($, surface)
-    expect(tab.joined).toContain(RUN_Q)
-    expect(tab.joined).toContain(BOX_NOTE)
-    expect(tab.labels).toEqual(['Yes', 'No'])
-    await press($, h, surface, 'onboard-no')
-    tab = await office($, surface)
-    expect(tab.joined).toContain(QUIET_Q)
-    await press($, h, surface, 'onboard-yes')
-    expect(h.saved.get('toggle:chiefOfStaff')).toBe(false)
-    expect(h.saved.has('toggle:quietChat')).toBe(false)
-    expect(decisionsOf(h)).toContain(`${RUN_Q} → No`)
-    expect(saveOf(h)?.step).toBe('team')
-  })
-
-  test(`${surface}: /office-setup runs setup again from the questions, after it was done`, async ($, on) => {
-    const h = onboardHost(on, { [`onboard:${CWD}`]: { step: 'done', pending: [], at: 1 } })
-    await open($, h, surface)
-    expect((await office($, surface)).setup).toEqual([])
-    const r = await $.command.run({ command: 'office-setup', args: '' } as never)
-    expect(JSON.stringify(r)).toMatch(/setup/i)
-    await settle(h)
-    expect(h.calls.boxes).toBe(2)
-    expect(saveOf(h)?.step).toBe('team')
-    expect((await office($, surface)).labels).toContain('Hire this team')
-  })
-}
+test('setup runs once however many frames pass', async ($, on) => {
+  const h = onboardHost(on)
+  await open($, h, 'terminal')
+  await frames(h, 40)
+  expect(opusCalls(h)).toHaveLength(1)
+  expect(h.calls.registered).toHaveLength(1)
+})
 
 test('/office-setup is registered at session start', async ($, on) => {
   const h = onboardHost(on)
@@ -161,89 +157,76 @@ test('/office-setup is registered at session start', async ($, on) => {
   expect(h.commands).toContain('office-setup')
 })
 
-test('answers given while Clawd is busy wait for his turn to end, then apply', async ($, on) => {
-  const h = onboardHost(on)
-  await open($, h, 'terminal')
-  await $.turn.start({ text: 'Fix it', turnId: 'm1' } as never)
-  await press($, h, 'terminal', 'onboard-start')
-  expect(h.saved.has('toggle:quietChat')).toBe(false)
-  expect(saveOf(h)?.pending).toEqual([{ field: 'chiefOfStaff', value: true }, { field: 'quietChat', value: false }])
-  expect((await office($, 'terminal')).joined).toContain(WAIT_NOTE)
-  await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 'm1', isAborted: false } as never)
-  await settle(h)
-  expect(h.saved.get('toggle:quietChat')).toBe(false)
-  expect(saveOf(h)?.pending).toEqual([])
-  expect((await office($, 'terminal')).joined).not.toContain(WAIT_NOTE)
-})
-
-test('thin evidence: the role is asked with a button per role, then the team is picked for it', async ($, on) => {
+test('thin evidence: no role is asked; the team is picked for the best guess, and the card has only Dismiss', async ($, on) => {
   const h = onboardHost(on)
   for (const path of [...h.files.keys()]) if (path.startsWith(`${CWD}/`)) h.files.delete(path)
   await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  let tab = await office($, 'terminal')
-  expect(tab.joined).toContain(ROLE_LINE)
-  expect(tab.labels).toEqual([...ROLES])
-  expect(h.calls.models).toEqual([])
-  await press($, h, 'terminal', 'onboard-changeRole-5')
-  tab = await office($, 'terminal')
-  expect(tab.joined).toContain(ROLES[5])
-  expect(tab.labels).toContain('Hire this team')
-  expect(saveOf(h)?.role).toBe(ROLES[5])
-})
-
-test('Change on the team card picks another role without a second Opus call', async ($, on) => {
-  const h = onboardHost(on)
-  await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  await press($, h, 'terminal', 'onboard-changeRole')
-  expect((await office($, 'terminal')).labels).toEqual([...ROLES])
-  await press($, h, 'terminal', 'onboard-changeRole-1')
   const tab = await office($, 'terminal')
-  expect(tab.joined).toContain(ROLES[1])
-  expect(tab.labels).toContain('Hire this team')
-  expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
+  expect(tab.labels).toEqual(['Dismiss'])
+  expect(tab.joined).not.toMatch(/Which fits best/)
+  expect(saveOf(h)).toMatchObject({ step: 'done', role: 'Software engineer' })
 })
 
-test('a seat nothing installed fits is filled by Clawd HQ\'s own helper, so no skills.sh search is offered, and nothing is sent or fetched', async ($, on) => {
-  const h = onboardHost(on)
-  await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  const tab = await office($, 'terminal')
-  expect(tab.joined).toContain('Find out clawd-hq:core-researcher')
-  expect(tab.joined).toContain('Clawd HQ\'s own Researcher · nothing installed fits')
-  expect(tab.joined).not.toContain('Search skills.sh for a')
-  expect(h.calls.fills).toEqual([])
-  expect(h.calls.sent).toEqual([])
-  expect(h.calls.fetches).toEqual([])
-})
-
-test('Opus gives no answer: the rules pick, and the card still shows a team (no Haiku step any more)', async ($, on) => {
+test('Opus gives no answer: the rules pick, and the card still shows a team', async ($, on) => {
   const h = onboardHost(on)
   h.models.opus = undefined
   await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  expect(h.calls.models.map(m => m.model)).toEqual(['opus'])
+  // The only model calls for the team are Opus's; the other call is the workflow read.
+  expect(h.calls.models.filter(m => !m.prompt.includes('<instructions>')).map(m => m.model)).toEqual(['opus'])
   expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('rules')
-  expect((await office($, 'terminal')).labels).toContain('Hire this team')
+  expect((await office($, 'terminal')).joined).toContain(DONE_HEAD)
 })
 
-test('setup left part way resumes at its step in the next session, with no second Opus call', async ($, on) => {
+test('a seat nothing installed fits is filled by Clawd HQ\'s own helper, and nothing is searched for, filled or fetched', async ($, on) => {
   const h = onboardHost(on)
   await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  expect(saveOf(h)?.step).toBe('team')
-  await $.session.end(CLEAR)
+  const tab = await office($, 'terminal')
+  expect(tab.joined).toContain('Researcher')
+  expect(tab.joined).not.toContain('skills.sh')
+  expect((h.saved.get(`team:${CWD}`) as { picks: Array<{ name: string }> }).picks.map(p => p.name)).toContain('clawd-hq:core-researcher')
+  expect(h.calls.fills).toEqual([])
+  expect(h.calls.fetches).toEqual([])
+})
+
+/** A team an earlier run picked and saved. */
+const SAVED_TEAM = {
+  picks: [
+    { seat: 'Plan', name: 'ecc:planner', kind: 'agent', receipt: 'used 3× here' },
+    { seat: 'Make', name: 'ecc:tdd-workflow', kind: 'skill', receipt: 'named in CLAUDE.md' },
+    { seat: 'Check', name: 'ecc:code-reviewer', kind: 'agent', receipt: 'used 2× here' },
+    { seat: 'Find out', name: 'clawd-hq:core-researcher', kind: 'agent', receipt: "Clawd HQ's own Researcher · nothing installed fits" },
+  ],
+  empty: ['Specialist'],
+  by: 'opus',
+}
+
+test('setup left at the team step resumes in the next session: the saved team is hired, with no second Opus call', async ($, on) => {
+  const h = onboardHost(on, { [KEY]: { step: 'team', role: 'Software engineer', at: 1 }, [`team:${CWD}`]: SAVED_TEAM })
   await open($, h, 'terminal')
-  expect((await office($, 'terminal')).labels).toContain('Hire this team')
-  expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
+  expect(opusCalls(h)).toHaveLength(0)
+  expect(saveOf(h)?.step).toBe('done')
+  expect(h.calls.registered).toHaveLength(1)
+  expect((await office($, 'terminal')).labels).toEqual(['Dismiss'])
+})
+
+test('setup left at the scan step starts over in the next session', async ($, on) => {
+  const h = onboardHost(on, { [KEY]: { step: 'scan', at: 1 } })
+  await open($, h, 'terminal')
+  expect(opusCalls(h)).toHaveLength(1)
+  expect(saveOf(h)?.step).toBe('done')
+})
+
+test('setup left at the workflow step finishes with the saved team', async ($, on) => {
+  const h = onboardHost(on, { [KEY]: { step: 'workflow', role: 'Software engineer', at: 1 }, [`team:${CWD}`]: SAVED_TEAM })
+  await open($, h, 'terminal')
+  expect(opusCalls(h)).toHaveLength(0)
+  expect(saveOf(h)?.step).toBe('done')
+  expect((await office($, 'terminal')).joined).toContain('Set up your team for this project: Planner, Tester, Reviewer, Researcher.')
 })
 
 test('the skill hires are registered again at every session start', async ($, on) => {
   const h = onboardHost(on)
   await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  await press($, h, 'terminal', 'onboard-hire')
   expect(h.calls.registered).toHaveLength(1)
   await $.session.start(START)
   await settle(h)
@@ -251,70 +234,62 @@ test('the skill hires are registered again at every session start', async ($, on
   expect(h.calls.registered[1]).toMatchObject({ name: 'tdd-workflow', skills: ['ecc:tdd-workflow'] })
 })
 
-for (const saved of [undefined, { step: 'offer', later: true, pending: [], at: 1 }, { step: 'team', pending: [], at: 1, role: 'Software engineer' }]) {
-  test(`the payroll review waits while setup is not done or skipped (${saved?.step ?? 'never offered'})`, async ($, on) => {
-    const h = onboardHost(on, saved === undefined ? {} : { [`onboard:${CWD}`]: saved })
-    await $.session.start(START)
-    for (let i = 0; i < 20; i += 1) await $.agent.offer({ agent: `ecc:go-agent-${i}`, description: 'Go work.' } as never)
-    await frames(h, 60)
-    expect(h.toasts.some(t => /Payroll review/.test(t))).toBe(false)
-  })
-}
-
-test('the box answers the first question: the card then shows the second, and its Yes answers that one', async ($, on) => {
-  const h = onboardHost(on)
-  h.box.answers = { [RUN_Q]: 'No' } // the second question gets no answer from the box
-  await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  const tab = await office($, 'terminal')
-  expect(tab.joined).toContain(QUIET_Q)
-  expect(tab.joined).not.toContain(RUN_Q)
-  await press($, h, 'terminal', 'onboard-yes')
-  expect(h.saved.get('toggle:chiefOfStaff')).toBe(false)
-  expect(h.saved.has('toggle:quietChat')).toBe(false)
-  expect(decisionsOf(h)).toContain(`${QUIET_Q} → Yes`)
-  expect(saveOf(h)?.step).toBe('team')
-})
-
-test('a second press of Hire, after the first, parks and hires nothing more', async ($, on) => {
-  const h = onboardHost(on)
-  await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  await ui.press({ key: 'onboard-hire' })
-  await ui.press({ key: 'onboard-hire' }).catch(() => undefined) // the button may be gone already
-  await ui.unmount()
-  await settle(h)
-  expect(h.calls.registered).toHaveLength(1)
-})
-
-test('a step that fails puts the offer back with what went wrong, and Start tries again', async ($, on) => {
-  const h = onboardHost(on)
-  await open($, h, 'terminal')
-  h.kv.isWriteFailing = true // the store refuses: the questions cannot be saved
-  await press($, h, 'terminal', 'onboard-start')
-  let tab = await office($, 'terminal')
-  expect(tab.joined).toMatch(/Setup stopped: .*Start tries again\./)
-  expect(tab.labels).toEqual(['Start', 'Later', 'Skip'])
-  h.kv.isWriteFailing = false
-  await press($, h, 'terminal', 'onboard-start')
-  tab = await office($, 'terminal')
-  expect(tab.labels).toContain('Hire this team')
-})
-
-test('a skipped workflow card keeps the steps saved by an earlier setup in another project', async ($, on) => {
+test('a project with no instruction files to read keeps the steps saved by an earlier setup in another project', async ($, on) => {
   const h = onboardHost(on, { profile: { role: 'Writer or researcher', workflow: ['Draft first.'], at: 1 } })
+  h.files.delete(`${CWD}/CLAUDE.md`)
   await open($, h, 'terminal')
-  await press($, h, 'terminal', 'onboard-start')
-  await press($, h, 'terminal', 'onboard-hire')
-  await press($, h, 'terminal', 'onboard-skipWorkflow')
   expect(h.saved.get('profile')).toMatchObject({ role: 'Software engineer', workflow: ['Draft first.'] })
+  expect(saveOf(h)?.step).toBe('done')
 })
 
-test('the offer is not shown with nothing drawn (a headless run), and nothing is saved', async ($, on) => {
+test('a step that fails shows a stopped card with how to try again, and /office-setup tries again', async ($, on) => {
+  const h = onboardHost(on)
+  h.kv.isWriteFailing = true // the store refuses
+  await open($, h, 'terminal')
+  let tab = await office($, 'terminal')
+  expect(tab.joined).toMatch(/Setup stopped: .*Run \/office-setup to try again\./)
+  expect(tab.labels).toEqual(['Dismiss'])
+  h.kv.isWriteFailing = false
+  await $.command.run({ command: 'office-setup', args: '' } as never)
+  await settle(h)
+  tab = await office($, 'terminal')
+  expect(tab.joined).toContain(DONE_HEAD)
+  expect(saveOf(h)?.step).toBe('done')
+})
+
+test('the headless run, with nothing drawn, saves nothing', async ($, on) => {
   const h = onboardHost(on)
   await $.session.start({ cwd: CWD, surface: null, isInteractive: false } as never)
   await frames(h, 30)
   expect(saveOf(h)).toBeUndefined()
-  expect(HOME).toBe('/home/me')
+  expect(h.calls.models).toEqual([])
+})
+
+test('the payroll waits while setup is not done, and only then', () => {
+  expect(isSetupBusy(undefined, true)).toBe(true)
+  expect(isSetupBusy({ step: 'scan', at: 1 }, true)).toBe(true)
+  expect(isSetupBusy({ step: 'team', at: 1 }, false)).toBe(true)
+  expect(isSetupBusy({ step: 'workflow', at: 1 }, true)).toBe(true)
+  expect(isSetupBusy({ step: 'done', at: 1 }, true)).toBe(false)
+  expect(isSetupBusy(undefined, false)).toBe(false) // never set up, and nothing will start by itself
+})
+
+const MANY = Array.from({ length: 20 }, (_, i) => `ecc:go-agent-${i}`)
+
+test('the payroll review waits while setup is still looking for its team', async ($, on) => {
+  const h = onboardHost(on)
+  h.scout.mode = 'silent' // the scout takes its time, so setup is still on the team step
+  await $.session.start(START)
+  for (const agent of MANY) await $.agent.offer({ agent, description: 'Go work.' } as never)
+  await frames(h, 60)
+  expect(saveOf(h)?.step).not.toBe('done')
+  expect(h.toasts.some(t => /Payroll review/.test(t))).toBe(false)
+})
+
+test('with Automatic setup off and no setup saved, the payroll review is not held back', { options: { autoSetup: false } }, async ($, on) => {
+  const h = onboardHost(on)
+  await $.session.start(START)
+  for (const agent of MANY) await $.agent.offer({ agent, description: 'Go work.' } as never)
+  await frames(h, 60)
+  expect(h.toasts.some(t => /Payroll review/.test(t))).toBe(true)
 })

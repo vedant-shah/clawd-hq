@@ -1,19 +1,15 @@
 // Onboarding: the names shared by the scan, team pick, hiring, workflow, cards and flow pieces. Types and tiny constants only.
 // Nothing here touches `$` or an atom; register.tsx fills OnboardIo with closures (see docs/research/onboarding-step1-plan.md).
 
-/** Where setup stands. `done` and `skipped` end it; `/office-setup` restarts at `intro`. */
-export type OnboardStep = 'offer' | 'intro' | 'scan' | 'team' | 'workflow' | 'first' | 'done' | 'skipped'
+/**
+ * Where setup stands: it runs by itself, scan → team (picked, then hired) → workflow → done. `done` ends it; `/office-setup` starts
+ * again at `scan`. A record the old flow left (an offer, a question, a first job, a skip) is read as never started or as done.
+ */
+export type OnboardStep = 'scan' | 'team' | 'workflow' | 'done'
 
-/** The two settings setup asks about (the Settings switches of the same names). */
-export type ToggleField = 'chiefOfStaff' | 'quietChat'
-/** One answer not applied yet: the other question is still open, or Clawd's turn is running. Each is dropped once applied, so a reload resumes with the rest. */
-export type PendingToggle = { readonly field: ToggleField; readonly value: boolean }
-
-/** Setup's place, kept per project at `onboard:<folder>`. `later` hides the offer until the next session. */
+/** Setup's place, kept per project at `onboard:<folder>`, so a restart part way resumes or retries. */
 export type OnboardSave = {
   readonly step: OnboardStep
-  readonly later?: true
-  readonly pending: readonly PendingToggle[]
   readonly role?: string
   readonly at: number
 }
@@ -102,41 +98,23 @@ export const usageKey = (folder: string) => `usage:${folder}`
 export const teamKey = (folder: string) => `team:${folder}`
 export const PROFILE_KEY = 'profile'
 
-/** A choice on a card. It fills the prompt box or runs a flow action; it never sends anything. */
-export type OnboardAction =
-  | 'start' | 'later' | 'skip'
-  | 'yes' | 'no'
-  | 'changeRole'
-  | 'hire' | 'adjust'
-  | 'searchYes' | 'searchNo'
-  | 'useWorkflow' | 'skipWorkflow'
-  | 'useFirst'
-export type OnboardButton = { readonly action: OnboardAction; readonly label: string; readonly isPrimary?: boolean }
+/** A choice on a card. The only one is Dismiss; a press never sends anything. */
+export type OnboardAction = 'dismiss'
+export type OnboardButton = { readonly action: OnboardAction; readonly label: string }
+
+/**
+ * What the card shows: `scan` while setup works, `done` once it has run, `failed` when a step stopped, and `quiet` for
+ * nothing at all (held once setup has nothing to show this session, so the frame check stops looking).
+ */
+export type CardStep = 'scan' | 'done' | 'failed' | 'quiet'
 
 /** What the Office tab draws for the current step. Facts go in `lines` (Text); buttons carry labels only. */
 export type OnboardCard = {
-  readonly step: OnboardStep
+  readonly step: CardStep
   readonly lines: readonly string[]
   readonly buttons: readonly OnboardButton[]
-  readonly role?: string
-  readonly team?: Team
-  /** Agent types parked by the hire, for "Parked m". */
-  readonly parked?: number
-  readonly workflow?: readonly string[]
-  /** The first-job suggestion. */
-  readonly suggestion?: string
-  /** A seat setup offers to search skills.sh for. */
-  readonly searchSeat?: Seat
-  /** A short plain note, such as "can't change that setting from here". */
+  /** A short plain note, such as "Claude Code would not add: x". */
   readonly note?: string
-}
-
-/** One question for the question box. */
-export type AskQuestion = {
-  readonly question: string
-  readonly header: string
-  readonly options: readonly { readonly label: string; readonly description: string }[]
-  readonly multiSelect?: boolean
 }
 
 /** A skill or command the engine lists. */
@@ -195,29 +173,16 @@ export type OnboardIo = {
   readonly complete: (req: CompleteRequest) => Promise<string | undefined>
   /** Starts the scout with the brief and waits for its picks; `undefined` when it could not start, ran out of time or sent nothing the check accepted. */
   readonly spawnScout: (brief: string, check: ScoutCheck) => Promise<ScoutReport | undefined>
-  /**
-   * One question in Claude Code's own question box (`$.ui.ask`: a mod's direct AskUserQuestion call is refused by the host),
-   * resolving to the label chosen or text typed under Other; `undefined` when it was dismissed or could not open.
-   */
-  readonly ask: (question: AskQuestion) => Promise<string | undefined>
-  /** Goes through the Settings switch path; `false` when it could not be changed from here. */
-  readonly setToggle: (field: ToggleField, value: boolean) => Promise<boolean>
-  /** The current value of a setting. */
-  readonly options: () => Promise<Readonly<Record<ToggleField, boolean>>>
-  /** Clawd's turn is running: a switch change waits until it ends (the Settings switch refuses then too). */
-  readonly isBusy: () => Promise<boolean>
+  /** The Automatic setup switch, read as it is now: off means nothing starts by itself (`/office-setup` still runs). */
+  readonly isAutoOn: () => boolean
   readonly registerHire: (spec: HireSpec) => Promise<boolean>
   /** Replaces the payroll's laid-off list, marks the payroll reviewed and keeps its stacks. */
   readonly savePayroll: (laidOff: readonly string[]) => Promise<void>
   /** The agent types on the laid-off list now: parked earlier, by hand or by a past setup. */
   readonly parked: () => readonly string[]
   readonly allAgentTypes: () => readonly string[]
-  readonly showPeople: () => void
-  /** Appends to the prompt box; nothing is sent. */
-  readonly fill: (text: string) => Promise<void>
   /** The person's answer, saved in Decisions. */
   readonly decide: (question: string, said: string) => Promise<void>
   readonly card: () => Promise<OnboardCard | undefined>
   readonly setCard: (card: OnboardCard | undefined) => Promise<void>
-  readonly toast: (text: string) => void
 }

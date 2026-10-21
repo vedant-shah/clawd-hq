@@ -8,8 +8,6 @@ type Surface = 'terminal' | 'desktop'
 
 export const CWD = '/repo'
 export const HOME = '/home/me'
-export const RUN_Q = 'Should I run the chat as your chief of staff, handing real work to specialists?'
-export const QUIET_Q = 'Should I keep the chat quiet, hiding the "finished" notices of specialists I hired?'
 
 /** A project with code and no tests, a README, and a CLAUDE.md that names a helper and lists a routine. */
 export const PROJECT: Readonly<Record<string, string>> = {
@@ -47,8 +45,6 @@ export const OPUS_TEAM = JSON.stringify({ picks: [
 ] })
 export const WORKFLOW_REPLY = '1. Plan the change first.\n2. Write the tests.\n3. Build it.'
 
-type Box = { mode: 'answer' | 'deny' | 'throw'; answers: Record<string, string> }
-
 /** Everything setup calls, answered and recorded. `opus` and `haiku` are the team answers (undefined: no answer). */
 export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   const agentList: unknown[] = [] // the agents the engine lists; a started scout joins it, as it would
@@ -56,8 +52,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   for (const [path, text] of Object.entries(PROJECT)) h.files.set(path, text)
   h.session.loaded = LOADED
   const models = { opus: OPUS_TEAM as string | undefined, haiku: undefined as string | undefined, workflow: WORKFLOW_REPLY as string | undefined }
-  const box: Box = { mode: 'answer', answers: { [RUN_Q]: 'Yes (Recommended)', [QUIET_Q]: 'No' } }
-  const calls = { models: [] as Array<{ model: string; prompt: string }>, boxes: 0, asked: [] as Array<{ question: string; labels: string[] }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, configSets: [] as unknown[], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
+  const calls = { models: [] as Array<{ model: string; prompt: string }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, configSets: [] as unknown[], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
   const children = (dir: string) => {
     const prefix = `${dir.replace(/\/+$/, '')}/`
     const names = new Map<string, boolean>()
@@ -101,12 +96,8 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   })
   on('tool.call', (_$, e) => {
     // What reached the tools: the calls the plugin let through (a rewritten input shows as it was rewritten).
-    if ((e as { tool: string }).tool !== 'AskUserQuestion') calls.tools.push({ tool: (e as { tool: string }).tool, agentId: (e as { agentId?: string }).agentId, input: e as Record<string, unknown> })
-    if ((e as { tool: string }).tool !== 'AskUserQuestion') return { result: 'ok' } as never
-    calls.boxes += 1
-    for (const q of (e as { questions?: Array<{ question: string; options: Array<{ label: string }> }> }).questions ?? []) calls.asked.push({ question: q.question, labels: q.options.map(o => o.label) })
-    if (box.mode === 'throw') throw new Error('no question box here')
-    return (box.mode === 'deny' ? { deny: 'not available' } : { result: { answers: box.answers } }) as never
+    calls.tools.push({ tool: (e as { tool: string }).tool, agentId: (e as { agentId?: string }).agentId, input: e as Record<string, unknown> })
+    return { result: 'ok' } as never
   })
   // The scout: `mode` 'deny' refuses its start (setup falls to Opus); 'script' starts it and runs `script` as the scout would, with the id it was given (the test makes the scout's calls through its own engine).
   const scout = {
@@ -135,7 +126,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     return { model: 'claude-sonnet-5-5', agentId: scout.id }
   })
   on('agent.offer', () => ({ isOffered: true }) as never)
-  return { ...h, models, box, calls, scout, links, agentList }
+  return { ...h, models, calls, scout, links, agentList }
 }
 export type OnboardHost = ReturnType<typeof onboardHost>
 
@@ -170,4 +161,4 @@ export async function press($: Engine, h: OnboardHost, surface: Surface, key: st
   await settle(h)
 }
 
-export const saveOf = (h: OnboardHost) => h.saved.get(`onboard:${CWD}`) as { step: string; later?: true; pending: unknown[]; role?: string } | undefined
+export const saveOf = (h: OnboardHost) => h.saved.get(`onboard:${CWD}`) as { step: string; role?: string; at: number } | undefined

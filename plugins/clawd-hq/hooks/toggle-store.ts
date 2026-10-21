@@ -6,7 +6,7 @@ import type { BriefingOptions } from './instructions'
 
 export type Saved = Readonly<Partial<Record<ToggleField, boolean>>>
 
-const FIELDS: readonly ToggleField[] = ['chiefOfStaff', 'quietChat', 'recap', 'youShouldKnow', 'leftUndone']
+const FIELDS: readonly ToggleField[] = ['chiefOfStaff', 'quietChat', 'recap', 'youShouldKnow', 'leftUndone', 'autoSetup']
 
 /** The store key of one switch: one key each, so two sessions changing different switches never undo each other. */
 export const savedKey = (field: ToggleField) => `toggle:${field}`
@@ -37,5 +37,6 @@ export function liveOptions(base: BriefingOptions): BriefingOptions {
     get isRecapOn() { return pick('recap', base.isRecapOn) },
     get isKnowOn() { return pick('youShouldKnow', base.isKnowOn) },
     get isLeftOn() { return pick('leftUndone', base.isLeftOn) },
+    get isAutoOn() { return pick('autoSetup', base.isAutoOn) },
   }
 }

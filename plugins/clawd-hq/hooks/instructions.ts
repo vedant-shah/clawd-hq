@@ -36,7 +36,7 @@ export const SEED_KEYS: Record<BriefPart, string> = { rules: 'brief:seed:rules',
 /** Where the person's own copy of a part lives; '' without a home folder. */
 export const ownPath = (home: string, part: BriefPart) => (home === '' ? '' : `${home}/.clawd-hq/${OWN_FILES[part]}`)
 
-export type BriefingOptions = { isOn: boolean; voiceFile: string; isRecapOn: boolean; isQuiet: boolean; isKnowOn: boolean; isLeftOn: boolean }
+export type BriefingOptions = { isOn: boolean; voiceFile: string; isRecapOn: boolean; isQuiet: boolean; isKnowOn: boolean; isLeftOn: boolean; isAutoOn: boolean }
 export type BriefingIo = {
   root: string
   read: (path: string) => Promise<string>
@@ -60,10 +60,10 @@ export type Briefing = { text?: string; rules?: PartRead; voice?: PartRead }
 
 /** The plugin's options as the manifest declares them; a value of the wrong kind counts as unset. */
 export function optionsOf(options: Readonly<Record<string, unknown>>): BriefingOptions {
-  const { chiefOfStaff, voiceFile, recap, quietChat, youShouldKnow, leftUndone } = options
+  const { chiefOfStaff, voiceFile, recap, quietChat, youShouldKnow, leftUndone, autoSetup } = options
   return {
     isOn: chiefOfStaff !== false, voiceFile: typeof voiceFile === 'string' ? voiceFile.trim() : '', isRecapOn: recap !== false, isQuiet: quietChat !== false,
-    isKnowOn: youShouldKnow !== false, isLeftOn: leftUndone !== false,
+    isKnowOn: youShouldKnow !== false, isLeftOn: leftUndone !== false, isAutoOn: autoSetup !== false,
   }
 }
 

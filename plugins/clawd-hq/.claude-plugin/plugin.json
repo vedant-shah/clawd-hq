@@ -47,6 +47,13 @@
       "description": "On (default): after a turn of Clawd's own that used five tools or more, a small model sets your request against his final report and lists at most one thing you explicitly asked for that was not done, in the Left undone section of the Office tab; it stays silent when in doubt. It uses a little of your plan. Off: that check is not made. The other source (TODO, skipped-test and not-implemented markers written into code files) is read on this machine and is not affected.",
       "required": false,
       "default": true
+    },
+    "autoSetup": {
+      "type": "boolean",
+      "title": "Automatic setup",
+      "description": "On (default): the first time the office opens in a project with no saved setup, setup runs by itself, with no questions. It looks quietly around the project, picks a starting team, hires it and keeps how you like to work in mind, then leaves one small card on the Office tab saying what was set up. A few model calls go out, one to Opus to pick the team. Off: nothing runs by itself; type /office-setup to run setup when you want it.",
+      "required": false,
+      "default": true
     }
   }
 }

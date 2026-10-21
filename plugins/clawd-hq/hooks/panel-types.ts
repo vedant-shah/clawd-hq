@@ -1,11 +1,12 @@
 // What the side panel is handed to draw, and the things it may ask for; register.tsx fills both.
-import type { Artifact, Badge, Boss, ClawdBrief, Employee, Fx, Gauge, KnowState, LeftItem, Memory, Payroll } from '../types'
+import type { Artifact, Badge, Boss, ClawdBrief, Employee, Fx, Gauge, KnowState, LeftItem, Memory, Payroll, RuleOffer } from '../types'
 import type { ClawdActions } from './clawd-edit'
 import type { ConfigField } from './configs'
 import type { BriefPart, BriefingOptions } from './instructions'
 import type { KnowActions } from './know-check'
 import type { LeftActions } from './left-io'
 import type { OnboardButton, OnboardCard } from './onboard-types'
+import type { RuleActions } from './rule-io'
 
 export type PanelData = {
   staff: Employee[]
@@ -20,6 +21,8 @@ export type PanelData = {
   artifacts: Artifact[]
   /** What Claude or a specialist left unfinished in this project, newest first. */
   leftUndone: LeftItem[]
+  /** The lasting rules Clawd offered to add to the project's CLAUDE.md this session, newest first. */
+  ruleOffers: RuleOffer[]
   gauge: Gauge
   now: number
   /** The notes from the check on finished work waiting on Clawd's card. */
@@ -32,7 +35,7 @@ export type PanelData = {
   onboard?: OnboardCard
 }
 
-export type PanelActions = KnowActions & ClawdActions & LeftActions & {
+export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleActions & {
   setFind: (tab: 'decisions' | 'people', text: string) => unknown
   forget: (id: string) => unknown
   /** The Hide button on an artifact row: that page leaves this project's desk (not claude.ai) until it is published or opened again. */

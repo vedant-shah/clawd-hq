@@ -80,6 +80,16 @@ export type LeftItem = {
   line?: number
 }
 
+/** A lasting rule Clawd offered to add to the project's CLAUDE.md (hooks/rule-offers.ts); kept for the session only. */
+export type RuleOffer = {
+  id: string
+  /** The rule as one clean line: the very line the Add to CLAUDE.md button writes. */
+  text: string
+  at: number
+  /** Why the last press of Add to CLAUDE.md did not go through; the offer stays. */
+  problem?: string
+}
+
 export type Payroll = { laidOff: string[]; isReviewed: boolean; stacks: string[] }
 
 /** An agent type's place on the books, kept across sessions. */
@@ -144,6 +154,8 @@ export type Fx = {
   isLogOpen?: boolean
   /** Why the last press of a config's toggle did not change it; gone once a change goes through. */
   configNote?: string
+  /** What the Add to CLAUDE.md button just did, for a few seconds: `at` tells a later note from the one it replaced. */
+  ruleDone?: { text: string; at: number }
   /**
    * The one line the coffee break button leaves under the footer's row: that it is compacting, that the command is ready in the prompt
    * box, or why it did not compact. `turns` is Clawd's turn count when it was made; a new turn of his makes it stale, and it is not drawn.
@@ -220,6 +232,7 @@ declare module 'claude-code' {
       gauge: Gauge
       artifacts: Artifact[]
       leftUndone: LeftItem[]
+      ruleOffers: RuleOffer[]
       know: KnowState
       brief: ClawdBrief
       /**

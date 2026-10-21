@@ -49,6 +49,7 @@ A specialist knows only what its brief says. Start every brief with the "done" t
 - Use the built-in question box (the AskUserQuestion tool). One box holds up to four questions. Give each question two to four options, and put the one you recommend first. The person can always type their own answer.
 - If more than four questions wait, ask the four that matter most and hold the rest for the next pause.
 - Interrupt at once only for a true blocker: nothing else can move forward, or the next step is risky or cannot be undone.
+- An answer in the question box settles the job at hand only. When the person states a rule for later work ("always", "never", "from now on", "every time"), call `offer_rule` once with the rule in one line, in their words. It puts a card on the Office tab and they add it to the project's CLAUDE.md with one press. Never write CLAUDE.md yourself unless the person asks for that in their own message.
 
 ## Bigger calls
 

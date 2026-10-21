@@ -30,6 +30,21 @@ export const STEP_SPEC: ToolSpec = {
   },
 }
 
+export const OFFER_RULE_SPEC: ToolSpec = {
+  name: 'offer_rule',
+  description:
+    'For Clawd, in the main chat: offer the person a lasting rule to add to the project\'s CLAUDE.md. Call it once when they state a rule for later work ' +
+    '("always", "never", "from now on", "every time"). It puts a card on the Office tab, and they add the line with one press. ' +
+    'The rule is one line in their words, at most 300 characters. This tool does not write CLAUDE.md. A specialist cannot use it: it puts the rule in its report.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      rule: { type: 'string', description: 'The rule as one line in the person\'s words, e.g. “Always run the tests before a commit”.' },
+    },
+    required: ['rule'],
+  },
+}
+
 export const REMEMBER_SPEC: ToolSpec = {
   name: 'remember',
   description:

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Artifact, Badge, Boss, Employee, Fx, KnowState, LeftItem, Memory, Payroll } from '../types'
+import type { Artifact, Badge, Boss, Employee, Fx, KnowState, LeftItem, Memory, Payroll, RuleOffer } from '../types'
 import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart, leftToolUsed, leftTurnStart, leftWatch, type LeftIo } from './left-io'
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, memoryBlock, oneLine, parseChoices, parseEffort, recallNote } from './desk'
 import type { Effort } from './desk'
@@ -64,7 +64,9 @@ import type { StepIo } from './steps'
 import { isCountedTool } from './usage-count'
 import { recordUse } from './use-tally'
 import { scrolled } from './scroll-window'
-import { DEMO_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
+import { DEMO_SPEC, OFFER_RULE_SPEC, REMEMBER_SPEC, STEP_SPEC } from './tool-specs'
+import { offerRule, ruleActions } from './rule-io'
+import type { RuleIo } from './rule-io'
 import { hire, withReport, withSaid, withStep, withTool } from './staff-model'
 import { clockOut, hireListed, newHire, reconcile, signOfLife, specialistOf } from './run-io'
 import type { RunIo } from './run-io'
@@ -81,6 +83,7 @@ const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
 const leftUndone = atom({ plugin: 'clawd-hq', key: 'leftUndone' } as const, [] as LeftItem[])
+const ruleOffers = atom({ plugin: 'clawd-hq', key: 'ruleOffers' } as const, [] as RuleOffer[])
 const know = atom({ plugin: 'clawd-hq', key: 'know' } as const, KNOW0)
 const clawdBrief = atom({ plugin: 'clawd-hq', key: 'brief' } as const, BRIEF0)
 const onboard = atom({ plugin: 'clawd-hq', key: 'onboard' } as const, null as OnboardCard | null)
@@ -226,10 +229,21 @@ const leftIo = ($: EngineInterface): LeftIo => ({
   read: path => $.fs.read(path), complete: ask => $.model.complete(ask), fillPrompt: text => knowIo($).fillPrompt(text), byOf: id => memoryIo($).byOf(id),
 })
 
-/** The office's own tools (hooks/own-tools.ts): the tour, remember, and the step report. */
+/**
+ * The "Add to CLAUDE.md" card (hooks/rule-io.ts). The press writes the exact line shown into the project's CLAUDE.md with no model in
+ * between: the one place the plugin writes that file, and a deliberate exception to "buttons only fill the prompt box".
+ */
+const ruleIo = ($: EngineInterface): RuleIo => ({
+  path: () => (cwd === '' ? '' : `${cwd.replace(/[\\/]+$/, '')}/CLAUDE.md`),
+  exists: path => $.fs.exists(path), read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text),
+  now: () => $.clock.now(), change: fn => update($, ruleOffers, fn),
+  setDone: fn => setFx($, f => ({ ...f, ruleDone: fn(f.ruleDone) })), after: (ms, fn) => $.clock.after(ms, fn),
+})
+
+/** The office's own tools (hooks/own-tools.ts): the tour, remember, the offer of a lasting rule, and the step report. */
 const ownToolIo = ($: EngineInterface): OwnToolIo => ({
   tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
-  remember: (id, input) => rememberCall(memoryIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
+  remember: (id, input) => rememberCall(memoryIo($), id, input), offerRule: (id, input) => offerRule(ruleIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
 })
 
 /** The step tool (hooks/steps.ts): only a specialist at work here reports. */
@@ -313,7 +327,7 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
   return {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
-    artifacts: await read($, artifacts), leftUndone: await read($, leftUndone), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
+    artifacts: await read($, artifacts), leftUndone: await read($, leftUndone), ruleOffers: await read($, ruleOffers), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
     brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options, onboard: await setupCard($),
   }
 }
@@ -354,6 +368,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     choose: async button => { void chooseOnboard(await onboardIo($, opts), button) }, // a step can wait on the question box or a model: the press does not
     ...knowActions(knowIo($)),
     ...leftActions(leftIo($)),
+    ...ruleActions(ruleIo($)),
   }
 }
 
@@ -437,6 +452,7 @@ export const register: Register = (on, options) => {
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
       ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${cwd}`)); await update($, leftUndone, () => items) }],
       ['remember tool', () => $.tool.register(REMEMBER_SPEC)],
+      ['offer rule tool', () => $.tool.register(OFFER_RULE_SPEC)],
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['team pick tool', () => $.tool.register(TEAM_PICK_SPEC)],
       ['setup scout', () => $.agent.register(SCOUT_SPEC)],

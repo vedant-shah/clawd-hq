@@ -52,6 +52,12 @@ test('the plugin\'s step calls and tool-loading rows are hidden; the same rows t
   expect(rowLook(call({ tool: 'mcp__other__step' }), staff)).toBe('show')
 })
 
+test('the offer of a lasting rule is dimmed like the other bookkeeping calls, and shown when it errored', () => {
+  expect(rowLook(call({ tool: 'mcp__clawd-hq__offer_rule', input: { rule: 'Never use tabs' } }), staff)).toBe('dim')
+  expect(rowLook(call({ tool: 'mcp__clawd-hq__offer_rule', isErrored: true }), staff)).toBe('show')
+  expect(rowLook(call({ tool: 'mcp__other__offer_rule' }), staff)).toBe('show')
+})
+
 test('remember, a message to a hired teammate, and the task list are dimmed, never hidden', () => {
   expect(rowLook(call({ tool: 'mcp__clawd-hq__remember', input: { decision: 'Scores live in Postgres' } }), staff)).toBe('dim')
   for (const tool of ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']) expect(rowLook(call({ tool }), staff)).toBe('dim')

@@ -31,7 +31,7 @@ async function rowOf($: Engine, surface: 'terminal' | 'desktop') {
 test('the step tool is registered with the demo and remember tools', async ($, on) => {
   const { tools } = host(on)
   await $.session.start(START)
-  expect(tools).toEqual(['demo', 'remember', 'step', 'team_pick'])
+  expect(tools).toEqual(['demo', 'remember', 'offer_rule', 'step', 'team_pick'])
 })
 
 test('every hire\'s brief carries the line that asks for steps, whatever its type', async ($, on) => {

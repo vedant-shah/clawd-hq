@@ -11,6 +11,7 @@ export const DESCRIPTION_CHARS = 160
 export const MAX_BLURBS = 120
 export const DEMO_TOOL = 'mcp__clawd-hq__demo'
 export const MEM_TOOL = 'mcp__clawd-hq__remember'
+export const RULE_TOOL = 'mcp__clawd-hq__offer_rule'
 export const STEP_TOOL = 'mcp__clawd-hq__step'
 export const TEAM_TOOL = 'mcp__clawd-hq__team_pick'
 // The memory keeps this many entries per project; Clawd and each brief get the newest RECALL.

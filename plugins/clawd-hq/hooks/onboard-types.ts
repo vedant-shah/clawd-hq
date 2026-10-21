@@ -177,8 +177,6 @@ export type OnboardIo = {
   /** The agent types on the laid-off list now: parked earlier, by hand or by a past setup. */
   readonly parked: () => readonly string[]
   readonly allAgentTypes: () => readonly string[]
-  /** The person's answer, saved in Decisions. */
-  readonly decide: (question: string, said: string) => Promise<void>
   readonly card: () => Promise<OnboardCard | undefined>
   readonly setCard: (card: OnboardCard | undefined) => Promise<void>
 }

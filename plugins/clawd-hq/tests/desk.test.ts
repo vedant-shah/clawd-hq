@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { BRIEF_NOTE, boxAnswers, fit, whoOf, oneLine, parseChoices, parseEffort, projectFiles, proposeLayoffs } from '../hooks/desk'
+import { BRIEF_NOTE, fit, whoOf, oneLine, parseChoices, parseEffort, projectFiles, proposeLayoffs } from '../hooks/desk'
 import * as desk from '../hooks/desk'
 
 test('a TypeScript project lays off other stacks and niche domains, never built-ins', () => {
@@ -26,8 +26,8 @@ test('oneLine collapses whitespace and cuts long text with an ellipsis', () => {
   expect(oneLine('   ', 5)).toBe('')
 })
 
-test('decisions are no longer put in Clawd\'s context or in a brief: the helpers that did it are gone', () => {
-  for (const name of ['memoryBlock', 'memoryLines', 'recallNote']) expect(desk).not.toHaveProperty(name)
+test('decisions are no longer put in Clawd\'s context or in a brief, and the question box\'s answers are no longer read for saving: the helpers are gone', () => {
+  for (const name of ['memoryBlock', 'memoryLines', 'recallNote', 'boxAnswers']) expect(desk).not.toHaveProperty(name)
 })
 
 test('the note on every brief tells a specialist to do the work itself and not hire other agents', () => {
@@ -92,16 +92,6 @@ test('a choice is kept whole up to its limit, and cut at a word past it', () => 
   const [choice] = parseChoices(`DECIDED: ${long}`)
   expect(choice!.length).toBeLessThanOrEqual(600)
   expect(choice!.endsWith('…')).toBe(false)
-})
-
-test('the answers in Clawd\'s question box are read by question, a typed reply stands for a question with no pick, and an empty one saves nothing', () => {
-  const input = { questions: [{ question: 'Ship Friday?' }, { question: 'Which colour?' }, {}] }
-  expect(boxAnswers(input, { result: { answers: { 'Ship Friday?': 'Yes' } } })).toEqual([{ question: 'Ship Friday?', said: 'Yes' }])
-  expect(boxAnswers(input, { result: { response: 'Do both' } })).toEqual([
-    { question: 'Ship Friday?', said: 'Do both' }, { question: 'Which colour?', said: 'Do both' }, { question: '', said: 'Do both' },
-  ])
-  expect(boxAnswers({ questions: 'nope' }, { result: { response: 'x' } })).toEqual([])
-  expect(boxAnswers(input, {})).toEqual([])
 })
 
 test('the project\'s files are its top names and one level below, skipping hidden folders and node_modules', async () => {

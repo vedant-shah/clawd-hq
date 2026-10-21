@@ -3,13 +3,13 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Artifact, Badge, Boss, Employee, Fx, KnowState, LeftItem, Memory, Payroll, RuleOffer } from '../types'
 import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart, leftToolUsed, leftTurnStart, leftWatch, type LeftIo } from './left-io'
-import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, boxAnswers, oneLine, parseChoices, parseEffort } from './desk'
+import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, oneLine, parseChoices, parseEffort } from './desk'
 import type { Effort } from './desk'
 import { resumedEffort } from './resume-effort'
 import { parsePairUp } from './pair-up'
 import { cleanArtifacts, hideArtifact, keepArtifact, sweepArtifacts } from './artifacts'
 import type { ArtifactAnswer, ArtifactIo } from './artifacts'
-import { loadMemory, remember, saveBoxAnswer, saveMemory } from './memory-io'
+import { loadMemory, remember, saveMemory } from './memory-io'
 import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, STEP_TOOL } from './constants'
@@ -200,7 +200,6 @@ const memoryIo = ($: EngineInterface): MemoryIo => ({
   warnOnce: text => { if (!isLogbookWarned) $.ui.toast(text); isLogbookWarned = true },
   retitle: () => retitleDecisions(paneIo($)),
   now: () => $.clock.now(),
-  quip: async (text, frames) => { const t = await read($, tick); await setBoss($, b => ({ ...b, quip: { text, until: t + frames } })) },
   byOf: async id => { const one = (await read($, staff)).find(e => e.id === id); return one ? labelOf(one, (await read($, blurbs))[one.type] ?? '') : 'agent' },
 })
 
@@ -295,7 +294,6 @@ const onboardIo = async ($: EngineInterface, opts: BriefingOptions): Promise<Onb
     spawnScout: (brief, check) => runScout(scoutBox, scoutHost($), brief, check, SCOUT_TIMEOUT_MS),
     registerHire: ({ name, description, prompt, skills }) => $.agent.register({ name, description, prompt, skills }).then(() => true, () => false),
     savePayroll: laidOff => savePayroll(payrollIo($), { ...p, laidOff: [...laidOff], isReviewed: true }), // its stacks kept
-    decide: (question, said) => saveBoxAnswer(memoryIo($), question, said),
     card: () => setupCard($), setCard: async card => { await update($, onboard, () => card ?? null) },
   }
 }
@@ -619,14 +617,10 @@ export const register: Register = (on, options) => {
     if (scouted) return ('run' in scouted ? next({ ...e, ...scouted.run } as never) : scouted) as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
     if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); leftToolUsed(tool); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
-    const own = await ownToolAnswer(ownToolIo($), tool, id, input) // the tour, remember, and a specialist's step report
+    const own = await ownToolAnswer(ownToolIo($), tool, id, input) // the tour, the offer of a rule, and a specialist's step report
     if (own) return own as never
-    // What the person answers in Clawd's question box is saved as their decision, each question with its own answer.
-    if (tool === 'AskUserQuestion' && id === undefined) {
-      const ran = await next(e)
-      for (const { question, said } of boxAnswers(input, ran)) await saveBoxAnswer(memoryIo($), question, said)
-      return ran
-    }
+    // What the person answers in Clawd's question box settles the job at hand only: nothing is saved, and his status line stays as it was.
+    if (tool === 'AskUserQuestion' && id === undefined) return next(e)
     if (id === undefined) {
       if (tool !== 'Agent' && tool !== 'Task') await setBoss($, b => ({ ...b, activity: sentenceOf(tool, input) }))
       return next(e)

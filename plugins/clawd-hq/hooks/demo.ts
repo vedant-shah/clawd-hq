@@ -50,7 +50,7 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.work('tdd', 'Bash', { command: 'npm test', description: 'Run the review panel tests' })
       await io.work('data', 'Read', { file_path: 'deals.csv' })
     }],
-    ['Clawd settles what he can and asks you the rest in one question box, at a natural pause. Your answers are saved as decisions.', async () => {
+    ['Clawd settles what he can and asks you the rest in one question box, at a natural pause. Your answer settles the job at hand only.', async () => {
       await io.say('Two questions saved up. I’ll ask them in one go.')
     }],
     ['When an agent fails, it goes home sick and Clawd reacts.', async () => {

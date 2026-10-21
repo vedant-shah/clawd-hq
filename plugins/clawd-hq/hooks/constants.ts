@@ -3,8 +3,6 @@ export const FRAME_MS = 400
 export const CHEER_TICKS = 5
 /** A given name is a word or two; anything longer is cut. */
 export const NAME_CHARS = 40
-/** How much of a question is kept in front of its answer in a saved decision. */
-export const TITLE_CHARS = 600
 export const BLURB_CHARS = 200
 // Agent-written text is cut to one line where it is stored.
 export const DESCRIPTION_CHARS = 160

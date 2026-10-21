@@ -281,6 +281,18 @@ test('the tour brings Settings forward, on the finished list, for the finishers,
   expect(raised().pop()).toBe('clawd-hq')
 })
 
+test('the tour says an answer in the question box settles the job at hand, and no longer says answers are saved as decisions', async ($, on) => {
+  const { clock } = host(on, [])
+  await $.command.run({ command: 'office-demo', args: '' } as never)
+  await clock.advance(6 * 5_000 + 100)
+  await clock.advance(100)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...paneProps('clawd-hq', 'Office') })
+  const caption = await ui.find({ type: 'Text', text: /^🎬 7\/12 · Clawd settles what he can/ })
+  expect(String(caption?.text)).toContain('Your answer settles the job at hand only.')
+  expect(String(caption?.text)).not.toMatch(/saved as decisions/)
+  await ui.unmount()
+})
+
 test('the tour does not reopen a pane the person closed', async ($, on) => {
   const { clock, opened, closePane } = host(on, [])
   await $.command.run({ command: 'office-demo', args: '' } as never)
@@ -301,20 +313,16 @@ test('one pane the host refuses does not stop the others from opening', async ($
   expect(opened[opened.length - 1]).toMatchObject({ id: 'clawd-hq', focus: true })
 })
 
-test('with the host refusing every open and every listing, /office, /office-demo, the demo tool, a memory write and the whole tour finish without throwing', async ($, on) => {
+test('with the host refusing every open and every listing, /office, /office-demo, the demo tool and the whole tour finish without throwing', async ($, on) => {
   const { clock, fail } = host(on)
-  on('tool.call', () => ({ result: { questions: [], answers: { 'Where do scores live?': 'Scores live in Postgres' } } }) as never)
   fail.open = true
   fail.list = true
   await expect($.command.run({ command: 'office', args: '' } as never)).resolves.toMatchObject({ text: expect.stringContaining('Office') })
   await expect($.command.run({ command: 'office-demo', args: '' } as never)).resolves.toMatchObject({ text: expect.stringContaining('tour') })
   await expect($.tool.call({ tool: 'mcp__clawd-hq__demo' } as never)).resolves.toBeDefined()
-  // A decision saved from the question box, while the host refuses everything.
-  await expect($.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Where do scores live?', options: [{ label: 'Scores live in Postgres' }] }] } as never)).resolves.toBeDefined()
   // The tour's own steps raise panes: all thirteen run, and the demo state is cleaned up at the end.
   await clock.advance(13 * 5_000 + 2_000)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...DECISIONS })
-  expect(await ui.find({ type: 'Text', text: /Scores live in Postgres/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /🎬/ })).toBeUndefined()
   await ui.unmount()
 })

@@ -1,13 +1,13 @@
 import { expect, test } from 'claude-code/testing'
-import { DECISIONS, SURFACES, START, host } from './host'
+import { DECISIONS, PANE, SURFACES, START, host } from './host'
 
-// The old decisions file, until the Decisions tab is retired. Nothing but a question-box answer writes to it any more, and what the
-// file holds is the only way to fill the tab. The mechanics of writing it (notes kept, an unreadable file never overwritten, a folder
-// that cannot be written to) are held by hooks/logbook.ts's and hooks/memory-io.ts's own tests, with a file system in memory.
+// The old decisions file, until the Decisions tab is retired. Nothing writes to it any more except a key choice a specialist
+// reports, and what the file holds is the only other way to fill the tab. The mechanics of writing it (notes kept, an unreadable
+// file never overwritten, a folder that cannot be written to) are held by hooks/logbook.ts's and hooks/memory-io.ts's own tests.
 
 const FILE = '/repo/.clawd-hq/decisions.md'
-const drawn = async ($: Parameters<Parameters<typeof test>[1]>[0], surface: 'terminal' | 'desktop') => {
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
+const drawn = async ($: Parameters<Parameters<typeof test>[1]>[0], surface: 'terminal' | 'desktop', pane = DECISIONS) => {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
   const text = JSON.stringify(await ui.drawn())
   await ui.unmount()
   return text
@@ -42,7 +42,7 @@ test('forgetting a decision removes its line from the file', async ($, on) => {
   expect(files.get(FILE)).not.toContain('Forget me')
 })
 
-// ---- What is saved is saved whole ----
+// ---- Answers in the question box are not saved ----
 
 // The engine hands a question box's answers back as a map from each question's text to its answer, beside a `text` the model reads.
 const boxResult = (answers: Record<string, string>, response?: string) => ({
@@ -52,51 +52,30 @@ const boxResult = (answers: Record<string, string>, response?: string) => ({
 const ask = ($: Parameters<Parameters<typeof test>[1]>[0], questions: string[]) =>
   $.tool.call({ tool: 'AskUserQuestion', questions: questions.map(question => ({ question, options: [{ label: 'A' }, { label: 'B' }] })) } as never)
 
-test('your answer in a question box is saved whole, however long', async ($, on) => {
+test('an answer in a question box settles the job at hand only: nothing is saved, nothing is said about it, and the answer still reaches Clawd', async ($, on) => {
   const { files } = host(on)
-  const answer = `Start fresh, and ${'keep the old ones where they are for now, '.repeat(6)}then decide later`
-  expect(answer.length).toBeGreaterThan(200)
-  on('tool.call', () => boxResult({ 'What happens to the old decisions?': answer }) as never)
-  await $.session.start(START)
-  await ask($, ['What happens to the old decisions?'])
-  expect(files.get(FILE)).toContain(`What happens to the old decisions? → ${answer}`)
-  expect(files.get(FILE)).not.toMatch(/…|The user answered/)
-})
-
-test('each question in a box is saved with its own answer, not with the whole reply', async ($, on) => {
-  const { files } = host(on)
-  on('tool.call', () => boxResult({ 'Which format?': 'Markdown', 'Copy the old ones?': 'Start fresh' }) as never)
-  await $.session.start(START)
-  await ask($, ['Which format?', 'Copy the old ones?'])
-  const text = files.get(FILE)!
-  expect(text).toMatch(/· Which format\? → Markdown\n/)
-  expect(text).toMatch(/· Copy the old ones\? → Start fresh\n/)
-  expect(text).not.toContain('The user answered')
-})
-
-test('a question you left unanswered in a box saves no decision; a typed reply with no picks is saved for it', async ($, on) => {
-  const { files } = host(on)
-  let reply: ReturnType<typeof boxResult> = boxResult({ 'Which format?': 'Markdown' })
+  let reply: ReturnType<typeof boxResult> = boxResult({ 'Which format?': 'Markdown', 'Copy the old ones?': 'Start fresh' })
   on('tool.call', () => reply as never)
   await $.session.start(START)
-  await ask($, ['Which format?', 'Skipped one?'])
-  expect(files.get(FILE)).toContain('Which format? → Markdown')
-  expect(files.get(FILE)).not.toContain('Skipped one?')
-
+  const answered = await ask($, ['Which format?', 'Copy the old ones?'])
+  expect(answered).toEqual(reply)
+  // A typed reply with no picks is no different.
   reply = boxResult({}, 'Do it the simple way')
-  await ask($, ['How should it work?'])
-  expect(files.get(FILE)).toContain('How should it work? → Do it the simple way')
+  expect(await ask($, ['How should it work?'])).toEqual(reply)
+
+  expect(files.has(FILE)).toBe(false)
+  for (const surface of SURFACES) {
+    expect(await drawn($, surface)).not.toMatch(/Markdown|Start fresh|simple way/)
+    expect(await drawn($, surface, PANE)).not.toMatch(/On it, boss/)
+  }
 })
 
-test('a very long question never pushes its answer out of the saved decision', async ($, on) => {
+test('an old decisions file is left exactly as it is by an answer in the question box', async ($, on) => {
   const { files } = host(on)
-  const question = `Should we ${'keep going with this plan and '.repeat(90)}ship?`
-  expect(question.length).toBeGreaterThan(2300)
-  on('tool.call', () => boxResult({ [question]: 'Yes' }) as never)
+  const old = '# Clawd HQ decisions\n\n- M1 · 2026-10-10 14:03 · decision · CEO · desk · Keep it simple\n'
+  files.set(FILE, old)
+  on('tool.call', () => boxResult({ 'Which format?': 'Markdown' }) as never)
   await $.session.start(START)
-  await ask($, [question])
-  expect(files.get(FILE)).toMatch(/ → Yes\n$/)
-  // And it reads back the same on the next session.
-  await $.session.start(START)
-  expect(await drawn($, 'terminal')).toContain(' → Yes')
+  await ask($, ['Which format?'])
+  expect(files.get(FILE)).toBe(old)
 })

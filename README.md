@@ -62,28 +62,7 @@ Nothing is ever sent for you. Buttons only fill your prompt box.
 
 **How a request flows**
 
-```mermaid
-flowchart TD
-    U["You"] --> C["Clawd, chief of staff"]
-    C --> D{"One or two steps?"}
-    D -- "yes" --> SELF["Clawd does it himself"]
-    D -- "no" --> HIRE
-    subgraph HIRE["Hire, sized to the job"]
-        M["Haiku, Sonnet or Opus"]
-        E["Effort: low to max"]
-        SK["Fitting skills in the brief"]
-    end
-    HIRE --> W["Specialists work<br/>in the background"]
-    W --> BACK
-    SELF --> BACK
-    subgraph BACK["Back with Clawd"]
-        CH["Clawd checks the report"]
-        K["You should know check"]
-        L["Left undone list"]
-        Q["Questions in one box"]
-    end
-    BACK --> R["One plain report to you"]
-```
+<p align="center"><img src="docs/diagrams/flow-request.svg" alt="How a request flows: you talk to Clawd; he does one- or two-step jobs himself or hires a specialist sized to the job; work comes back to Clawd for checks; you get one plain report." width="560"></p>
 
 - You only talk to Clawd. He does one- or two-step jobs himself and hires for the rest.
 - Each hire gets a model and effort sized to the job, and a brief that names the skills that fit.
@@ -92,27 +71,7 @@ flowchart TD
 
 **The ways Clawd can staff a job**
 
-```mermaid
-flowchart TD
-    S["Setup scout, read-only"] -- "picks the team<br/>at first open" --> C["Clawd"]
-    C --> ONE
-    C --> PAIR
-    C --> COUNCIL
-    C -.-> TEAMS
-    subgraph ONE["Single specialist"]
-        O["One desk on the floor"]
-    end
-    subgraph PAIR["Pair-up"]
-        A["Author"] <-->|"one critique round"| B["Critic"]
-    end
-    subgraph COUNCIL["Council"]
-        V["Independent voices"] --> YD["You decide"]
-    end
-    subgraph TEAMS["Agent teams, optional"]
-        T["Off by default"]
-    end
-    style TEAMS stroke-dasharray: 5 5
-```
+<p align="center"><img src="docs/diagrams/flow-staffing.svg" alt="The ways Clawd can staff a job: a setup scout picks the team; then a single specialist, a pair-up of author and critic, a council where you decide, or optional agent teams." width="640"></p>
 
 - **Single specialist.** The usual case. One helper works in the background at its own desk.
 - **Pair-up.** For risky or wide work. Named specialists, such as an author and a critic, message each other directly. After one round of critique, each reports to Clawd. The office shows them as one card.
@@ -189,21 +148,11 @@ Every helper gets its own pixel Clawd, drawn for what it does:
 
 Setup runs on its own the first time. No questions. A card shows what it picked.
 
-```mermaid
-flowchart LR
-    S["Scout reads project<br/>read-only"]
-    S --> P["Plan"]
-    S --> M["Make"]
-    S --> K["Check"]
-    S --> F["Find out"]
-    S --> X["Specialist<br/>up to three"]
-```
+<p align="center"><img src="docs/diagrams/flow-team-pick.svg" alt="The scout reads the project, read-only, and fills the Plan, Make, Check, Find out and up to three Specialist seats." width="560"></p>
 
 - It reads the project and lists the agents and skills you have installed, and picks the team from that list.
 - It counts which helpers you used in past sessions, on this computer.
 - An empty Plan, Make, Check or Find out seat gets Clawd HQ's own Planner, Builder, Reviewer or Researcher.
-- It suggests a first job. You send it yourself.
-
 Type `/office-setup` to run it again.
 
 ## ⚙️ Settings

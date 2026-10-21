@@ -4,13 +4,13 @@
 
 # Clawd HQ
 
-### A Claude Code plugin that turns Claude into your chief of staff.
+### A chief of staff for your Claude Code project.
 
-Clawd hands your work to specialist agents and runs them in the background, so he is always free to talk to you. You watch them work in a live office panel.
+Brief Clawd once. He picks specialists from your installed helpers, runs independent work in the background, and brings back one report. Keep talking while the specialists work.
 
-`always free to talk` · `uses your installed helpers` · `right-sized models` · `live office panel`
+`free to talk` · `uses your installed helpers` · `right-sized models` · `live office panel`
 
-[Features](#-features) · [How it runs](#-how-clawd-runs-the-work) · [The office](#-the-office) · [Setup](#-first-time-setup) · [Privacy](#-privacy)
+[What it does](#-what-it-does) · [How it runs](#-how-clawd-runs-the-work) · [The office](#-the-office) · [Setup](#-first-time-setup) · [Privacy](#-privacy)
 
 </div>
 
@@ -27,36 +27,51 @@ Start a session. The office opens on its own. Type `/office-demo` for a one-minu
 
 Needs Claude Code v2.1.287 or later.
 
-## ✨ Features
+## ✨ What it does
 
-- **Always free to talk.** Clawd hands every job of more than two or three steps to a specialist in the background. Jobs that don't depend on each other run side by side. Ask him anything while three specialists work: he doesn't go heads-down.
+Clawd HQ isn't a new agent runtime. It packages Claude Code's native agents into an opinionated project workflow: delegation by default for larger jobs, model and effort sizing, quiet progress, and a live office panel.
+
+### 1. Stays free to talk
+
+- **Delegates by default.** Clawd hands every job of more than two or three steps to a specialist in the background. Jobs that don't depend on each other run side by side. Ask him anything while three specialists work.
+- **Specialists don't stall.** They never stop mid-run for a question. They make their best call, finish the job, and list their assumptions and questions at the end for Clawd.
+- **Steer a running specialist.** Clawd can message any running specialist, so you can change or add to a brief without restarting the job.
+- **One report.** Questions come to you in one box (up to four) at a pause. Quiet chat hides "finished" notices. Failures and questions always show.
+
+Free to talk is the aim, not a promise. Short direct jobs (a single command, a line or two) Clawd does himself, and then you wait.
+
+### 2. Right team, right size
+
 - **Uses what you already have.** Setup picks your team from the agents and skills you have installed. Each brief names the installed skills that fit the job. Nothing new to download.
 - **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus.
-- **Recap.** Back from a break? Clawd's card shows where you were and the next step.
-- **You should know.** A small model checks each report against what was done. It speaks only when it matters.
-- **Left undone.** Lists work that was put off, like TODOs and skipped tests. "Do it now" puts it in your prompt box.
-- **Coffee break.** Compacts a long chat at a calm moment, never mid-build.
 - **Pair-ups.** Two or more specialists check each other on risky work.
-- **Artifact Desk.** Every page Claude publishes on claude.ai, one click away.
 - **Lay off unused helpers.** Keeps Clawd's choices short. One tap brings any back.
-- **Edit Clawd.** Change his rules or voice in plain words, from Settings.
-- **Your decisions stick.** What you answer in Clawd's question box goes into every brief.
-<!-- CHANGING: the separate decisions file (.clawd-hq/decisions.md) is being removed. A button will put "Add this rule to the project's CLAUDE.md: <rule>" in your prompt box instead, and you send it yourself. Rewrite this item when that lands. -->
+- **Edit Clawd.** Change his rules or voice in plain words, from Settings. A short set of core rules is locked in code, so no edit can remove them. One click on Reset goes back to the built-in text.
 
-Nothing is ever sent for you. Buttons only fill your prompt box.
+### 3. Checks, and keeps you oriented
+
+- **You should know.** Builds on Claude Code's built-in "You should know". A small Haiku model re-checks each finished job for claims the steps don't back up, hidden failures and broken rules. It speaks only when it matters, backs off if you ignore it, and quiets Claude Code's own banner while the office is open, so you aren't told twice. Every card has **Ask Clawd**.
+- **Left undone.** Lists work that was put off, like TODOs and skipped tests. "Do it now" puts it in your prompt box.
+- **Recap.** Back from a break? Clawd's card shows where you were and the next step. It asks one short question on the chat Claude Code has already cached.
+- **Coffee break.** Compacts a long chat at a calm moment, never mid-build.
+- **Lasting rules, on your say-so.** When you state a rule for later work ("always", "from now on"), Clawd offers it on a card. One press adds that exact line to the project's CLAUDE.md, which every specialist already reads. An answer in the question box settles only the job at hand.
+- **Artifact Desk.** Every page Claude publishes on claude.ai, one click away.
+
+Every check can be turned off in Settings. Nothing is ever sent for you. Buttons fill your prompt box; the one exception is "Add to CLAUDE.md", which writes the line you see.
 
 ## 🔁 What changes
 
+Claude Code already runs subagents in the background, with a model and effort per agent ([docs](https://code.claude.com/docs/en/sub-agents)). Clawd HQ sets that up for you and adds the workflow around it.
+
 | | Plain Claude Code | With Clawd HQ |
 | --- | --- | --- |
-| While work runs | You wait for Claude | Clawd is free to talk |
-| Who does the work | Claude, in your chat | Specialists, in the background |
-| Which model | One model for everything | The smallest model that can do each job |
-| Questions | One at a time, any time | Up to four in one box, at a pause |
+| Delegation | Claude decides case by case | Larger jobs go to specialists by default |
+| Choosing models | You or each agent file set them | Clawd sizes model and effort per job |
+| Questions | Come as they arise | Up to four in one box, at a pause |
+| Progress | Raw tool rows in the chat | Plain-words steps in a live office panel |
 
 - Clawd does one-step jobs himself. Anything bigger goes to a specialist.
-- Each brief carries your past decisions, so you aren't asked twice.
-- Quiet chat hides "finished" notices. Failures and questions always show.
+- Lasting rules live in your CLAUDE.md, so you aren't asked twice.
 
 ## 🧭 How Clawd runs the work
 
@@ -139,12 +154,10 @@ Every helper gets its own pixel Clawd, drawn for what it does:
 - **Multi-session tools make you run each session.** Here the chat hands out the work.
 - **Workflow kits make you drive them with commands.** Clawd picks the helper and model himself.
 - **Big catalogs give you hundreds of agents.** Setup picks a small team from what you already use.
-- **It checks the work.** "You should know" and "Left undone" catch what reports leave out.
+- **One office per project.** In other offices, every hire starts with picking a repo. Here the office is the project, so you never pick one.
 - **It needs nothing else.** It ships its own Planner, Builder, Reviewer and Researcher.
 
 ## 🚀 First-time setup
-
-<!-- CHANGING: setup is becoming silent. It will ask no questions and be on by default, with switches in Settings. Check this section against the code when it lands. -->
 
 Setup runs on its own the first time. No questions. A card shows what it picked.
 
@@ -153,7 +166,8 @@ Setup runs on its own the first time. No questions. A card shows what it picked.
 - It reads the project and lists the agents and skills you have installed, and picks the team from that list.
 - It counts which helpers you used in past sessions, on this computer.
 - An empty Plan, Make, Check or Find out seat gets Clawd HQ's own Planner, Builder, Reviewer or Researcher.
-Type `/office-setup` to run it again.
+
+Type `/office-setup` to run it again. Turn off "Automatic setup" in Settings if you'd rather start it yourself.
 
 ## ⚙️ Settings
 
@@ -166,6 +180,7 @@ All on by default. Flip them in the Settings tab.
 | --- | --- |
 | Clawd runs the chat | Claude behaves as usual. You keep the panel. |
 | Quiet chat | The chat shows every row. |
+| Automatic setup | Setup runs only when you type `/office-setup`. |
 | Recap on Clawd's card | No recap is made. |
 | You should know | Finished work isn't checked. Claude Code's own note works as usual. |
 | Left undone check | The model check is skipped. Code markers are still read. |
@@ -184,7 +199,7 @@ Most of it runs on your machine. Model calls use your plan.
 
 | When | Model | What it sees |
 | --- | --- | --- |
-| Setup picks a team | Sonnet, read-only | Files in this project it opens (no content search, no secret-named files, nothing outside the folder), plus your helpers' names and use counts. About $0.15 per project ($0.13 to $0.18 across 11 real projects). |
+| Setup picks a team | Sonnet, read-only | Files in this project it opens (no content search, no secret-named files, nothing outside the folder), plus your helpers' names and use counts. About $0.15 per project on API billing ($0.13 to $0.18 across 11 real projects). |
 | Setup fallback | Opus, once | A project summary, the README, your instruction files, helper names and counts |
 | Setup writes your workflow | Haiku | Your instruction files |
 | Recap | The session's model | One short question on the cached chat |
@@ -200,6 +215,7 @@ Apart from these calls, the plugin opens no network connections and starts no pr
 <summary>What is stored, and where</summary>
 
 - **Your Claude Code config folder, never your project:** who you laid off, hire counts, the Artifact Desk list, "You should know" notes, and the Left undone list.
+- **Your project's CLAUDE.md:** only the rule lines you add with "Add to CLAUDE.md".
 - **Past sessions:** read on this computer. Only helper names and counts are kept.
 - **Your copies of Clawd's rules and voice:** in `~/.clawd-hq/`, made only when you edit them.
 

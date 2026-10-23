@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Artifact, Badge, Boss, Employee, Fx, KnowState, LeftItem, Memory, Payroll, RuleOffer } from '../types'
+import type { Artifact, Badge, Boss, Employee, Fx, KnowState, LeftItem, Payroll, RuleOffer } from '../types'
 import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart, leftToolUsed, leftTurnStart, leftWatch, type LeftIo } from './left-io'
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, oneLine, parseChoices, parseEffort } from './desk'
 import type { Effort } from './desk'
@@ -9,7 +9,6 @@ import { resumedEffort } from './resume-effort'
 import { parsePairUp } from './pair-up'
 import { cleanArtifacts, hideArtifact, keepArtifact, sweepArtifacts } from './artifacts'
 import type { ArtifactAnswer, ArtifactIo } from './artifacts'
-import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, STEP_TOOL } from './constants'
 import { ownToolAnswer } from './own-tools'
@@ -81,7 +80,6 @@ const tick = atom({ plugin: 'clawd-hq', key: 'tick' } as const, 0)
 const blurbs = atom({ plugin: 'clawd-hq', key: 'blurbs' } as const, {} as Record<string, string>)
 const roster = atom({ plugin: 'clawd-hq', key: 'roster' } as const, {} as Record<string, Badge>)
 const payroll = atom({ plugin: 'clawd-hq', key: 'payroll' } as const, PAYROLL0)
-const memory = atom({ plugin: 'clawd-hq', key: 'memory' } as const, [] as Memory[])
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
 const leftUndone = atom({ plugin: 'clawd-hq', key: 'leftUndone' } as const, [] as LeftItem[])
@@ -211,20 +209,14 @@ const paneIo = ($: EngineInterface): PaneIo => ({
   close: id => $.ui.close({ id }),
 })
 
-// ---- Memory: the project's decisions (hooks/memory-io.ts) ----
-
-/** Set once a write failed this session, so the person is told once and not on every decision. */
-let isLogbookWarned = false
-/** The same for the artifact list. */
+/** Set once a write of the artifact list failed this session, so the person is told once. */
 let isArtifactsWarned = false
 
-const memoryIo = ($: EngineInterface): MemoryIo => ({
-  logbook: { cwd, exists: path => $.fs.exists(path), read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text), now: () => $.clock.now(), held: () => read($, memory) },
-  keep: async list => { await update($, memory, () => list) },
-  warnOnce: text => { if (!isLogbookWarned) $.ui.toast(text); isLogbookWarned = true },
-  now: () => $.clock.now(),
-  byOf: async id => { const one = (await read($, staff)).find(e => e.id === id); return one ? labelOf(one, (await read($, blurbs))[one.type] ?? '') : 'agent' },
-})
+/** The name an agent's work is filed under; 'agent' when it is not on the books. */
+const byOf = async ($: EngineInterface, id: string) => {
+  const one = (await read($, staff)).find(e => e.id === id)
+  return one ? labelOf(one, (await read($, blurbs))[one.type] ?? '') : 'agent'
+}
 
 // ---- Payroll: which agent types Clawd is offered (hooks/payroll.ts) ----
 
@@ -248,7 +240,7 @@ const artifactIo = ($: EngineInterface): ArtifactIo => ({
 /** Left undone (hooks/left-io.ts): work put off, kept per project folder. The Do it now button reuses the heads-up card's prompt fill. */
 const leftIo = ($: EngineInterface): LeftIo => ({
   folder: () => cwd, now: () => $.clock.now(), change: fn => update($, leftUndone, fn), save: (folder, list) => $.store.set(`leftUndone:${folder}`, list),
-  read: path => $.fs.read(path), complete: ask => $.model.complete(ask), fillPrompt: text => knowIo($).fillPrompt(text), byOf: id => memoryIo($).byOf(id),
+  read: path => $.fs.read(path), complete: ask => $.model.complete(ask), fillPrompt: text => knowIo($).fillPrompt(text), byOf: id => byOf($, id),
 })
 
 /**
@@ -461,7 +453,6 @@ export const register: Register = (on, options) => {
     reach = REACH0
     isEditTurn = false
     resetPayroll()
-    isLogbookWarned = false
     isArtifactsWarned = false
     // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.
     setRecapOn(() => brief.isRecapOn)

@@ -1,16 +1,15 @@
-// The project's old decisions file, seeded by hand. Nothing writes decisions any more, so a test of the Decisions tab (until it is
-// retired) starts from a file such as an earlier version left, as the plugin once wrote it.
-import { toMarkdown } from '../hooks/logbook'
-import type { Memory } from '../types'
+// The project's old decisions file, seeded by hand. Clawd HQ no longer reads or writes it, so a test that wants to show that
+// starts from a file such as an earlier version left, in the form it was written.
 
 export const DECISIONS_FILE = '/repo/.clawd-hq/decisions.md'
 
-export type Seed = { text: string; kind?: Memory['kind']; by?: string }
+export type Seed = { text: string; kind?: 'decision' | 'choice'; by?: string }
+
+const HEADER = '# Clawd HQ decisions\n\nWhat you decided and what your agents chose, one line each, oldest first.\n\n'
 
 /** Puts these entries, oldest first, in the old decisions file of `files` (the host's in-memory file system). The ids run M1, M2, ... */
 export function seedDecisions(files: Map<string, string>, entries: readonly Seed[]) {
-  const list = entries.map((one, i): Memory => ({
-    id: `M${i + 1}`, kind: one.kind ?? 'decision', text: one.text.replace(/\s+/g, ' ').trim(), by: one.by ?? 'CEO', at: Date.UTC(2026, 9, 10, 14, i), source: 'desk',
-  }))
-  files.set(DECISIONS_FILE, toMarkdown(list))
+  const lines = entries.map((one, i) =>
+    `- M${i + 1} · 2026-10-10 14:${String(i % 60).padStart(2, '0')} · ${one.kind ?? 'decision'} · ${one.by ?? 'CEO'} · desk · ${one.text.replace(/\s+/g, ' ').trim()}\n`)
+  files.set(DECISIONS_FILE, `${HEADER}${lines.join('')}`)
 }

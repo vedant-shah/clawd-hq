@@ -47,16 +47,6 @@ export type Employee = {
   choices?: string[]
 }
 
-/** One thing Clawd remembers for this project: a decision the user made, or a key choice an agent came back with. */
-export type Memory = {
-  id: string
-  kind: 'decision' | 'choice'
-  text: string
-  by: string
-  at: number
-  source: 'desk' | 'report' | 'clawd'
-}
-
 /** A page on claude.ai that Claude published or opened with the Artifact tool in this project, newest first. */
 export type Artifact = {
   /** Its link, one of the two shapes hooks/artifacts.ts accepts. */
@@ -234,7 +224,6 @@ declare module 'claude-code' {
       blurbs: Record<string, string>
       roster: Record<string, Badge>
       payroll: Payroll
-      memory: Memory[]
       gauge: Gauge
       artifacts: Artifact[]
       leftUndone: LeftItem[]

@@ -11,5 +11,3 @@ export const DEMO_TOOL = 'mcp__clawd-hq__demo'
 export const RULE_TOOL = 'mcp__clawd-hq__offer_rule'
 export const STEP_TOOL = 'mcp__clawd-hq__step'
 export const TEAM_TOOL = 'mcp__clawd-hq__team_pick'
-/** The newest this many decisions are kept: in the file and in the pane. */
-export const MAX_MEMORY = 1000

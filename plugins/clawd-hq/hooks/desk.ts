@@ -20,12 +20,7 @@ export function oneLine(text: string, max: number): string {
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : chars.join('')
 }
 
-/**
- * The most that is kept of anything saved as a decision or a choice. Saved text is kept whole; this only stops a
- * runaway one, at a word and without a mark, so a saved line never ends in an ellipsis that hides the answer.
- */
-export const SAVED_CHARS = 2000
-/** A specialist's own choice is a note, and the newest notes ride along in every brief, so it gets a tighter stop. */
+/** A specialist's reported choice is a note on its record, so it is kept to this, at a word and without a mark. */
 const CHOICE_CHARS = 600
 
 /** One line like `oneLine`, but cut at a word and without a mark: for text the pane wraps, where an ellipsis would only hide words. */

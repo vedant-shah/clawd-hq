@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { BRIEF_NOTE, fit, whoOf, oneLine, parseChoices, parseEffort, projectFiles, proposeLayoffs } from '../hooks/desk'
+import { BRIEF_NOTE, fit, oneLine, parseChoices, parseEffort, projectFiles, proposeLayoffs } from '../hooks/desk'
 import * as desk from '../hooks/desk'
 
 test('a TypeScript project lays off other stacks and niche domains, never built-ins', () => {
@@ -27,7 +27,7 @@ test('oneLine collapses whitespace and cuts long text with an ellipsis', () => {
 })
 
 test('decisions are no longer put in Clawd\'s context or in a brief, and the question box\'s answers are no longer read for saving: the helpers are gone', () => {
-  for (const name of ['memoryBlock', 'memoryLines', 'recallNote', 'boxAnswers']) expect(desk).not.toHaveProperty(name)
+  for (const name of ['memoryBlock', 'memoryLines', 'recallNote', 'boxAnswers', 'whoOf']) expect(desk).not.toHaveProperty(name)
 })
 
 test('the note on every brief tells a specialist to do the work itself and not hire other agents', () => {
@@ -51,14 +51,6 @@ test('fit collapses whitespace and cuts long text at a word, with no mark', () =
   expect(fit('   ', 5)).toBe('')
   // Whole characters: an emoji is never split in half.
   expect(fit('😀😀😀😀😀😀', 4)).toBe('😀😀😀😀')
-})
-
-test('whoOf reads who something is from: a role, or the role of an older "Name the Role"; CEO and Clawd stay as they are', () => {
-  expect(whoOf('Guard')).toBe('Guard')
-  expect(whoOf('Sage the Guard')).toBe('Guard')
-  expect(whoOf('Bean 71 the Writer')).toBe('Writer')
-  expect(whoOf('CEO')).toBe('CEO')
-  expect(whoOf('Clawd')).toBe('Clawd')
 })
 
 test('the note on every brief asks a specialist to say, in plain words, what step it is on', () => {

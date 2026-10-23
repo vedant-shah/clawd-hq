@@ -9,7 +9,6 @@ import { resumedEffort } from './resume-effort'
 import { parsePairUp } from './pair-up'
 import { cleanArtifacts, hideArtifact, keepArtifact, sweepArtifacts } from './artifacts'
 import type { ArtifactAnswer, ArtifactIo } from './artifacts'
-import { saveMemory } from './memory-io'
 import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, STEP_TOOL } from './constants'
@@ -355,7 +354,7 @@ async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions
 async function panelData($: EngineInterface, options: BriefingOptions): Promise<PanelData> {
   return {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
-    roster: await read($, roster), payroll: await getPayroll($), memory: await read($, memory),
+    roster: await read($, roster), payroll: await getPayroll($),
     artifacts: await read($, artifacts), leftUndone: await read($, leftUndone), ruleOffers: await read($, ruleOffers), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
     brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options, onboard: await setupCard($),
   }
@@ -384,7 +383,6 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     editClawd: async (target, isTerminal) => clawdActions(await clawdIo($, opts)).editClawd(target, isTerminal),
     resetClawd: async part => clawdActions(await clawdIo($, opts)).resetClawd(part),
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
-    forget: id => saveMemory(memoryIo($), list => list.filter(x => x.id !== id)),
     hideArtifact: url => hideArtifact(artifactIo($), cwd, url),
     layOff: type => setLaidOff(payrollIo($), type, true),
     hire: type => setLaidOff(payrollIo($), type, false),

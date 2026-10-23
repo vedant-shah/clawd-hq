@@ -148,7 +148,7 @@ export type Gauge = {
 
 export type Fx = {
   /** What the person typed into each tab's filter. */
-  finds?: { decisions?: string; people?: string }
+  finds?: { people?: string }
   demo?: { step: number; total: number; caption: string }
   /** The payroll review waiting in the People tab: how many agent types this project has no use for, and why. */
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }

@@ -1,7 +1,6 @@
-// What the side panel shows, as pure functions: who is at work, who finished, Clawd's status line, how decisions group.
-import type { Badge, Employee, Memory } from '../types'
+// What the side panel shows, as pure functions: who is at work, who finished, Clawd's status line, the people on the books.
+import type { Badge, Employee } from '../types'
 import { READING_BRIEF } from './activity'
-import { whoOf } from './desk'
 import { ago, bareType, labelOf, roleOf } from './office'
 import type { PanelData } from './panel-types'
 import { withoutStepPrefix } from './steps'
@@ -99,43 +98,12 @@ export function statusOf(isBusy: boolean, working: number, failed: string[]): { 
   return { tone: 'clear', text: working > 0 ? 'Free' : 'All clear' }
 }
 
-// ---- Decisions ----
-
-const MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER']
-
-export function dayLabel(at: number, now: number): string {
-  const [d, n] = [new Date(at), new Date(now)]
-  const base = `${MONTHS[d.getMonth()]} ${d.getDate()}`
-  return d.getFullYear() === n.getFullYear() ? base : `${base}, ${d.getFullYear()}`
-}
-
-const idNumber = (m: Memory) => Number(m.id.slice(1)) || 0
-/** Newest first; entries made in the same instant keep the order they were made in, the last one first. */
-const byNewest = (a: Memory, b: Memory) => b.at - a.at || idNumber(b) - idNumber(a)
-
-/** Entries newest first, grouped by the day they were made. */
-export function groupByDay(entries: Memory[], now: number): Array<{ label: string; entries: Memory[] }> {
-  const groups: Array<{ label: string; entries: Memory[] }> = []
-  for (const m of [...entries].sort(byNewest)) {
-    const label = dayLabel(m.at, now)
-    const last = groups[groups.length - 1]
-    if (last && last.label === label) groups[groups.length - 1] = { label, entries: [...last.entries, m] }
-    else groups.push({ label, entries: [m] })
-  }
-  return groups
-}
-
-/** The newest `limit` entries, newest first. */
-export const newestFirst = (entries: Memory[], limit: number): Memory[] => [...entries].sort(byNewest).slice(0, limit)
+// ---- People ----
 
 const match = (haystack: string[], query: string) => {
   const q = query.trim().toLowerCase()
   return q === '' || haystack.some(h => h.toLowerCase().includes(q))
 }
-
-export const filterMemory = (entries: Memory[], query: string): Memory[] => entries.filter(m => match([m.text, whoOf(m.by)], query))
-
-// ---- People ----
 
 export type Person = { type: string; name: string; plugin: string; jobs: number; blurb: string; isOff: boolean }
 

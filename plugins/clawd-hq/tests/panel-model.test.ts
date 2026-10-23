@@ -1,16 +1,16 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  atWork, buildPeople, newestFirst, recentFailures, canLayOff, dayLabel, doneLine, doneThisSession, filterMemory, groupByDay, pluginOf,
+  atWork, buildPeople, recentFailures, canLayOff, doneLine, doneThisSession, pluginOf,
   modelLabel, splitPeople, statusOf, tokensLabel, workLine,
 } from '../hooks/panel-model'
+import * as model from '../hooks/panel-model'
 import type { Person } from '../hooks/panel-model'
-import type { Employee, Memory } from '../types'
+import type { Employee } from '../types'
 
 const MIN = 60_000
 const emp = (over: Partial<Employee>): Employee => ({
   id: 'a1', type: 'ecc:planner', description: 'Plan it', mood: 'working', tools: 0, startedAt: 0, joinedTick: 0, ...over,
 })
-const mem = (over: Partial<Memory>): Memory => ({ id: 'M1', kind: 'decision', text: 'Use Postgres', by: 'CEO', at: 0, source: 'desk', ...over })
 
 test('a specialist stopped on purpose reads as stopped, not failed: calm line, no red, and Clawd does not report it as a failure', () => {
   const stopped = emp({ mood: 'stopped', startedAt: 0, endedAt: 90_000 })
@@ -116,27 +116,8 @@ test('Clawd\'s status line says what he is doing and never repeats the at-work c
   for (const s of [statusOf(false, 0, []), statusOf(true, 3, []), statusOf(false, 1, ['Reviewer'])]) expect(s.text).not.toMatch(/need|waiting|question/i)
 })
 
-test('a day reads as OCTOBER 10, with the year only when it is not this one', () => {
-  const noon = new Date(2026, 9, 10, 12).getTime()
-  expect(dayLabel(noon, new Date(2026, 9, 11, 9).getTime())).toBe('OCTOBER 10')
-  expect(dayLabel(noon, new Date(2027, 0, 2, 9).getTime())).toBe('OCTOBER 10, 2026')
-})
-
-test('decisions group by day, newest first, and keep both kinds', () => {
-  const at = (d: number, h: number) => new Date(2026, 9, d, h).getTime()
-  const list = [mem({ id: 'M1', at: at(8, 9) }), mem({ id: 'M2', at: at(10, 9), kind: 'choice', by: 'Rex the Reviewer' }), mem({ id: 'M3', at: at(10, 15) })]
-  const groups = groupByDay(list, at(11, 9))
-  expect(groups.map(g => g.label)).toEqual(['OCTOBER 10', 'OCTOBER 8'])
-  expect(groups[0]!.entries.map(e => e.id)).toEqual(['M3', 'M2'])
-  expect(list.map(e => e.id)).toEqual(['M1', 'M2', 'M3'])
-})
-
-test('the filter matches the text or who said it, ignoring case and blanks', () => {
-  const list = [mem({ id: 'M1', text: 'Use Postgres' }), mem({ id: 'M2', text: 'Quiet mode', kind: 'choice', by: 'Rex the Reviewer' })]
-  expect(filterMemory(list, 'postgres').map(e => e.id)).toEqual(['M1'])
-  expect(filterMemory(list, '  REVIEWER ').map(e => e.id)).toEqual(['M2'])
-  expect(filterMemory(list, '   ')).toHaveLength(2)
-  expect(filterMemory(list, 'zzz')).toHaveLength(0)
+test('the panel has no decisions to group, list or filter any more: those helpers are gone', () => {
+  for (const name of ['dayLabel', 'groupByDay', 'newestFirst', 'filterMemory']) expect(model).not.toHaveProperty(name)
 })
 
 test('a type shows its plugin, and only plugin types can be laid off', () => {
@@ -168,31 +149,12 @@ test('recent failures are real specialists that failed lately, newest first', ()
   expect(recentFailures(list, 1000, 950).map(e => e.id)).toEqual(['b', 'a'])
 })
 
-test('decisions made in the same instant come newest id first', () => {
-  const list = [mem({ id: 'M2', at: 5 }), mem({ id: 'M10', at: 5 }), mem({ id: 'M3', at: 5 })]
-  expect(newestFirst(list, 3).map(m => m.id)).toEqual(['M10', 'M3', 'M2'])
-  expect(groupByDay(list, 5)[0]!.entries.map(m => m.id)).toEqual(['M10', 'M3', 'M2'])
-})
-
-test('the newest decisions come first and are cut to the limit', () => {
-  const list = [mem({ id: 'M1', at: 1 }), mem({ id: 'M2', at: 3 }), mem({ id: 'M3', at: 2 })]
-  expect(newestFirst(list, 2).map(m => m.id)).toEqual(['M2', 'M3'])
-  expect(newestFirst(list, 10)).toHaveLength(3)
-})
-
 test('people are built from the books: a plain role name, the plugin, the hire count and whether they are laid off', () => {
   const people = buildPeople(['ecc:planner', 'Explore', 'ecc:planner'], { 'ecc:planner': 'Plans work' }, { 'ecc:planner': { jobs: 4 } }, ['Explore'])
   expect(people).toHaveLength(2)
   const pip = people.find(p => p.type === 'ecc:planner')!
   expect(pip).toMatchObject({ name: 'Planner', plugin: 'ecc', jobs: 4, blurb: 'Plans work', isOff: false })
   expect(people.find(p => p.type === 'Explore')).toMatchObject({ plugin: 'built in', jobs: 0, isOff: true })
-})
-
-test('the memory search matches a note\'s role, not an old made-up name', () => {
-  const list = [mem({ id: 'M1', text: 'Use Postgres', kind: 'choice', by: 'Taro the Tester' }), mem({ id: 'M2', text: 'Quiet mode', kind: 'choice', by: 'Reviewer' })]
-  expect(filterMemory(list, 'tester').map(m => m.id)).toEqual(['M1'])
-  expect(filterMemory(list, 'taro')).toEqual([])
-  expect(filterMemory(list, 'reviewer').map(m => m.id)).toEqual(['M2'])
 })
 
 test('two types with the same role are told apart on the People tab by their type; a role held by one stands alone', () => {

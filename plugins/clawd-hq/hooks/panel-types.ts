@@ -1,5 +1,5 @@
 // What the side panel is handed to draw, and the things it may ask for; register.tsx fills both.
-import type { Artifact, Badge, Boss, ClawdBrief, Employee, Fx, Gauge, KnowState, LeftItem, Memory, Payroll, RuleOffer } from '../types'
+import type { Artifact, Badge, Boss, ClawdBrief, Employee, Fx, Gauge, KnowState, LeftItem, Payroll, RuleOffer } from '../types'
 import type { ClawdActions } from './clawd-edit'
 import type { ConfigField } from './configs'
 import type { BriefPart, BriefingOptions } from './instructions'
@@ -17,7 +17,6 @@ export type PanelData = {
   blurbs: Record<string, string>
   roster: Record<string, Badge>
   payroll: Payroll
-  memory: Memory[]
   /** The pages Claude published or opened in this project, newest first. */
   artifacts: Artifact[]
   /** What Claude or a specialist left unfinished in this project, newest first. */
@@ -37,8 +36,7 @@ export type PanelData = {
 }
 
 export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleActions & OldActions & {
-  setFind: (tab: 'decisions' | 'people', text: string) => unknown
-  forget: (id: string) => unknown
+  setFind: (tab: 'people', text: string) => unknown
   /** The Hide button on an artifact row: that page leaves this project's desk (not claude.ai) until it is published or opened again. */
   hideArtifact: (url: string) => unknown
   layOff: (type: string) => unknown

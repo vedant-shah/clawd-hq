@@ -37,9 +37,6 @@ export function fit(text: string, max: number): string {
   return (space > max / 2 ? cut.slice(0, space) : cut).trimEnd()
 }
 
-/** Who something is from: "Guard", or "Guard" from an older "Sage the Guard"; "CEO" and "Clawd" stay as they are. */
-export const whoOf = (from: string) => from.split(' the ').pop() ?? from
-
 // ---- Payroll ----
 
 /** Stacks an agent type is only useful for, by the files that mark a project as that stack. */

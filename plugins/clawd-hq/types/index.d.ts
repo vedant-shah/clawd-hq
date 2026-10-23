@@ -158,6 +158,8 @@ export type Fx = {
   isLogOpen?: boolean
   /** Why the last press of a config's toggle did not change it; gone once a change goes through. */
   configNote?: string
+  /** The project has an old decisions file and the person has not answered the one-time card about it yet (hooks/old-decisions.ts). */
+  oldDecisions?: true
   /** What the Add to CLAUDE.md button just did, for a few seconds: `at` tells a later note from the one it replaced. */
   ruleDone?: { text: string; at: number }
   /**

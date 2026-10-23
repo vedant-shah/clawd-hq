@@ -66,6 +66,8 @@ import { isCountedTool } from './usage-count'
 import { recordUse } from './use-tally'
 import { scrolled } from './scroll-window'
 import { DEMO_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
+import { checkOld, oldActions } from './old-decisions'
+import type { OldIo } from './old-decisions'
 import { offerRule, ruleActions } from './rule-io'
 import type { RuleIo } from './rule-io'
 import { hire, withChoices, withReport, withSaid, withStep, withTool } from './staff-model'
@@ -263,6 +265,13 @@ const ruleIo = ($: EngineInterface): RuleIo => ({
   setDone: fn => setFx($, f => ({ ...f, ruleDone: fn(f.ruleDone) })), after: (ms, fn) => $.clock.after(ms, fn),
 })
 
+/** The one-time card about an old decisions file (hooks/old-decisions.ts): the plugin only checks that the file is there; it never reads or changes it. */
+const oldIo = ($: EngineInterface): OldIo => ({
+  folder: () => cwd, exists: path => $.fs.exists(path), get: key => $.store.get(key), set: (key, value) => $.store.set(key, value),
+  fill: async text => (await $.prompt.fill({ text, mode: 'append' })).isFilled,
+  show: isShown => setFx($, f => ({ ...f, oldDecisions: isShown ? true : undefined })), toast: text => void $.ui.toast(text),
+})
+
 /** The office's own tools (hooks/own-tools.ts): the tour, the offer of a lasting rule, and the step report. */
 const ownToolIo = ($: EngineInterface): OwnToolIo => ({
   tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
@@ -391,6 +400,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     ...knowActions(knowIo($)),
     ...leftActions(leftIo($)),
     ...ruleActions(ruleIo($)),
+    ...oldActions(oldIo($)),
   }
 }
 
@@ -476,6 +486,7 @@ export const register: Register = (on, options) => {
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
       ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${cwd}`)); await update($, leftUndone, () => items) }],
       ['offer rule tool', () => $.tool.register(OFFER_RULE_SPEC)],
+      ['old decisions card', () => checkOld(oldIo($))],
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['team pick tool', () => $.tool.register(TEAM_PICK_SPEC)],
       ['setup scout', () => $.agent.register(SCOUT_SPEC)],

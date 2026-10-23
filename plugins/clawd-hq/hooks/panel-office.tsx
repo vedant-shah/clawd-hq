@@ -13,6 +13,7 @@ import { overlay } from './pixels'
 import { floorSlots } from './pair-up'
 import { pairDesk } from './panel-pair'
 import { knowSection } from './panel-know'
+import { oldSection } from './panel-old'
 import { ruleSection } from './panel-rules'
 import { leftSection } from './panel-left'
 import { onboardSection } from './panel-onboard'
@@ -187,6 +188,7 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
       {clawdCard(ctx)}
       {knowSection(kit, data, actions)}
       {ruleSection(kit, data, actions)}
+      {oldSection(kit, data, actions)}
       {onboardSection(kit, data.onboard, { choose: actions.choose })}
       {floor(ctx)}
       {leftSection(kit, data, actions)}

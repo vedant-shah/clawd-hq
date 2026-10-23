@@ -6,6 +6,7 @@ import type { BriefPart, BriefingOptions } from './instructions'
 import type { KnowActions } from './know-check'
 import type { LeftActions } from './left-io'
 import type { OnboardButton, OnboardCard } from './onboard-types'
+import type { OldActions } from './old-decisions'
 import type { RuleActions } from './rule-io'
 
 export type PanelData = {
@@ -35,7 +36,7 @@ export type PanelData = {
   onboard?: OnboardCard
 }
 
-export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleActions & {
+export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleActions & OldActions & {
   setFind: (tab: 'decisions' | 'people', text: string) => unknown
   forget: (id: string) => unknown
   /** The Hide button on an artifact row: that page leaves this project's desk (not claude.ai) until it is published or opened again. */

@@ -43,6 +43,7 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 ### 2. Right team, right size
 
 - **Uses what you already have.** Setup picks your team from the agents and skills you have installed. Each brief names the installed skills that fit the job. Nothing new to download.
+- **Contractors.** Clawd searches everything installed before each hire. If only a skill that isn't on your team fits, he hires it for that one job, and offers to make it staff the second time.
 - **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus.
 - **Pair-ups.** Two or more specialists check each other on risky work.
 - **Lay off unused helpers.** Keeps Clawd's choices short. One tap brings any back.

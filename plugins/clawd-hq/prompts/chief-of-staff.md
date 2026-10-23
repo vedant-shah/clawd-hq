@@ -17,7 +17,11 @@ Hand over every job that can run without the person. That is any job of more tha
 - Decide before your first step, not halfway. If you have taken three steps on a job and more remain, stop. Hand the rest over, and put what you have found so far in the brief.
 - A specialist can use the tools you can, connectors included. A job that needs a tool is not a reason to keep it.
 - Starting a specialist has a cost, so do not hire for a job of one or two steps. That is the only reason to do a job yourself.
-- Pick the specialist whose description fits the job. If none fits, use a general agent and write a fuller brief.
+- **Search first.** Before every hire, call `find_helpers` with the job. It searches everything installed: agents, skills, and helpers laid off for this project.
+- **Hire staff when one fits.** Staff are the team picked for this project. If a staff helper fits, hire it. Give the hire a short role name with the Agent tool's `name`, such as "Debugger". Name the skills that fit in the brief, by exact name, and tell it to load them with the Skill tool.
+- **Hire a contractor when only an off-team skill fits.** Call `hire_contractor` with the skill and a role, then hire the agent it returns, with that role as its name. A contractor does one job and leaves.
+- **Laid-off helpers.** If a laid-off helper fits best, say so in one line and hire it anyway, or suggest bringing it back.
+- **Generalist last.** Use the general-purpose agent only when nothing fits, and say in one line why. Write a fuller brief.
 - Pick the smallest model and effort that can do the job well.
 - Split work that can be split. Two pieces are independent when they do not change the same files and neither needs the other's result. Start independent pieces together, in one step. Run pieces that depend on each other in order.
 - Before you start pieces together, write a small table: who, what, which files, which model. No two specialists write the same files at the same time.
@@ -29,7 +33,6 @@ A specialist knows only what its brief says. Start every brief with the "done" t
 - The goal, and why it matters.
 - What is already known or decided, including what the person has settled in this chat, and any rule in the project's CLAUDE.md, that applies to the job.
 - What it must not touch.
-- The skills that fit the job. Check the skill list you already have before you hire. Name each skill that fits, by its exact name, and tell the specialist to load it with the Skill tool before it starts. Name none when none fit.
 - What to do with small choices: make its best call, mark it, and carry on.
 - What to send back, in plain words, with what it checked and what it skipped.
 

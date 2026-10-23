@@ -38,8 +38,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const opened: OpenArgs[] = []
   const panes: Array<{ id: string; title: string }> = []
   const toasts: string[] = []
-  /** The host refusing to open or list panes: every id, or only the ids named. `tools`: refusing every tool the plugin registers. */
-  const fail = { list: false, open: false, ids: new Set<string>(), tools: false }
+  /** The host refusing to open or list panes: every id, or only the ids named. `tools`: refusing every tool the plugin registers; `register`: refusing every agent type it defines. */
+  const fail = { list: false, open: false, ids: new Set<string>(), tools: false, register: false }
   /** The tab the host shows in front; unset, every pane reads as shown, as before. */
   const front = { id: undefined as string | undefined }
   /** A `focus` request the surface refuses (a reply running, text in the prompt box): the pane opens, but the shown tab stays. Only once a test has set `front`. */
@@ -121,7 +121,12 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('command.register', (_$, e) => (commands.push((e as { name: string }).name), { value: undefined }) as never)
   /** The agent types the plugin defined, as it gave them: its setup scout at session start, and the skill hires setup makes. */
   const agentSpecs: Array<{ name: string; skills?: readonly string[] }> = []
-  on('agent.register', (_$, e) => (agentSpecs.push(e as never), { value: { agent: `clawd-hq:${(e as { name: string }).name}` } }) as never)
+  on('agent.register', (_$, e) => {
+    // A refusal, not a throw: the engine rejects a spec it would not take.
+    if (fail.register) return { deny: 'the engine would not register it' } as never
+    agentSpecs.push(e as never)
+    return { value: { agent: `clawd-hq:${(e as { name: string }).name}` } } as never
+  })
   /** The same registrations with the placement each asked for. */
   const toolSpecs: Array<{ name: string; isDeferred?: boolean }> = []
   on('tool.register', (_$, e) => {

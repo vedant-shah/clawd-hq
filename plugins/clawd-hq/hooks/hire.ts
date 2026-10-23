@@ -30,7 +30,7 @@ export type SavedTeam = Team & { readonly hires?: readonly HireSpec[] }
 
 const OWN_PLUGIN = 'clawd-hq'
 const NAME_CHARS = 64
-const HIRE_PROMPT = 'The skill listed for you is preloaded into your context. Follow it for the task you are given, do only that task, and report back plainly: what you did, what you found, and anything left undone.'
+export const HIRE_PROMPT ='The skill listed for you is preloaded into your context. Follow it for the task you are given, do only that task, and report back plainly: what you did, what you found, and anything left undone.'
 const EMPTY_REPORT: HireReport = { parked: 0, hired: [], dropped: [], failed: [] }
 
 const listedAs = (name: string) => `${OWN_PLUGIN}:${name}`
@@ -112,6 +112,23 @@ export async function hireTeam(io: HireIo, team: Team): Promise<HireReport> {
   await io.set(teamKey(io.cwd), { ...team, hires } satisfies SavedTeam).catch(() => undefined)
   const { hired, failed } = await register(io, hires)
   return { parked: isParked ? parkedList.length : 0, hired, dropped, failed, ...(isParked ? {} : { isParkFailed: true as const }) }
+}
+
+/**
+ * Adds one skill to the saved team as a specialist and registers its hire, with the team's other picks, its hires and the parked list left
+ * as they were. This is how a contractor is made staff. A skill that is not in the installed list is not added (a wrong name fails silently).
+ * A save that fails is thrown, so the caller can say so.
+ */
+export async function addSkillHire(io: Pick<HireIo, 'cwd' | 'get' | 'set' | 'breakdown' | 'commands' | 'registerHire'>, skill: string, receipt: string): Promise<HireReport> {
+  const saved = await io.get<SavedTeam>(teamKey(io.cwd)).then(s => s, () => undefined)
+  const base: SavedTeam = Array.isArray(saved?.picks) && Array.isArray(saved.empty) ? saved : { picks: [], empty: [], by: 'rules' }
+  const isThere = base.picks.some(p => p.kind === 'skill' && p.name === skill)
+  const team: Team = { ...base, picks: isThere ? base.picks : [...base.picks, { seat: 'Specialist', name: skill, kind: 'skill', receipt }] }
+  const { hires, dropped } = skillHires(team, await installedSkills(io))
+  if (dropped.includes(skill)) return { ...EMPTY_REPORT, dropped: [skill] }
+  await io.set(teamKey(io.cwd), { ...team, hires } satisfies SavedTeam)
+  const { hired, failed } = await register(io, hires.filter(h => h.skills.includes(skill)))
+  return { parked: 0, hired, dropped, failed }
 }
 
 // ---- Rehire ----

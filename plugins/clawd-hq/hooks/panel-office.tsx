@@ -15,6 +15,7 @@ import { pairDesk } from './panel-pair'
 import { knowSection } from './panel-know'
 import { oldSection } from './panel-old'
 import { ruleSection } from './panel-rules'
+import { contractorSection } from './panel-contractor'
 import { leftSection } from './panel-left'
 import { onboardSection } from './panel-onboard'
 import { LOST_LINE } from './rules-reach'
@@ -189,6 +190,7 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
       {clawdCard(ctx)}
       {knowSection(kit, data, actions)}
       {ruleSection(kit, data, actions)}
+      {contractorSection(kit, data, actions)}
       {oldSection(kit, data, actions)}
       {onboardSection(kit, data.onboard, { choose: actions.choose })}
       {floor(ctx)}

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { Artifact, Badge, Boss, Employee, Fx, KnowState, LeftItem, Payroll, RuleOffer } from '../types'
+import type { Artifact, Badge, Boss, ContractorOffer, Employee, Fx, KnowState, LeftItem, Payroll, RuleOffer } from '../types'
 import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart, leftToolUsed, leftTurnStart, leftWatch, type LeftIo } from './left-io'
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, oneLine, parseChoices, parseEffort } from './desk'
 import type { Effort } from './desk'
@@ -63,8 +63,10 @@ import type { StepIo } from './steps'
 import { isCountedTool } from './usage-count'
 import { recordUse } from './use-tally'
 import { scrolled } from './scroll-window'
-import { DEMO_SPEC, FIND_HELPERS_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
+import { DEMO_SPEC, FIND_HELPERS_SPEC, HIRE_CONTRACTOR_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
 import { findHelpers } from './find-helpers'
+import { contractorActions, hireContractor } from './contractor'
+import type { ContractorIo } from './contractor'
 import { checkOld, oldActions } from './old-decisions'
 import type { OldIo } from './old-decisions'
 import { offerRule, ruleActions } from './rule-io'
@@ -85,6 +87,7 @@ const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
 const leftUndone = atom({ plugin: 'clawd-hq', key: 'leftUndone' } as const, [] as LeftItem[])
 const ruleOffers = atom({ plugin: 'clawd-hq', key: 'ruleOffers' } as const, [] as RuleOffer[])
+const contractorOffers = atom({ plugin: 'clawd-hq', key: 'contractorOffers' } as const, [] as ContractorOffer[])
 const know = atom({ plugin: 'clawd-hq', key: 'know' } as const, KNOW0)
 const clawdBrief = atom({ plugin: 'clawd-hq', key: 'brief' } as const, BRIEF0)
 const onboard = atom({ plugin: 'clawd-hq', key: 'onboard' } as const, null as OnboardCard | null)
@@ -266,8 +269,12 @@ const oldIo = ($: EngineInterface): OldIo => ({
 const ownToolIo = ($: EngineInterface, opts: BriefingOptions): OwnToolIo => ({
   tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
   offerRule: (id, input) => offerRule(ruleIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
-  find: async (id, input) => findHelpers(await onboardIo($, opts), id, input),
+  find: async (id, input) => findHelpers(await onboardIo($, opts), id, input), contractor: async (id, input) => hireContractor(await contractorIo($, opts), id, input),
 })
+
+/** Contractors (hooks/contractor.ts): setup's calls, plus the offers on the Office tab. */
+const contractorIo = async ($: EngineInterface, opts: BriefingOptions): Promise<ContractorIo> =>
+  ({ ...(await onboardIo($, opts)), change: fn => update($, contractorOffers, fn), toast: text => void $.ui.toast(text) })
 
 /** The step tool (hooks/steps.ts): only a specialist at work here reports. */
 const stepIo = ($: EngineInterface): StepIo => ({
@@ -349,7 +356,7 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
   return {
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($),
-    artifacts: await read($, artifacts), leftUndone: await read($, leftUndone), ruleOffers: await read($, ruleOffers), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
+    artifacts: await read($, artifacts), leftUndone: await read($, leftUndone), ruleOffers: await read($, ruleOffers), contractorOffers: await read($, contractorOffers), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
     brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options, onboard: await setupCard($),
   }
 }
@@ -390,6 +397,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     ...knowActions(knowIo($)),
     ...leftActions(leftIo($)),
     ...ruleActions(ruleIo($)),
+    ...contractorActions(() => contractorIo($, opts)),
     ...oldActions(oldIo($)),
   }
 }
@@ -477,6 +485,7 @@ export const register: Register = (on, options) => {
       ['old decisions card', () => checkOld(oldIo($))],
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['find helpers tool', () => $.tool.register(FIND_HELPERS_SPEC)],
+      ['contractor tool', () => $.tool.register(HIRE_CONTRACTOR_SPEC)],
       ['team pick tool', () => $.tool.register(TEAM_PICK_SPEC)],
       ['setup scout', () => $.agent.register(SCOUT_SPEC)],
       ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames

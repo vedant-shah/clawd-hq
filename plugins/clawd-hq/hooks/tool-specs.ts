@@ -47,6 +47,24 @@ export const FIND_HELPERS_SPEC: ToolSpec = {
   },
 }
 
+export const HIRE_CONTRACTOR_SPEC: ToolSpec = {
+  name: 'hire_contractor',
+  // In the prompt's own list: find_helpers sends Clawd here for an off-team skill, so he should not have to search for it first.
+  isDeferred: false,
+  description:
+    'For Clawd, in the main chat: hire an installed skill that is not on the team (find_helpers says "not on team") as a contractor for one job. ' +
+    'Give the skill\'s exact name and a short role such as “Designer”. It sets up a one-job agent that has the skill loaded, and tells you the agent type to ' +
+    'hire with the Agent tool (give that hire the role as its name). The contractor leaves when the job ends. A specialist cannot use it.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      skill: { type: 'string', description: 'The exact name of an installed skill, as find_helpers gives it.' },
+      role: { type: 'string', description: 'A short title for the job, e.g. “Designer”. At most 30 characters.' },
+    },
+    required: ['skill', 'role'],
+  },
+}
+
 export const OFFER_RULE_SPEC: ToolSpec = {
   name: 'offer_rule',
   description:

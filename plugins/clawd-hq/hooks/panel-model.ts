@@ -1,6 +1,7 @@
 // What the side panel shows, as pure functions: who is at work, who finished, Clawd's status line, the people on the books.
 import type { Badge, Employee } from '../types'
 import { READING_BRIEF } from './activity'
+import { isContractorType } from './contractor-name'
 import { ago, bareType, labelOf, roleOf, typeTag } from './office'
 import type { PanelData } from './panel-types'
 import { withoutStepPrefix } from './steps'
@@ -19,10 +20,15 @@ export function tokensLabel(n = 0): string {
 /** "Tester", or "Designer" for one given that name: what this specialist is called, in one or two plain words. */
 export const titled = (one: Employee, data: Pick<PanelData, 'blurbs'>) => labelOf(one, data.blurbs[one.type] ?? '')
 
+/** DECIDED: an ID badge glyph marks a contractor on its card. It is the one the toasts already use for the People Team, and it reads as a visitor's pass. */
+const VISITOR_BADGE = '🪪'
+
 /** The dim second part of a desk card's title, or nothing: " · Builder" for a hire given another name. */
 export const tagged = (one: Employee, data: Pick<PanelData, 'blurbs'>): string | undefined => {
   const tag = typeTag(one, data.blurbs[one.type] ?? '')
-  return tag === undefined ? undefined : ` · ${tag}`
+  if (tag === undefined) return undefined
+  // A contractor wears a visitor badge: an ID badge in front of the word.
+  return isContractorType(one.type) ? ` · ${VISITOR_BADGE} ${tag}` : ` · ${tag}`
 }
 
 export const atWork = (staff: Employee[]): Employee[] => staff.filter(isActive)

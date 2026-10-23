@@ -82,6 +82,16 @@ export type RuleOffer = {
   problem?: string
 }
 
+/** The offer to make a contractor staff (hooks/contractor.ts): shown on the Office tab once a skill has been hired for a second job here; kept for the session only. */
+export type ContractorOffer = {
+  /** The skill's exact name, which is also the offer's id. */
+  id: string
+  /** The role it was last hired as, such as "Designer". */
+  role: string
+  /** How many times it has been hired in this project. */
+  times: number
+}
+
 export type Payroll = { laidOff: string[]; isReviewed: boolean; stacks: string[] }
 
 /** An agent type's place on the books, kept across sessions. */
@@ -228,6 +238,7 @@ declare module 'claude-code' {
       artifacts: Artifact[]
       leftUndone: LeftItem[]
       ruleOffers: RuleOffer[]
+      contractorOffers: ContractorOffer[]
       know: KnowState
       brief: ClawdBrief
       /**

@@ -106,7 +106,9 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     /** The scout's definition, as the plugin registered it at session start. */
     get registered() { return h.agentSpecs.filter(s => s.name === 'scout') },
   }
-  on('command.list', () => ({ value: [{ name: 'ecc:tdd-workflow', description: 'Writes tests first, then the code.', source: 'plugin' }] }) as never)
+  // The engine's command list; a test adds to it for the skills that come past the cut breakdown.
+  const commandList = [{ name: 'ecc:tdd-workflow', description: 'Writes tests first, then the code.', source: 'plugin' }]
+  on('command.list', () => ({ value: commandList }) as never)
   on('prompt.fill', (_$, e) => (calls.fills.push((e as { text: string }).text), { isFilled: true }) as never)
   on('prompt.submit', (_$, e) => (calls.sent.push((e as { text: string }).text), { text: (e as { text: string }).text }) as never)
   on('http.fetch', (_$, e) => (calls.fetches.push(String((e as { url: string }).url)), { value: { status: 500 } }) as never)
@@ -126,7 +128,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     return { model: 'claude-sonnet-5-5', agentId: scout.id }
   })
   on('agent.offer', () => ({ isOffered: true }) as never)
-  return { ...h, models, calls, scout, links, agentList }
+  return { ...h, models, calls, scout, links, agentList, commandList }
 }
 export type OnboardHost = ReturnType<typeof onboardHost>
 

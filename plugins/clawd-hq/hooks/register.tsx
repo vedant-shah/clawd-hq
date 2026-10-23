@@ -63,7 +63,8 @@ import type { StepIo } from './steps'
 import { isCountedTool } from './usage-count'
 import { recordUse } from './use-tally'
 import { scrolled } from './scroll-window'
-import { DEMO_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
+import { DEMO_SPEC, FIND_HELPERS_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
+import { findHelpers } from './find-helpers'
 import { checkOld, oldActions } from './old-decisions'
 import type { OldIo } from './old-decisions'
 import { offerRule, ruleActions } from './rule-io'
@@ -261,10 +262,11 @@ const oldIo = ($: EngineInterface): OldIo => ({
   show: isShown => setFx($, f => ({ ...f, oldDecisions: isShown ? true : undefined })), toast: text => void $.ui.toast(text),
 })
 
-/** The office's own tools (hooks/own-tools.ts): the tour, the offer of a lasting rule, and the step report. */
-const ownToolIo = ($: EngineInterface): OwnToolIo => ({
+/** The office's own tools (hooks/own-tools.ts): the tour, the offer of a lasting rule, the step report, and the search of everything installed. */
+const ownToolIo = ($: EngineInterface, opts: BriefingOptions): OwnToolIo => ({
   tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
   offerRule: (id, input) => offerRule(ruleIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
+  find: async (id, input) => findHelpers(await onboardIo($, opts), id, input),
 })
 
 /** The step tool (hooks/steps.ts): only a specialist at work here reports. */
@@ -474,6 +476,7 @@ export const register: Register = (on, options) => {
       ['offer rule tool', () => $.tool.register(OFFER_RULE_SPEC)],
       ['old decisions card', () => checkOld(oldIo($))],
       ['step tool', () => $.tool.register(STEP_SPEC)],
+      ['find helpers tool', () => $.tool.register(FIND_HELPERS_SPEC)],
       ['team pick tool', () => $.tool.register(TEAM_PICK_SPEC)],
       ['setup scout', () => $.agent.register(SCOUT_SPEC)],
       ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames
@@ -650,7 +653,7 @@ export const register: Register = (on, options) => {
     if (scouted) return ('run' in scouted ? next({ ...e, ...scouted.run } as never) : scouted) as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
     if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); leftToolUsed(tool); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
-    const own = await ownToolAnswer(ownToolIo($), tool, id, input) // the tour, the offer of a rule, and a specialist's step report
+    const own = await ownToolAnswer(ownToolIo($, brief), tool, id, input) // the tour, the offer of a rule, a specialist's step report, and Clawd's search
     if (own) return own as never
     // What the person answers in Clawd's question box settles the job at hand only: nothing is saved, and his status line stays as it was.
     if (tool === 'AskUserQuestion' && id === undefined) return next(e)

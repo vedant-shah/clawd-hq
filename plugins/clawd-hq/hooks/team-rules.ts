@@ -67,7 +67,7 @@ const isToolByName = (c: Candidate) => c.kind === 'skill' && isToolLike(c.id)
 
 // ---- The candidate list (build3.mjs) ----
 
-const idOf = (h: Helper) => (h.name.includes(':') || !h.plugin ? h.name : `${h.plugin}:${h.name}`)
+export const idOf = (h: Helper) => (h.name.includes(':') || !h.plugin ? h.name : `${h.plugin}:${h.name}`)
 const isAllowed = (id: string) => !BUILTINS.has(id) && !OWN_HIRE.test(id)
 const isKept = (c: Candidate) => c.uses > 0 || c.isNamed || c.isOwn
 const isNoise = (c: Candidate) => isToolByName(c)

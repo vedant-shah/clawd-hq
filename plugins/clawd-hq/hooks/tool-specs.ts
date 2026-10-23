@@ -30,6 +30,23 @@ export const STEP_SPEC: ToolSpec = {
   },
 }
 
+export const FIND_HELPERS_SPEC: ToolSpec = {
+  name: 'find_helpers',
+  // In the prompt's own list: Clawd calls it before every hire, so he should not have to search for it first.
+  isDeferred: false,
+  description:
+    'For Clawd, in the main chat: search every installed agent and skill for a job, before you hire anyone. Give a plain description of the work. ' +
+    'It returns the five best fits. Each has a name, a kind (agent or skill), what it does, and a status: staff (on this project\'s team), ' +
+    'laid off (parked for this project) or not on team (installed, not picked). A specialist cannot use it.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'The work to be done, in plain words, e.g. “design the settings page” or “review a Go change for bugs”.' },
+    },
+    required: ['job'],
+  },
+}
+
 export const OFFER_RULE_SPEC: ToolSpec = {
   name: 'offer_rule',
   description:

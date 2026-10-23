@@ -28,10 +28,10 @@ async function rowOf($: Engine, surface: 'terminal' | 'desktop') {
   return { row, texts, bars, glyphs: texts.filter(t => /^━+$|^─+$/.test(t)) }
 }
 
-test('the step tool is registered with the demo and offer_rule tools; there is no remember tool', async ($, on) => {
+test('the step tool is registered with the demo, offer_rule and find_helpers tools; there is no remember tool', async ($, on) => {
   const { tools } = host(on)
   await $.session.start(START)
-  expect(tools).toEqual(['demo', 'offer_rule', 'step', 'team_pick'])
+  expect(tools).toEqual(['demo', 'offer_rule', 'step', 'find_helpers', 'team_pick'])
 })
 
 test('every hire\'s brief carries the line that asks for steps, whatever its type', async ($, on) => {
@@ -184,7 +184,8 @@ test('the step tool is registered in front, not behind a search', async ($, on) 
   await $.session.start(START)
   expect(toolSpecs.find(t => t.name === 'step')?.isDeferred).toBe(false)
   expect(toolSpecs.find(t => t.name === 'team_pick')?.isDeferred).toBe(false) // the scout has no search tool to find it with
-  expect(toolSpecs.filter(t => t.name !== 'step' && t.name !== 'team_pick').every(t => t.isDeferred === undefined)).toBe(true)
+  expect(toolSpecs.find(t => t.name === 'find_helpers')?.isDeferred).toBe(false) // Clawd calls it before every hire
+  expect(toolSpecs.filter(t => !['step', 'team_pick', 'find_helpers'].includes(t.name)).every(t => t.isDeferred === undefined)).toBe(true)
 })
 
 test('after a report the row shows a small bar and the count: line glyphs on the terminal, a thin image elsewhere', async ($, on) => {

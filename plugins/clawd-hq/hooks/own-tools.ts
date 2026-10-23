@@ -1,6 +1,6 @@
-// The tools the office registers for the model (the tour, the offer of a lasting rule, the step report) and what a call of each is answered with.
+// The tools the office registers for the model (the tour, the offer of a lasting rule, the step report, the search for helpers) and what a call of each is answered with.
 // No `$`: what each does comes in as a closure.
-import { DEMO_TOOL, RULE_TOOL, STEP_TOOL } from './constants'
+import { DEMO_TOOL, FIND_TOOL, RULE_TOOL, STEP_TOOL } from './constants'
 import { BRAND } from './office'
 
 /** What the office's own tools may do. */
@@ -11,6 +11,8 @@ export type OwnToolIo = {
   readonly offerRule: (agentId: string | undefined, input: Record<string, unknown>) => Promise<{ readonly result: string } | { readonly deny: string }>
   /** A specialist's report of its steps; only one at work here counts. */
   readonly step: (agentId: string | undefined, input: Record<string, unknown>) => Promise<{ readonly result: string } | { readonly deny: string }>
+  /** Clawd's search of everything installed for a job (hooks/find-helpers.ts); a specialist's call is refused. */
+  readonly find: (agentId: string | undefined, input: Record<string, unknown>) => Promise<{ readonly result: string } | { readonly deny: string }>
 }
 
 const TOUR_TEXT = `The ${BRAND} tour is playing in the side panel for about a minute. If the panel is not visible, the user can type /office.`
@@ -22,5 +24,6 @@ export async function ownToolAnswer(io: OwnToolIo, tool: string, agentId: string
     return { result: TOUR_TEXT }
   }
   if (tool === RULE_TOOL) return io.offerRule(agentId, input)
+  if (tool === FIND_TOOL) return io.find(agentId, input)
   return tool === STEP_TOOL ? io.step(agentId, input) : undefined
 }

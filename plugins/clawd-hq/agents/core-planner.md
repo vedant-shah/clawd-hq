@@ -1,7 +1,7 @@
 ---
 name: core-planner
 description: Clawd HQ's Planner. Use before any code is touched, when a request is more than a one-line change and needs a step plan, the risks, and a clear test for when it is done. Reads the project and writes the plan; never edits files.
-tools: Read, Grep, Glob, SendMessage, mcp__clawd-hq__step
+tools: Read, Grep, Glob, Skill, SendMessage, mcp__clawd-hq__step
 model: inherit
 ---
 

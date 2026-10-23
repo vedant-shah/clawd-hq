@@ -5,7 +5,7 @@ import { clawdMood, poseOf, quipOf } from './clawd-says'
 import { lookAlt, lookOf, stepOf } from './clawd-look'
 import { COFFEE_OFFER_LINE, isDrinking, isOffering } from './coffee-break'
 import { AMBER, GREEN, RED, givenName, hash } from './office'
-import { atWork, deskWords, modelLabel, recentFailures, statusOf, titled, workLine } from './panel-model'
+import { atWork, deskWords, modelLabel, recentFailures, statusOf, tagged, titled, workLine } from './panel-model'
 import { effortLabel } from './usage'
 import { stepCount } from './steps'
 import { splitRecap } from './recap'
@@ -112,6 +112,7 @@ function deskRow(one: Employee, { kit, data }: Ctx) {
   const { said, sentence } = deskWords(one, line)
   // The terminal cannot scale a picture, so a row there gets the tiny 8 by 8 one and its words get the room.
   const look = avatarFor(givenName(one) ?? one.type)
+  const tag = tagged(one, data)
   // At work it blinks now and then and moves what it holds, on a beat of its own.
   const [draw, pose] = [kit.isTerminal ? tinyIcon : assemble, poseOf(data.tick, hash(one.id) % BEATS, true)]
   // Its room is the still picture's; where there is height to spare, the lifted one's too, so what it holds is never cut.
@@ -121,7 +122,7 @@ function deskRow(one: Employee, { kit, data }: Ctx) {
     <Box key={`desk-${one.id}`} borderStyle="round" borderDimColor paddingX={1} flexDirection="row" gap={2} alignItems="center">
       <Box flexShrink={0}>{picture}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
-        <Text wrap="wrap"><Text bold>{titled(one, data)}</Text><Text dimColor>{` ${one.description || one.type}`}</Text></Text>
+        <Text wrap="wrap"><Text bold>{titled(one, data)}</Text>{tag !== undefined && <Text dimColor>{tag}</Text>}<Text dimColor>{` ${one.description || one.type}`}</Text></Text>
         {said !== undefined
           ? [
             <Text key={`said-${one.id}`} italic wrap="wrap">{said}</Text>,

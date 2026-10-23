@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { labelOf, nameLabel, roleOf } from '../hooks/office'
+import { labelOf, nameLabel, roleOf, typeTag } from '../hooks/office'
 
 const GENERAL = 'General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.'
 
@@ -68,4 +68,23 @@ test('a name with no letters is not a label', () => {
 test('a name that repeats the type with its plugin prefix is not a label', () => {
   expect(labelOf({ type: 'ecc:tdd-guide', name: 'ecc:tdd-guide' })).toBe('Tester')
   expect(labelOf({ type: 'ecc:tdd-guide', name: 'ecc:tdd-guide-2' })).toBe('Tester')
+})
+
+// ---- The dim second part of a named hire's title ----
+
+test('a named hire keeps its type as a second part: Debugger · Builder', () => {
+  expect(typeTag({ type: 'clawd-hq:core-builder', name: 'debugger' })).toBe('Builder')
+  expect(typeTag({ type: 'clawd-hq:core-planner', name: 'debugger' })).toBe('Planner')
+  expect(typeTag({ type: 'clawd-hq:core-reviewer', name: 'debugger' })).toBe('Reviewer')
+  expect(typeTag({ type: 'clawd-hq:core-researcher', name: 'debugger' })).toBe('Researcher')
+  expect(typeTag({ type: 'ecc:tdd-guide', name: 'debugger' })).toBe('Tester')
+})
+
+test('the second part is left out when it adds nothing: no name, the same word, or a general agent', () => {
+  expect(typeTag({ type: 'ecc:tdd-guide' })).toBeUndefined()
+  expect(typeTag({ type: 'ecc:tdd-guide', name: 'tester' })).toBeUndefined()
+  expect(typeTag({ type: 'ecc:tdd-guide', name: 'tdd-guide' })).toBeUndefined()
+  expect(typeTag({ type: 'general-purpose', name: 'debugger' }, GENERAL)).toBeUndefined()
+  expect(typeTag({ type: 'general-purpose' }, GENERAL)).toBeUndefined()
+  expect(typeTag({ type: 'ecc:tdd-guide', name: 'ceo' })).toBeUndefined()
 })

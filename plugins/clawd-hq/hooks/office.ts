@@ -1,5 +1,6 @@
 // Pure pieces of the office: who a subagent is, how they look, what they and Clawd say.
 import type { Employee, Badge } from '../types'
+import { CORE_FOUR } from './core-four'
 
 export type Role = {
   key: string
@@ -88,6 +89,17 @@ export function givenName(one: { type: string; name?: string }): string | undefi
 
 /** What a specialist is called, in one or two plain words: the name it was given, else its role. */
 export const labelOf = (one: { type: string; name?: string }, blurb = ''): string => givenName(one) ?? roleOf(one.type, blurb).title
+
+/**
+ * The dim second part of a card's title: what the hire's type is, when the name it was given hides that ("Debugger · Builder").
+ * Left out when there is no name, when it only repeats the type, and for a general agent, which says nothing more.
+ */
+export function typeTag(one: { type: string; name?: string }, blurb = ''): string | undefined {
+  const given = givenName(one)
+  if (given === undefined) return undefined
+  const tag = CORE_FOUR.find(h => h.type === one.type)?.label ?? roleOf(one.type, blurb).title
+  return tag === GENERALIST.title || tag.toLowerCase() === given.toLowerCase() ? undefined : tag
+}
 
 export function clip(text: string, width: number): string {
   if (width <= 1) return ''

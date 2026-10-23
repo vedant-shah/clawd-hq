@@ -432,6 +432,27 @@ test('two named general agents read as their names and get different pictures; t
   }
 })
 
+test('a hire given a name shows it as the card title, with its type as a dim second part; a general agent shows the name alone', async ($, on) => {
+  host(on, [
+    { id: 'b1', type: 'clawd-hq:core-builder', description: 'Find the crash', status: 'running', name: 'debugger' },
+    { id: 'g1', type: 'general-purpose', description: 'Tidy the notes', status: 'running', name: 'editor' },
+  ])
+  let n = 0
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: ['b1', 'g1'][n++] }))
+  await $.agent.spawn({ prompt: 'p', description: 'Find the crash', subagentType: 'clawd-hq:core-builder', name: 'debugger' } as never)
+  await $.agent.spawn({ prompt: 'p', description: 'Tidy the notes', subagentType: 'general-purpose', name: 'editor' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect((await ui.find({ type: 'Text', text: /^Debugger$/ }))?.props.bold).toBe(true)
+    expect((await ui.find({ type: 'Text', text: /^ · Builder$/ }))?.props.dimColor).toBe(true)
+    expect((await ui.find({ type: 'Text', text: /^Editor$/ }))?.props.bold).toBe(true)
+    const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
+    expect(texts.some(t => /Generalist/.test(t))).toBe(false)
+    expect(texts.filter(t => t.startsWith(' · ') && /Builder|Generalist|Editor/.test(t))).toEqual([' · Builder'])
+    await ui.unmount()
+  }
+})
+
 test('an unnamed general agent is a Generalist even when its brief talks of testing and executing', async ($, on) => {
   host(on, [{ id: 'g1', type: 'general-purpose', description: 'Check README against plugin', status: 'running' }])
   on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'g1' }))

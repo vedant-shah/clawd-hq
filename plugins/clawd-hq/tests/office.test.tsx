@@ -6,7 +6,7 @@ import { AMBER, GREEN, RED } from '../hooks/office'
 import { fade, overlay, rasterCells, svgOf, trim, trimLike } from '../hooks/pixels'
 import { BRIEF_NOTE } from '../hooks/desk'
 import { seedDecisions } from './decisions-file'
-import { CLEAR, DECISIONS, HOUR, PANE, PEOPLE, START, SURFACES, host, mountLog, planner } from './host'
+import { CLEAR, HOUR, PANE, PEOPLE, START, SURFACES, host, mountLog, planner } from './host'
 
 test('a spawned architect gets a desk and shows as working', async ($, on) => {
   host(on, [{ id: 'a1', type: 'ecc:architect', description: 'Design scoring', status: 'running' }])
@@ -349,9 +349,7 @@ test('a session end that is not a clear leaves the list alone', { timeoutMs: 15_
 })
 
 test('text agents write is kept to one short line where it is stored (a task is cut at a word, with no mark)', async ($, on) => {
-  const { toasts, files } = host(on, [])
-  const longDecision = `Scores live in Postgres\n${'because it is better '.repeat(30)}`
-  seedDecisions(files, [{ text: longDecision }])
+  const { toasts } = host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
   on('agent.offer', () => ({ isOffered: true }) as never)
   await $.session.start(START)
@@ -374,81 +372,7 @@ test('text agents write is kept to one short line where it is stored (a task is 
     const blurb = await people.find({ type: 'Text', text: /^Plans work before anyone builds/ })
     expect(String(blurb?.text)).not.toContain('\n')
     await people.unmount()
-
-    const decisions = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
-    const decision = await decisions.find({ type: 'Text', text: /Scores live in Postgres/ })
-    expect(String(decision?.text)).not.toContain('\n')
-    // A decision is saved whole: nothing is cut and no mark is added.
-    expect(String(decision?.text)).toContain(`Scores live in Postgres ${'because it is better '.repeat(30)}`.trim())
-    expect(String(decision?.text)).not.toMatch(/…/)
-    await decisions.unmount()
   }
-})
-
-test('the Decisions filter text and results are kept for every drawing of the pane', async ($, on) => {
-  const { files } = host(on)
-  seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations' }])
-  await $.session.start(START)
-  for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
-    await $.ui.input({ plugin: 'clawd-hq', key: 'find-decisions', text: 'drizzle', kind: 'change', surface })
-    expect(await ui.find({ type: 'Text', text: /Scores live/ })).toBeUndefined()
-
-    await ui.unmount()
-
-    const again = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
-    expect((await again.find({ key: 'find-decisions' }))?.props.value).toBe('drizzle')
-    expect(await again.find({ type: 'Text', text: /Use Drizzle/ })).toBeDefined()
-    expect(await again.find({ type: 'Text', text: /Scores live/ })).toBeUndefined()
-    await $.ui.input({ plugin: 'clawd-hq', key: 'find-decisions', text: '', kind: 'change', surface })
-    await again.unmount()
-  }
-})
-
-test('Decisions lists a user decision with a You tag and an agent note, dimmer, with a Note tag and its author', async ($, on) => {
-  const { files } = host(on, [planner])
-  seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations', kind: 'choice', by: 'Planner' }])
-  await $.session.start(START)
-
-  for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...DECISIONS })
-    const you = await ui.find({ type: 'Text', text: /^\s*You\s*$/ })
-    const note = await ui.find({ type: 'Text', text: /Note/ })
-    expect(you).toBeDefined()
-    expect(note).toBeDefined()
-    expect(you?.props.dimColor).toBeUndefined()
-    expect(note?.props.dimColor).toBe(true)
-    const decision = await ui.find({ type: 'Text', text: /Scores live in Postgres/ })
-    const choice = await ui.find({ type: 'Text', text: /Use Drizzle for migrations/ })
-    expect(decision?.props.dimColor).toBeUndefined()
-    expect(String(choice?.text)).toMatch(/Planner.*Use Drizzle/)
-    expect(await ui.find({ type: 'Text', text: /2 total/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Showing/ })).toBeUndefined()
-
-    // Newest first: the note was made last.
-    const texts = (await ui.findAll({ type: 'Text', text: /Postgres|Drizzle/ })).map(t => String(t.text))
-    expect(texts[0]).toMatch(/Drizzle/)
-
-    // The filter narrows the list as it is typed.
-    await $.ui.input({ plugin: 'clawd-hq', key: 'find-decisions', text: 'postgres', kind: 'change', surface })
-    expect(await ui.find({ type: 'Text', text: /Use Drizzle/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /Scores live in Postgres/ })).toBeDefined()
-    await $.ui.input({ plugin: 'clawd-hq', key: 'find-decisions', text: '', kind: 'change', surface })
-    await ui.unmount()
-  }
-})
-
-test('a decision can be forgotten, and a long list says how many are shown', async ($, on) => {
-  const { files } = host(on)
-  seedDecisions(files, [{ text: 'Scores live in Postgres' }, ...Array.from({ length: 45 }, (_, i) => ({ text: `Filler decision number ${i}` }))])
-  await $.session.start(START)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
-  expect(await ui.find({ type: 'Text', text: /Showing 40 of 46/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Scores live in Postgres/ })).toBeUndefined()
-  await ui.press({ key: 'forget-M46' })
-  expect(await ui.find({ type: 'Text', text: /Showing 40 of 45/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Filler decision number 44/ })).toBeUndefined()
-  await ui.unmount()
 })
 
 test('People lists a team member and a laid-off one in their sections, and lay off and hire move them', async ($, on) => {

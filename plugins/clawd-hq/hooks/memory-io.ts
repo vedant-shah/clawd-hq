@@ -11,8 +11,6 @@ export type MemoryIo = {
   keep: (list: Memory[]) => Promise<void>
   /** Shows the text once a session: the first failure is told, the rest are not. */
   warnOnce: (text: string) => void
-  /** The Decisions tab's title follows the count. */
-  retitle: () => Promise<void>
   now: () => Promise<number>
   /** The name an agent's own note is filed under; 'agent' when it is not on the books. */
   byOf: (agentId: string) => Promise<string>
@@ -26,7 +24,6 @@ export async function saveMemory(io: MemoryIo, fn: (list: Memory[]) => Memory[])
   await io.keep(list)
   // The decision stays in this session; the person hears of it once.
   if (!(await saveLogbook(io.logbook, book, list))) io.warnOnce(`Could not save decisions to ${LOGBOOK_FILE}. They are kept for this session only.`)
-  await io.retitle()
 }
 
 export async function remember(io: MemoryIo, m: Omit<Memory, 'id' | 'at'>, supersedes?: string) {

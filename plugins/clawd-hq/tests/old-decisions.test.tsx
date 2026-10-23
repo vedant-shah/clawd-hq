@@ -108,6 +108,16 @@ test('the old file is never changed or removed: not by the card, a press, or a d
   expect([...h.files.keys()]).toEqual([FILE]) // nothing else was written, and nothing was removed
 })
 
+test('the old file is never read: not at session start, not when the office opens, not by the card\'s buttons; there is no Decisions tab to fill from it', async ($, on) => {
+  const h = office(on)
+  h.files.set(FILE, OLD)
+  await $.session.start(START)
+  await $.command.run({ command: 'office', args: '' } as never)
+  await press($, 'Offer them as rules')
+  expect(h.reads.filter(p => p.endsWith('decisions.md'))).toEqual([])
+  expect(h.panes.map(p => p.id)).not.toContain('clawd-hq-decisions')
+})
+
 test('a prompt box that cannot take the text, or a fill that fails, keeps the card and says so', async ($, on) => {
   const h = office(on)
   h.files.set(FILE, OLD)

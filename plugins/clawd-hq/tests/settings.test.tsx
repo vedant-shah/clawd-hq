@@ -379,7 +379,7 @@ test('the list never adds a tab: the host still has the four panes', async ($, o
   await $.command.run({ command: 'office', args: '' } as never)
   const ui = await mountLog($, 'terminal')
   await ui.unmount()
-  expect(panes.map(p => p.title)).toEqual(['Office', 'Decisions', 'People', 'Settings'])
+  expect(panes.map(p => p.title)).toEqual(['Office', 'People', 'Settings'])
 })
 
 // ---- Clawd's instructions, below the switches ----

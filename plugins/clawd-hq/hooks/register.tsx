@@ -9,7 +9,7 @@ import { resumedEffort } from './resume-effort'
 import { parsePairUp } from './pair-up'
 import { cleanArtifacts, hideArtifact, keepArtifact, sweepArtifacts } from './artifacts'
 import type { ArtifactAnswer, ArtifactIo } from './artifacts'
-import { loadMemory, saveMemory } from './memory-io'
+import { saveMemory } from './memory-io'
 import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, STEP_TOOL } from './constants'
@@ -56,7 +56,7 @@ import { isBackgroundHint, isHandback, isNoUpdate, rowLook } from './quiet'
 import { checkHandback, checkOwnTurn, forgetKnow, isWatching, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
-import { PANES, askAgain, askOnAttach, openAtStart, openPanes, pinHeight, raise, retitleDecisions } from './panes'
+import { PANES, askAgain, askOnAttach, openAtStart, openPanes, pinHeight, raise } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -210,7 +210,6 @@ const paneIo = ($: EngineInterface): PaneIo => ({
   open: args => $.ui.open(args),
   list: () => $.ui.panes(),
   close: id => $.ui.close({ id }),
-  decisions: async () => (await read($, memory)).length,
 })
 
 // ---- Memory: the project's decisions (hooks/memory-io.ts) ----
@@ -224,7 +223,6 @@ const memoryIo = ($: EngineInterface): MemoryIo => ({
   logbook: { cwd, exists: path => $.fs.exists(path), read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text), now: () => $.clock.now(), held: () => read($, memory) },
   keep: async list => { await update($, memory, () => list) },
   warnOnce: text => { if (!isLogbookWarned) $.ui.toast(text); isLogbookWarned = true },
-  retitle: () => retitleDecisions(paneIo($)),
   now: () => $.clock.now(),
   byOf: async id => { const one = (await read($, staff)).find(e => e.id === id); return one ? labelOf(one, (await read($, blurbs))[one.type] ?? '') : 'agent' },
 })
@@ -481,7 +479,6 @@ export const register: Register = (on, options) => {
       ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })],
       ['demo tool', () => $.tool.register(DEMO_SPEC)],
       ['payroll', async () => { const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined; if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved })) }],
-      ['decisions', async () => { const recalled = await loadMemory(memoryIo($)); await update($, memory, () => recalled) }],
       // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
       ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${cwd}`)); await update($, leftUndone, () => items) }],
@@ -532,7 +529,7 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'office' }, async $ => {
     await openPanes(paneIo($), true)
-    return { text: `${BRAND} is open: Office · Decisions · People · Settings are the tabs at the top.` }
+    return { text: `${BRAND} is open: Office · People · Settings are the tabs at the top.` }
   })
 
   // The header's context bar and limit countdowns follow the engine's own readings.

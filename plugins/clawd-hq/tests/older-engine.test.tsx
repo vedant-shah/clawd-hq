@@ -53,14 +53,14 @@ test('every tab draws only Text props the 2.1.295 engine takes, on every surface
   for (const surface of SURFACES) {
     for (const pane of ALL_PANES) refused.push(...(await refusedProps($, pane, surface)))
     // Settings after an edit press whose line the box would not take, and with the finished list open.
-    refused.push(...(await refusedProps($, ALL_PANES[3], surface, ['clawd-edit-rules'])))
-    refused.push(...(await refusedProps($, ALL_PANES[3], surface, ['settings-log'])))
+    refused.push(...(await refusedProps($, ALL_PANES[2], surface, ['clawd-edit-rules'])))
+    refused.push(...(await refusedProps($, ALL_PANES[2], surface, ['settings-log'])))
   }
   expect([...new Set(refused)]).toEqual([])
 })
 
 const amber = async ($: Engine) => {
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...ALL_PANES[3] })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...ALL_PANES[2] })
   const line = await ui.find({ type: 'Text', text: /^Couldn't read Clawd's instructions: \S/ })
   const isEmpty = (await ui.find({ type: 'Text', text: /Nothing to show yet/ })) !== undefined
   await ui.unmount()
@@ -90,7 +90,7 @@ test('a start-up step that fails stops none after it: the tab still fills, and a
   const h = office(on)
   h.fail.tools = true
   await $.session.start(START)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...ALL_PANES[3] })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...ALL_PANES[2] })
   expect(await ui.find({ type: 'Text', text: /Nothing to show yet/ })).toBeUndefined()
   expect((await ui.findAll({ type: 'Markdown' })).length).toBeGreaterThan(0)
   await ui.unmount()
@@ -132,7 +132,7 @@ test('the Settings tab shows the instructions and voice boxes, with the text it 
   office(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...ALL_PANES[3] })
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...ALL_PANES[2] })
     expect(await ui.find({ type: 'Text', text: /Nothing to show yet/ })).toBeUndefined()
     expect((await ui.findAll({ type: 'Markdown' })).some(m => String(m.props.text).startsWith('# Clawd\n\n## Rules\n\n- One.'))).toBe(true)
     await ui.unmount()

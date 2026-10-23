@@ -1,7 +1,6 @@
 // One pane of the side panel: the view's body, then the usage footer. The host draws the tabs between the views.
 import { kitOf } from './panel-kit'
 import type { Kit, PanelTools } from './panel-kit'
-import { decisionsTab } from './panel-decisions'
 import { officeTab } from './panel-office'
 import { peopleTab } from './panel-people'
 import { settingsTab } from './panel-settings'
@@ -13,7 +12,6 @@ import type { PaneView } from './panes'
 export type PanelLayout = { columns: number; minHeight?: number | string }
 
 function bodyOf(kit: Kit, data: PanelData, view: PaneView, actions: PanelActions, cw: number) {
-  if (view === 'decisions') return decisionsTab(kit, data, actions)
   if (view === 'people') return peopleTab(kit, data, actions)
   return view === 'settings' ? settingsTab(kit, data, actions) : officeTab(kit, data, actions, cw)
 }

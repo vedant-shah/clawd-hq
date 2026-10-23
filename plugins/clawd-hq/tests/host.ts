@@ -12,11 +12,10 @@ export const paneProps = (requestId: string, title: string, over: Record<string,
 }) as const
 
 export const PANE = paneProps('clawd-hq', 'Office')
-export const DECISIONS = paneProps('clawd-hq-decisions', 'Decisions')
 export const PEOPLE = paneProps('clawd-hq-people', 'People')
 export const SETTINGS = paneProps('clawd-hq-settings', 'Settings')
 /** Every office pane, in tab order. */
-export const ALL_PANES = [PANE, DECISIONS, PEOPLE, SETTINGS] as const
+export const ALL_PANES = [PANE, PEOPLE, SETTINGS] as const
 
 /** The Settings pane showing the finished-work list: the link to it is pressed when the pane is showing the switches. */
 export async function mountLog($: Engine, surface: 'terminal' | 'desktop', over: Record<string, unknown> = {}) {
@@ -54,7 +53,10 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
     if (disk.isExistsFailing) throw new Error('the check itself failed')
     return { value: files.has((e as { path: string }).path) } as never
   })
+  /** The paths the plugin asked to read, in order. */
+  const reads: string[] = []
   on('fs.read', (_$, e) => {
+    reads.push((e as { path: string }).path)
     const text = files.get((e as { path: string }).path)
     if (text === undefined || disk.isReadFailing) throw new Error('ENOENT')
     return { value: text } as never
@@ -155,5 +157,5 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   /** The plugin closing a pane: the ids it asked for, then the same as the person's close. */
   const closed: string[] = []
   on('ui.close', (_$, e) => (closed.push((e as { id: string }).id), closePane((e as { id: string }).id), { value: undefined }) as never)
-  return { clock, opened, closed, toasts, session, compacts, compact, panes, closePane, fail, front, focus, surface, files, disk, saved, kv, commands, tools, toolSpecs, agentSpecs }
+  return { clock, opened, closed, toasts, session, compacts, compact, panes, closePane, fail, front, focus, surface, files, reads, disk, saved, kv, commands, tools, toolSpecs, agentSpecs }
 }

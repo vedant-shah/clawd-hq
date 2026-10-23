@@ -4,7 +4,7 @@ import { clawdAvatar } from '../hooks/avatars'
 import { NAP_MS } from '../hooks/clawd-says'
 import { COFFEE_AFTERGLOW_MS } from '../hooks/coffee-break'
 import { rasterCells, svgOf, trimLike } from '../hooks/pixels'
-import { DECISIONS, PANE, START } from './host'
+import { PANE, PEOPLE, START } from './host'
 import { endTurn, flowHost, job, measure, startTurn } from './flow'
 
 // The runner has a real timer, though its types do not list one.
@@ -85,9 +85,9 @@ async function atBreak($: Engine, h: ReturnType<typeof flowHost>) {
   await measure($, OVER)
 }
 
-/** Presses the button (it is in the footer of every pane; the Decisions pane keeps the Office pane free to look at meanwhile). */
+/** Presses the button (it is in the footer of every pane; the People pane keeps the Office pane free to look at meanwhile). */
 async function press($: Engine) {
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...DECISIONS })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PEOPLE })
   await ui.press(BUTTON)
   await ui.unmount()
 }

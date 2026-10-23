@@ -135,7 +135,6 @@ AT WORK · 3
 - **Usage.** Context, session limit and weekly limit. Amber at 70%, red at 90%.
 
 The other tabs:
-<!-- CHANGING: the Decisions tab is being removed. This list is written for after that change. -->
 
 - **People.** Hire, lay off and search your helpers.
 - **Settings.** The switches, the work finished this session, and Clawd's rules and voice.

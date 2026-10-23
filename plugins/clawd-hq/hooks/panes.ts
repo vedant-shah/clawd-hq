@@ -110,7 +110,7 @@ export const askAgain = (io: PaneIo) => attempt(async () => {
  */
 export const askOnAttach = (io: PaneIo) => attempt(async () => {
   if (!isFocusOwed || !(await isBehind(io))) return
-  await openPane(io, paneOf('office'), await io.decisions(), true)
+  await openPane(io, paneOf('office'), true)
   isFocusOwed = await isBehind(io)
 })
 

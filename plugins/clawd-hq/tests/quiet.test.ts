@@ -58,6 +58,13 @@ test('the offer of a lasting rule is dimmed like the other bookkeeping calls, an
   expect(rowLook(call({ tool: 'mcp__other__offer_rule' }), staff)).toBe('show')
 })
 
+test('the helper search and a contractor hire are dimmed like the other bookkeeping calls, and shown when they errored', () => {
+  for (const tool of ['mcp__clawd-hq__find_helpers', 'mcp__clawd-hq__hire_contractor']) {
+    expect(rowLook(call({ tool, input: { job: 'design the settings page' } }), staff)).toBe('dim')
+    expect(rowLook(call({ tool, isErrored: true }), staff)).toBe('show')
+  }
+})
+
 test('a message to a hired teammate and the task list are dimmed, never hidden; the old remember tool is no longer special', () => {
   expect(rowLook(call({ tool: 'mcp__clawd-hq__remember', input: { decision: 'Scores live in Postgres' } }), staff)).toBe('show')
   for (const tool of ['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet']) expect(rowLook(call({ tool }), staff)).toBe('dim')

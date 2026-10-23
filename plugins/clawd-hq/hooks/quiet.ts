@@ -79,7 +79,7 @@ export function isHandback(row: ChatRow, staff: Employee[]): boolean {
 
 // ---- Small tool rows: the office's own bookkeeping calls are hidden or dimmed, never an error or a question ----
 const STEP_TOOL = 'mcp__clawd-hq__step'
-const OFFER_RULE_TOOL = 'mcp__clawd-hq__offer_rule'
+const DIMMED_OWN_TOOLS: ReadonlySet<string> = new Set(['mcp__clawd-hq__offer_rule', 'mcp__clawd-hq__find_helpers', 'mcp__clawd-hq__hire_contractor'])
 const TOOL_SEARCH = 'ToolSearch'
 const SEND_MESSAGE = 'SendMessage'
 const TASK_LIST_TOOLS: ReadonlySet<string> = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'])
@@ -111,7 +111,7 @@ function isToTeammate(input: unknown, staff: Employee[]): boolean {
 export function rowLook(row: ToolRow, staff: Employee[]): RowLook {
   if (row.isErrored || row.isInterrupted) return 'show'
   if (HIDDEN_TOOLS.has(row.tool)) return 'hide'
-  if (row.tool === OFFER_RULE_TOOL || TASK_LIST_TOOLS.has(row.tool)) return 'dim'
+  if (DIMMED_OWN_TOOLS.has(row.tool) || TASK_LIST_TOOLS.has(row.tool)) return 'dim'
   // A result row carries no input (only the call's answer): Clawd's own SendMessage answer is dimmed with the call.
   if (row.tool === SEND_MESSAGE && (row.input === undefined ? !('input' in row) : isToTeammate(row.input, staff))) return 'dim'
   return 'show'

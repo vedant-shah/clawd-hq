@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { AgentStatus } from 'claude-code'
-import { MAX_STAFF, QUIET_MS, STALE_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, restart, touch, verdict, withSaid, withStep, withTool } from '../hooks/staff-model'
+import { MAX_CHOICES, MAX_STAFF, QUIET_MS, STALE_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, restart, touch, verdict, withChoices, withSaid, withStep, withTool } from '../hooks/staff-model'
 import type { Boss, Employee } from '../types'
 
 const MIN = 60_000
@@ -200,4 +200,29 @@ test('what a specialist says is kept on its record, and the end of a run or a ne
   expect(withStep(talking, usage({ input_tokens: 5 }), 'm', 10).said).toBe('Checking the rules.')
   expect(endRun(talking, 'done', 'signal', 500, 3).said).toBeUndefined()
   expect(restart(endRun(talking, 'done', 'signal', 500, 3), 9_000, 40).said).toBeUndefined()
+})
+
+// ---- The choices a specialist reports (its DECIDED lines) ----
+
+test('choices a specialist reports are added to its record in order, the same one said again (any case or spacing) once', () => {
+  const one = withChoices(emp({}), ['Use Drizzle — typed', 'Keep the table flat'])
+  expect(one.choices).toEqual(['Use Drizzle — typed', 'Keep the table flat'])
+  const more = withChoices(one, ['use  drizzle — TYPED', 'Add an index'])
+  expect(more.choices).toEqual(['Use Drizzle — typed', 'Keep the table flat', 'Add an index'])
+  // The record given in is never changed.
+  expect(one.choices).toEqual(['Use Drizzle — typed', 'Keep the table flat'])
+})
+
+test('a record keeps the newest five choices only', () => {
+  const many = Array.from({ length: MAX_CHOICES + 3 }, (_, i) => `Choice ${i}`)
+  const one = withChoices(emp({}), many)
+  expect(MAX_CHOICES).toBe(5)
+  expect(one.choices).toEqual(many.slice(-MAX_CHOICES))
+})
+
+test('no choices leave the record as it was, with no empty list on it', () => {
+  const one = emp({})
+  expect(withChoices(one, [])).toBe(one)
+  expect(withChoices(one, ['  ', ''])).toBe(one)
+  expect('choices' in withChoices(one, [])).toBe(false)
 })

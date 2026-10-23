@@ -9,7 +9,7 @@ import { resumedEffort } from './resume-effort'
 import { parsePairUp } from './pair-up'
 import { cleanArtifacts, hideArtifact, keepArtifact, sweepArtifacts } from './artifacts'
 import type { ArtifactAnswer, ArtifactIo } from './artifacts'
-import { loadMemory, remember, saveMemory } from './memory-io'
+import { loadMemory, saveMemory } from './memory-io'
 import type { MemoryIo } from './memory-io'
 import { READING_BRIEF, THINKING, narrationOf, sentenceOf } from './activity'
 import { BLURB_CHARS, DEMO_TOOL, FRAME_MS, STEP_TOOL } from './constants'
@@ -68,7 +68,7 @@ import { scrolled } from './scroll-window'
 import { DEMO_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
 import { offerRule, ruleActions } from './rule-io'
 import type { RuleIo } from './rule-io'
-import { hire, withReport, withSaid, withStep, withTool } from './staff-model'
+import { hire, withChoices, withReport, withSaid, withStep, withTool } from './staff-model'
 import { clockOut, hireListed, newHire, reconcile, signOfLife, specialistOf } from './run-io'
 import type { RunIo } from './run-io'
 import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine, reasonOf, runEach, startNote } from './state'
@@ -711,11 +711,12 @@ export const register: Register = (on, options) => {
     if (e.agentId !== undefined) {
       scoutBox.finish(e.agentId) // a scout that ends with no picks sent ends the wait; anyone else is no scout, and nothing happens
       const asker = (await read($, staff)).find(one => one.id === e.agentId)
-      // Key choices the agent made itself go into the project's memory. Its questions stay in its report, for Clawd.
+      // Key choices the agent made itself go on its own record, for this session. Its questions stay in its report, for Clawd.
       if (asker && !asker.id.startsWith(DEMO)) {
         if (e.reason === 'answer') await setBoss($, withHandBack) // work handed back: a checkpoint once Clawd has reported it
         const by = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
-        for (const text of parseChoices(e.answer ?? '')) await remember(memoryIo($), { kind: 'choice', text, by, source: 'report' })
+        const choices = parseChoices(e.answer ?? '')
+        if (choices.length > 0) await update($, staff, l => edit(l, asker.id, one => withChoices(one, choices)))
         // After each hand-back, a check of the work against its report; a note may join Clawd's card.
         if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
         void leftAnswer(leftIo($), e, by)

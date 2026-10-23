@@ -43,6 +43,8 @@ export type Employee = {
   stepBy?: 'tool' | 'words'
   /** Set when Clawd hired it as one of a pair-up (a `PAIR-UP: <goal>` first line in its brief): the job's goal and when it was hired. Members with the same goal hired close together share one card. */
   pair?: { goal: string; at: number }
+  /** The key choices it reported in its hand-backs (its DECIDED lines), oldest first, at most five (hooks/staff-model.ts). Kept for the session only, with the record. */
+  choices?: string[]
 }
 
 /** One thing Clawd remembers for this project: a decision the user made, or a key choice an agent came back with. */

@@ -4,6 +4,7 @@ import { givenName } from './office'
 import { AMBER } from './office'
 import { finishedSlots } from './pair-up'
 import { doneLine, titled } from './panel-model'
+import { choiceLines } from './panel-choices'
 import { pairDone } from './panel-pair'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -11,7 +12,8 @@ import type { Employee } from '../types'
 
 const MAX_ROWS = 40
 
-function row(one: Employee, { Box, Text, sprite, isTerminal }: Kit, data: PanelData) {
+function row(one: Employee, kit: Kit, data: PanelData) {
+  const { Box, Text, sprite, isTerminal } = kit
   const line = doneLine(one, data.now)
   const icon = sprite(`done-${one.id}`, (isTerminal ? tinyIcon : compactIcon)(avatarFor(givenName(one) ?? one.type)), { scale: 3, alt: '', keep: 0.7 })
   const isAlert = line.isFailed || line.isLost
@@ -22,6 +24,7 @@ function row(one: Employee, { Box, Text, sprite, isTerminal }: Kit, data: PanelD
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text wrap="wrap">{titled(one, data)}</Text>
         <Text dimColor wrap="wrap">{one.description || one.type}</Text>
+        {choiceLines(kit, `done-${one.id}`, [one])}
         {isTerminal && <Text color={tookColor} dimColor={!isAlert} wrap="wrap">{`${line.when} · ${line.took}`}</Text>}
       </Box>
       {!isTerminal && (

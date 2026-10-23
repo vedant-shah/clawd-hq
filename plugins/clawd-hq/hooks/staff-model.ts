@@ -81,6 +81,18 @@ export const finishedText = (mood: Mood, prop: string, label: string, e: Employe
 /** A progress report (the step tool's) reaches a specialist only while its run is going; one that ended meanwhile is left as it was. A report is a sign of life. */
 export const withReport = (one: Employee, r: StepReport, now: number): Employee => (isActive(one) ? touch(withProgress(one, r), now) : one)
 
+/** A record keeps the newest this many of the choices its specialist reported. */
+export const MAX_CHOICES = 5
+
+const sameChoice = (a: string, b: string) => a.replace(/\s+/g, ' ').trim().toLowerCase() === b.replace(/\s+/g, ' ').trim().toLowerCase()
+
+/** The specialist with these choices added to its record: the same one said again (any case or spacing) is kept once, the newest five stay. No new choice, no change. */
+export function withChoices(one: Employee, said: readonly string[]): Employee {
+  const added = said.filter(text => text.trim() !== '')
+  const merged = added.reduce<string[]>((list, text) => (list.some(old => sameChoice(old, text)) ? list : [...list, text]), one.choices ?? [])
+  return merged.length === (one.choices ?? []).length ? one : { ...one, choices: merged.slice(-MAX_CHOICES) }
+}
+
 /** A tool call: the specialist is at work, one tool more, and the sentence says on what. One still arriving stays arriving. */
 export const withTool = (one: Employee, activity: string): Employee =>
   ({ ...one, mood: one.mood === 'arriving' ? 'arriving' : 'working', activity, tools: one.tools + 1 })

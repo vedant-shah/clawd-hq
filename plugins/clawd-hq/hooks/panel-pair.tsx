@@ -3,6 +3,7 @@
 import { avatarFor, compactIcon, tinyIcon } from './avatars'
 import { AMBER, ago, givenName } from './office'
 import { isActive, titled } from './panel-model'
+import { choiceLines } from './panel-choices'
 import { pairLine, pairTitle } from './pair-up'
 import type { PairGroup, PairState } from './pair-up'
 import type { Kit } from './panel-kit'
@@ -54,6 +55,7 @@ export function pairDone(kit: Kit, data: PanelData, group: PairGroup) {
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text wrap="wrap">{titleOf(group, data)}</Text>
         <Text dimColor wrap="wrap">{group.goal}</Text>
+        {choiceLines(kit, `done-pair-${first.id}`, group.members)}
         {isTerminal && <Text color={color} dimColor={color === undefined} wrap="wrap">{`${when} · ${text}`}</Text>}
       </Box>
       {!isTerminal && (

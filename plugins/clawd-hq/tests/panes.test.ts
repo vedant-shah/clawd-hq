@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { PANES, askAgain, openAtStart, openPanes, paneOf, pinHeight, type PaneIo } from '../hooks/panes'
+import { PANES, askAgain, askOnAttach, openAtStart, openPanes, paneOf, pinHeight, type PaneIo } from '../hooks/panes'
 
 test('the four panes, in the order the host shows them as tabs, with the office keeping its old id and Settings last', () => {
   expect(PANES.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-settings'])
@@ -52,9 +52,10 @@ function engineIo() {
   const io: PaneIo = {
     open: async a => {
       if (!strip.includes(a.id)) { strip.push(a.id); state.shown = state.focused ?? a.id }
-      if (a.focus === true && !state.isRefusing) { state.shown = a.id; state.focused = a.id }
+      if (a.focus === true && !state.isRefusing && !state.isUnplaced) { state.shown = a.id; state.focused = a.id }
     },
-    list: async () => strip.map(id => ({ id, title: id, isShown: state.shown === id, isFocused: state.focused === id, isPlaced: !state.isUnplaced })),
+    // No surface placing the panes (the desktop before it attaches, a narrow terminal): none is shown or focused.
+    list: async () => strip.map(id => ({ id, title: id, isShown: !state.isUnplaced && state.shown === id, isFocused: state.focused === id, isPlaced: !state.isUnplaced })),
     close: async id => { if (strip.includes(id)) strip.splice(strip.indexOf(id), 1) },
     decisions: async () => 0,
   }
@@ -200,4 +201,54 @@ test('a host that cannot list its panes breaks neither the start nor the second 
   const broken: PaneIo = { ...io, list: async () => { throw new Error('the host cannot list panes') } }
   await expect(openAtStart(broken)).resolves.toBeUndefined()
   await expect(askAgain(broken)).resolves.toBeUndefined()
+})
+
+// ---- The desktop: the session starts before any surface is attached, so the start's request has nothing to land on. ----
+
+/** The desktop at session start: no surface places the panes yet, so the request is lost. Then the app attaches and shows the tab opened last. */
+async function desktopStartsBeforeSurface() {
+  const run = recordingEngine()
+  run.state.isUnplaced = true
+  await openAtStart(run.io)
+  expect(run.state.shown).toBe('clawd-hq-settings')
+  run.state.isUnplaced = false
+  return run
+}
+
+test('the cause: a start made before any surface is attached left nothing owed, so Settings, opened last, stayed in front', async () => {
+  const { io, state, opened } = await desktopStartsBeforeSurface()
+  expect(state.shown).toBe('clawd-hq-settings')
+  await askAgain(io)
+  expect(focusOpens(opened)).toEqual(['clawd-hq', 'clawd-hq'])
+  expect(state.shown).toBe('clawd-hq')
+})
+
+test('when a surface attaches after the start, Office is asked for then; a granted ask leaves nothing owed for the first reply', async () => {
+  const { io, state, opened } = await desktopStartsBeforeSurface()
+  await askOnAttach(io)
+  expect(state.shown).toBe('clawd-hq')
+  state.shown = 'clawd-hq-people'
+  await askAgain(io)
+  expect(state.shown).toBe('clawd-hq-people')
+  expect(focusOpens(opened)).toEqual(['clawd-hq', 'clawd-hq'])
+})
+
+test('an ask on attach that the surface refuses is still made once more after the first reply', async () => {
+  const { io, state, opened } = await desktopStartsBeforeSurface()
+  state.isRefusing = true
+  await askOnAttach(io)
+  expect(state.shown).toBe('clawd-hq-settings')
+  state.isRefusing = false
+  await askAgain(io)
+  expect(state.shown).toBe('clawd-hq')
+  expect(focusOpens(opened)).toHaveLength(3)
+})
+
+test('an attach with nothing owed (a granted start, a reload that left the tabs alone) asks for nothing', async () => {
+  const granted = recordingEngine()
+  await openAtStart(granted.io)
+  granted.state.shown = 'clawd-hq-people'
+  await askOnAttach(granted.io)
+  expect(granted.state.shown).toBe('clawd-hq-people')
+  expect(focusOpens(granted.opened)).toEqual(['clawd-hq'])
 })

@@ -45,6 +45,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const front = { id: undefined as string | undefined }
   /** A `focus` request the surface refuses (a reply running, text in the prompt box): the pane opens, but the shown tab stays. Only once a test has set `front`. */
   const focus = { isRefused: false }
+  /** No surface attached yet (the desktop app starts the session before it draws): panes open undrawn and no focus request is granted. */
+  const surface = { isAbsent: false }
   /** The project's files, in memory: what the plugin writes lands here, and a test seeds it. `isWriteFailing` is a folder it cannot write to, `isReadFailing` a file it cannot read, `isExistsFailing` a check that itself fails. */
   const files = new Map<string, string>()
   const disk = { isWriteFailing: false, isReadFailing: false, isExistsFailing: false }
@@ -82,15 +84,16 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
     const { id, title = id } = e as OpenArgs
     if (fail.open || fail.ids.has(id)) throw new Error('the host refused the pane')
     opened.push(e as OpenArgs)
-    if ((e as OpenArgs).focus === true && front.id !== undefined && !focus.isRefused) front.id = id
+    if ((e as OpenArgs).focus === true && front.id !== undefined && !focus.isRefused && !surface.isAbsent) front.id = id
     const at = panes.findIndex(p => p.id === id)
     if (at >= 0) panes[at] = { id, title }
     else panes.push({ id, title })
-    return { value: { isPlaced: true } } as never
+    return { value: surface.isAbsent ? { isPlaced: false, reason: 'no-surface' } : { isPlaced: true } } as never
   })
   on('ui.panes', () => {
     if (fail.list) throw new Error('the host cannot list panes')
-    return { value: panes.map(p => ({ ...p, isShown: front.id === undefined || front.id === p.id, isFocused: false, isPlaced: true })) } as never
+    // With no surface attached every pane waits undrawn, and none is shown.
+    return { value: panes.map(p => ({ ...p, isShown: !surface.isAbsent && (front.id === undefined || front.id === p.id), isFocused: false, isPlaced: !surface.isAbsent })) } as never
   })
   on('turn.complete', () => ({ text: '' }))
   on('prompt.context', ($, e) => ({ blocks: (e as { blocks: never[] }).blocks }))
@@ -152,5 +155,5 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   /** The plugin closing a pane: the ids it asked for, then the same as the person's close. */
   const closed: string[] = []
   on('ui.close', (_$, e) => (closed.push((e as { id: string }).id), closePane((e as { id: string }).id), { value: undefined }) as never)
-  return { clock, opened, closed, toasts, session, compacts, compact, panes, closePane, fail, front, focus, files, disk, saved, kv, commands, tools, toolSpecs, agentSpecs }
+  return { clock, opened, closed, toasts, session, compacts, compact, panes, closePane, fail, front, focus, surface, files, disk, saved, kv, commands, tools, toolSpecs, agentSpecs }
 }

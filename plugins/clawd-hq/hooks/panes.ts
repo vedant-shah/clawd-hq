@@ -71,10 +71,18 @@ export async function openPanes(io: PaneIo, isFocusing: boolean) {
 /** The start's focus request was turned down (the surface was busy), so Office is asked for once more, after the first main-chat reply. */
 let isFocusOwed = false
 
+const officeOf = async (io: PaneIo) => (await io.list()).find(x => x.id === paneOf('office').id)
+
 /** Office is placed but not the tab in front: what a refused focus request leaves. */
 const isBehind = async (io: PaneIo) => {
-  const office = (await io.list()).find(x => x.id === paneOf('office').id)
+  const office = await officeOf(io)
   return office !== undefined && office.isPlaced && !office.isShown
+}
+
+/** Office is open but not the tab in front, placed or not: a request refused, or made before any surface was there to grant it. */
+const isNotFront = async (io: PaneIo) => {
+  const office = await officeOf(io)
+  return office !== undefined && !office.isShown
 }
 
 /**
@@ -88,7 +96,7 @@ export async function openAtStart(io: PaneIo) {
   let isUp = false
   await attempt(async () => { isUp = (await io.list()).some(x => x.id === paneOf('office').id) })
   await openPanes(io, !isUp)
-  if (!isUp) await attempt(async () => { isFocusOwed = await isBehind(io) })
+  if (!isUp) await attempt(async () => { isFocusOwed = await isNotFront(io) })
 }
 
 /** After the first main-chat reply: the one second try at the start's refused request. Never more than that in a session. */
@@ -96,6 +104,16 @@ export const askAgain = (io: PaneIo) => attempt(async () => {
   if (!isFocusOwed) return
   isFocusOwed = false
   if (await isBehind(io)) await openPane(io, paneOf('office'), await io.decisions(), true)
+})
+
+/**
+ * A surface attached after the start (the desktop app runs the session before it draws anything): the panes are placed now,
+ * with Settings, the one opened last, in front, so Office is asked for. A refusal stays owed for the first reply.
+ */
+export const askOnAttach = (io: PaneIo) => attempt(async () => {
+  if (!isFocusOwed || !(await isBehind(io))) return
+  await openPane(io, paneOf('office'), await io.decisions(), true)
+  isFocusOwed = await isBehind(io)
 })
 
 /** Brings a pane to the front if it is still open; one the person closed stays closed. */

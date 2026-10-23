@@ -55,7 +55,7 @@ import { isBackgroundHint, isHandback, isNoUpdate, rowLook } from './quiet'
 import { checkHandback, checkOwnTurn, forgetKnow, isWatching, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
-import { PANES, askAgain, openAtStart, openPanes, pinHeight, raise, retitleDecisions } from './panes'
+import { PANES, askAgain, askOnAttach, openAtStart, openPanes, pinHeight, raise, retitleDecisions } from './panes'
 import type { PaneIo } from './panes'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -484,6 +484,13 @@ export const register: Register = (on, options) => {
   on('classic.SubagentStop', async ($, e, next) => {
     await clockOut(runIo($), e.agent_id, 'done')
     return next(e)
+  })
+
+  // The desktop app starts the session before it draws anything: when it attaches, Office is asked to the front (hooks/panes.ts).
+  on('session.attach', async ($, e, next) => {
+    const result = await next(e)
+    void askOnAttach(paneIo($))
+    return result
   })
 
   on('command.run', { command: 'office' }, async $ => {

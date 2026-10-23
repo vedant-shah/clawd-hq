@@ -100,6 +100,40 @@ test('a focus request the surface refused at session start (a reply is running) 
   }
 })
 
+test('the desktop app attaching after the session started: Office is asked to the front when it attaches, and not again after the first reply', async ($, on) => {
+  const { opened, front, surface } = host(on)
+  front.id = 'clawd-hq-settings'
+  surface.isAbsent = true
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
+  await settle($)
+  // Nothing places the panes yet, so the start's request had nothing to land on.
+  expect(front.id).toBe('clawd-hq-settings')
+
+  surface.isAbsent = false
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' } as never)
+  await settle($)
+  expect(front.id).toBe('clawd-hq')
+
+  front.id = 'clawd-hq-people'
+  const asks = focusAsks(opened).length
+  await mainReplyEnds($)
+  expect(focusAsks(opened)).toHaveLength(asks)
+  expect(front.id).toBe('clawd-hq-people')
+})
+
+test('an attach when nothing is owed (the start was granted) does not move the person off the tab they are on', async ($, on) => {
+  const { opened, front } = host(on)
+  front.id = 'clawd-hq-settings'
+  await $.session.start(START)
+  await settle($)
+  front.id = 'clawd-hq-people'
+  const asks = focusAsks(opened).length
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' } as never)
+  await settle($)
+  expect(focusAsks(opened)).toHaveLength(asks)
+  expect(front.id).toBe('clawd-hq-people')
+})
+
 test('a reload of the plugin (a config changed) finds its panes up: they open again without focus, and nothing is asked after the reply', async ($, on) => {
   const { opened, front, focus } = host(on)
   front.id = 'clawd-hq-settings'

@@ -117,6 +117,8 @@ export type Boss = {
   carriedAt?: number
   /** Where the person's latest message came from (its origin kind, or `none` where the engine named none), kept for the coffee break record. */
   spokeBy?: string
+  /** The main chat's latest request went without Clawd's rules, by either road (hooks/rules-reach.ts): his card warns. */
+  isRulesLost?: boolean
   idleSince: number
   hires: number
   wins: number

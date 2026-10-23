@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { LEFT_KEEP } from '../hooks/left-list'
+import { RULES_FILE, VOICE_FILE } from '../hooks/instructions'
 import { MUST_NOT_FLAG } from './left-false'
 import { PANE, PEOPLE, SETTINGS, START, SURFACES, host } from './host'
 
@@ -13,6 +14,7 @@ const USAGE = { input_tokens: 900, output_tokens: 20, cache_read_input_tokens: 0
 const answered = (text: string) => ({ isAnswered: true, text, usage: USAGE })
 const undone = (...items: string[]) => answered(JSON.stringify({ undone: items }))
 const OTHER = { cwd: '/other', surface: 'terminal', isInteractive: true } as never
+const ROOT = new URL('..', (import.meta as unknown as { url: string }).url).pathname.replace(/\/$/, '')
 
 /** A session whose model answers with `reply()`, whose tools answer with `tool.answer(input)`, and whose prompt box and model calls are recorded. */
 function office(on: On, reply: () => unknown = () => undone()) {
@@ -353,6 +355,9 @@ test('Clear empties the list, the store and the section, and shows no toast', as
 
 test('no toast is shown when something is added', async ($, on) => {
   const h = office(on, () => undone('Add the tests'))
+  // Clawd's own instructions are there, as in a real install: a first message may read them (hooks/rules-reach.ts).
+  h.files.set(`${ROOT}/${RULES_FILE}`, '# Clawd')
+  h.files.set(`${ROOT}/${VOICE_FILE}`, 'Plain words.')
   await $.session.start(START)
   await clawdTurn($, h, { tools: 5 })
   await todo($, h, 'handle empty list')

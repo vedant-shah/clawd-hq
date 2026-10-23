@@ -16,6 +16,7 @@ import { knowSection } from './panel-know'
 import { ruleSection } from './panel-rules'
 import { leftSection } from './panel-left'
 import { onboardSection } from './panel-onboard'
+import { LOST_LINE } from './rules-reach'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 import type { Employee } from '../types'
@@ -62,6 +63,7 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
         </Box>
         {/* The main chat's model and effort, muted like a specialist's; nothing while the model is unknown. */}
         {chatModel !== '' && <Text key="clawd-model" dimColor wrap="wrap">{chatModel}</Text>}
+        {boss.isRulesLost === true && <Text key="clawd-rules-lost" color={AMBER} wrap="wrap">{LOST_LINE}</Text>}
         {/* What he says sits in its bubble under the model line. */}
         <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>

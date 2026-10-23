@@ -46,6 +46,7 @@ import { startDemo } from './demo'
 import type { DemoIo } from './demo'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
+import { BYPASS_KEY, REACH0, fallbackText, isFallbackDue, judged, withCompose, withNewConversation, withRequest, withSent } from './rules-reach'
 import { SHIPPED_DENY, clawdActions, editNote, editPartOf, guardOnCrash, isShippedWrite, readFailed, readFailedLine, refreshClawd } from './clawd-edit'
 import type { ClawdIo } from './clawd-edit'
 import { maybeRecap, noteRecapTurn, resetRecap, setRecapOn } from './recap'
@@ -162,6 +163,29 @@ const briefIo = ($: EngineInterface, home: string, warn: (text: string) => void)
 
 /** What this session's chat was given: read at its first request, again after a session start or /clear. */
 let briefing: Promise<Briefing> | undefined
+/** Which road the rules took this session (hooks/rules-reach.ts), and what an earlier session learnt of this machine. */
+let reach = REACH0
+let wasBypassed: boolean | undefined
+
+/** This session's briefing. Set before anything is awaited, so requests made at the same moment share one read (and one warning). */
+const briefingOf = ($: EngineInterface, opts: BriefingOptions) =>
+  (briefing ??= homeOf($).then(home => readBriefing(briefIo($, home, text => void $.ui.toast(text)), opts)))
+
+/** The rules (and the profile from setup) for a prompt, where the system prompt hook has not run: once per conversation. */
+async function rulesRide($: EngineInterface, opts: BriefingOptions, e: { text: string; command?: unknown }): Promise<string[]> {
+  if (!opts.isOn || e.command !== undefined || e.text.trimStart().startsWith('/') || !isFallbackDue(reach, wasBypassed)) return []
+  const { text } = await briefingOf($, opts)
+  if (text === undefined) return []
+  reach = withSent(reach)
+  return [fallbackText(text, profileBlock((await $.store.get(PROFILE_KEY).catch(() => undefined)) as Profile | undefined))]
+}
+
+/** After a main chat request: what this machine does with the system prompt is kept, and Clawd's card warns when the rules were missing. */
+async function judgeReach($: EngineInterface) {
+  const { isLost, bypassed } = judged(reach, wasBypassed)
+  if (bypassed !== undefined) { wasBypassed = bypassed; await $.store.set(BYPASS_KEY, bypassed) }
+  if ((await getBoss($)).isRulesLost !== isLost) await setBoss($, b => ({ ...b, isRulesLost: isLost }))
+}
 /** The main chat's turn began with an edit request from the Settings tab: the plugin's own instruction files are off limits until it ends. */
 let isEditTurn = false
 
@@ -416,18 +440,19 @@ export const register: Register = (on, options) => {
   const brief = liveOptions(optionsOf(options)) // each switch read when used: a saved press first (hooks/toggle-store.ts)
 
   // Clawd's rules and voice join the main chat's instructions: read once a session (and again after /clear), then the same text on every request, so the prompt cache holds.
+  // A plugin seated outermost can send this event past ours (hooks/rules-reach.ts): the rules then ride with a prompt instead.
   on('prompt.compose', async ($, e, next) => {
     const base = await next(e)
     if (!brief.isOn || !isBriefed(e.traits)) return base
-    // Set before anything is awaited, so requests made at the same moment share one read (and one warning).
-    briefing ??= homeOf($).then(home => readBriefing(briefIo($, home, text => void $.ui.toast(text)), brief))
-    const { text } = await briefing
+    const { text } = await briefingOf($, brief)
+    reach = withCompose(reach, text !== undefined)
     return text === undefined ? base : { sections: [...base.sections, { id: SECTION_ID, scope: 'session', text } as const] }
   })
 
   on('session.start', async ($, e, next) => {
     cwd = e.cwd
     briefing = undefined
+    reach = REACH0
     isEditTurn = false
     resetPayroll()
     isLogbookWarned = false
@@ -437,6 +462,7 @@ export const register: Register = (on, options) => {
     // Each step stands on its own: one that fails stops none after it (the Settings tab still fills), and the person is told which.
     const failed = await runEach([
       ['saved switches', async () => useSaved(await loadSaved(key => $.store.get(key)))],
+      ['instructions road', async () => { const v = await $.store.get(BYPASS_KEY); wasBypassed = typeof v === 'boolean' ? v : undefined }],
       ['recap', () => resetRecap(recapIo($))],
       ['check on finished work', () => startKnow(knowIo($), cwd)],
       // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
@@ -516,7 +542,7 @@ export const register: Register = (on, options) => {
       await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined, contextTokens: undefined }))
     }
     // Another conversation takes over this process without a session.start: its recap and its turns are its own.
-    if (e.reason === 'clear' || e.reason === 'resume') await resetRecap(recapIo($))
+    if (e.reason === 'clear' || e.reason === 'resume') { reach = withNewConversation(reach); await resetRecap(recapIo($)) }
     await forgetKnow(knowIo($))
     return next(e)
   })
@@ -588,7 +614,10 @@ export const register: Register = (on, options) => {
     // A request is a sign of life, and a resumed specialist's first can come before any tool call.
     if (me) await signOfLife(runIo($), me.id, THINKING)
     const effort = e.agentId ? efforts.get(e.agentId) ?? me?.effort : undefined
+    if (!e.agentId) reach = withRequest(reach, e.messageCount)
     const result = yield* next(effort ? { ...e, effort } : e)
+    // The request's system prompt was composed on the way: whether the rules reached it is known now.
+    if (!e.agentId && brief.isOn) await judgeReach($).catch(() => undefined) // a store that refuses only means it is learnt again next session
     const [u, said] = [result.usage, narrationOf(result.answer ?? '')]
     if (!e.agentId || (!u && !said)) return result
     const now = await $.clock.now()
@@ -653,7 +682,8 @@ export const register: Register = (on, options) => {
     else if (isNotification(e)) await setBoss($, b => withNotice(b, e.turnId !== undefined)) // a job's notification starts or joins a turn: which one reports a hand-back
     if (brief.isKnowOn) await knowPrompt(knowIo($), e as { text: string })
     const note = await editNote(e.text, brief.voiceFile, $.plugin.root, () => homeOf($))
-    return next(note === undefined ? e : { ...e, context: [...(e.context ?? []), note] })
+    const added = [...(note === undefined ? [] : [note]), ...(await rulesRide($, brief, e))]
+    return next(added.length === 0 ? e : { ...e, context: [...(e.context ?? []), ...added] })
   })
   // While ours is on and an office tab is open, Claude Code's own "You should know" stays quiet; every other side question passes.
   on('model.fork', async ($, e, next) => (brief.isKnowOn && isBuiltinKnow(next.origin) && (await isWatching(knowIo($))) ? { value: QUIET_FORK } : next(e)))

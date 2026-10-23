@@ -70,11 +70,11 @@ test('a list read back from the store is cleaned: bad entries go, text is one cl
   const good = item({ id: 'a', text: 'Keep me' })
   const raw = [
     good, null, 'junk', { id: 'x' }, item({ id: 'b', source: 'nope' as never }), item({ id: 'c', at: Number.NaN }), item({ id: 'd', text: '' }),
-    item({ id: 'e', text: 'Two\nlines\u0007 here', source: 'file', file: 'src/a.ts', line: 3 }), item({ id: 'f', text: 'keep me.' }), item({ id: 'g', file: 7 as never, line: -1 }),
+    item({ id: 'e', text: 'TODO: Two\nlines\u0007 here', source: 'file', file: 'src/a.ts', line: 3 }), item({ id: 'f', text: 'keep me.' }), item({ id: 'g', file: 7 as never, line: -1 }),
   ]
   const clean = cleanLeft(raw)
   expect(clean.map(i => i.id)).toEqual(['a', 'e', 'g'])
-  expect(clean[1]).toEqual(expect.objectContaining({ text: 'Two lines here', file: 'src/a.ts', line: 3 }))
+  expect(clean[1]).toEqual(expect.objectContaining({ text: 'TODO: Two lines here', file: 'src/a.ts', line: 3 }))
   expect(clean[2]).toEqual({ id: 'g', text: 'Add rate limiting', source: 'check', by: 'Clawd', at: 10 })
   for (const odd of [undefined, null, 7, 'x', {}]) expect(cleanLeft(odd)).toEqual([])
   expect(cleanLeft(Array.from({ length: 50 }, (_, n) => item({ id: `i${n}`, text: `Unique job ${n} thing${n}z` }))).length).toBe(LEFT_KEEP)
@@ -97,6 +97,16 @@ test('on load, what an earlier version saved and this one no longer lists is dro
   expect(cleanLeft(old.slice(0, 7))).toEqual([])
   // Loading again changes nothing more.
   expect(cleanLeft(cleanLeft(old))).toEqual(cleanLeft(old))
+})
+
+test('on load, saved file items the scanner would no longer report are dropped: template text, and lines that are no marker', () => {
+  const file = (id: string, text: string, name = 'src/a.ts') => ({ id, text, source: 'file', by: 'Builder', at: 5, file: name, line: 2 })
+  const old = [
+    file('j1', 'TODO: ${text}\\n`), { result: \'ok\' })'), file('j2', 'TODO: ${text}`, ...(agentId === undefined ? {} : { agentId }) } as never)'),
+    file('j3', 'TODO: ${text}\\n` } as never)'), file('j4', 'just some words'), file('j5', 'FIXME: real', 'a.py'), file('j6', "it.skip('x', f)"),
+    file('j7', 'throw new Error(\'Not implemented\')'), file('j8', 'TODO: it\'s fine'),
+  ]
+  expect(cleanLeft(old).map(i => i.id)).toEqual(['j5', 'j6', 'j7', 'j8'])
 })
 
 // ---- Source 3: the second check ----

@@ -50,22 +50,68 @@ export function isProjectCode(relative: string): boolean {
 const TOKENS: Readonly<Record<Language, readonly string[]>> = { slash: ['//', '/*'], hash: ['#'], dash: ['--'], html: ['<!--'] }
 const QUOTES = new Set(['"', "'", '`'])
 
-/** The line split where its first comment opens: the code before it (strings left in), and the comment's text after its token. */
-function split(line: string, lang: Language): { code: string; comment?: string } {
-  if (lang === 'slash' && /^\s*\*(?!\/)/.test(line)) return { code: '', comment: line.replace(/^\s*\*/, '') } // inside a block comment
+/** A line read: its code (strings left in), which characters of it are inside a string, and the text of its first comment. */
+type Scanned = { code: string; inStr: boolean[]; comment?: string }
+
+/** What is open when a line starts: template literals and the `${` holes in them (a hole is its brace depth; a template is TPL), and a block comment. */
+const TPL = -1
+type Open = { frames: number[]; block: boolean }
+
+/**
+ * One line, read with what the lines before it left open. DECIDED: strings are tracked across the whole new text, not per line —
+ * a backtick string runs over lines and holds `${…}` holes that can nest; a single or double quote ends with its line. Only
+ * code outside a string can open a comment. If unsure, the line is read as string, so it is not reported.
+ */
+function scanLine(line: string, lang: Language, open: Open): Scanned {
+  const frames = [...open.frames]
+  let code = ''
+  const inStr: boolean[] = []
+  let comment: string | undefined
   let quote: string | undefined
-  for (let i = 0; i < line.length; i += 1) {
+  const put = (text: string, isStr: boolean) => { code += text; for (let k = 0; k < text.length; k += 1) inStr.push(isStr) }
+  let i = 0
+  if (lang === 'slash' && !open.block && frames.length === 0 && /^\s*\*(?!\/)/.test(line)) return { code: '', inStr: [], comment: line.replace(/^\s*\*/, '') } // a block comment's middle line, in text that began inside the comment
+  let block = open.block
+  if (block) {
+    const end = line.indexOf('*/')
+    comment = line.slice(0, end < 0 ? undefined : end)
+    if (end < 0) return { code: '', inStr: [], comment }
+    block = false
+    i = end + 2
+  }
+  for (; i < line.length; i += 1) {
     const ch = line[i]!
+    const top = frames.length === 0 ? undefined : frames[frames.length - 1]
     if (quote !== undefined) {
-      if (ch === '\\') i += 1
-      else if (ch === quote) quote = undefined
-    } else if (QUOTES.has(ch)) quote = ch
-    else {
+      if (ch === '\\') { put(line.slice(i, i + 2), true); i += 1 } else if (ch === quote) { quote = undefined; put(ch, false) } else put(ch, true)
+    } else if (top === TPL) {
+      if (ch === '\\') { put(line.slice(i, i + 2), true); i += 1 } else if (ch === '`') { frames.pop(); put(ch, false) } else if (ch === '$' && line[i + 1] === '{') { frames.push(0); put('${', false); i += 1 } else put(ch, true)
+    } else if (top !== undefined && ch === '}' && top === 0) { frames.pop(); put(ch, false) } else if (top !== undefined && (ch === '{' || ch === '}')) {
+      frames[frames.length - 1] = top + (ch === '{' ? 1 : -1)
+      put(ch, false)
+    } else if (QUOTES.has(ch)) {
+      if (ch === '`' && lang === 'slash') frames.push(TPL)
+      else quote = ch
+      put(ch, false)
+    } else {
       const token = TOKENS[lang].find(t => line.startsWith(t, i))
-      if (token !== undefined) return { code: line.slice(0, i), comment: line.slice(i + token.length) }
+      if (token === undefined) { put(ch, false); continue }
+      if (token !== '/*') { comment ??= line.slice(i + token.length); break }
+      const end = line.indexOf('*/', i + 2)
+      comment ??= line.slice(i + 2, end < 0 ? undefined : end)
+      if (end < 0) { block = true; break }
+      i = end + 1
     }
   }
-  return { code: line }
+  open.frames = frames
+  open.block = block
+  return { code, inStr, ...(comment === undefined ? {} : { comment }) }
+}
+
+/** Every line of `text` read in turn, each knowing what the lines before it left open. */
+function scanText(text: string, lang: Language): Scanned[] {
+  const open: Open = { frames: [], block: false }
+  return text.split(/\r?\n/).map(line => scanLine(line, lang, open))
 }
 
 const MARKER = /^[\s*]*((?:TODO|FIXME|XXX)\b.*)$/
@@ -75,31 +121,18 @@ const COMMENT_END = /\s*(?:\*\/\}?|-->)\s*\}?\s*$/
 const SKIP_CALLS = /\b(?:it|test|describe)\.skip\s*\(|\bx(?:it|describe)\s*\(|@pytest\.mark\.skip\b|\bt\.Skip\(/
 const NOT_DONE = /\bthrow\s+new\s+\w*Error\(\s*['"`]not implemented|\braise\s+NotImplementedError\b|\bthrow\s+new\s+NotImplemented(?:Error|Exception)\b/i
 
-/** Whether `index` lies inside a quoted string of the line. */
-function inString(line: string, index: number): boolean {
-  let quote: string | undefined
-  for (let i = 0; i < index; i += 1) {
-    const ch = line[i]!
-    if (quote !== undefined) {
-      if (ch === '\\') i += 1
-      else if (ch === quote) quote = undefined
-    } else if (QUOTES.has(ch)) quote = ch
-  }
-  return quote !== undefined
-}
-
-/** A match of `re` in `code` that is not inside a string. */
-function codeMatch(code: string, re: RegExp): boolean {
+/** A match of `re` in the code of a scanned line that does not start inside a string. */
+function codeMatch({ code, inStr }: Scanned, re: RegExp): boolean {
   const found = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`)
-  return [...code.matchAll(found)].some(m => !inString(code, m.index ?? 0))
+  return [...code.matchAll(found)].some(m => !inStr[m.index ?? 0])
 }
 
 /** The line as it should be shown, or nothing when it is no unfinished-work line. */
-function unfinishedText(line: string, lang: Language): string | undefined {
-  const { code, comment } = split(line, lang)
+function unfinishedText(line: string, scanned: Scanned): string | undefined {
+  const { comment } = scanned
   const marker = comment === undefined ? undefined : MARKER.exec(comment)
   if (marker) return marker[1]!.replace(COMMENT_END, '').trim()
-  return codeMatch(code, SKIP_CALLS) || codeMatch(code, NOT_DONE) ? line.trim() : undefined
+  return codeMatch(scanned, SKIP_CALLS) || codeMatch(scanned, NOT_DONE) ? line.trim() : undefined
 }
 
 /** An unfinished-work line: what to show, and its line in the text it was found in (1 is the first). */
@@ -113,17 +146,29 @@ export function unfinishedLines(oldText: string, newText: string, lang: Language
   const had = new Map<string, number>()
   for (const line of oldText.split(/\r?\n/)) had.set(line.trim(), (had.get(line.trim()) ?? 0) + 1)
   const hits: FileHit[] = []
+  const scanned = scanText(newText, lang)
   newText.split(/\r?\n/).forEach((raw, index) => {
     const seen = had.get(raw.trim()) ?? 0
     if (seen > 0) { had.set(raw.trim(), seen - 1); return }
-    const found = unfinishedText(raw, lang)
+    const found = unfinishedText(raw, scanned[index]!)
     const text = found === undefined ? '' : fit(plainText(found), FILE_MAX)
     if (text !== '' && !looksSecret(text) && !hits.some(h => h.text === text)) hits.push({ text, line: index + 1 })
   })
   return hits.slice(0, FILE_ITEMS)
 }
 
-type Pair = { before: string; after: string }
+/**
+ * Whether a saved file item's text would still be reported for a file at `path`: as a comment's note (it is shown without the
+ * comment token, so one is put back) or as a line of code. Text with `${` in it is template text, never a note.
+ */
+export function stillReported(text: string, path: string): boolean {
+  const lang = languageOf(path)
+  if (lang === undefined || text.includes('${')) return false
+  const opener = TOKENS[lang][0]!
+  return [text, `${opener} ${text}`].some(candidate => unfinishedLines('', candidate, lang).length > 0)
+}
+
+type Pair ={ before: string; after: string }
 
 /** The old and new text a file tool call carries, one pair per edit; none when the input is not what the tool takes. */
 function pairsOf(tool: string, input: Record<string, unknown>, before: string): Pair[] {

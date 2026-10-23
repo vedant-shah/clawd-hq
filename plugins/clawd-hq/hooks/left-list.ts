@@ -3,7 +3,7 @@
 import type { LeftItem } from '../types'
 import { fit } from './desk'
 import { plainText } from './know'
-import { isProjectCode } from './left-scan'
+import { isProjectCode, stillReported } from './left-scan'
 
 /** DECIDED: the newest 10 are kept per project — the list is rare by design, and a long one would only be noise. */
 export const LEFT_KEEP = 10
@@ -66,7 +66,8 @@ const line = (text: unknown, max: number) => (typeof text === 'string' ? fit(pla
  * A list read back from the store, which anyone can edit: only well-formed items survive, as one clean line each, once each,
  * the newest 10. DECIDED: this is also how an older version's list is cleaned, on every load, with no version number to keep
  * — the rule is the same each time, so a second load changes nothing. Items that came from an answer (that source is gone),
- * and file items that are not in a code file inside the project (a README, a docs/ note, a full local path), are dropped;
+ * and file items that are not in a code file inside the project (a README, a docs/ note, a full local path), or that the
+ * scanner would no longer report (template text with `${` in it, a line that is no marker), are dropped;
  * the store is rewritten without them the next time the list changes.
  */
 export function cleanLeft(raw: unknown): LeftItem[] {
@@ -77,7 +78,7 @@ export function cleanLeft(raw: unknown): LeftItem[] {
     if (typeof one.at !== 'number' || !Number.isFinite(one.at)) continue
     const source = one.source!
     const [text, by, file] = [line(one.text, LEFT_TEXT), line(one.by, 40), source === 'file' ? line(one.file, 200) : '']
-    if (text === '' || by === '' || (source === 'file' && !isProjectCode(file))) continue
+    if (text === '' || by === '' || (source === 'file' && !(isProjectCode(file) && stillReported(text, file)))) continue
     if (kept.some(k => isSame(k, { text, source, by, file: file || undefined }))) continue
     kept.push({ id: one.id.slice(0, 40), text, source, by, at: one.at, ...(file === '' ? {} : { file }), ...(file !== '' && isCount(one.line) ? { line: one.line } : {}) })
   }

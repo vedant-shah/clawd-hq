@@ -50,6 +50,23 @@ test('a marker outside a comment, in another language\'s comment, in a string, o
   for (const [line, lang] of quiet) expect([line, hits(line, '', lang)]).toEqual([line, []])
 })
 
+test('a marker inside any string, including a template that runs over several lines, is not a hit', () => {
+  const quiet = [
+    '  h.files.set(file, `a()\\n// TODO: ${text}\\n`), { result: \'ok\' })',
+    'x({ content: `TODO: ${text}`, ...(id === undefined ? {} : { id }) })',
+    'x({ content: `// TODO: ${text}\\n` } as never)',
+    'const s = `first\n// TODO: inside the template\n# FIXME: and this\nit.skip(\'x\')\nlast`',
+    'const s = `a ${b} c\n// TODO: still inside\n`',
+    'const s = `a ${`nested\n// TODO: deep`} b\n// FIXME: still inside`',
+    'const s = `a ${ {x: 1}.x } // TODO: after the braces`',
+    'const s = "say \\" // TODO: escaped quote"',
+  ]
+  for (const text of quiet) expect([text, hits(text)]).toEqual([text, []])
+  expect(hits('const s = `open\nline two`\n// TODO: after the template')).toEqual([[3, 'TODO: after the template']])
+  expect(hits('const s = `a ${b // TODO: a real comment in code\n}`')).toEqual([[1, 'TODO: a real comment in code']])
+  expect(hits('/* start\n TODO: inside a block\n*/ x()\n// TODO: after')).toEqual([[2, 'TODO: inside a block'], [4, 'TODO: after']])
+})
+
 test('skipped tests are found in each test tool\'s spelling', () => {
   const lines = ["it.skip('does x', () => {})", "test.skip('does y', async () => {})", "describe.skip('suite', () => {})", "xit('old', () => {})", "xdescribe('old suite', () => {})",
     '@pytest.mark.skip(reason="later")', '\tt.Skip("flaky")']

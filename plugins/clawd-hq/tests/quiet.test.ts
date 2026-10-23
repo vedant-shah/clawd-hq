@@ -65,11 +65,17 @@ test('a message to a hired teammate and the task list are dimmed, never hidden; 
   expect(rowLook(call({ tool: 'SendMessage', input: { to: 'Judge', message: 'Score round 2.' } }), staff)).toBe('dim')
 })
 
-test('a message to anyone else, or one that asks for something, is not dimmed', () => {
+test('Clawd\'s own message to a hired teammate is dimmed however it is addressed or worded; one to anyone else is not', () => {
+  // Addressed with the @ the row shows, and wording that mentions approval or asks something: still Clawd talking to his own team.
+  expect(rowLook(call({ tool: 'SendMessage', input: { to: '@judge', message: 'Decisions on review findings' } }), staff)).toBe('dim')
+  expect(rowLook(call({ tool: 'SendMessage', input: { to: 'judge', message: 'Approved. Which side goes first?' } }), staff)).toBe('dim')
+  expect(rowLook(call({ tool: 'SendMessage', input: { to: 'judge', message: 'Please approve the plan.' } }), staff)).toBe('dim')
+  // The result row carries no input: it is Clawd's own call's answer, dimmed with it.
+  expect(rowLook({ tool: 'SendMessage', isErrored: false }, staff)).toBe('dim')
+  expect(rowLook({ tool: 'SendMessage', isErrored: true }, staff)).toBe('show')
   expect(rowLook(call({ tool: 'SendMessage', input: { to: 'someone-else', message: 'hi' } }), staff)).toBe('show')
+  expect(rowLook(call({ tool: 'SendMessage', input: { to: '@someone-else', message: 'hi' } }), staff)).toBe('show')
   expect(rowLook(call({ tool: 'SendMessage', input: { to: 'a1', message: 'hi' } }), staff)).toBe('show')
-  expect(rowLook(call({ tool: 'SendMessage', input: { to: 'judge', message: 'Which side goes first?' } }), staff)).toBe('show')
-  expect(rowLook(call({ tool: 'SendMessage', input: { to: 'judge', message: 'Please approve the plan.' } }), staff)).toBe('show')
   expect(rowLook(call({ tool: 'SendMessage', input: { to: 'judge' } }), staff)).toBe('dim')
   for (const input of [undefined, null, 'x', 7, [], { to: 5 }]) expect(rowLook(call({ tool: 'SendMessage', input }), staff)).toBe('show')
 })
@@ -122,8 +128,49 @@ test('the merged line is shown whenever it is not plainly a success, the full vi
   }
 })
 
+test('"N background commands completed" and the "N background task completed, M running" summary are hidden when plainly a success', () => {
+  for (const text of ['2 background commands completed', '3 background commands completed', '1 background command completed', '1 background task completed, 1 running', '2 background tasks completed, 3 running', '2 background tasks completed']) {
+    expect(isHandback(row({ text }), staff)).toBe(true)
+    expect(isHandback(row({ text }), [])).toBe(true)
+    expect(isHandback(row({ text, task: { status: 'completed' } }), staff)).toBe(true)
+  }
+})
+
+test('those merged lines are shown when a failure is in them, or in the full view, or when the person or another party wrote them', () => {
+  for (const text of ['2 background commands failed', '2 background commands completed, 1 failed', '1 background task completed, 1 failed', '1 background task completed, 1 running, 1 failed', '2 background commands', '1 background task running']) {
+    expect(isHandback(row({ text }), staff)).toBe(false)
+  }
+  expect(isHandback(row({ text: '2 background commands completed', task: { status: 'failed' } }), staff)).toBe(false)
+  expect(isHandback(row({ text: '1 background task completed, 1 running', task: { status: 'killed' } }), staff)).toBe(false)
+  expect(isHandback(row({ text: '2 background commands completed', isExpanded: true }), staff)).toBe(false)
+  for (const originKind of ['composer', 'peer', 'channel', 'unclassified', 'scheduled-trigger', 'bridge']) {
+    expect(isHandback(row({ text: '2 background commands completed', originKind }), staff)).toBe(false)
+    expect(isHandback(row({ text: '1 background task completed, 1 running', originKind }), staff)).toBe(false)
+  }
+})
+
+test('a specialist\'s message to Clawd (a peer SendMessage) is hidden when it asks for nothing and reports no trouble', () => {
+  const peer = (over: Record<string, unknown> = {}) => row({ originKind: 'peer-send-message', text: 'Decisions on review findings: kept 3, dropped 1.', from: { name: 'judge' }, ...over })
+  expect(isHandback(peer(), staff)).toBe(true)
+  // The row can come without a sender ("Message from subagent"), under the generic name, or under an unnamed specialist's agent type.
+  expect(isHandback(peer({ from: undefined }), staff)).toBe(true)
+  expect(isHandback(peer({ from: { name: 'subagent' } }), staff)).toBe(true)
+  expect(isHandback(peer({ from: { name: 'ecc:code-reviewer' } }), staff)).toBe(true)
+  expect(isHandback(peer({ from: { name: 'Judge' } }), staff)).toBe(true)
+  // A named sender the office did not hire is not its own, and no staff means a named sender cannot be placed.
+  expect(isHandback(peer({ from: { name: 'Judge' } }), [])).toBe(false)
+  expect(isHandback(peer({ from: undefined }), [])).toBe(true)
+})
+
+test('a peer message that asks, fails or needs a permission is shown, and so is one from a session that is not the office\'s', () => {
+  const texts = ['Which side goes first?', 'I need permission to run the build.', 'Please approve the plan.', 'Shutdown requested.', 'The build failed with 3 errors.', 'Tests are failing.', 'I am blocked on the schema.', 'I cannot reach the database.', 'Unable to write the file.', 'Error: ENOENT on config.json']
+  for (const text of texts) expect(isHandback(row({ originKind: 'peer-send-message', from: { name: 'judge' }, text }), staff)).toBe(false)
+  expect(isHandback(row({ originKind: 'peer-send-message', from: { name: 'Another session' }, text: 'All done.' }), staff)).toBe(false)
+  expect(isHandback(row({ originKind: 'peer-send-message', from: { name: 'judge' }, text: 'All done.', isExpanded: true }), staff)).toBe(false)
+})
+
 test('a message with a stamp of where it came from is never hidden, even under a teammate\'s name', () => {
-  for (const originKind of ['peer', 'peer-send-message', 'channel', 'composer', 'bridge', 'sdk', 'scheduled-trigger', 'task-notification']) {
+  for (const originKind of ['peer', 'channel', 'composer', 'bridge', 'sdk', 'scheduled-trigger', 'task-notification']) {
     expect(isHandback(row({ originKind, from: { name: 'judge' } }), staff)).toBe(false)
   }
 })

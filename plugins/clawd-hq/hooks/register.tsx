@@ -713,8 +713,9 @@ export const register: Register = (on, options) => {
   {
     on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
       const p = e.props
-      // Most rows are the person's own or already in full: nothing is read for them. A notification may be the merged line, which names no task.
-      if (!isQuiet() || p.isExpanded || (!p.task && !p.from && p.origin.kind !== 'task-notification')) return next(e)
+      // Most rows are the person's own or already in full: nothing is read for them. A notification may be a merged line (no task), a peer message may come with no sender.
+      const isOwn = !p.task && !p.from && p.origin.kind !== 'task-notification' && p.origin.kind !== 'peer-send-message'
+      if (!isQuiet() || p.isExpanded || isOwn) return next(e)
       if (!isHandback({ isExpanded: p.isExpanded, originKind: p.origin.kind, text: p.text, task: p.task, from: p.from }, await read($, staff))) return next(e)
       return blank(resolver($), e)
     })

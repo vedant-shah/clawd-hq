@@ -91,6 +91,43 @@ test('the merged "N background agents completed" line is hidden on every surface
   expect(await drawn($, 'UserMessage', merged({ origin: { kind: 'composer' } }))).toContain('ENGINE')
 })
 
+test('"N background commands completed" and the task summary line are hidden on every surface; a failure or the full view is not', async ($, on) => {
+  await office($, on)
+  for (const text of ['2 background commands completed', '3 background commands completed', '1 background task completed, 1 running']) {
+    for (const surface of ['terminal', 'desktop'] as const) {
+      expect(isHidden(await drawn($, 'UserMessage', notice({ text, task: undefined }), surface))).toBe(true)
+    }
+    expect(await drawn($, 'UserMessage', notice({ text, task: { status: 'failed' } }))).toContain('ENGINE')
+    expect(await drawn($, 'UserMessage', notice({ text, task: undefined, isExpanded: true }))).toContain('ENGINE')
+    expect(await drawn($, 'UserMessage', notice({ text, task: undefined, origin: { kind: 'composer' } }))).toContain('ENGINE')
+  }
+  expect(await drawn($, 'UserMessage', notice({ text: '2 background commands completed, 1 failed', task: undefined }))).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', notice({ text: '1 background task completed, 1 failed', task: undefined }))).toContain('ENGINE')
+})
+
+test('a specialist\'s peer message to Clawd is hidden on every surface, even with no sender named; a question, a failure or another session is not', async ($, on) => {
+  await office($, on)
+  const peer = (over: Record<string, unknown> = {}) => ({ text: 'Decisions on review findings: kept 3.', origin: { kind: 'peer-send-message' }, isExpanded: false, from: { name: 'judge' }, ...over })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    expect(isHidden(await drawn($, 'UserMessage', peer(), surface))).toBe(true)
+    expect(isHidden(await drawn($, 'UserMessage', peer({ from: undefined }), surface))).toBe(true)
+  }
+  expect(await drawn($, 'UserMessage', peer({ text: 'Which side goes first?' }))).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', peer({ text: 'I need permission to run the build.' }))).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', peer({ text: 'The build failed.' }))).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', peer({ from: { name: 'Another session' } }))).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', peer({ isExpanded: true }))).toContain('ENGINE')
+})
+
+test('Clawd\'s own SendMessage row to a hired teammate is dimmed, call and result, with an @ in the name or a worded request', async ($, on) => {
+  await office($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const input = { to: '@judge', message: 'Decisions on review findings. Approved?' }
+    expect(isDim(await drawn($, 'ToolUse', tool('SendMessage', { input }), surface))).toBe(true)
+    expect(isDim(await drawn($, 'ToolResult', result('SendMessage'), surface))).toBe(true)
+  }
+})
+
 test('the plugin\'s step calls, tool-loading rows and the background hint are hidden, call and result alike', async ($, on) => {
   await office($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -128,8 +165,9 @@ test('errored or interrupted rows, questions, other tools and a message to anyon
   const other = await drawn($, 'ToolUse', tool('SendMessage', { input: { to: 'someone-else', message: 'hi' } }))
   expect(other).toContain('ENGINE')
   expect(isDim(other)).toBe(false)
-  const asks = await drawn($, 'ToolUse', tool('SendMessage', { input: { to: 'judge', message: 'Which side goes first?' } }))
-  expect(isDim(asks)).toBe(false)
+  const errored = await drawn($, 'ToolResult', result('SendMessage', { isErrored: true }))
+  expect(errored).toContain('ENGINE')
+  expect(isDim(errored)).toBe(false)
   expect(await drawn($, 'ToolProgress', { tool_use_id: 't1', kind: 'other', hint: 'x' })).toContain('ENGINE')
 })
 
@@ -142,6 +180,15 @@ test('with the quiet chat setting off, nothing in the chat is hidden', { options
   expect(await drawn($, 'UserMessage', notice())).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', notice({ text: '2 background agents completed', task: undefined }))).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', fromJudge())).toContain('ENGINE')
+  for (const text of ['2 background commands completed', '1 background task completed, 1 running']) {
+    expect(await drawn($, 'UserMessage', notice({ text, task: undefined }))).toContain('ENGINE')
+  }
+  expect(await drawn($, 'UserMessage', { text: 'Done.', origin: { kind: 'peer-send-message' }, isExpanded: false, from: { name: 'judge' } })).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', { text: 'Done.', origin: { kind: 'peer-send-message' }, isExpanded: false })).toContain('ENGINE')
+  const sent = await drawn($, 'ToolUse', tool('SendMessage', { input: { to: 'judge', message: 'Score round 2.' } }))
+  expect(sent).toContain('ENGINE')
+  expect(isDim(sent)).toBe(false)
+  expect(isDim(await drawn($, 'ToolResult', result('SendMessage')))).toBe(false)
   expect(await drawn($, 'AssistantMessage', { text: '[no update]', isFirstOfReply: true })).toContain('ENGINE')
 })
 
@@ -153,5 +200,14 @@ test('with Clawd not running the chat, nothing in the chat is hidden either', { 
   expect(await drawn($, 'UserMessage', notice())).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', notice({ text: '2 background agents completed', task: undefined }))).toContain('ENGINE')
   expect(await drawn($, 'UserMessage', fromJudge())).toContain('ENGINE')
+  for (const text of ['2 background commands completed', '1 background task completed, 1 running']) {
+    expect(await drawn($, 'UserMessage', notice({ text, task: undefined }))).toContain('ENGINE')
+  }
+  expect(await drawn($, 'UserMessage', { text: 'Done.', origin: { kind: 'peer-send-message' }, isExpanded: false, from: { name: 'judge' } })).toContain('ENGINE')
+  expect(await drawn($, 'UserMessage', { text: 'Done.', origin: { kind: 'peer-send-message' }, isExpanded: false })).toContain('ENGINE')
+  const sent = await drawn($, 'ToolUse', tool('SendMessage', { input: { to: 'judge', message: 'Score round 2.' } }))
+  expect(sent).toContain('ENGINE')
+  expect(isDim(sent)).toBe(false)
+  expect(isDim(await drawn($, 'ToolResult', result('SendMessage')))).toBe(false)
   expect(await drawn($, 'AssistantMessage', { text: '[no update]', isFirstOfReply: true })).toContain('ENGINE')
 })

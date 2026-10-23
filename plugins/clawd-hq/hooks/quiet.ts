@@ -26,15 +26,35 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 /** A message that asks for something is never filler: a question, or a request for permission, approval or shutdown. */
 const ASKS = /\?|\b(permission|approv|shut ?down)/i
 
-/** The line the transcript folds several finished background agents into. */
-const MERGED_AGENTS_DONE = /^\d+ background agents completed\.?$/i
+/** A message that reports a failure or a block is never filler either. */
+const TROUBLE = /\b(fail\w*|error\w*|blocked|unable|cannot|can'?t|crash\w*|stuck)\b/i
+
+/**
+ * The lines the transcript folds several finished background jobs into: agents, shell commands, or the summary that still counts
+ * what is running ("1 background task completed, 1 running"). Anything with a failure in it does not match.
+ */
+const MERGED_DONE = /^\d+ background (?:agents?|commands?|tasks?) completed(?:, \d+ running)?\.?$/i
 
 /**
  * That merged line, when it is plainly a success. It names no task of its own, so it cannot be checked against the specialists the
  * office hired; it is hidden whoever they were. Only the engine's own notification stamp counts, and a status that is not "completed" is shown.
  */
-const isMergedAgentsDone = (row: ChatRow): boolean =>
-  row.originKind === 'task-notification' && MERGED_AGENTS_DONE.test(row.text.trim()) && (row.task?.status === undefined || row.task.status === 'completed')
+const isMergedDone = (row: ChatRow): boolean =>
+  row.originKind === 'task-notification' && MERGED_DONE.test(row.text.trim()) && (row.task?.status === undefined || row.task.status === 'completed')
+
+/** Who the engine names for a specialist's message when it has no better word. */
+const GENERIC_SENDER = 'subagent'
+
+/** The office's own: a specialist hired by name or by agent type, the generic sender, or no sender named at all. */
+const isOfficeSender = (from: ChatRow['from'], staff: Employee[]): boolean =>
+  from === undefined || same(from.name, GENERIC_SENDER) || staff.some(one => same(one.type, from.name) || (one.name !== undefined && same(one.name, from.name)))
+
+/**
+ * A specialist's message to Clawd (a SendMessage delivery), when it asks for nothing and reports no trouble. The specialist's
+ * final report says the rest, so the row can go; one with a question, a failure or a permission request in it is shown.
+ */
+const isPeerFiller = (row: ChatRow, staff: Employee[]): boolean =>
+  row.originKind === 'peer-send-message' && !ASKS.test(row.text) && !TROUBLE.test(row.text) && isOfficeSender(row.from, staff)
 
 /**
  * A row that only hands work back to Clawd: the "finished" notice of a job that ended well (a specialist the office
@@ -44,7 +64,7 @@ const isMergedAgentsDone = (row: ChatRow): boolean =>
  */
 export function isHandback(row: ChatRow, staff: Employee[]): boolean {
   if (row.isExpanded) return false
-  if (isMergedAgentsDone(row)) return true
+  if (isMergedDone(row) || isPeerFiller(row, staff)) return true
   if (row.task) {
     if (row.originKind !== 'task-notification' || row.task.status !== 'completed') return false
     if (staff.some(one => one.id === row.task!.id)) return true
@@ -79,11 +99,12 @@ function sentMessage(input: unknown): { to: string; message: string } | undefine
   return typeof to === 'string' ? { to, message: typeof message === 'string' ? message : '' } : undefined
 }
 
-/** A message from Clawd to a teammate the office hired by name, that asks nothing. */
+/** A message from Clawd to a teammate the office hired by name (the row writes it with an @). However it is worded: it is Clawd talking to his own team. */
 function isToTeammate(input: unknown, staff: Employee[]): boolean {
   const sent = sentMessage(input)
-  if (sent === undefined || ASKS.test(sent.message)) return false
-  return staff.some(one => one.name !== undefined && same(one.name, sent.to))
+  if (sent === undefined) return false
+  const to = sent.to.trim().replace(/^@/, '')
+  return staff.some(one => one.name !== undefined && same(one.name, to))
 }
 
 /** How a tool call's row (or its result) is drawn. Anything errored or cut short is shown in full, whatever the tool. */
@@ -91,6 +112,7 @@ export function rowLook(row: ToolRow, staff: Employee[]): RowLook {
   if (row.isErrored || row.isInterrupted) return 'show'
   if (HIDDEN_TOOLS.has(row.tool)) return 'hide'
   if (row.tool === OFFER_RULE_TOOL || TASK_LIST_TOOLS.has(row.tool)) return 'dim'
-  if (row.tool === SEND_MESSAGE && isToTeammate(row.input, staff)) return 'dim'
+  // A result row carries no input (only the call's answer): Clawd's own SendMessage answer is dimmed with the call.
+  if (row.tool === SEND_MESSAGE && (row.input === undefined ? !('input' in row) : isToTeammate(row.input, staff))) return 'dim'
   return 'show'
 }

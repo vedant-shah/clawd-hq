@@ -34,7 +34,7 @@ const TONE = { clear: GREEN, busy: AMBER, alert: RED } as const
 type Ctx = { kit: Kit; data: PanelData; actions: PanelActions; cw: number }
 
 function clawdCard({ kit, data, actions, cw }: Ctx) {
-  const { Box, Text, sprite } = kit
+  const { Box, Text, Button, sprite } = kit
   const { staff, boss, tick, now } = data
   const working = atWork(staff)
   const failed = recentFailures(staff, now, SICK_MS).map(one => titled(one, data))
@@ -69,6 +69,10 @@ function clawdCard({ kit, data, actions, cw }: Ctx) {
         {/* What he says sits in its bubble under the model line. */}
         <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>
+        </Box>
+        {/* Only fills the prompt box with "Hold a council on: "; the person types the question and sends it. */}
+        <Box key="clawd-buttons" flexDirection="row">
+          <Button key="clawd-council" label="Hold a council" onPress={() => actions.holdCouncil()} />
         </Box>
         {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
         {!boss.isBusy && boss.recap !== undefined && (

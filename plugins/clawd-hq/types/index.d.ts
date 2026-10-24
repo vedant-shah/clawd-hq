@@ -42,7 +42,9 @@ export type Employee = {
   /** Where the progress came from: the step tool's report, which stands, or a "Step N of M" in the specialist's own words. */
   stepBy?: 'tool' | 'words'
   /** Set when Clawd hired it as one of a pair-up (a `PAIR-UP: <goal>` first line in its brief): the job's goal and when it was hired. Members with the same goal hired close together share one card. */
-  pair?: { goal: string; at: number }
+  pair?: { goal: string; at: number; /** Set for a council voice (a `COUNCIL: <question>` first line): `goal` is the question, and the group is a council, not a pair-up. */ isCouncil?: true }
+  /** A council voice's first report line, kept once its run ends well (hooks/council.ts); gone when it is sent back to work. */
+  report?: string
   /** The key choices it reported in its hand-backs (its DECIDED lines), oldest first, at most five (hooks/staff-model.ts). Kept for the session only, with the record. */
   choices?: string[]
 }

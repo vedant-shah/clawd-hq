@@ -11,30 +11,36 @@ export const PAIR_WINDOW_MS = 10 * 60_000
 /** A goal is kept to a size a card can wrap, cut at a word and with no mark. */
 const GOAL_CHARS = 160
 
-const PAIR_LINE = /^\s*PAIR-UP:[ \t]*(\S[^\r\n]*?)[ \t]*(?:\r?\n|$)/i
+const PAIR_LINE = /^\s*(PAIR-UP|COUNCIL):[ \t]*(\S[^\r\n]*?)[ \t]*(?:\r?\n|$)/i
 
-/** The `PAIR-UP: <goal>` line Clawd starts a pair-up member's brief with (after its effort line is taken off), and the brief without it. An empty goal is no pair-up. */
-export function parsePairUp(prompt: string): { goal?: string; prompt: string } {
+/**
+ * The `PAIR-UP: <goal>` line Clawd starts a pair-up member's brief with (after its effort line is taken off), and the brief without it. An empty goal is no pair-up.
+ * A `COUNCIL: <question>` line in the same place is a council voice's: the question comes back as the goal, marked `isCouncil`.
+ */
+export function parsePairUp(prompt: string): { goal?: string; isCouncil?: true; prompt: string } {
   const m = prompt.match(PAIR_LINE)
-  const goal = m ? fit(m[1] ?? '', GOAL_CHARS) : ''
-  return m && goal !== '' ? { goal, prompt: prompt.slice(m[0].length) } : { prompt }
+  const goal = m ? fit(m[2] ?? '', GOAL_CHARS) : ''
+  if (!m || goal === '') return { prompt }
+  return { goal, ...(m[1]!.toUpperCase() === 'COUNCIL' ? { isCouncil: true as const } : {}), prompt: prompt.slice(m[0].length) }
 }
 
-/** Two or more specialists hired together for one goal, in the order they were hired. */
-export type PairGroup = { goal: string; members: Employee[] }
+/** Two or more specialists hired together for one goal, in the order they were hired. `isCouncil` marks a council: voices on one question, drawn as one card with its own picture. */
+export type PairGroup = { goal: string; members: Employee[]; isCouncil?: true }
 
 const sameGoal = (a: string, b: string) => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase()
 
 /** Every pair-up on the books: members with the same goal, hired within the window of the first of them. One alone is no pair-up. */
 export function pairGroups(staff: Employee[]): PairGroup[] {
   const hires = staff.filter((e): e is Employee & { pair: NonNullable<Employee['pair']> } => e.pair !== undefined).sort((a, b) => a.pair.at - b.pair.at)
-  const groups = hires.reduce<Array<{ goal: string; at: number; members: Employee[] }>>((all, one) => {
-    const open = all.find(g => sameGoal(g.goal, one.pair.goal) && one.pair.at - g.at <= PAIR_WINDOW_MS)
+  // A council and a pair-up never share a card, even when their words match.
+  const groups = hires.reduce<Array<{ goal: string; at: number; isCouncil: boolean; members: Employee[] }>>((all, one) => {
+    const isCouncil = one.pair.isCouncil === true
+    const open = all.find(g => g.isCouncil === isCouncil && sameGoal(g.goal, one.pair.goal) && one.pair.at - g.at <= PAIR_WINDOW_MS)
     return open
       ? all.map(g => (g === open ? { ...g, members: [...g.members, one] } : g))
-      : [...all, { goal: one.pair.goal, at: one.pair.at, members: [one] }]
+      : [...all, { goal: one.pair.goal, at: one.pair.at, isCouncil, members: [one] }]
   }, [])
-  return groups.filter(g => g.members.length >= 2).map(({ goal, members }) => ({ goal, members }))
+  return groups.filter(g => g.members.length >= 2).map(({ goal, members, isCouncil }) => ({ goal, members, ...(isCouncil ? { isCouncil: true as const } : {}) }))
 }
 
 const groupOf = (groups: PairGroup[], id: string) => groups.find(g => g.members.some(m => m.id === id))

@@ -71,7 +71,8 @@ import { checkOld, oldActions } from './old-decisions'
 import type { OldIo } from './old-decisions'
 import { offerRule, ruleActions } from './rule-io'
 import type { RuleIo } from './rule-io'
-import { hire, withChoices, withReport, withSaid, withStep, withTool } from './staff-model'
+import { hire, withReport, withSaid, withStep, withTool } from './staff-model'
+import { fillCouncil, runCouncil, withVoiceNotes, type CouncilIo } from './council'
 import { clockOut, hireListed, newHire, reconcile, signOfLife, specialistOf } from './run-io'
 import type { RunIo } from './run-io'
 import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine, reasonOf, runEach, startNote } from './state'
@@ -389,6 +390,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     hire: type => setLaidOff(payrollIo($), type, false),
     settlePayroll: isLayoff => applyPayroll(payrollIo($), isLayoff),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
+    holdCouncil: () => fillCouncil(councilIo($)),
     coffeeBreak: isTerminal => takeCoffeeBreak(coffeeIo($), isTerminal).catch((err: unknown) => $.ui.toast(`Couldn't compact the chat: ${reasonOf(err)}.`)),
     showLog: isOpen => showLog($, isOpen),
     setConfig: (field, value) => setConfig($, field, value),
@@ -420,6 +422,9 @@ const coffeeIo = ($: EngineInterface): CoffeeIo => ({
   setNote: async note => { const { turns } = await getBoss($); await setFx($, f => ({ ...f, coffee: note && { ...note, turns } })) },
   clearReading: async () => { await setBoss($, withNewWork); await update($, gauge, g => ({ ...g, contextPercent: undefined, contextTokens: undefined })) }, // a compaction ends the checkpoint too
 })
+
+/** The Hold a council button and /council (hooks/council.ts): the box is filled after what is there; a typed question is sent as the person's own words. */
+const councilIo = ($: EngineInterface): CouncilIo => ({ fill: text => $.prompt.fill({ text, mode: 'append' }), submit: text => $.prompt.submit({ text, asUser: true }), later: fn => $.clock.after(0, fn), toast: text => void $.ui.toast(text) })
 
 /** The record of why the coffee break button shows or not (hooks/coffee-debug.ts), kept at `debug:coffee` in the store. */
 const coffeeDebugIo = ($: EngineInterface): CoffeeDebugIo => ({
@@ -475,6 +480,7 @@ export const register: Register = (on, options) => {
       // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
       ['payroll review', async () => { if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined })) }],
       ['/office', () => $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })],
+      ['/council', () => $.command.register({ name: 'council', description: 'Ask a few independent voices about a hard choice: /council <question>' })],
       ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })],
       ['demo tool', () => $.tool.register(DEMO_SPEC)],
       ['payroll', async () => { const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined; if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved })) }],
@@ -562,6 +568,8 @@ export const register: Register = (on, options) => {
     return { text: `${BRAND} setup is running for this project. A small card on the Office tab says what was set up.` }
   })
 
+  on('command.run', { command: 'council' }, async ($, e) => ({ text: await runCouncil(councilIo($), e.args) }))
+
   on('command.run', { command: 'office-demo' }, async $ => {
     await openPanes(paneIo($), false)
     await startDemo(demoIo($))
@@ -598,7 +606,7 @@ export const register: Register = (on, options) => {
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     // A pair-up member's `PAIR-UP: <goal>` line (hooks/pair-up.ts) comes off the same way, right after it.
     const { effort, prompt: unEffort } = parseEffort(e.prompt)
-    const { goal, prompt } = parsePairUp(unEffort)
+    const { goal, isCouncil, prompt } = parsePairUp(unEffort)
     await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
     if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
@@ -608,7 +616,7 @@ export const register: Register = (on, options) => {
       keepBrief(r.agentId, sent)
       if (effort) efforts.set(r.agentId, effort)
       await newHire(runIo($), r.agentId, e.subagentType, e.description, e.name)
-      const pair = goal !== undefined && !e.workflow ? { goal, at: await $.clock.now() } : undefined // a workflow keeps its script's prompt, so its line was never taken off
+      const pair = goal !== undefined && !e.workflow ? { goal, at: await $.clock.now(), ...(isCouncil ? { isCouncil } : {}) } : undefined // a workflow keeps its script's prompt, so its line was never taken off
       await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), ...(pair ? { pair } : {}), model: one.model || r.model })))
       await showStatus($)
     }
@@ -725,7 +733,7 @@ export const register: Register = (on, options) => {
         if (e.reason === 'answer') await setBoss($, withHandBack) // work handed back: a checkpoint once Clawd has reported it
         const by = labelOf(asker, (await read($, blurbs))[asker.type] ?? '')
         const choices = parseChoices(e.answer ?? '')
-        if (choices.length > 0) await update($, staff, l => edit(l, asker.id, one => withChoices(one, choices)))
+        if (choices.length > 0 || asker.pair?.isCouncil) await update($, staff, l => edit(l, asker.id, one => withVoiceNotes(one, choices, e.reason === 'answer' ? e.answer ?? '' : '')))
         // After each hand-back, a check of the work against its report; a note may join Clawd's card.
         if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
         void leftAnswer(leftIo($), e, by)

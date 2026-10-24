@@ -454,7 +454,7 @@ test('Ask Clawd fills the prompt box with the line and the longer version, sends
 test('Ask Clawd shows with or without Learn more opened, first of the dim buttons, and on a note with no explanation', async ($, on) => {
   await withNotes($, on, [reply(1)])
   const ui = await office$($, 'desktop')
-  const keys = async () => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label)).slice(0, 3)
+  const keys = async () => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label)).filter(label => label !== 'Hold a council').slice(0, 3)
   expect(await keys()).toEqual(['Learn more', 'Ask Clawd', 'Dismiss'])
   await ui.press({ key: 'know-more' })
   expect(await keys()).toEqual(['Got it', 'Ask Clawd', 'Dismiss'])

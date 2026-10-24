@@ -92,7 +92,7 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   expect(opened.some(o => /desk/i.test(o.id))).toBe(false)
   expect(toasts.some(t => /for the CEO|DynamoDB|Launch Friday/.test(t))).toBe(false)
   // No command opens a desk, and no tool files a question on one.
-  expect(commands).toEqual(['office', 'office-demo', 'office-setup'])
+  expect(commands).toEqual(['office', 'council', 'office-demo', 'office-setup'])
   expect(tools).toEqual(['demo', 'offer_rule', 'step', 'find_helpers', 'hire_contractor', 'team_pick'])
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
@@ -103,7 +103,7 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   }
 })
 
-test("Clawd's card says All clear in an empty office, has no button of its own, and shows the empty floor", async ($, on) => {
+test("Clawd's card says All clear in an empty office, has only the council button of its own, and shows the empty floor", async ($, on) => {
   const { clock } = host(on)
   on('turn.start', () => ({ turnId: 't1' }))
 
@@ -149,7 +149,7 @@ test("Clawd's card says All clear in an empty office, has no button of its own, 
     expect(await ui.find({ key: 'resume' })).toBeUndefined()
     expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
     // Clawd's card has no button; the footer's Usage button is the only one in the pane.
-    expect((await ui.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['usage-toggle'])
+    expect((await ui.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['clawd-council', 'usage-toggle'])
     await ui.unmount()
   }
 })

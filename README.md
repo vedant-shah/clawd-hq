@@ -91,7 +91,7 @@ Claude Code already runs subagents in the background, with a model and effort pe
 
 - **Single specialist.** The usual case. One helper works in the background at its own desk.
 - **Pair-up.** For risky or wide work. Named specialists, such as an author and a critic, message each other directly. After one round of critique, each reports to Clawd. The office shows them as one card.
-- **Council.** For a hard choice that is hard to undo. A few voices answer on their own, and you decide.
+- **Council.** For a hard choice that is hard to undo. A few voices answer on their own, and you decide. Press "Hold a council" on Clawd's card to start the question in your prompt box, or type `/council <question>`. The voices share one card with its own picture of three robed judges.
 - **Agent teams.** Only when Claude Code's experimental agent-teams feature is turned on. It is off by default.
 
 ## 🏢 The office
@@ -133,6 +133,7 @@ AT WORK · 3
 - **Clawd's card.** His status, with a green, amber or red dot. The chat's model and effort. He stays free while specialists work, and falls asleep when the office is quiet.
 - **At work.** One card per specialist: its own words, model, time, tokens and a progress bar.
 - **Pair-up.** Specialists hired together share one card.
+- **Council.** The voices of a council share one card, with each voice's status. When all have finished, it shows the first line of each report.
 - **Usage.** Context, session limit and weekly limit. Amber at 70%, red at 90%.
 
 The other tabs:

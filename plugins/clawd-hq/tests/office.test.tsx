@@ -492,6 +492,46 @@ test('a run that ends adds its tokens to its type once, and a second run adds it
   expect(kept()).toBe(10_000)
 })
 
+test('a People row keeps picture, text and button on one line at any width: the row never wraps, the ends never shrink, the text does', async ($, on) => {
+  host(on, [])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.agent.offer({ agent: 'ecc:planner', description: `Plans work. ${'A long second thought. '.repeat(20)}` } as never)
+  await $.agent.offer({ agent: 'legal:review-contract', description: 'Reads contracts closely.' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'o', kind: 'change', surface })
+    const onTeam = await ui.find({ key: 'person-ecc:planner' })
+    expect(onTeam?.props.flexWrap).not.toBe('wrap')
+    expect(onTeam?.props.flexDirection).toBe('row')
+    const parts = (onTeam?.children ?? []) as Array<{ props: Record<string, unknown> }>
+    expect(parts).toHaveLength(3)
+    expect(parts.map(p => p.props.flexShrink)).toEqual([0, 1, 0])
+    expect(parts[1]?.props.flexGrow).toBe(1)
+    // The action sits in its own box that does not shrink, whether it is "lay off" or "Hire".
+    for (const key of ['person-ecc:planner', 'person-legal:review-contract']) {
+      const row = await ui.find({ key })
+      const last = ((row?.children ?? []) as Array<{ props: Record<string, unknown> }>).at(-1)
+      expect(last?.props.flexShrink).toBe(0)
+    }
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface })
+    await ui.unmount()
+  }
+})
+
+test('a long agent description is kept whole on the books, never cut with a mark, and the People row shows its first sentence', async ($, on) => {
+  host(on, [])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  const long = `Answers questions about ${'Claude Code features, hooks, IDE integrations and settings, '.repeat(6)}and more`
+  expect(long.length).toBeGreaterThan(300)
+  await $.agent.offer({ agent: 'claude-code-guide', description: long } as never)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PEOPLE })
+  const line = await ui.find({ type: 'Text', text: /^Answers questions about/ })
+  expect(line?.text).toBe(long)
+  expect(String(line?.text)).not.toMatch(/…/)
+  expect(line?.props.wrap).toBe('wrap')
+  await ui.unmount()
+})
+
 test('a People row no longer shows the plugin or how often a type was hired', async ($, on) => {
   host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'h1' }))

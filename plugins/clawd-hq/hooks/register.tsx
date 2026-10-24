@@ -3,7 +3,7 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Artifact, Badge, Boss, ContractorOffer, Employee, Fx, KnowState, LeftItem, Payroll, RuleOffer } from '../types'
 import { FILE_TOOLS, leftActions, leftAnswer, leftAsked, leftOwnTurn, leftStart, leftToolUsed, leftTurnStart, leftWatch, type LeftIo } from './left-io'
-import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, oneLine, parseChoices, parseEffort } from './desk'
+import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, fit, parseChoices, parseEffort } from './desk'
 import type { Effort } from './desk'
 import { resumedEffort } from './resume-effort'
 import { parsePairUp } from './pair-up'
@@ -578,7 +578,7 @@ export const register: Register = (on, options) => {
   // Instruction-aware: remember what each agent type is for, put it on the books, and keep laid-off types off the listing.
   on('agent.offer', async ($, e, next) => {
     if (e.agent === SCOUT_TYPE) return { isOffered: false } // the plugin's own: never offered to the chat, never on the books
-    const blurb = oneLine(e.description, BLURB_CHARS)
+    const blurb = fit(e.description, BLURB_CHARS) // cut at a word with no mark: the People row wraps it, and an ellipsis would only hide words
     // The engine offers every agent type at the same moment when a session starts. Their writes go one at a time:
     // the state refuses a write that lost the race too often, and the hook was then skipped for that type.
     await inLine(async () => {

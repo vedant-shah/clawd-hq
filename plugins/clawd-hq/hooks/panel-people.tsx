@@ -11,16 +11,19 @@ function row(p: Person, kit: Kit, actions: PanelActions) {
   const { Box, Text, Button, sprite, isTerminal } = kit
   const icon = sprite(`person-${p.type}`, (isTerminal ? tinyIcon : compactIcon)(avatarFor(p.type)), { scale: 3, alt: p.name, keep: p.isOff ? 0.75 : undefined })
   return (
-    <Box key={`person-${p.type}`} flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
+    // One line at any width: the picture and the button keep their size, and only the text between them gives way and wraps.
+    <Box key={`person-${p.type}`} flexDirection="row" gap={2} alignItems="center">
       <Box flexShrink={0}>{icon}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text bold wrap="wrap">{p.name}</Text>
         {p.blurb !== '' && <Text dimColor wrap="wrap">{firstSentence(p.blurb)}</Text>}
         {(p.tokens ?? 0) > 0 && <Text dimColor wrap="wrap">{`${tokensLabel(p.tokens)} tokens`}</Text>}
       </Box>
-      {p.isOff
-        ? <Button key={`hire-${p.type}`} label="Hire" onPress={() => actions.hire(p.type)} />
-        : canLayOff(p.type) && <Button key={`layoff-${p.type}`} plain dimColor label="lay off" onPress={() => actions.layOff(p.type)} />}
+      <Box flexShrink={0}>
+        {p.isOff
+          ? <Button key={`hire-${p.type}`} label="Hire" onPress={() => actions.hire(p.type)} />
+          : canLayOff(p.type) && <Button key={`layoff-${p.type}`} plain dimColor label="lay off" onPress={() => actions.layOff(p.type)} />}
+      </Box>
     </Box>
   )
 }

@@ -3,7 +3,8 @@ export const FRAME_MS = 400
 export const CHEER_TICKS = 5
 /** A given name is a word or two; anything longer is cut. */
 export const NAME_CHARS = 40
-export const BLURB_CHARS = 200
+/** What an agent type is for, kept at a word with no mark: long enough that the People row's first sentence is seldom cut. */
+export const BLURB_CHARS = 600
 // Agent-written text is cut to one line where it is stored.
 export const DESCRIPTION_CHARS = 160
 export const MAX_BLURBS = 120

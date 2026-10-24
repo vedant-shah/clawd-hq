@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { CHARACTERS, PALETTE } from '../hooks/avatar-data'
+import { CHARACTERS, COMPACT, PALETTE } from '../hooks/avatar-data'
 import { avatarFor, clawdAvatar, compactIcon, tinyIcon } from '../hooks/avatars'
 import { councilIcon, councilTinyIcon } from '../hooks/council-avatar'
 import { COUNCIL_LEAD, fillCouncil, runCouncil, voiceLine, withVoiceNotes } from '../hooks/council'
@@ -84,14 +84,34 @@ test('only a council voice keeps a report line; its choices are kept as before',
 
 // ---- The council's own avatar ----
 
-test('the council picture is 16 by 12 and 8 by 8, in the shared palette only', () => {
+test('the council picture is 23 by 12 and 18 by 7, in the shared palette only', () => {
   const [icon, tiny] = [councilIcon(), councilTinyIcon()]
-  expect([icon.length, icon.every(r => r.length === 16)]).toEqual([12, true])
-  expect([tiny.length, tiny.every(r => r.length === 8)]).toEqual([8, true])
+  expect([icon.length, icon.every(r => r.length === 23)]).toEqual([12, true])
+  expect([tiny.length, tiny.every(r => r.length === 18)]).toEqual([7, true])
   for (const cell of [...filled(icon), ...filled(tiny)]) expect(colors.has(cell)).toBe(true)
 })
 
-test('three robed figures: the middle one taller than the two beside it, which match; a gavel is held up at its side', () => {
+test('the judges are Clawd bodies: the orange body, the hem and legs, and two black eyes each, with no separate faces', () => {
+  const key = Object.fromEntries(Object.entries(PALETTE).map(([k, c]) => [c, k]))
+  const asKeys = (grid: Array<Array<string | null>>) => grid.map(r => r.map(c => (c === null ? '.' : key[c])).join(''))
+  const [icon, tiny] = [councilIcon(), councilTinyIcon()]
+  for (const grid of [icon, tiny]) {
+    for (const c of [PALETTE.o!, PALETTE.d!, PALETTE.k!]) expect(filled(grid)).toContain(c)
+    // Three bodies, two eyes each (the list icon draws each eye two dots tall).
+    const eyes = filled(grid).filter(c => c === PALETTE.k).length
+    expect(eyes).toBe(grid === icon ? 12 : 6)
+    // Orange is the commonest body colour of the three; no skin-like second colour beside it.
+    expect(filled(grid).filter(c => c === PALETTE.o).length).toBeGreaterThan(filled(grid).filter(c => c === PALETTE.n).length)
+  }
+  // The big judge's legs are the very row the Clawd body ends with (hooks/avatar-data.ts COMPACT.body).
+  const legs = COMPACT.body.rows[COMPACT.body.rows.length - 1]!.slice(4, 12)
+  expect(legs).toBe('o.d..d.o')
+  expect(asKeys(icon).some(r => r.includes(legs))).toBe(true)
+  // The judges' wigs are grey and white.
+  for (const c of [PALETTE.g!, PALETTE.w!]) expect(filled(icon)).toContain(c)
+})
+
+test('three judges: the middle one bigger than the two beside it, which match; a gavel is held up at its side', () => {
   for (const grid of [councilIcon(), councilTinyIcon()]) {
     const [w, h] = [grid[0]!.length, grid.length]
     const cols = (from: number, to: number) => grid.map(r => r.slice(from, to))
@@ -99,7 +119,7 @@ test('three robed figures: the middle one taller than the two beside it, which m
     const top = (part: typeof left) => part.findIndex(r => r.some(c => c !== null))
     // The middle figure starts at the top; the sides begin lower, at the same row.
     expect(top(mid)).toBe(0)
-    expect(top(left)).toBeGreaterThan(2)
+    expect(top(left)).toBeGreaterThan(1)
     // Below the gavel, the sides are the same height: same row to start, same rows used, same robe colours.
     const below = Math.ceil(h * 0.5)
     expect(rowsUsed(left, below, h)).toBe(rowsUsed(right, below, h))

@@ -8,11 +8,14 @@ import { installedSkills } from './hire'
 import type { SavedTeam } from './hire'
 import { teamKey } from './onboard-types'
 import type { OnboardIo, PastUse } from './onboard-types'
+import { useOf } from './skill-use'
 import { idOf } from './team-rules'
 
 /** The most matches a search returns. */
 export const MATCHES = 5
 const JOB_CHARS = 1000
+const MAX_KEYWORDS = 12
+const KEYWORD_CHARS = 40
 
 export type Status = 'staff' | 'laid off' | 'not on team'
 /** One installed helper, as the search sees it. `id` is the exact name to hire it by; `hireAs` is the agent type of a staff skill's hire. */
@@ -49,9 +52,13 @@ function scoreOf(job: ReadonlySet<string>, h: Listed): number {
   return [...job].reduce((sum, w) => sum + (name.has(w) ? NAME_WEIGHT : 0) + (about.has(w) ? 1 : 0), 0)
 }
 
-/** The best fits for the job, best first. At the same fit: staff, then not on team, then laid off, then by name. Nothing that shares no word is returned. */
-export function rankHelpers(job: string, list: readonly Listed[], limit = MATCHES): readonly Listed[] {
-  const words = jobWords(job)
+/** The keywords Clawd gave: text only, trimmed, blanks dropped, the first twelve. Anything else gives none. */
+export const keywordsOf = (input: unknown): readonly string[] =>
+  Array.isArray(input) ? input.filter((k): k is string => typeof k === 'string').map(k => k.trim().slice(0, KEYWORD_CHARS)).filter(k => k !== '').slice(0, MAX_KEYWORDS) : []
+
+/** The best fits for the job and its keywords, best first. At the same fit: staff, then not on team, then laid off, then by name. Nothing that shares no word is returned. */
+export function rankHelpers(job: string, list: readonly Listed[], limit = MATCHES, keywords: readonly string[] = []): readonly Listed[] {
+  const words = jobWords([job, ...keywords].join(' '))
   return list.map(h => ({ h, score: scoreOf(words, h) })).filter(r => r.score > 0)
     .sort((a, b) => b.score - a.score || ORDER[a.h.status] - ORDER[b.h.status] || a.h.id.localeCompare(b.h.id))
     .slice(0, limit).map(r => r.h)
@@ -113,13 +120,14 @@ function nextOf(h: Listed): string {
   return `Not on the team. Call ${CONTRACTOR_NAME} with skill "${h.id}" and a short role, then hire the agent it returns.`
 }
 
-const shown = (h: Listed) => ({ name: h.id, kind: h.kind, about: h.about, status: h.status, next: nextOf(h) })
+/** A match as Clawd sees it. A skill also says what it adds (`use`); an agent has no such label. */
+const shown = (h: Listed) => ({ name: h.id, kind: h.kind, ...(h.kind === 'skill' ? { use: useOf(h.id, h.about) } : {}), about: h.about, status: h.status, next: nextOf(h) })
 
 /** The answer to a call of `find_helpers`: the top matches for the job as JSON text, or why the call is refused. Only Clawd (no agent id) may search. */
 export async function findHelpers(io: FindIo, agentId: string | undefined, input: Record<string, unknown>): Promise<{ readonly result: string } | { readonly deny: string }> {
   if (agentId !== undefined) return { deny: FIND_DENY }
   const job = typeof input.job === 'string' ? input.job.trim().slice(0, JOB_CHARS) : ''
   if (job === '') return { deny: 'job must be text: say what the work is in a few words.' }
-  const matches = rankHelpers(job, await listHelpers(io)).map(shown)
+  const matches = rankHelpers(job, await listHelpers(io), MATCHES, keywordsOf(input.keywords)).map(shown)
   return { result: JSON.stringify(matches.length > 0 ? { matches } : { matches, note: NO_FIT }) }
 }

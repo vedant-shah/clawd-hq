@@ -35,13 +35,19 @@ export const FIND_HELPERS_SPEC: ToolSpec = {
   // In the prompt's own list: Clawd calls it before every hire, so he should not have to search for it first.
   isDeferred: false,
   description:
-    'For Clawd, in the main chat: search every installed agent and skill for a job, before you hire anyone. Give a plain description of the work. ' +
-    'It returns the five best fits. Each has a name, a kind (agent or skill), what it does, and a status: staff (on this project\'s team), ' +
-    'laid off (parked for this project) or not on team (installed, not picked). A specialist cannot use it.',
+    'For Clawd, in the main chat: search every installed agent and skill for a job, before you hire anyone. Give the job and 5 to 8 keywords. ' +
+    'It always returns the five best fits, with no cut-off, so judge the fit yourself. Each has a name, a kind (agent or skill), what it does, and a status: staff (on this project\'s team), ' +
+    'laid off (parked for this project) or not on team (installed, not picked). A skill also has a use: knowledge (facts or taste a model may lack) or process (a way of working). ' +
+    'A specialist cannot use it.',
   inputSchema: {
     type: 'object',
     properties: {
       job: { type: 'string', description: 'The work to be done, in plain words, e.g. “design the settings page” or “review a Go change for bugs”.' },
+      keywords: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '5 to 8 words for the same work: other ways to say it, synonyms, and the field\'s own words. For a design job: “UI, layout, CSS, visual, polish”. At most 12.',
+      },
     },
     required: ['job'],
   },

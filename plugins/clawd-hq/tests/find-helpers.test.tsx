@@ -53,6 +53,26 @@ test('a skill on the team is staff, and its hire is named', async ($, on) => {
   expect(top?.next).toContain('clawd-hq:tdd-workflow')
 })
 
+test('each skill match says what it adds: knowledge or process. An agent carries no such label', async ($, on) => {
+  await office(on)
+  await $.session.start(START)
+  await offerAgents($)
+  const found = await matchesOf($, 'plan the work and write tests first with an investor pitch deck')
+  const by = (name: string) => found.find(m => m.name === name) as (Match & { use?: string }) | undefined
+  expect(by('ecc:tdd-workflow')?.use).toBe('process')
+  expect(by('pitch-deck')?.use).toBe('knowledge')
+  expect(by('ecc:planner')).toBeDefined()
+  expect(by('ecc:planner')).not.toHaveProperty('use')
+})
+
+test('keywords from Clawd find a paraphrased job that the plain words miss', async ($, on) => {
+  await office(on)
+  await $.session.start(START)
+  expect(await matchesOf($, 'something for the money people')).toEqual([])
+  const found = (JSON.parse((await find($, { job: 'something for the money people', keywords: ['investor', 'slides', 7, ''] })).result ?? '{}') as { matches: Match[] }).matches
+  expect(found[0]).toMatchObject({ name: 'pitch-deck' })
+})
+
 test('an agent laid off for this project is still found, and marked laid off', async ($, on) => {
   await office(on)
   await $.session.start(START)

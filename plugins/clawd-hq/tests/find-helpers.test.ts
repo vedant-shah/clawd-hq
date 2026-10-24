@@ -1,6 +1,6 @@
 // find_helpers, the ranking: word overlap between the job and each helper's name and description, with no model call.
 import { expect, test } from 'claude-code/testing'
-import { MATCHES, jobWords, rankHelpers } from '../hooks/find-helpers'
+import { MATCHES, jobWords, keywordsOf, rankHelpers } from '../hooks/find-helpers'
 import type { Listed } from '../hooks/find-helpers'
 
 const item = (id: string, about: string, over: Partial<Listed> = {}): Listed => ({ id, kind: 'skill', about, status: 'not on team', ...over })
@@ -41,6 +41,20 @@ test('a better fit wins over a status; at the same fit, staff come before not on
     item('a:design-system', 'Design system work for design tokens.', { status: 'laid off' }),
   ]
   expect(rankHelpers('design system', list).map(h => h.id)).toEqual(['a:design-system', 'a:design-staff', 'a:design-team', 'a:design-off'])
+})
+
+test('keywords widen the search: a paraphrased job finds the helper through the field\'s own words', () => {
+  const list = [item('emil-design-eng', 'UI polish, layout and CSS details.'), item('ecc:postgres-patterns', 'Database tuning.')]
+  expect(rankHelpers('make the settings screen look nicer', list)).toEqual([])
+  expect(rankHelpers('make the settings screen look nicer', list, MATCHES, ['UI', 'layout', 'CSS', 'visual']).map(h => h.id)).toEqual(['emil-design-eng'])
+  expect(rankHelpers('make the settings screen look nicer', list, MATCHES, [])).toEqual([])
+})
+
+test('keywords are cleaned: blanks and non-text are ignored, and only the first twelve count', () => {
+  expect(keywordsOf(['  css ', '', '   ', 7, null, 'ui'])).toEqual(['css', 'ui'])
+  expect(keywordsOf('css')).toEqual([])
+  expect(keywordsOf(undefined)).toEqual([])
+  expect(keywordsOf(Array.from({ length: 20 }, (_, i) => `k${i}`))).toHaveLength(12)
 })
 
 test('a job with no usable word, or a list with no fit, gives nothing; the list given is not changed', () => {

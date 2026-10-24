@@ -17,8 +17,11 @@ Hand over every job that can run without the person. That is any job of more tha
 - Decide before your first step, not halfway. If you have taken three steps on a job and more remain, stop. Hand the rest over, and put what you have found so far in the brief.
 - A specialist can use the tools you can, connectors included. A job that needs a tool is not a reason to keep it.
 - Starting a specialist has a cost, so do not hire for a job of one or two steps. That is the only reason to do a job yourself.
-- **Search first.** Before every hire, call `find_helpers` with the job. It searches everything installed: agents, skills, and helpers laid off for this project.
-- **Hire staff when one fits.** Staff are the team picked for this project. If a staff helper fits, hire it. Give the hire a short role name with the Agent tool's `name`, such as "Debugger". Name the skills that fit in the brief, by exact name, and tell it to load them with the Skill tool.
+- **Search before a new kind of hire.** Call `find_helpers` before you hire a kind of specialist you have not hired in this chat. Do not search again when you hire the same kind of specialist for more of the same work. It searches everything installed: agents, skills, and helpers laid off for this project.
+- **Give it the job and 5 to 8 keywords.** Keywords are other words for the work and the field's own words, such as "UI, layout, CSS, visual" for a design job.
+- **The search always returns five.** Judge the fit yourself. If none fits, say so in one line and why.
+- **Hire staff when one fits.** Staff are the team picked for this project. If a staff helper fits, hire it. Give the hire a short role name with the Agent tool's `name`, such as "Debugger".
+- **Attach a skill only when it adds knowledge.** The search marks each skill as knowledge or process. Name a knowledge skill in the brief, by exact name, and tell the hire to load it with the Skill tool. Leave out process skills, such as test-first or review steps. At most two. None for a Haiku job or a one-file edit.
 - **Hire a contractor when only an off-team skill fits.** Call `hire_contractor` with the skill and a role, then hire the agent it returns, with that role as its name. A contractor does one job and leaves.
 - **Laid-off helpers.** If a laid-off helper fits best, say so in one line and hire it anyway, or suggest bringing it back.
 - **Generalist last.** Use the general-purpose agent only when nothing fits, and say in one line why. Write a fuller brief.

@@ -518,17 +518,16 @@ test('a People row keeps picture, text and button on one line at any width: the 
   }
 })
 
-test('a long agent description is kept whole on the books, never cut with a mark, and the People row shows its first sentence', async ($, on) => {
+test('a long agent description shows on its People row as one short line, never cut with a mark', async ($, on) => {
   host(on, [])
   on('agent.offer', () => ({ isOffered: true }) as never)
-  const long = `Answers questions about ${'Claude Code features, hooks, IDE integrations and settings, '.repeat(6)}and more`
+  const long = `Use this agent when the user asks questions ("Can Claude...", "How do I...") about: (1) Claude Code (the CLI tool) - ${'features, hooks, IDE integrations and settings, '.repeat(8)}`
   expect(long.length).toBeGreaterThan(300)
   await $.agent.offer({ agent: 'claude-code-guide', description: long } as never)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PEOPLE })
-  const line = await ui.find({ type: 'Text', text: /^Answers questions about/ })
-  expect(line?.text).toBe(long)
-  expect(String(line?.text)).not.toMatch(/…/)
+  const line = await ui.find({ type: 'Text', text: /^Questions about Claude Code$/ })
   expect(line?.props.wrap).toBe('wrap')
+  expect(await ui.find({ type: 'Text', text: /…|\.\.\.|Use this agent/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -541,12 +540,12 @@ test('a People row no longer shows the plugin or how often a type was hired', as
   await ui.unmount()
 })
 
-test('a People row tells what someone does in the first sentence of the blurb only, never cut with a mark', async ($, on) => {
+test('a People row tells what someone does in the first clause of the blurb only, with no closing full stop', async ($, on) => {
   host(on, [])
   on('agent.offer', () => ({ isOffered: true }) as never)
   await $.agent.offer({ agent: 'ecc:planner', description: 'Plans work before anyone builds. Checks each step against the brief.' } as never)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
-  const line = await ui.find({ type: 'Text', text: /^Plans work before anyone builds\.$/ })
+  const line = await ui.find({ type: 'Text', text: /^Plans work before anyone builds$/ })
   expect(line?.props.wrap).toBe('wrap')
   expect(await ui.find({ type: 'Text', text: /Checks each step/ })).toBeUndefined()
   await ui.unmount()

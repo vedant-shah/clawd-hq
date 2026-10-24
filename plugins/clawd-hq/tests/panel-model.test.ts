@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  atWork, buildPeople, recentFailures, canLayOff, doneLine, doneThisSession, firstSentence, pluginOf,
+  atWork, buildPeople, recentFailures, canLayOff, doneLine, doneThisSession, shortLine, pluginOf,
   modelLabel, splitPeople, statusOf, tokensLabel, workLine,
 } from '../hooks/panel-model'
 import * as model from '../hooks/panel-model'
@@ -140,12 +140,38 @@ test('people split into team and talent pool, and the search covers name, plugin
   expect(splitPeople(people, 'planner').team).toHaveLength(1)
 })
 
-test('a blurb on the People tab is its first sentence, whole, or the whole blurb when it has only one', () => {
-  expect(firstSentence('Plans work before anyone builds. Checks each step against the brief.')).toBe('Plans work before anyone builds.')
-  expect(firstSentence('Reads contracts closely')).toBe('Reads contracts closely')
-  expect(firstSentence('Is it ready? Say so.')).toBe('Is it ready?')
-  expect(firstSentence('Uses v1.2 of the tool, always')).toBe('Uses v1.2 of the tool, always')
-  expect(firstSentence('')).toBe('')
+test('a People row line is a short summary: lead-ins off, the first clause, at most about 80 characters, never cut with a mark', () => {
+  expect(shortLine('Plans work before anyone builds. Checks each step against the brief.')).toBe('Plans work before anyone builds')
+  expect(shortLine('Reads contracts closely')).toBe('Reads contracts closely')
+  expect(shortLine('Uses v1.2 of the tool, always')).toBe('Uses v1.2 of the tool, always')
+  expect(shortLine('')).toBe('')
+  expect(shortLine('   ')).toBe('')
+  const long = shortLine(`${'word '.repeat(40)}end.`)
+  expect(long.length).toBeLessThanOrEqual(80)
+  expect(long).not.toMatch(/[….,;:]$/)
+  expect(long.endsWith('word')).toBe(true)
+})
+
+test('real agent descriptions come out as one short line', () => {
+  const real: Array<[string, string]> = [
+    ['Questions about Claude Code', 'Use this agent when the user asks questions ("Can Claude...", "Does Claude...", "How do I...") about: (1) Claude Code (the CLI tool) - features, hooks, slash commands, MCP servers, settings, IDE integrations, keyboard shortcuts; (2) Claude Agent SDK - building custom agents; (3) Claude API.'],
+    ['Read-only search agent for broad fan-out searches', 'Read-only search agent for broad fan-out searches — when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps.'],
+    ['Software architect agent for designing implementation plans', 'Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans.'],
+    ['Carry out one scoped change in the code', "Clawd HQ's Builder. Use to carry out one scoped change in the code, such as a feature, a fix or a small refactor, once it is clear what to build. Writes the test first."],
+    ["A change to Claude's own interface or behaviour", "Specialist: Make a mod: a change to Claude's own interface or behaviour, such as a live pane or panel, a band above the prompt, a status line, a toast."],
+    ['Planning specialist for complex features and refactoring', 'Expert planning specialist for complex features and refactoring. Use PROACTIVELY when users request feature implementation, architectural changes, or complex refactoring.'],
+    ['Code review specialist', 'Expert code review specialist. Proactively reviews code for quality, security, and maintainability. Use immediately after writing or modifying code.'],
+    ['Test-Driven Development specialist enforcing write-tests-first methodology', 'Test-Driven Development specialist enforcing write-tests-first methodology. Use PROACTIVELY when writing new features, fixing bugs, or refactoring code.'],
+    ['Build and TypeScript error resolution specialist', 'Build and TypeScript error resolution specialist. Use PROACTIVELY when build fails or type errors occur.'],
+    ['General-purpose agent for researching complex questions', 'General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file, use this agent.'],
+    ["Configure the user's Claude Code status line setting", "Use this agent to configure the user's Claude Code status line setting."],
+  ]
+  for (const [want, description] of real) {
+    const got = shortLine(description)
+    expect(got).toBe(want)
+    expect(got.length).toBeLessThanOrEqual(80)
+    expect(got).not.toMatch(/…|\.\.\./)
+  }
 })
 
 test('recent failures are real specialists that failed lately, newest first', () => {

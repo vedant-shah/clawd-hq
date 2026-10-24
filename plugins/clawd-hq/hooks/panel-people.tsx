@@ -1,6 +1,6 @@
 // The People tab: the team on the payroll. The laid-off talent pool (and so the rest of what is installed) shows only under a search.
 import { avatarFor, compactIcon, tinyIcon } from './avatars'
-import { buildPeople, canLayOff, firstSentence, splitPeople, tokensLabel } from './panel-model'
+import { buildPeople, canLayOff, shortLine, splitPeople, tokensLabel } from './panel-model'
 import type { Person } from './panel-model'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -16,7 +16,7 @@ function row(p: Person, kit: Kit, actions: PanelActions) {
       <Box flexShrink={0}>{icon}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text bold wrap="wrap">{p.name}</Text>
-        {p.blurb !== '' && <Text dimColor wrap="wrap">{firstSentence(p.blurb)}</Text>}
+        {p.blurb !== '' && <Text dimColor wrap="wrap">{shortLine(p.blurb)}</Text>}
         {(p.tokens ?? 0) > 0 && <Text dimColor wrap="wrap">{`${tokensLabel(p.tokens)} tokens`}</Text>}
       </Box>
       <Box flexShrink={0}>

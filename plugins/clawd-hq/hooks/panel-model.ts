@@ -119,8 +119,48 @@ const match = (haystack: string[], query: string) => {
 
 export type Person = { type: string; name: string; plugin: string; jobs: number; blurb: string; isOff: boolean; /** Everything its runs have used. */ tokens?: number }
 
-/** The first sentence of a blurb, whole: what a People row says someone does. A blurb with no full stop is kept as it is. */
-export const firstSentence = (text: string) => /^.*?[.!?](?=\s|$)/.exec(text.trim())?.[0] ?? text.trim()
+const SHORT_CHARS = 80
+/** Where a clause ends: a full stop, a colon, a semicolon, a bracket, or a dash with spaces round it. */
+const CLAUSE_END = /\.(?:\s|$)|[:;]|\s\(|\s[-—–]\s/
+/** What agent descriptions open with before they say what the agent does. */
+const LEAD_IN = /^(?:use this agent (?:when|to|for)\s+|use this (?:when|to)\s+|use to\s+|use proactively(?:\s+(?:when|for|to))?[,.]?\s*|specialist:\s*|expert\s+)/i
+/** "Use this agent when the user asks questions (...) about: X": what it answers is after the colon. */
+const WHEN_ASKED = /^use this agent when (?:the )?users? asks? (questions )?[^:]*?:\s*(?:\(\d+\)\s*)?(.+)$/i
+
+const clausesOf = (text: string): string[] => {
+  const out: string[] = []
+  for (let rest = text; rest.trim() !== '' && out.length < 4;) {
+    const end = CLAUSE_END.exec(rest)
+    out.push((end ? rest.slice(0, end.index) : rest).trim())
+    rest = end ? rest.slice(end.index + end[0].length) : ''
+  }
+  return out.filter(Boolean)
+}
+
+/** At most about 80 characters: at the first comma once there is a phrase, else at a word, and never with a mark. */
+function atMost(text: string): string {
+  if (text.length <= SHORT_CHARS) return text
+  const comma = text.indexOf(',', 20)
+  if (comma > 0 && comma <= SHORT_CHARS) return text.slice(0, comma)
+  const cut = text.slice(0, SHORT_CHARS)
+  const space = cut.lastIndexOf(' ')
+  return space > SHORT_CHARS / 2 ? cut.slice(0, space) : cut
+}
+
+/**
+ * What a People row says someone does, in one short line: the lead-ins of an agent's description off ("Use this agent when",
+ * "Use PROACTIVELY", "Specialist:", "Expert"), its first clause of four words or more, and at most about 80 characters.
+ */
+export function shortLine(text: string): string {
+  const plain = text.replace(/\s+/g, ' ').trim()
+  const asked = WHEN_ASKED.exec(plain)
+  const clauses = clausesOf(asked ? `${asked[1] ? 'questions about ' : ''}${asked[2]}` : plain)
+  const chosen = clauses.find(c => c.split(' ').length >= 4) ?? clauses[0] ?? ''
+  let line = chosen
+  for (let next = line.replace(LEAD_IN, ''); next !== line; next = line.replace(LEAD_IN, '')) line = next
+  line = atMost(line).replace(/[\s.,;:!?…-]+$/, '')
+  return line.charAt(0).toUpperCase() + line.slice(1)
+}
 
 export const pluginOf = (type: string) => (type.includes(':') ? type.split(':')[0]! : 'built in')
 

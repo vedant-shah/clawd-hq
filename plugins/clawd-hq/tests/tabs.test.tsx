@@ -340,7 +340,7 @@ test('no text in any tab is cut short: nothing truncates on either surface, and 
       const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
       const texts = await ui.findAll({ type: 'Text' })
       expect(texts.filter(t => t.props.wrap === 'truncate').map(t => `${pane.requestId}: ${String(t.text)}`)).toEqual([])
-      if (pane.requestId === 'clawd-hq-people') expect(texts.find(t => t.text === LONG_BLURB)?.props.wrap).toBe('wrap')
+      if (pane.requestId === 'clawd-hq-people') expect(texts.find(t => t.text === 'Plans the work in small steps before anyone builds')?.props.wrap).toBe('wrap')
       if (pane.requestId === 'clawd-hq') expect(texts.some(t => /Scoring plan/.test(String(t.text)))).toBe(true)
       await ui.unmount()
     }

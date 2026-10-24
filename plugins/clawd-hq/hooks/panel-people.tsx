@@ -73,6 +73,7 @@ export function peopleTab(kit: Kit, data: PanelData, actions: PanelActions) {
       )}
       {data.fx.layoffs && review(kit, data.fx.layoffs, actions)}
       {everyone.length === 0 && <Text dimColor>No one on the books yet. Agents appear here once they are offered to Clawd.</Text>}
+      {isSearching && team.length + pool.length === 0 && <Text dimColor wrap="wrap">{`Nothing matches "${query.trim()}".`}</Text>}
       {team.length > 0 && section('TEAM', team, kit, actions)}
       {pool.length > 0 && section('TALENT POOL', pool, kit, actions)}
       {!isSearching && waiting > 0 && <Text dimColor wrap="wrap">{`${waiting} more installed. Search to find and hire one.`}</Text>}

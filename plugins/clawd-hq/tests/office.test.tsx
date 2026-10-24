@@ -425,6 +425,22 @@ test('People lists a team member and a laid-off one in their sections, and lay o
   }
 })
 
+test('a People search that matches no one says so, and the line goes when the search is cleared', async ($, on) => {
+  host(on, [])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.agent.offer({ agent: 'ecc:planner', description: 'Plans work' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'zzzz', kind: 'change', surface })
+    expect(await ui.find({ type: 'Text', text: /^Nothing matches "zzzz"\.$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /No one on the books/ })).toBeUndefined()
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'planner', kind: 'change', surface })
+    expect(await ui.find({ type: 'Text', text: /Nothing matches/ })).toBeUndefined()
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface })
+    await ui.unmount()
+  }
+})
+
 test('a People row no longer shows the plugin or how often a type was hired', async ($, on) => {
   host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'h1' }))

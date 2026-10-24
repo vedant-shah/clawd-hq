@@ -96,7 +96,13 @@ export type ContractorOffer = {
   times: number
 }
 
-export type Payroll = { laidOff: string[]; isReviewed: boolean; stacks: string[] }
+export type Payroll = {
+  laidOff: string[]
+  isReviewed: boolean
+  stacks: string[]
+  /** The agent types on this project's team once it was settled: a type offered later is not on it, and is laid off at once. Absent until then. */
+  kept?: string[]
+}
 
 /** An agent type's place on the books, kept across sessions. */
 export type Badge = { jobs: number; /** Everything this type's finished runs used, for this machine: a running total. */ tokens?: number }

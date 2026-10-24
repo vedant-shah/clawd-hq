@@ -43,7 +43,9 @@ export function withJobs(books: Record<string, Badge>, type: string, jobs: numbe
 /** The payroll with this type laid off (last on the list) or rehired; either way it counts as reviewed. */
 export function withLaidOff(p: Payroll, type: string, isOff: boolean): Payroll {
   const rest = p.laidOff.filter(t => t !== type)
-  return { ...p, laidOff: isOff ? [...rest, type] : rest, isReviewed: true }
+  // A hand-picked type joins the settled team (or leaves it), so a later offer of other types does not touch it.
+  const kept = p.kept === undefined ? {} : { kept: isOff ? p.kept.filter(t => t !== type) : [...new Set([...p.kept, type])] }
+  return { ...p, ...kept, laidOff: isOff ? [...rest, type] : rest, isReviewed: true }
 }
 
 /** The blurbs with this type's new one last; past the cap, the oldest go. */

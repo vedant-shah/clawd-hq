@@ -20,13 +20,13 @@ import { SCOUT_CRASH_DENY, runScout, scoutRoute, spawnTypeOf } from './scout-run
 import type { RouteIo, ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, TEAM_PICK_SPEC } from './scout-spec'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
-import { resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
+import { holdBack, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
 import { checkOnboard, chooseOnboard, isSetupBusy, restartOnboard, savedOf, startOnboard } from './onboard'
 import { ancestorPaths, answerText, breakdownOf, commandsOf, listEntries } from './onboard-adapt'
 import { rehire } from './hire'
 import { PROFILE_BLOCK, profileBlock } from './profile'
-import { PROFILE_KEY } from './onboard-types'
-import type { OnboardCard, OnboardIo, Profile } from './onboard-types'
+import { PROFILE_KEY, teamKey } from './onboard-types'
+import type { OnboardCard, OnboardIo, Profile, Team } from './onboard-types'
 import type { PayrollIo } from './payroll'
 import { ROWS_KEY, setToggle } from './configs'
 import type { ConfigField, ConfigIo } from './configs'
@@ -228,6 +228,7 @@ const byOf = async ($: EngineInterface, id: string) => {
 const payrollIo = ($: EngineInterface): PayrollIo => ({
   cwd, get: () => getPayroll($), set: async p => { await update($, payroll, () => p) }, keep: (key, p) => $.store.set(key, p),
   types: async () => [...new Set([...Object.keys(await read($, blurbs)), ...Object.keys(await read($, roster))])],
+  picks: async () => ((await $.store.get(teamKey(cwd))) as Team | undefined)?.picks?.filter(p => p.kind === 'agent').map(p => p.name),
   list: path => $.fs.list(path), fx: () => getFx($), setFx: fn => setFx($, fn),
   invalidate: () => { $.ui.invalidate('tool.describe'); $.ui.invalidate('prompt.attachment') },
 })
@@ -587,7 +588,7 @@ export const register: Register = (on, options) => {
       }
       if (!(await read($, roster))[e.agent]) await enrollNow($, e.agent, 0)
     })
-    if ((await getPayroll($)).laidOff.includes(e.agent)) return { isOffered: false }
+    if (await inLine(() => holdBack(payrollIo($), e.agent))) return { isOffered: false }
     return next(e)
   })
 

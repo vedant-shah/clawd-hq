@@ -687,13 +687,64 @@ test('a small team is left whole; the trim is made once the team grows past 15 t
   expect(toasts.some(t => /Payroll review|laid off/.test(t))).toBe(false)
 })
 
-test('a team with nothing to lay off keeps everyone, and types that arrive later are not trimmed after the fact', async ($, on) => {
+test('a team with nothing to lay off keeps everyone, and types that arrive later wait in the pool', async ($, on) => {
   const useful = Array.from({ length: 16 }, (_, i) => `ecc:planner-${i}`)
   const { clock } = await untilReview($, on, useful)
   expect(await teamSize($)).toBe(17)
   for (const agent of MANY.slice(0, 7)) await $.agent.offer({ agent, description: 'x' } as never)
   await clock.advance(50 * 400)
-  expect(await teamSize($)).toBe(24)
+  expect(await teamSize($)).toBe(17)
+})
+
+test('the team is the picked team plus what the person hired: a type offered later is not on it, and a team that had grown goes back by itself', async ($, on) => {
+  const team = { picks: [{ seat: 'Plan', name: 'ecc:planner', kind: 'agent', receipt: 'x' }, { seat: 'Specialist', name: 'plugin-authoring', kind: 'skill', receipt: 'x' }], empty: [], by: 'rules' }
+  // An older payroll: reviewed once, everything since offered left on the team.
+  const h = host(on, [], { 'payroll:/repo': { laidOff: ['legal:contracts'], isReviewed: true, stacks: [] }, 'team:/repo': team, 'onboard:/repo': { step: 'skipped', pending: [], at: 1 } })
+  const toasts = h.toasts
+  const offered: Record<string, unknown> = {}
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.session.start(START)
+  for (const agent of ['ecc:planner', 'ecc:architect', 'ecc:go-reviewer', 'legal:contracts', 'Explore']) offered[agent] = await $.agent.offer({ agent, description: `Does ${agent}` } as never)
+  await h.clock.advance(25 * 400 + 100)
+  // The picked agent, the built-in general agent and Explore: not the 2 types that crept in.
+  expect(await teamSize($)).toBe(3)
+  expect(toasts.filter(t => /laid off|Payroll/.test(t))).toEqual([])
+  // A type offered after that is not on the team and is not listed to Clawd.
+  expect(await $.agent.offer({ agent: 'ecc:fresh', description: 'New' } as never)).toMatchObject({ isOffered: false })
+  expect(await teamSize($)).toBe(3)
+  // It is in the pool, found by a search, and hiring it by hand puts it on the team for good.
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'fresh', kind: 'change', surface: 'terminal' })
+  await ui.press({ key: 'hire-ecc:fresh' })
+  await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface: 'terminal' })
+  await ui.unmount()
+  expect(await teamSize($)).toBe(4)
+  expect(await $.agent.offer({ agent: 'ecc:fresher', description: 'Newer' } as never)).toMatchObject({ isOffered: false })
+  await $.session.start(START)
+  await h.clock.advance(60 * 400)
+  expect(await teamSize($)).toBe(4)
+  expect(await $.agent.offer({ agent: 'ecc:fresh', description: 'New' } as never)).not.toMatchObject({ isOffered: false })
+})
+
+test('tokens a run used show on its type\'s People row once the run has ended', async ($, on) => {
+  host(on, [{ id: 'a1', type: 'ecc:planner', description: 'Plan it', status: 'running' }])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'claude-opus-5-5', input_tokens: 900_000, output_tokens: 100 } } as never
+  })
+  await $.session.start(START)
+  await $.agent.offer({ agent: 'ecc:planner', description: 'Plans work.' } as never)
+  await $.agent.spawn({ prompt: 'Plan', description: 'Plan it', subagentType: 'ecc:planner' } as never)
+  const steps = $.turn.step({ turnId: 't1', index: 0, model: 'm', messageCount: 3, agentId: 'a1' } as never)
+  let part = await steps.next()
+  while (!part.done) part = await steps.next()
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'a1', isAborted: false } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
+    expect(await ui.find({ type: 'Text', text: /^900K tokens$/ })).toBeDefined()
+    await ui.unmount()
+  }
 })
 
 test('a trimmed payroll is not trimmed again in a new session: what the person rehired stays', async ($, on) => {

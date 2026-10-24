@@ -35,23 +35,24 @@ Clawd HQ isn't a new agent runtime. It packages Claude Code's native agents into
 
 - **Delegates by default.** Clawd hands every job of more than two or three steps to a specialist in the background. Jobs that don't depend on each other run side by side. Ask him anything while three specialists work.
 - **Specialists don't stall.** They never stop mid-run for a question. They make their best call, finish the job, and list their assumptions and questions at the end for Clawd.
-- **Steer a running specialist.** Clawd can message any running specialist, so you can change or add to a brief without restarting the job.
+- **Steer a running specialist.** Uses Claude Code's own agent messaging: Clawd can message any running specialist, and it picks the message up at its next step. Change or add to a brief without restarting the job.
 - **One report.** Questions come to you in one box (up to four) at a pause. Quiet chat hides "finished" notices. Failures and questions always show.
+- **Plain words.** Clawd talks in plain, short sentences, borrowing a few rules from ASD-STE100 (Simplified Technical English).
 
 Free to talk is the aim, not a promise. Short direct jobs (a single command, a line or two) Clawd does himself, and then you wait.
 
 ### 2. Right team, right size
 
 - **Uses what you already have.** Setup picks your team from the agents and skills you have installed. Each brief names the installed skills that fit the job. Nothing new to download.
-- **Contractors.** Clawd searches everything installed before each hire. If only a skill that isn't on your team fits, he hires it for that one job, and offers to make it staff the second time.
-- **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus.
+- **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort.
+- **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus. Skills are attached only when they add knowledge, not process: at most two, and none for a one-file edit or a job on the smallest model.
 - **Pair-ups.** Two or more specialists check each other on risky work.
-- **Lay off unused helpers.** Keeps Clawd's choices short. One tap brings any back.
+- **Lay off unused helpers.** Helpers outside the team are laid off on their own, which keeps Clawd's choices short. Search brings any back.
 - **Edit Clawd.** Change his rules or voice in plain words, from Settings. A short set of core rules is locked in code, so no edit can remove them. One click on Reset goes back to the built-in text.
 
 ### 3. Checks, and keeps you oriented
 
-- **You should know.** Builds on Claude Code's built-in "You should know". A small Haiku model re-checks each finished job for claims the steps don't back up, hidden failures and broken rules. It speaks only when it matters, backs off if you ignore it, and quiets Claude Code's own banner while the office is open, so you aren't told twice. Every card has **Ask Clawd**.
+- **You should know.** Our own check on finished work: Haiku reads the specialist's full record against its report, and speaks up only when something matters. It backs off if you ignore it. It stands in for Claude Code's built-in You should know while it's on, so you aren't told twice. Every card has **Ask Clawd**.
 - **Left undone.** Lists work that was put off, like TODOs and skipped tests. "Do it now" puts it in your prompt box.
 - **Recap.** Back from a break? Clawd's card shows where you were and the next step. It asks one short question on the chat Claude Code has already cached.
 - **Coffee break.** Compacts a long chat at a calm moment, never mid-build.
@@ -90,8 +91,8 @@ Claude Code already runs subagents in the background, with a model and effort pe
 <p align="center"><img src="docs/diagrams/flow-staffing.svg" alt="The ways Clawd can staff a job: a setup scout picks the team; then a single specialist, a pair-up of author and critic, a council where you decide, or optional agent teams." width="640"></p>
 
 - **Single specialist.** The usual case. One helper works in the background at its own desk.
-- **Pair-up.** For risky or wide work. Named specialists, such as an author and a critic, message each other directly. After one round of critique, each reports to Clawd. The office shows them as one card.
-- **Council.** For a hard choice that is hard to undo. A few voices answer on their own, and you decide. Press "Hold a council" on Clawd's card to start the question in your prompt box, or type `/council <question>`. The voices share one card with its own picture of three robed judges.
+- **Pair-up.** For risky or wide work. Named specialists, such as an author and a critic, message each other directly (helpers that lack Claude Code's messaging tool go through Clawd). After one round of critique, each reports to Clawd. The office shows them as one card.
+- **Council.** For a hard choice that is hard to undo. Press "Hold a council" on Clawd's card (it fills your prompt box) or type `/council <question>`: four fresh voices answer once, without seeing each other, and Clawd sums up without being one of them. You decide. The office shows it as one Council card.
 - **Agent teams.** Only when Claude Code's experimental agent-teams feature is turned on. It is off by default.
 
 ## 🏢 The office
@@ -138,7 +139,7 @@ AT WORK · 3
 
 The other tabs:
 
-- **People.** Hire, lay off and search your helpers.
+- **People.** Your team, with what each helper does and how many tokens it has used. Helpers outside the team, including ones you install later, are laid off on their own; search finds them again.
 - **Settings.** The switches, the work finished this session, and Clawd's rules and voice.
 
 Every helper gets its own pixel Clawd, drawn for what it does:
@@ -154,7 +155,7 @@ Every helper gets its own pixel Clawd, drawn for what it does:
 - **Usage panels show numbers.** This one shows who is doing what, and has the numbers too.
 - **Multi-session tools make you run each session.** Here the chat hands out the work.
 - **Workflow kits make you drive them with commands.** Clawd picks the helper and model himself.
-- **Big catalogs give you hundreds of agents.** Setup picks a small team from what you already use.
+- **Big catalogs give you hundreds of agents.** Setup picks a small team from what you already use. Clawd searches everything installed before a new kind of job, so the team is never a ceiling.
 - **One office per project.** In other offices, every hire starts with picking a repo. Here the office is the project, so you never pick one.
 - **It needs nothing else.** It ships its own Planner, Builder, Reviewer and Researcher.
 

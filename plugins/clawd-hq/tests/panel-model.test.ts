@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import {
-  atWork, buildPeople, recentFailures, canLayOff, doneLine, doneThisSession, pluginOf,
+  atWork, buildPeople, recentFailures, canLayOff, doneLine, doneThisSession, firstSentence, pluginOf,
   modelLabel, splitPeople, statusOf, tokensLabel, workLine,
 } from '../hooks/panel-model'
 import * as model from '../hooks/panel-model'
@@ -138,6 +138,14 @@ test('people split into team and talent pool, and the search covers name, plugin
   expect(splitPeople(people, 'legal').team).toHaveLength(0)
   expect(splitPeople(people, 'contracts').pool).toHaveLength(1)
   expect(splitPeople(people, 'planner').team).toHaveLength(1)
+})
+
+test('a blurb on the People tab is its first sentence, whole, or the whole blurb when it has only one', () => {
+  expect(firstSentence('Plans work before anyone builds. Checks each step against the brief.')).toBe('Plans work before anyone builds.')
+  expect(firstSentence('Reads contracts closely')).toBe('Reads contracts closely')
+  expect(firstSentence('Is it ready? Say so.')).toBe('Is it ready?')
+  expect(firstSentence('Uses v1.2 of the tool, always')).toBe('Uses v1.2 of the tool, always')
+  expect(firstSentence('')).toBe('')
 })
 
 test('recent failures are real specialists that failed lately, newest first', () => {

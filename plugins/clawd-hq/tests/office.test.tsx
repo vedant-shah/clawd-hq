@@ -386,8 +386,10 @@ test('People lists a team member and a laid-off one in their sections, and lay o
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
     expect(await ui.find({ type: 'Text', text: /TEAM · 3/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /ecc plugin · never hired/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /built in · never hired/ })).toBeDefined()
+    // A row is the name and one line of what they do: no "Hired" mark, no plugin or hire-count line, no total.
+    expect(await ui.find({ type: 'Text', text: /^Plans work before anyone builds$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Hired|never hired|plugin ·|total/ })).toBeUndefined()
+    expect(await ui.find({ key: 'layoff-ecc:planner' })).toBeDefined()
     // On the terminal a person's row draws the tiny picture.
     if (surface === 'terminal') {
       const person = (await ui.findAll({ type: 'Raster' })).find(r => r.props.key === 'person-ecc:planner')!
@@ -397,31 +399,49 @@ test('People lists a team member and a laid-off one in their sections, and lay o
     expect(await ui.find({ key: 'layoff-Explore' })).toBeUndefined()
 
     await ui.press({ key: 'layoff-legal:review-contract' })
+    // A laid-off helper leaves the screen: the pool is hidden until a search, with one line saying how many wait.
     expect(await ui.find({ type: 'Text', text: /TEAM · 2/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /TALENT POOL · 1/ })).toBeDefined()
-    expect(await ui.find({ key: 'hire-legal:review-contract' })).toBeDefined()
-    expect(await ui.find({ key: 'layoff-legal:review-contract' })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /15 total|3 total/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
+    expect(await ui.find({ key: 'hire-legal:review-contract' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^1 more installed\. Search to find and hire one\.$/ })).toBeDefined()
 
-    // The search covers the plugin name.
+    // The search covers the plugin name, and shows the matching pool rows with a Hire button.
     await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'legal', kind: 'change', surface })
     expect(await ui.find({ type: 'Text', text: /TEAM/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /TALENT POOL · 1/ })).toBeDefined()
-    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface })
+    expect(await ui.find({ key: 'hire-legal:review-contract' })).toBeDefined()
+    expect(await ui.find({ key: 'layoff-legal:review-contract' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /more installed/ })).toBeUndefined()
+    // A search also finds team members.
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'planner', kind: 'change', surface })
+    expect(await ui.find({ type: 'Text', text: /TEAM · 1/ })).toBeDefined()
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'legal', kind: 'change', surface })
 
     await ui.press({ key: 'hire-legal:review-contract' })
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface })
     expect(await ui.find({ type: 'Text', text: /TEAM · 3/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
     await ui.unmount()
   }
 })
 
-test('how often a type was hired shows on its People row', async ($, on) => {
+test('a People row no longer shows the plugin or how often a type was hired', async ($, on) => {
   host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'h1' }))
   await $.agent.spawn({ prompt: 'Plan', description: 'Plan', subagentType: 'ecc:planner' } as never)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
-  expect(await ui.find({ type: 'Text', text: /ecc plugin · hired 1 time$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /hired 1 time|plugin ·/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a People row tells what someone does in the first sentence of the blurb only, never cut with a mark', async ($, on) => {
+  host(on, [])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.agent.offer({ agent: 'ecc:planner', description: 'Plans work before anyone builds. Checks each step against the brief.' } as never)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  const line = await ui.find({ type: 'Text', text: /^Plans work before anyone builds\.$/ })
+  expect(line?.props.wrap).toBe('wrap')
+  expect(await ui.find({ type: 'Text', text: /Checks each step/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -473,7 +493,7 @@ test('many agent types offered at the same moment are all recorded, and none is 
   const text = JSON.stringify(await ui.drawn())
   await ui.unmount()
   // Every one is on the books (the list itself shows only so many rows).
-  expect(text).toContain('60 total')
+  expect(text).not.toContain('total')
   expect(text).toContain('TEAM · 60')
 })
 
@@ -490,8 +510,8 @@ test('a hire made while agent types are still being recorded is counted, and no 
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
   const text = JSON.stringify(await ui.drawn())
   await ui.unmount()
-  expect(text).toContain('40 total')
-  expect(text).toContain('hired 1 time')
+  expect(text).toContain('TEAM · 40')
+  expect(text).not.toContain('hired 1 time')
 })
 
 // ---- The payroll review: in the People tab, where the payroll is ----
@@ -543,7 +563,8 @@ test('answering the payroll review lays the unused types off, or keeps everyone,
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
   await ui.press({ key: 'payroll-layoff' })
   expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /TALENT POOL · 7/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^7 more installed\. Search to find and hire one\.$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
   expect(toasts.some(t => /7 agent types laid off/.test(t))).toBe(true)
   await ui.unmount()
 })
@@ -564,7 +585,7 @@ test('laying one type off by hand settles the payroll, so the review goes away',
   expect(await ui.find({ key: 'payroll-review' })).toBeDefined()
   await ui.press({ key: 'layoff-ecc:planner' })
   expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /TALENT POOL · 1/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^1 more installed\./ })).toBeDefined()
   await ui.unmount()
 })
 

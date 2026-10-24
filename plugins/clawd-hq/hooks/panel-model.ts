@@ -119,6 +119,9 @@ const match = (haystack: string[], query: string) => {
 
 export type Person = { type: string; name: string; plugin: string; jobs: number; blurb: string; isOff: boolean }
 
+/** The first sentence of a blurb, whole: what a People row says someone does. A blurb with no full stop is kept as it is. */
+export const firstSentence = (text: string) => /^.*?[.!?](?=\s|$)/.exec(text.trim())?.[0] ?? text.trim()
+
 export const pluginOf = (type: string) => (type.includes(':') ? type.split(':')[0]! : 'built in')
 
 /** Built-in agents are never laid off. */

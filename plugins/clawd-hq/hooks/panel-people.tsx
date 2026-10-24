@@ -1,15 +1,11 @@
-// The People tab: the team on the payroll and the talent pool of laid-off agents.
+// The People tab: the team on the payroll. The laid-off talent pool (and so the rest of what is installed) shows only under a search.
 import { avatarFor, compactIcon, tinyIcon } from './avatars'
-import { GREEN } from './office'
-import { buildPeople, canLayOff, splitPeople } from './panel-model'
+import { buildPeople, canLayOff, firstSentence, splitPeople } from './panel-model'
 import type { Person } from './panel-model'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 
 const MAX_ROWS = 20
-
-const hiredLine = (p: Person) =>
-  `${p.plugin === 'built in' ? 'built in' : `${p.plugin} plugin`} · ${p.jobs === 0 ? 'never hired' : `hired ${p.jobs} ${p.jobs === 1 ? 'time' : 'times'}`}`
 
 function row(p: Person, kit: Kit, actions: PanelActions) {
   const { Box, Text, Button, sprite, isTerminal } = kit
@@ -19,17 +15,11 @@ function row(p: Person, kit: Kit, actions: PanelActions) {
       <Box flexShrink={0}>{icon}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text bold wrap="wrap">{p.name}</Text>
-        {p.blurb !== '' && <Text dimColor wrap="wrap">{p.blurb}</Text>}
-        <Text dimColor wrap="wrap">{hiredLine(p)}</Text>
+        {p.blurb !== '' && <Text dimColor wrap="wrap">{firstSentence(p.blurb)}</Text>}
       </Box>
       {p.isOff
         ? <Button key={`hire-${p.type}`} label="Hire" onPress={() => actions.hire(p.type)} />
-        : (
-          <Box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
-            <Text color={GREEN}>{'✓ Hired'}</Text>
-            {canLayOff(p.type) && <Button key={`layoff-${p.type}`} plain dimColor label="lay off" onPress={() => actions.layOff(p.type)} />}
-          </Box>
-        )}
+        : canLayOff(p.type) && <Button key={`layoff-${p.type}`} plain dimColor label="lay off" onPress={() => actions.layOff(p.type)} />}
     </Box>
   )
 }
@@ -69,22 +59,23 @@ export function peopleTab(kit: Kit, data: PanelData, actions: PanelActions) {
   const types = [...Object.keys(blurbs), ...Object.keys(roster), ...staff.map(e => e.type)]
   const everyone = buildPeople(types, blurbs, roster, payroll.laidOff)
   const query = data.fx.finds?.people ?? ''
-  const { team, pool } = splitPeople(everyone, query)
+  const found = splitPeople(everyone, query)
+  // Laid-off helpers (the pool) are listed only under a search; otherwise one line counts them.
+  const isSearching = query.trim() !== ''
+  const team = found.team
+  const pool = isSearching ? found.pool : []
+  const waiting = everyone.filter(p => p.isOff).length
   return (
     <Box flexDirection="column" gap={1}>
-      <Box flexDirection="row" gap={2} alignItems="center">
-        {Input && (
-          <Box flexGrow={1}>
-            <Input key="find-people" label="/" placeholder="Search people and plugins" value={query} onInput={v => actions.setFind('people', v)}
-              onSubmit={v => actions.setFind('people', v)} />
-          </Box>
-        )}
-        <Text dimColor>{`${everyone.length} total`}</Text>
-      </Box>
+      {Input && (
+        <Input key="find-people" label="/" placeholder="Search to hire someone else" value={query} onInput={v => actions.setFind('people', v)}
+          onSubmit={v => actions.setFind('people', v)} />
+      )}
       {data.fx.layoffs && review(kit, data.fx.layoffs, actions)}
-      {team.length + pool.length === 0 && <Text dimColor>No one on the books yet. Agents appear here once they are offered to Clawd.</Text>}
+      {everyone.length === 0 && <Text dimColor>No one on the books yet. Agents appear here once they are offered to Clawd.</Text>}
       {team.length > 0 && section('TEAM', team, kit, actions)}
       {pool.length > 0 && section('TALENT POOL', pool, kit, actions)}
+      {!isSearching && waiting > 0 && <Text dimColor wrap="wrap">{`${waiting} more installed. Search to find and hire one.`}</Text>}
     </Box>
   )
 }

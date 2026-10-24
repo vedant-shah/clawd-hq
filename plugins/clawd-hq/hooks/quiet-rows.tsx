@@ -1,6 +1,7 @@
 // The quiet chat's two ways to draw a row: as nothing, or as the look in hooks/quiet.ts says. No `$`: the drawing table comes in as `resolve`.
 import type { EngineInterface, RenderElement } from 'claude-code'
-import type { rowLook } from './quiet'
+import { dimLine } from './quiet'
+import type { rowLook, ToolRow } from './quiet'
 
 /** `$.ui.resolve`, handed in as a closure: picks the drawing surface's own elements for a render event. */
 export type Resolve = EngineInterface['ui']['resolve']
@@ -12,10 +13,13 @@ export function blank(resolve: Resolve, e: RenderEvent) {
   return <Text>{''}</Text>
 }
 
-/** A small row as its look says: drawn as it is, as nothing, or dimmed. */
-export async function smallRow(resolve: Resolve, e: RenderEvent, look: ReturnType<typeof rowLook>, draw: () => Promise<RenderElement>): Promise<RenderElement> {
+/**
+ * A small row as its look says: drawn as it is, as nothing, or dimmed. A dimmed row is a short line of its own words:
+ * the engine's drawing (`draw()`) is a node no Text may hold, so wrapping it in a dim Text is refused.
+ */
+export async function smallRow(resolve: Resolve, e: RenderEvent & { props: ToolRow }, look: ReturnType<typeof rowLook>, draw: () => Promise<RenderElement>): Promise<RenderElement> {
   if (look === 'show') return draw()
   if (look === 'hide') return blank(resolve, e)
   const { Text } = resolve(e)
-  return <Text dimColor>{await draw()}</Text>
+  return <Text dimColor>{dimLine(e.props)}</Text>
 }

@@ -86,7 +86,7 @@ const TASK_LIST_TOOLS: ReadonlySet<string> = new Set(['TodoWrite', 'TaskCreate',
 const HIDDEN_TOOLS: ReadonlySet<string> = new Set([STEP_TOOL, TOOL_SEARCH])
 const BACKGROUND_HINT = 'background_hint'
 
-export type ToolRow = { tool: string; input?: unknown; isErrored: boolean; isInterrupted?: boolean }
+export type ToolRow = { tool: string; input?: unknown; output?: unknown; isErrored: boolean; isInterrupted?: boolean; isExpanded?: boolean }
 export type RowLook = 'show' | 'dim' | 'hide'
 
 /** The run-in-background pill under a running tool call. */
@@ -107,12 +107,46 @@ function isToTeammate(input: unknown, staff: Employee[]): boolean {
   return staff.some(one => one.name !== undefined && same(one.name, to))
 }
 
-/** How a tool call's row (or its result) is drawn. Anything errored or cut short is shown in full, whatever the tool. */
+const AGENT_TOOL = 'Agent'
+/** What an Agent call answers at once when its agent runs on in the background (or in the cloud): a launch, not a finish. */
+const LAUNCHED: ReadonlySet<string> = new Set(['async_launched', 'remote_launched'])
+
+/** The result row of an Agent call that only launched a background agent. A result row carries no input; the call row does. */
+function isLaunchResult(row: ToolRow): boolean {
+  if (row.tool !== AGENT_TOOL || 'input' in row) return false
+  const status = typeof row.output === 'object' && row.output !== null ? (row.output as { status?: unknown }).status : undefined
+  return typeof status === 'string' && LAUNCHED.has(status)
+}
+
+/** How a tool call's row (or its result) is drawn. The full view, and anything errored or cut short, is shown as the engine draws it, whatever the tool. */
 export function rowLook(row: ToolRow, staff: Employee[]): RowLook {
-  if (row.isErrored || row.isInterrupted) return 'show'
-  if (HIDDEN_TOOLS.has(row.tool)) return 'hide'
+  if (row.isExpanded || row.isErrored || row.isInterrupted) return 'show'
+  if (HIDDEN_TOOLS.has(row.tool) || isLaunchResult(row)) return 'hide'
   if (DIMMED_OWN_TOOLS.has(row.tool) || TASK_LIST_TOOLS.has(row.tool)) return 'dim'
   // A result row carries no input (only the call's answer): Clawd's own SendMessage answer is dimmed with the call.
   if (row.tool === SEND_MESSAGE && (row.input === undefined ? !('input' in row) : isToTeammate(row.input, staff))) return 'dim'
   return 'show'
+}
+
+// ---- A dimmed row's own words: the engine's drawing cannot sit inside a dim Text, so the row is one short line of ours ----
+const DIM_LINE_CHARS = 100
+const DIM_RESULT = '  └ done'
+const MCP_NAME = /^mcp__.+?__(.+)$/
+
+/** The tool's own name: `find_helpers` for `mcp__clawd-hq__find_helpers`, a built-in's as it is. */
+const shortName = (tool: string) => MCP_NAME.exec(tool)?.[1] ?? tool
+
+/** The input's text fields, in order, on one line; lists and objects are left out. */
+function inputSummary(input: unknown): string {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return ''
+  return Object.values(input).filter((v): v is string => typeof v === 'string' && v.trim() !== '').join(' · ').replace(/\s+/g, ' ').trim()
+}
+
+const clip = (text: string) => (text.length > DIM_LINE_CHARS ? `${text.slice(0, DIM_LINE_CHARS - 1)}…` : text)
+
+/** The line a dimmed row draws: the call's tool and what it was asked, or, for a result row (which has no input), that it is done. */
+export function dimLine(row: ToolRow): string {
+  if (!('input' in row)) return DIM_RESULT
+  const summary = inputSummary(row.input)
+  return clip(summary === '' ? shortName(row.tool) : `${shortName(row.tool)} · ${summary}`)
 }

@@ -61,7 +61,8 @@ test('a reply of Clawd\'s that is only the no-update mark is hidden; a real repl
 
 const tool = (name: string, over: Record<string, unknown> = {}) => ({ tool_use_id: 't1', tool: name, input: {}, isRunning: false, isErrored: false, isInterrupted: false, output: {}, ...over })
 const result = (name: string, over: Record<string, unknown> = {}) => ({ tool_use_id: 't1', tool: name, output: {}, isErrored: false, ...over })
-const isDim = (text: string) => text.includes('ENGINE') && text.includes('"dimColor":true')
+// A dimmed row is a dim line of the plugin's own: the engine's drawing cannot sit inside a dim Text (tests/quiet-dim.test.tsx).
+const isDim = (text: string) => !text.includes('ENGINE') && text.includes('"dimColor":true')
 
 test('a finished notice of a background job the office did not hire is hidden when it finished well, on every surface', async ($, on) => {
   await office($, on)

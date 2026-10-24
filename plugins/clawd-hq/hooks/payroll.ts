@@ -1,4 +1,4 @@
-// Payroll: which agent types Clawd is offered in this project, and the review that lays off types it does not use.
+// Payroll: which agent types Clawd is offered in this project, and the review that lays off, by itself, the types it does not use.
 // register.tsx hands over the calls it may make (PayrollIo); nothing here touches `$` or an atom.
 import type { Fx, Payroll } from '../types'
 import { projectFiles, proposeLayoffs } from './desk'
@@ -17,7 +17,6 @@ export type PayrollIo = {
   list: (path: string) => Promise<ReadonlyArray<{ name: string; kind: string }>>
   fx: () => Promise<Fx>
   setFx: (fn: (f: Fx) => Fx) => Promise<void>
-  toast: (text: string) => void
   /** The agent listing is drawn from the offer: ask for it again. */
   invalidate: () => void
 }
@@ -46,17 +45,11 @@ export async function reviewPayroll(io: PayrollIo) {
     await savePayroll(io, { ...(await io.get()), isReviewed: true, stacks: plan.stacks })
     return
   }
-  // The files took a moment to list: a payroll the person settled by hand meanwhile needs no review.
-  if ((await io.get()).isReviewed) return
-  // The review waits in the People tab, where the payroll is; the person hears of it once.
-  await io.setFx(f => ({ ...f, layoffs: { count: plan.laidOff.length, total: types.length, stacks: plan.stacks, why: plan.why } }))
-  io.toast(`📋 Payroll review: ${plan.laidOff.length} agent types this project does not use. See the People tab.`)
-}
-
-export async function applyPayroll(io: PayrollIo, isLayoff: boolean) {
-  const plan = await planOf(io, await io.types())
-  await savePayroll(io, { laidOff: isLayoff ? plan.laidOff : [], isReviewed: true, stacks: plan.stacks })
-  io.toast(isLayoff ? `📉 ${plan.laidOff.length} agent types laid off for this project. Rehire any from the People tab.` : '👥 Everyone stays on the payroll.')
+  // The files took a moment to list: a payroll the person settled by hand meanwhile is left as it is.
+  const now = await io.get()
+  if (now.isReviewed) return
+  // No question is asked: the types this project has no use for are laid off at once. A search in the People tab still finds them to rehire.
+  await savePayroll(io, { laidOff: [...new Set([...now.laidOff, ...plan.laidOff])], isReviewed: true, stacks: plan.stacks })
 }
 
 export const setLaidOff = async (io: PayrollIo, type: string, isOff: boolean) => savePayroll(io, withLaidOff(await io.get(), type, isOff))

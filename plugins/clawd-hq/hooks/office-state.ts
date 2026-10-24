@@ -33,10 +33,11 @@ export function freshHire(a: { id: string; type: string; description: string; na
   return { id: a.id, type: a.type, description: fit(a.description, DESCRIPTION_CHARS), ...named, mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
 }
 
-/** The books with `jobs` more for this type; a type not there yet starts at them. */
-export function withJobs(books: Record<string, Badge>, type: string, jobs: number): Record<string, Badge> {
+/** The books with `jobs` more, and `tokens` more used, for this type; a type not there yet starts at them. */
+export function withJobs(books: Record<string, Badge>, type: string, jobs: number, tokens = 0): Record<string, Badge> {
   const badge = books[type] ?? { jobs: 0 }
-  return { ...books, [type]: { ...badge, jobs: badge.jobs + jobs } }
+  const used = tokens > 0 ? { tokens: (badge.tokens ?? 0) + tokens } : {}
+  return { ...books, [type]: { ...badge, ...used, jobs: badge.jobs + jobs } }
 }
 
 /** The payroll with this type laid off (last on the list) or rehired; either way it counts as reviewed. */

@@ -20,8 +20,8 @@ export type RunIo = {
   /** Changes the books in one write; the change may run more than once, so it must be repeatable. */
   readonly changeStaff: (fn: (list: Employee[]) => Employee[]) => Promise<unknown>
   readonly blurbs: () => Promise<Record<string, string>>
-  /** Puts a type on the books with how often it was hired. */
-  readonly enroll: (type: string, jobs: number) => Promise<void>
+  /** Puts a type on the books with how often it was hired, and how many tokens more its runs have used. */
+  readonly enroll: (type: string, jobs: number, tokens?: number) => Promise<void>
   readonly setBoss: (fn: (b: Boss) => Boss) => Promise<void>
   readonly toast: (text: string) => void
   readonly agents: () => Promise<readonly ListedAgent[]>
@@ -56,10 +56,13 @@ export async function clockOut(io: RunIo, id: string, mood: Mood, how: EndedBy =
     return edit(l, id, one => {
       if (!isActive(one) || (how !== 'signal' && quietFor(one, now) <= QUIET_MS)) return one
       ended = one
-      return endRun(one, mood, how, now, t)
+      return { ...endRun(one, mood, how, now, t), counted: one.tokens ?? 0 }
     })
   })
   const e = ended as Employee | undefined
+  // What this run used joins its type's total, less what an earlier end of the same run already added. A stand-in adds none.
+  const added = e ? (e.tokens ?? 0) - (e.counted ?? 0) : 0
+  if (e && added > 0 && !id.startsWith(DEMO)) await io.enroll(e.type, 0, added)
   // Lost contact is neither a win nor a failure: no toast, no cheer.
   if (!e || mood === 'lost') return
   const blurb = (await io.blurbs())[e.type] ?? ''

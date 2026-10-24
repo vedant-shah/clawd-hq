@@ -44,8 +44,6 @@ export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleAction
   hideArtifact: (url: string) => unknown
   layOff: (type: string) => unknown
   hire: (type: string) => unknown
-  /** The person's answer to the payroll review: lay off what the project has no use for, or keep everyone. */
-  settlePayroll: (isLayoff: boolean) => unknown
   /** Opens the usage footer's rows, or closes them. */
   toggleUsage: () => unknown
   /** The Hold a council button on Clawd's card pressed: `Hold a council on: ` is put in the prompt box (never sent). */

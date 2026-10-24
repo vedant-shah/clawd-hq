@@ -34,6 +34,8 @@ export type Employee = {
   outTokens?: number
   /** The largest request input of this run; the input half of `tokens`, so a compaction cannot lower it. */
   peakInput?: number
+  /** How much of this run's `tokens` was already added to its type's total, so an end heard twice, or a run that goes on after a guessed end, counts once. A new run starts again. */
+  counted?: number
   context?: number
   /** What the specialist itself reports with the step tool: steps done, the plan's size (1 to 12), and a few plain words on the step. None until it reports. */
   stepDone?: number
@@ -97,7 +99,7 @@ export type ContractorOffer = {
 export type Payroll = { laidOff: string[]; isReviewed: boolean; stacks: string[] }
 
 /** An agent type's place on the books, kept across sessions. */
-export type Badge = { jobs: number }
+export type Badge = { jobs: number; /** Everything this type's finished runs used, for this machine: a running total. */ tokens?: number }
 
 export type Boss = {
   activity: string

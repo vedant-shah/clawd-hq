@@ -117,7 +117,7 @@ const match = (haystack: string[], query: string) => {
   return q === '' || haystack.some(h => h.toLowerCase().includes(q))
 }
 
-export type Person = { type: string; name: string; plugin: string; jobs: number; blurb: string; isOff: boolean }
+export type Person = { type: string; name: string; plugin: string; jobs: number; blurb: string; isOff: boolean; /** Everything its runs have used. */ tokens?: number }
 
 /** The first sentence of a blurb, whole: what a People row says someone does. A blurb with no full stop is kept as it is. */
 export const firstSentence = (text: string) => /^.*?[.!?](?=\s|$)/.exec(text.trim())?.[0] ?? text.trim()
@@ -142,7 +142,7 @@ export function buildPeople(types: string[], blurbs: Record<string, string>, ros
     const bare = bareType(type)
     const tag = bare.toLowerCase() === title.toLowerCase() ? pluginOf(type) : bare
     return {
-      type, blurb: blurbs[type] ?? '', plugin: pluginOf(type), jobs: roster[type]?.jobs ?? 0, isOff: off.has(type),
+      type, blurb: blurbs[type] ?? '', plugin: pluginOf(type), jobs: roster[type]?.jobs ?? 0, tokens: roster[type]?.tokens, isOff: off.has(type),
       name: shared ? `${title} (${tag})` : title,
     }
   })

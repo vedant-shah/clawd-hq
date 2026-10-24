@@ -403,7 +403,7 @@ test('People lists a team member and a laid-off one in their sections, and lay o
     expect(await ui.find({ type: 'Text', text: /TEAM · 2/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
     expect(await ui.find({ key: 'hire-legal:review-contract' })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /^1 more installed\. Search to find and hire one\.$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /more installed|Search to find/ })).toBeUndefined()
 
     // The search covers the plugin name, and shows the matching pool rows with a Hire button.
     await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'legal', kind: 'change', surface })
@@ -439,6 +439,57 @@ test('a People search that matches no one says so, and the line goes when the se
     await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface })
     await ui.unmount()
   }
+})
+
+test('a People row picture is described by the name, so a desktop that skips pictures with no description still draws it', async ($, on) => {
+  host(on, [])
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.agent.offer({ agent: 'ecc:planner', description: 'Plans work' } as never)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PEOPLE })
+  const pictures = await ui.findAll({ type: 'Svg' })
+  expect(pictures.map(p => p.props.alt)).toEqual(['Planner'])
+  await ui.unmount()
+})
+
+test('a People row ends with the total tokens that type has used, dim, and shows none when it has used none', async ($, on) => {
+  host(on, [], { roster: { 'ecc:planner': { jobs: 3, tokens: 1_234_567 }, 'ecc:architect': { jobs: 1, tokens: 0 }, 'ecc:tdd-guide': { jobs: 0 } } })
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.session.start(START)
+  for (const agent of ['ecc:planner', 'ecc:architect', 'ecc:tdd-guide']) await $.agent.offer({ agent, description: 'Does work.' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
+    const used = await ui.findAll({ type: 'Text', text: /tokens$/ })
+    expect(used.map(t => t.text)).toEqual(['1.2M tokens'])
+    expect(used[0]?.props.dimColor).toBe(true)
+    await ui.unmount()
+  }
+})
+
+test('a run that ends adds its tokens to its type once, and a second run adds its own', async ($, on) => {
+  const h = host(on, [{ id: 'a1', type: 'ecc:planner', description: 'Plan it', status: 'running' }])
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'claude-opus-5-5', input_tokens: 4_900, output_tokens: 100 } } as never
+  })
+  await $.session.start(START)
+  await $.agent.spawn({ prompt: 'Plan', description: 'Plan it', subagentType: 'ecc:planner' } as never)
+  const kept = () => (h.saved.get('roster') as Record<string, { tokens?: number }>)['ecc:planner']?.tokens
+  const run = async (turnId: string) => {
+    const steps = $.turn.step({ turnId, index: 0, model: 'm', messageCount: 3, agentId: 'a1' } as never)
+    let part = await steps.next()
+    while (!part.done) part = await steps.next()
+  }
+  const end = (turnId: string) => $.turn.complete({ reason: 'answer', answer: 'ok', turnId, agentId: 'a1', isAborted: false } as never)
+  await run('t1')
+  await end('t1')
+  expect(kept()).toBe(5_000)
+  // The same stop heard twice counts once.
+  await end('t1')
+  expect(kept()).toBe(5_000)
+  // The specialist is sent back to work after a real stop: a new run, counted on top.
+  await run('t2')
+  await end('t2')
+  expect(kept()).toBe(10_000)
 })
 
 test('a People row no longer shows the plugin or how often a type was hired', async ($, on) => {
@@ -548,102 +599,74 @@ async function untilReview($: Engine, on: Parameters<typeof host>[0], types = MA
   await h.clock.advance(25 * 400 + 100)
   return h
 }
-const reviewShown = async ($: Engine) => {
+/** How many are on the team, as the People tab's heading says: 0 when there is no heading. */
+const teamSize = async ($: Engine) => {
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
-  const isShown = (await ui.find({ key: 'payroll-review' })) !== undefined
+  const heading = await ui.find({ type: 'Text', text: /^TEAM · \d+$/ })
   await ui.unmount()
-  return isShown
+  return Number(/\d+/.exec(String(heading?.text))?.[0] ?? 0)
 }
 
-test('the payroll review waits in the People tab with both answers, and the person hears of it once', async ($, on) => {
-  const { toasts, clock, opened } = await untilReview($, on)
-  expect(toasts.filter(t => /Payroll review/.test(t))).toEqual(['📋 Payroll review: 7 agent types this project does not use. See the People tab.'])
+test('the payroll is trimmed by itself: no card, no pop-up, and a search finds the laid-off ones with Hire', async ($, on) => {
+  const { toasts, opened } = await untilReview($, on)
+  expect(toasts.filter(t => /Payroll review|laid off/.test(t))).toEqual([])
   expect(opened.some(o => /desk/i.test(o.id))).toBe(false)
-  await clock.advance(60 * 400)
-  expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(1)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
-    expect(await ui.find({ type: 'Text', text: /^Payroll review: lay off 7 of 1[56] agent types this project does not use\?$/ })).toBeDefined()
-    expect(String((await ui.find({ key: 'payroll-layoff' }))?.props.label)).toBe('Lay off 7')
-    expect(await ui.find({ key: 'payroll-keep' })).toBeDefined()
+    expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /Payroll review/ })).toBeUndefined()
+    // 15 offered types less the 7 laid off, and the built-in general agent that is always on the books.
+    expect(await ui.find({ type: 'Text', text: /^TEAM · 9$/ })).toBeDefined()
+    expect(await ui.find({ key: 'hire-ecc:go-reviewer' })).toBeUndefined()
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'go-reviewer', kind: 'change', surface })
+    expect(await ui.find({ key: 'hire-ecc:go-reviewer' })).toBeDefined()
+    await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface })
     await ui.unmount()
-    // The review is the People tab's alone.
-    const office = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    expect(JSON.stringify(await office.drawn())).not.toMatch(/Payroll review/)
-    await office.unmount()
   }
 })
 
-test('answering the payroll review lays the unused types off, or keeps everyone, and the review goes away', async ($, on) => {
-  const { toasts } = await untilReview($, on)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
-  await ui.press({ key: 'payroll-layoff' })
-  expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /^7 more installed\. Search to find and hire one\.$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
-  expect(toasts.some(t => /7 agent types laid off/.test(t))).toBe(true)
-  await ui.unmount()
-})
-
-test('keeping everyone also ends the review', async ($, on) => {
-  const { toasts } = await untilReview($, on)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
-  await ui.press({ key: 'payroll-keep' })
-  expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
-  expect(toasts.some(t => /Everyone stays on the payroll/.test(t))).toBe(true)
-  await ui.unmount()
-})
-
-test('laying one type off by hand settles the payroll, so the review goes away', async ($, on) => {
+test('laying one type off by hand still works, and rehiring from a search brings it back', async ($, on) => {
   await untilReview($, on)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
-  expect(await ui.find({ key: 'payroll-review' })).toBeDefined()
   await ui.press({ key: 'layoff-ecc:planner' })
-  expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /^1 more installed\./ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^TEAM · 8$/ })).toBeDefined()
+  await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'planner', kind: 'change', surface: 'terminal' })
+  await ui.press({ key: 'hire-ecc:planner' })
+  await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^TEAM · 9$/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('a small team gets no payroll review; the review is made once the team grows past 15 types', async ($, on) => {
-  // Fewer than 15 agent types: nothing to review.
+test('a small team is left whole; the trim is made once the team grows past 15 types', async ($, on) => {
+  // Fewer than 15 agent types: nothing to trim.
   const { toasts, clock } = await untilReview($, on, MANY.slice(0, 10))
-  expect(await reviewShown($)).toBe(false)
-  expect(toasts.some(t => /Payroll review/.test(t))).toBe(false)
+  expect(await teamSize($)).toBe(11)
   // Six more types join: the team is large enough now, and seven of its types are of no use here.
   for (const n of [1, 2, 3, 4, 5, 6]) await $.agent.offer({ agent: `ecc:planner-${n}`, description: 'Plans' } as never)
   await clock.advance(25 * 400)
-  expect(await reviewShown($)).toBe(true)
-  expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(1)
+  expect(await teamSize($)).toBe(10)
+  expect(toasts.some(t => /Payroll review|laid off/.test(t))).toBe(false)
 })
 
-test('a team with nothing to lay off is marked reviewed with no card and no pop-up', async ($, on) => {
+test('a team with nothing to lay off keeps everyone, and types that arrive later are not trimmed after the fact', async ($, on) => {
   const useful = Array.from({ length: 16 }, (_, i) => `ecc:planner-${i}`)
-  const { toasts, clock } = await untilReview($, on, useful)
-  expect(await reviewShown($)).toBe(false)
-  expect(toasts.some(t => /Payroll review/.test(t))).toBe(false)
-  // Types that could be laid off arrive later: the payroll is already reviewed, so nothing is proposed.
+  const { clock } = await untilReview($, on, useful)
+  expect(await teamSize($)).toBe(17)
   for (const agent of MANY.slice(0, 7)) await $.agent.offer({ agent, description: 'x' } as never)
   await clock.advance(50 * 400)
-  expect(await reviewShown($)).toBe(false)
+  expect(await teamSize($)).toBe(24)
 })
 
-test('once the payroll is settled a new session brings back no review; an unsettled one is made again', async ($, on) => {
-  const { toasts, clock } = await untilReview($, on)
-  // A new session with the review still open: the old card goes, and the review is made again for this session.
-  await $.session.start(START)
-  expect(await reviewShown($)).toBe(false)
-  await clock.advance(25 * 400 + 100)
-  expect(await reviewShown($)).toBe(true)
-  expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(2)
-
+test('a trimmed payroll is not trimmed again in a new session: what the person rehired stays', async ($, on) => {
+  const { clock } = await untilReview($, on)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
-  await ui.press({ key: 'payroll-keep' })
+  await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'go-reviewer', kind: 'change', surface: 'terminal' })
+  await ui.press({ key: 'hire-ecc:go-reviewer' })
+  await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface: 'terminal' })
   await ui.unmount()
   await $.session.start(START)
   await clock.advance(60 * 400)
-  expect(await reviewShown($)).toBe(false)
-  expect(toasts.filter(t => /Payroll review/.test(t))).toHaveLength(2)
+  expect(await teamSize($)).toBe(10)
 })
 
 test('a specialist\'s turn starting is not Clawd\'s: his card stays free to talk, with its green dot', async ($, on) => {

@@ -20,7 +20,7 @@ import { SCOUT_CRASH_DENY, runScout, scoutRoute, spawnTypeOf } from './scout-run
 import type { RouteIo, ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, TEAM_PICK_SPEC } from './scout-spec'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
-import { applyPayroll, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
+import { resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
 import { checkOnboard, chooseOnboard, isSetupBusy, restartOnboard, savedOf, startOnboard } from './onboard'
 import { ancestorPaths, answerText, breakdownOf, commandsOf, listEntries } from './onboard-adapt'
 import { rehire } from './hire'
@@ -114,18 +114,18 @@ const efforts = new Map<string, Effort>()
  * Puts a type on the books, with how often it was hired, kept across sessions in the store. Queued, so it never
  * overlaps another write to the books.
  */
-const enroll = ($: EngineInterface, type: string, jobs: number) => inLine(() => enrollNow($, type, jobs))
+const enroll = ($: EngineInterface, type: string, jobs: number, tokens = 0) => inLine(() => enrollNow($, type, jobs, tokens))
 
 /** The write itself, for a caller already inside `inLine`: queueing it again there would wait on itself for ever. */
-async function enrollNow($: EngineInterface, type: string, jobs: number) {
+async function enrollNow($: EngineInterface, type: string, jobs: number, tokens = 0) {
   const mine = await read($, roster)
   const saved = Object.keys(mine).length === 0 ? ((await $.store.get('roster')) as Record<string, Badge> | undefined) : undefined
   const cur = { ...(saved ?? {}), ...mine }
-  if (cur[type] && jobs === 0) {
+  if (cur[type] && jobs === 0 && tokens === 0) {
     if (saved) await update($, roster, () => cur)
     return
   }
-  const next = withJobs(cur, type, jobs)
+  const next = withJobs(cur, type, jobs, tokens)
   await update($, roster, () => next)
   await $.store.set('roster', next)
 }
@@ -133,7 +133,7 @@ async function enrollNow($: EngineInterface, type: string, jobs: number) {
 /** The books of specialists (hooks/run-io.ts): who is at work, hired, heard from or gone. */
 const runIo = ($: EngineInterface): RunIo => ({
   now: () => $.clock.now(), tick: () => read($, tick), staff: () => read($, staff), changeStaff: fn => update($, staff, fn),
-  blurbs: () => read($, blurbs), enroll: (type, jobs) => enroll($, type, jobs), setBoss: fn => setBoss($, fn),
+  blurbs: () => read($, blurbs), enroll: (type, jobs, tokens) => enroll($, type, jobs, tokens), setBoss: fn => setBoss($, fn),
   toast: text => void $.ui.toast(text), agents: () => $.agent.list(),
 })
 
@@ -228,7 +228,7 @@ const byOf = async ($: EngineInterface, id: string) => {
 const payrollIo = ($: EngineInterface): PayrollIo => ({
   cwd, get: () => getPayroll($), set: async p => { await update($, payroll, () => p) }, keep: (key, p) => $.store.set(key, p),
   types: async () => [...new Set([...Object.keys(await read($, blurbs)), ...Object.keys(await read($, roster))])],
-  list: path => $.fs.list(path), fx: () => getFx($), setFx: fn => setFx($, fn), toast: text => void $.ui.toast(text),
+  list: path => $.fs.list(path), fx: () => getFx($), setFx: fn => setFx($, fn),
   invalidate: () => { $.ui.invalidate('tool.describe'); $.ui.invalidate('prompt.attachment') },
 })
 
@@ -388,7 +388,6 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     hideArtifact: url => hideArtifact(artifactIo($), cwd, url),
     layOff: type => setLaidOff(payrollIo($), type, true),
     hire: type => setLaidOff(payrollIo($), type, false),
-    settlePayroll: isLayoff => applyPayroll(payrollIo($), isLayoff),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
     holdCouncil: () => fillCouncil(councilIo($)),
     coffeeBreak: isTerminal => takeCoffeeBreak(coffeeIo($), isTerminal).catch((err: unknown) => $.ui.toast(`Couldn't compact the chat: ${reasonOf(err)}.`)),

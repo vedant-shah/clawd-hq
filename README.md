@@ -44,7 +44,7 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 ### 2. Right team, right size
 
 - **Uses what you already have.** Setup picks your team from the agents and skills you have installed. Each brief names the installed skills that fit the job. Nothing new to download.
-- **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort.
+- **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort. When nothing installed fits, he says so and points you to the `find-skills` skill to search the public skill registry. Installing is your call; Clawd never downloads anything.
 - **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus. Skills are attached only when they add knowledge, not process: at most two, and none for a one-file edit or a job on the smallest model.
 - **Pair-ups.** Two or more specialists check each other on risky work.
 - **Lay off unused helpers.** Helpers outside the team are laid off on their own, which keeps Clawd's choices short. Search brings any back.
@@ -76,6 +76,12 @@ Claude Code already runs subagents in the background, with a model and effort pe
 - Lasting rules live in your CLAUDE.md, so you aren't asked twice.
 
 ## 🧭 How Clawd runs the work
+
+Clawd HQ follows the "elephants and goldfish" idea from Google ([paper](https://research.google/pubs/elephants-goldfish-and-the-new-golden-age-of-software-engineering/)):
+
+- **The elephant is Clawd.** One long conversation with you holds the project's memory and decisions. He writes no code himself.
+- **The goldfish are the specialists.** Each starts fresh and knows only its brief, so it has none of the chat's blind spots.
+- **Fresh eyes check the plan.** For risky work, a fresh Reviewer first restates the plan in its own words. A part it can't restate is unclear and gets fixed before anyone builds.
 
 **How a request flows**
 

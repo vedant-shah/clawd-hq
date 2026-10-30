@@ -46,8 +46,6 @@ export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleAction
   hire: (type: string) => unknown
   /** Opens the usage footer's rows, or closes them. */
   toggleUsage: () => unknown
-  /** The Hold a council button on Clawd's card pressed: `Hold a council on: ` is put in the prompt box (never sent). */
-  holdCouncil: () => unknown
   /** The coffee break button pressed: the chat is compacted now (or, where the engine cannot, `/compact` is put in the prompt box). */
   coffeeBreak: (isTerminal: boolean) => unknown
   /** Settings shows the list of finished work (true) or its configs again (false). */

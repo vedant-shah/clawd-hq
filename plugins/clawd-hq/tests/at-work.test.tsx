@@ -485,8 +485,8 @@ test('on the terminal a specialist row draws the tiny picture and Clawd his smal
   // A half-block row is two picture rows: the 8 by 8 picture is 4 rows and 8 columns at most.
   expect(small.props.rows).toBeLessThanOrEqual(4)
   expect(small.props.columns).toBeLessThanOrEqual(8)
-  // Clawd's own picture, the first one in the pane, is his small drawing: no taller than a specialist's, and wider.
-  expect(pictureOf(drawn)!.props.rows).toBeLessThanOrEqual(4)
+  // Clawd's own picture, the first one in the pane, is his small drawing: wider than a specialist's, and two rows taller for his crown.
+  expect(pictureOf(drawn)!.props.rows).toBeLessThanOrEqual(6)
   expect(pictureOf(drawn)!.props.columns).toBeGreaterThan(small.props.columns!)
 
   const desktop = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })

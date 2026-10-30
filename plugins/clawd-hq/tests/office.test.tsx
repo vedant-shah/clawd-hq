@@ -52,8 +52,8 @@ test('avatars are pixel art on the terminal: Clawd and each specialist at work',
   expect(rasters.length).toBe(2)
   const clawd = rasters.find(r => r.props.key === 'clawd')!
   const desk = rasters.find(r => r.props.key === 'desk-x1')!
-  // Clawd's small drawing is 14 columns by 4 rows once trimmed: as tall as a specialist's picture, and wider.
-  expect([clawd.props.columns, clawd.props.rows]).toEqual([14, 4])
+  // Clawd's small drawing is 14 columns by 6 rows once trimmed: wider than a specialist's picture, and two rows taller for his crown.
+  expect([clawd.props.columns, clawd.props.rows]).toEqual([14, 6])
   expect(moments(pose => clawdAvatar(pose).compact, rasterCells)).toContain(clawd.props.cells)
   // The reviewer is drawn with the code-reviewer's own colours, not another's: the tiny picture, since the terminal cannot scale.
   expect(moments(pose => tinyIcon(avatarFor('ecc:code-reviewer'), pose), rasterCells)).toContain(desk.props.cells)
@@ -70,8 +70,8 @@ test('avatars are SVGs on the desktop, in the avatars own colors', async ($, on)
   const svgs = (await ui.findAll({ type: 'Svg' })).filter(svg => svg.props.height !== 4)
   expect(svgs.length).toBe(2)
   const [clawd, desk] = svgs
-  // Clawd is 23 by 16 sprite pixels at 4px: 92 by 64.
-  expect([clawd!.props.width, clawd!.props.height]).toEqual([92, 64])
+  // Clawd is 23 by 20 sprite pixels at 4px (his crown adds 4 rows): 92 by 80.
+  expect([clawd!.props.width, clawd!.props.height]).toEqual([92, 80])
   expect(moments(pose => clawdAvatar(pose).full, g => svgOf(g, 4))).toContain(clawd!.props.source)
   // The reviewer is drawn from the code-reviewer's parts (a teal cardigan), not another's.
   expect(moments(pose => assemble(avatarFor('ecc:code-reviewer'), pose), g => svgOf(g, 3), true)).toContain(desk!.props.source)
@@ -103,7 +103,7 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   }
 })
 
-test("Clawd's card says All clear in an empty office, has only the council button of its own, and shows the empty floor", async ($, on) => {
+test("Clawd's card says All clear in an empty office, has no button of its own, and shows the empty floor", async ($, on) => {
   const { clock } = host(on)
   on('turn.start', () => ({ turnId: 't1' }))
 
@@ -149,7 +149,7 @@ test("Clawd's card says All clear in an empty office, has only the council butto
     expect(await ui.find({ key: 'resume' })).toBeUndefined()
     expect(await ui.find({ key: 'see-needs' })).toBeUndefined()
     // Clawd's card has no button; the footer's Usage button is the only one in the pane.
-    expect((await ui.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['clawd-council', 'usage-toggle'])
+    expect((await ui.findAll({ type: 'Button' })).map(b => b.props.key)).toEqual(['usage-toggle'])
     await ui.unmount()
   }
 })

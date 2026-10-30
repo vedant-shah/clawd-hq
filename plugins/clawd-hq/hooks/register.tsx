@@ -72,7 +72,7 @@ import type { OldIo } from './old-decisions'
 import { offerRule, ruleActions } from './rule-io'
 import type { RuleIo } from './rule-io'
 import { hire, withReport, withSaid, withStep, withTool } from './staff-model'
-import { fillCouncil, runCouncil, withVoiceNotes, type CouncilIo } from './council'
+import { runCouncil, withVoiceNotes, type CouncilIo } from './council'
 import { clockOut, hireListed, newHire, reconcile, signOfLife, specialistOf } from './run-io'
 import type { RunIo } from './run-io'
 import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine, reasonOf, runEach, startNote } from './state'
@@ -390,7 +390,6 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     layOff: type => setLaidOff(payrollIo($), type, true),
     hire: type => setLaidOff(payrollIo($), type, false),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
-    holdCouncil: () => fillCouncil(councilIo($)),
     coffeeBreak: isTerminal => takeCoffeeBreak(coffeeIo($), isTerminal).catch((err: unknown) => $.ui.toast(`Couldn't compact the chat: ${reasonOf(err)}.`)),
     showLog: isOpen => showLog($, isOpen),
     setConfig: (field, value) => setConfig($, field, value),
@@ -423,7 +422,7 @@ const coffeeIo = ($: EngineInterface): CoffeeIo => ({
   clearReading: async () => { await setBoss($, withNewWork); await update($, gauge, g => ({ ...g, contextPercent: undefined, contextTokens: undefined })) }, // a compaction ends the checkpoint too
 })
 
-/** The Hold a council button and /council (hooks/council.ts): the box is filled after what is there; a typed question is sent as the person's own words. */
+/** /council (hooks/council.ts): the box is filled after what is there; a typed question is sent as the person's own words. */
 const councilIo = ($: EngineInterface): CouncilIo => ({ fill: text => $.prompt.fill({ text, mode: 'append' }), submit: text => $.prompt.submit({ text, asUser: true }), later: fn => $.clock.after(0, fn), toast: text => void $.ui.toast(text) })
 
 /** The record of why the coffee break button shows or not (hooks/coffee-debug.ts), kept at `debug:coffee` in the store. */

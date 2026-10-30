@@ -93,7 +93,7 @@ test('a made-up character still gets a compact icon, hat and accent included', (
   expect(cells(icon).length).toBeGreaterThan(40)
 })
 
-test('Clawd wears his blazer and a red tie, with no crown or emblem', () => {
+test('Clawd wears his blazer, a red tie and the gold crown, with no emblem', () => {
   const red = PALETTE.r
   const { full, compact } = clawdAvatar()
   expect(full).toHaveLength(24)
@@ -101,9 +101,16 @@ test('Clawd wears his blazer and a red tie, with no crown or emblem', () => {
   expect(full[15]![10]).toBe(red)
   expect(full[18]![8]).toBe(red)
   expect(full[18]![11]).toBe(red)
-  // The crown would sit at the top, over the body's empty rows.
-  expect(full.slice(0, 9).flat().every(c => c === null)).toBe(true)
+  // The crown sits over the body's empty rows (5 to 8), whole: its points, its band and its jewels, nothing above it.
+  expect(full.slice(0, 5).flat().every(c => c === null)).toBe(true)
+  expect(full[5]!.slice(5, 15)).toEqual([PALETTE.y, null, null, null, PALETTE.y, PALETTE.y, null, null, null, PALETTE.y])
+  expect(full[7]!.slice(5, 15)).toEqual(Array(10).fill(PALETTE.y))
+  expect(full[8]!.slice(5, 15)).toEqual([PALETTE.y, PALETTE.n, PALETTE.y, PALETTE.y, PALETTE.n, PALETTE.n, PALETTE.y, PALETTE.y, PALETTE.n, PALETTE.y])
   expect(compact).toHaveLength(12)
+  // His small crown, rows 1 to 3 over the body, with the top row empty.
+  expect(compact[0]!.every(c => c === null)).toBe(true)
+  expect(compact[1]!.slice(4, 12)).toEqual([PALETTE.y, null, null, PALETTE.y, PALETTE.y, null, null, PALETTE.y])
+  expect(compact[3]!.slice(4, 12)).toEqual([PALETTE.y, PALETTE.n, PALETTE.y, PALETTE.y, PALETTE.y, PALETTE.y, PALETTE.n, PALETTE.y])
   // His small drawing keeps the orange body: no tie, no white, the bottom torso row navy and the arms orange.
   expect(compact.flat()).not.toContain(red)
   for (const y of [4, 5, 6, 7]) expect(compact[y]!.slice(2, 14)).not.toContain(PALETTE.w)

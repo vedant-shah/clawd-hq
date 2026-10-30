@@ -139,7 +139,7 @@ export function avatarFor(agentType: string): Character {
 
 // ---- Clawd ----
 
-// A small red tie, drawn for now: Clawd has no crown and no emblem yet.
+// A small red tie, drawn for now: Clawd wears his gold crown but has no emblem yet.
 const TIE: Part[] = [{ x: 9, y: 15, rows: ['rr', 'rr', 'rr', 'rr'] }, { x: 8, y: 18, rows: ['rrrr'] }]
 
 // Clawd's navy hem on the small drawing (his own, not the shared body), in place of the tie: the bottom torso row turns navy; no white, arms stay orange.
@@ -160,13 +160,13 @@ function holdings(look: Look, step: number, pose: Pose, logbook: { full: Part; c
 }
 
 /**
- * Clawd's interim look: his outfit, expression and prop, no crown or emblem, plus the tie. A blink swaps only the eyes; a lift raises his
+ * Clawd's interim look: his outfit, expression, gold crown and prop, no emblem, plus the tie. A blink swaps only the eyes; a lift raises his
  * logbook a dot. A `look` of asleep or coffee (with the `step` of the z's or the steam) changes the eyes and what is in his hand.
  */
 export function clawdAvatar(pose: Pose = {}): { full: Grid; compact: Grid } {
   const clawd = CHARACTERS.find(c => c.id === 'clawd')!
   const held = holdings(pose.look ?? 'normal', pose.step ?? 0, pose, { full: PARTS.prop![clawd.prop]!, compact: COMPACT.accent[clawd.compactAccent]! })
-  const full = paintAll(blank(GRID.width, GRID.height), [BODY, PARTS.outfit![clawd.outfit]!, held.eyes ?? PARTS.expression![clawd.expression]!, ...TIE, ...held.full])
-  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, HEM_ICON, ...held.eyesSmall, ...held.compact])
+  const full = paintAll(blank(GRID.width, GRID.height), [BODY, PARTS.outfit![clawd.outfit]!, held.eyes ?? PARTS.expression![clawd.expression]!, PARTS.headwear![clawd.headwear]!, ...TIE, ...held.full])
+  const compact = paintAll(blank(COMPACT_GRID.width, COMPACT_GRID.height), [COMPACT.body, HEM_ICON, COMPACT.headwear[clawd.headwear]!, ...held.eyesSmall, ...held.compact])
   return { full, compact }
 }

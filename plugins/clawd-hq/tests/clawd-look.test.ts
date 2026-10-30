@@ -50,7 +50,8 @@ test('asleep: eyes shut for good, no logbook, and a blue z where the logbook was
   const zs = where(asleep.full, BLUE).filter(cell => Number(cell.split(',')[0]) >= 17)
   expect(zs.length).toBeGreaterThanOrEqual(5)
   // Nothing of the logbook (yellow cover mark, brown binding) is left on the right.
-  expect(where(asleep.full, PALETTE.y)).toEqual([])
+  // (The crown's gold stays, above row 9.)
+  expect(where(asleep.full, PALETTE.y).filter(cell => Number(cell.split(',')[1]) >= 9)).toEqual([])
   expect(where(asleep.full, PALETTE.t)).toEqual([])
   // His small drawing shuts the eyes too and also loses the logbook for a z.
   expect(diff(still.compact, asleep.compact).length).toBeGreaterThan(0)
@@ -115,7 +116,7 @@ test('coffee: eyes wide open and alert, a mug instead of the logbook, steam that
   expect(still.full[11]![6]).toBe(PALETTE.k)
   expect(coffee.full[11]![6]).toBe(PALETTE.w)
   expect(coffee.full[12]![6]).toBe(PALETTE.k)
-  expect(where(coffee.full, PALETTE.y)).toEqual([])
+  expect(where(coffee.full, PALETTE.y).filter(cell => Number(cell.split(',')[1]) >= 9)).toEqual([])
   expect(where(coffee.full, GREY).length).toBeGreaterThan(0)
   expect(where(coffee.full, PALETTE.n).length).toBeGreaterThan(0)
   for (const pick of [(a: ReturnType<typeof clawdAvatar>) => a.full, (a: ReturnType<typeof clawdAvatar>) => a.compact]) {
@@ -136,7 +137,7 @@ test('the looks keep his navy blazer and red tie', () => {
     expect(one.compact[8]!.slice(3, 13)).toEqual(Array(10).fill(PALETTE.n))
     for (const y of [4, 5, 6, 7]) expect(one.compact[y]!.slice(2, 14)).not.toContain(PALETTE.w)
     for (const [x, y] of [[2, 6], [2, 7]] as const) expect(one.compact[y]![x]).toBe(PALETTE.o)
-    expect(one.full.slice(0, 9).flat().every(c => c === null)).toBe(true)
+    expect(one.full.slice(0, 5).flat().every(c => c === null)).toBe(true)
   }
   expect(still.full[15]![9]).toBe(PALETTE.r)
 })
@@ -176,4 +177,15 @@ test('the picture says what he is doing', () => {
   expect(lookAlt('coffee')).toMatch(/drinking coffee$/)
   expect(COFFEE_WORDS).toBe('drinking coffee')
   expect(lookAlt('normal')).toBe('Clawd, the chief of staff, in a navy blazer and red tie, holding a logbook')
+})
+
+test('the crown stays on, unchanged, in every look, blink and lift', () => {
+  const still = clawdAvatar()
+  const poses = [{ isBlinking: true }, { isLifted: true }, { look: 'asleep' as const, step: 3 }, { look: 'coffee' as const, step: 3 }]
+  for (const pose of poses) {
+    const one = clawdAvatar(pose)
+    // Only the crown's columns: the z's and steam rise on the right, beside it.
+    expect(one.full.slice(0, 9).map(row => row.slice(0, 17))).toEqual(still.full.slice(0, 9).map(row => row.slice(0, 17)))
+    expect(one.compact.slice(0, 4).map(row => row.slice(0, 13))).toEqual(still.compact.slice(0, 4).map(row => row.slice(0, 13)))
+  }
 })

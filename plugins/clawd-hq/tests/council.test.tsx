@@ -132,27 +132,18 @@ test('a voice that failed shows no report line, and the card says Failed', async
   await log.unmount()
 })
 
-// ---- The button on Clawd's card ----
+// ---- Clawd's card: no button, a hint for the command ----
 
-test('the Hold a council button on Clawd\'s card only fills the prompt box; nothing is sent', async ($, on) => {
-  const { fills, sent } = office(on)
+test('Clawd\'s card has no council button; a dim line under his words says to type /council <question>', async ($, on) => {
+  office(on)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-    const button = await ui.find({ key: 'clawd-council' })
-    expect(button?.props.label).toBe('Hold a council')
-    await ui.press({ key: 'clawd-council' })
+    expect(await ui.find({ key: 'clawd-council' })).toBeUndefined()
+    expect((await ui.findAll({ type: 'Button' })).map(b => b.props.label)).not.toContain('Hold a council')
+    const hint = await ui.find({ type: 'Text', text: 'Type /council <question> to hold a council.' })
+    expect(hint?.props.dimColor).toBe(true)
     await ui.unmount()
   }
-  expect(fills.map(f => f.text)).toEqual(['Hold a council on: ', 'Hold a council on: '])
-  expect(sent).toEqual([])
-})
-
-test('where the prompt box cannot take the words, a toast says what to type', async ($, on) => {
-  const { toasts } = office(on, false)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
-  await ui.press({ key: 'clawd-council' })
-  await ui.unmount()
-  expect(toasts).toContain('Type this in the chat: Hold a council on: ')
 })
 
 // ---- The /council command ----

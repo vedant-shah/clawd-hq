@@ -59,8 +59,10 @@ export const HIRE_CONTRACTOR_SPEC: ToolSpec = {
   isDeferred: false,
   description:
     'For Clawd, in the main chat: hire an installed skill that is not on the team (find_helpers says "not on team") as a contractor for one job. ' +
-    'Give the skill\'s exact name and a short role such as “Designer”. It sets up a one-job agent that has the skill loaded, and tells you the agent type to ' +
-    'hire with the Agent tool (give that hire the role as its name). The contractor leaves when the job ends. A specialist cannot use it.',
+    'Give the skill\'s exact name and a short role such as “Designer”. It tells you the agent type to hire with the Agent tool, right away. ' +
+    'Give that hire the role as its name; the name is required. It also gives you the exact line that has the contractor load the skill. ' +
+    'Put that line right after the [effort: …] line of the brief, and after a PAIR-UP: or COUNCIL: line if there is one. ' +
+    'The contractor leaves when the job ends. A specialist cannot use it.',
   inputSchema: {
     type: 'object',
     properties: {

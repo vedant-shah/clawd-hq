@@ -1,6 +1,6 @@
 // Pure pieces of the office: who a subagent is, how they look, what they and Clawd say.
 import type { Employee, Badge } from '../types'
-import { isContractorType, roleFromBlurb } from './contractor-name'
+import { isContractorType } from './contractor-name'
 import { CORE_FOUR } from './core-four'
 
 export type Role = {
@@ -88,15 +88,9 @@ export function givenName(one: { type: string; name?: string }): string | undefi
   return !/\p{L}/u.test(label) || RESERVED.test(label) || isId || repeatsType ? undefined : label
 }
 
-/** What a specialist is called, in one or two plain words: the name it was given, else its role (a contractor's is the one it was hired as). */
+/** What a specialist is called, in one or two plain words: the name it was given (a contractor's is its role), else its role. */
 export const labelOf = (one: { type: string; name?: string }, blurb = ''): string =>
-  givenName(one) ?? contractorRole(one.type, blurb) ?? roleOf(one.type, blurb).title
-
-/** The role a contractor was hired as, from its registered description; nothing for anyone else or a description with no role. */
-function contractorRole(type: string, blurb: string): string | undefined {
-  const role = isContractorType(type) ? nameLabel(roleFromBlurb(blurb)) : ''
-  return role === '' ? undefined : role
-}
+  givenName(one) ?? roleOf(one.type, blurb).title
 
 /**
  * The dim second part of a card's title: what the hire's type is, when the name it was given hides that ("Debugger · Builder").

@@ -1,49 +1,37 @@
-// Contractors, the pure parts: the agent type a skill is hired under, how a role is cleaned, and the offer to make one staff.
+// Contractors, the pure parts: the agent type every contractor is hired under, how a role is cleaned, and the offer to make one staff.
 import { expect, test } from 'claude-code/testing'
-import { contractorName, contractorType, isContractorType, roleFromBlurb } from '../hooks/contractor-name'
+import { CONTRACTOR_TYPE, isContractorType } from '../hooks/contractor-name'
 import { offerText, parseContractor, withOffer, withoutOffer } from '../hooks/contractor'
 import { labelOf, typeTag } from '../hooks/office'
 import { tagged } from '../hooks/panel-model'
 import type { Employee } from '../types'
 
-test('a skill is hired under a safe agent name made from its whole id, at most 64 characters', () => {
-  expect(contractorName('ecc:frontend-design')).toBe('contractor-ecc-frontend-design')
-  expect(contractorName('pitch deck!')).toBe('contractor-pitch-deck')
-  expect(contractorName('a'.repeat(100))).toMatch(/^contractor-a+$/)
-  expect(contractorName('a'.repeat(100)).length).toBeLessThanOrEqual(64)
-  expect(contractorName('ecc:frontend-design')).toMatch(/^[A-Za-z0-9_-]{1,64}$/)
-  expect(contractorType('ecc:frontend-design')).toBe('clawd-hq:contractor-ecc-frontend-design')
-  // Two skills that share a short name stay two agents.
-  expect(contractorName('a:planner')).not.toBe(contractorName('b:planner'))
+/** What the shipped agent file says it is for (agents/contractor.md). */
+const BLURB = 'Clawd HQ\'s contractor, hired for one job. Hire it only as the hire_contractor tool says, with the line it gives at the top of the brief.'
+
+test('every contractor is hired as the one agent the plugin ships, which the Agent tool knows from the start', () => {
+  expect(CONTRACTOR_TYPE).toBe('clawd-hq:contractor')
 })
 
-test('only this plugin\'s contractor types are contractors', () => {
-  expect(isContractorType('clawd-hq:contractor-ecc-frontend-design')).toBe(true)
+test('only this plugin\'s contractor type is a contractor', () => {
+  expect(isContractorType(CONTRACTOR_TYPE)).toBe(true)
   expect(isContractorType('clawd-hq:core-builder')).toBe(false)
-  expect(isContractorType('other:contractor-x')).toBe(false)
+  expect(isContractorType('other:contractor')).toBe(false)
   expect(isContractorType('general-purpose')).toBe(false)
 })
 
-test('the role is the words before the first colon of the registered description', () => {
-  expect(roleFromBlurb('Designer: Makes pages look right.')).toBe('Designer')
-  expect(roleFromBlurb('No colon here')).toBe('')
-})
-
-test('a contractor reads as its role, with Contractor as the dim second part, whether or not it was given a name', () => {
-  const type = 'clawd-hq:contractor-ecc-frontend-design'
-  const blurb = 'Designer: Makes pages look right.'
-  expect(labelOf({ type }, blurb)).toBe('Designer')
-  expect(labelOf({ type, name: 'ui-designer' }, blurb)).toBe('Ui designer')
-  expect(typeTag({ type }, blurb)).toBe('Contractor')
-  expect(typeTag({ type, name: 'designer' }, blurb)).toBe('Contractor')
-  // A role with no usable words falls back to the general label.
-  expect(labelOf({ type: 'clawd-hq:contractor-zzz' }, 'no colon')).toBe('Generalist')
+test('a contractor reads as the role it was given as its name, with Contractor as the dim second part', () => {
+  expect(labelOf({ type: CONTRACTOR_TYPE, name: 'ui-designer' }, BLURB)).toBe('Ui designer')
+  expect(typeTag({ type: CONTRACTOR_TYPE }, BLURB)).toBe('Contractor')
+  expect(typeTag({ type: CONTRACTOR_TYPE, name: 'designer' }, BLURB)).toBe('Contractor')
+  // With no name, the general label.
+  expect(labelOf({ type: CONTRACTOR_TYPE }, BLURB)).toBe('Generalist')
 })
 
 test('the card tag carries the visitor badge for a contractor and nothing extra for anyone else', () => {
   const one = (type: string, name?: string): Employee => ({ id: 'x', type, description: 'd', name, mood: 'working', tools: 0, startedAt: 0, joinedTick: 0 })
-  const data = { blurbs: { 'clawd-hq:contractor-s': 'Designer: Makes pages.' } }
-  expect(tagged(one('clawd-hq:contractor-s', 'designer'), data)).toBe(' · 🪪 Contractor')
+  const data = { blurbs: { [CONTRACTOR_TYPE]: BLURB } }
+  expect(tagged(one(CONTRACTOR_TYPE, 'designer'), data)).toBe(' · 🪪 Contractor')
   expect(tagged(one('clawd-hq:core-builder', 'debugger'), data)).toBe(' · Builder')
   expect(tagged(one('general-purpose'), data)).toBeUndefined()
 })

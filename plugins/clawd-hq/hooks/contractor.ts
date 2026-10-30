@@ -1,12 +1,13 @@
-// Contractors: an installed skill that is not on the team, hired for one job. `hire_contractor` registers a one-job agent that preloads the
-// skill (the way setup registers a skill hire) and answers with the agent type to hire. The agent is never put in the team record. Hires are
-// counted per project and skill; on the second hire of a skill the Office tab offers to make it staff, and "Make staff" adds it to the
-// saved team through the existing hire path. No `$` here: register.tsx hands in the calls as closures.
+// Contractors: an installed skill that is not on the team, hired for one job. `hire_contractor` checks the skill and answers with the one
+// contractor agent the plugin ships and the first line of its brief, which has it load the skill. Nothing is registered: a type registered
+// now would reach the Agent tool only next turn. Hires are counted per project and skill; on the second hire of a skill the Office tab
+// offers to make it staff, and "Make staff" adds it to the saved team through the existing hire path. No `$` here: register.tsx hands in
+// the calls as closures.
 import type { ContractorOffer } from '../types'
-import { contractorName, contractorType } from './contractor-name'
+import { CONTRACTOR_TYPE } from './contractor-name'
 import { listHelpers } from './find-helpers'
 import type { FindIo } from './find-helpers'
-import { HIRE_PROMPT, addSkillHire, installedSkills } from './hire'
+import { addSkillHire, installedSkills } from './hire'
 import type { OnboardIo } from './onboard-types'
 import { inLine, reasonOf } from './state'
 
@@ -74,12 +75,14 @@ let putOff: ReadonlySet<string> = new Set()
 
 const nameFor = (role: string) => role.toLowerCase().replace(/\s+/g, '-')
 const answerFor = (skill: string, role: string) =>
-  `Contractor ready: "${role}" works from the skill ${skill}. Hire it now with the Agent tool: subagent_type "${contractorType(skill)}", name "${nameFor(role)}", and a brief for the one job. ` +
-  'It does that job and leaves. If the Agent tool does not know the type yet, say so in one line and hire the general-purpose agent instead, naming the skill in the brief.'
+  `Contractor ready: "${role}" works from the skill ${skill}. Hire it now with the Agent tool: subagent_type "${CONTRACTOR_TYPE}" and name "${nameFor(role)}". ` +
+  'The name is required: it is how the office shows the role. ' +
+  'Put this exact line in the brief right after the [effort: …] line, and after a PAIR-UP: or COUNCIL: line if there is one: ' +
+  `Load the skill ${skill} with the Skill tool before anything else. Then give the one job. It does that job and leaves.`
 
 /**
- * Clawd's call of `hire_contractor`: the skill is checked against the installed list, the one-job agent is registered, the hire is counted
- * and, from the second hire of the skill, the offer to make it staff goes on the Office tab. A specialist's call is refused.
+ * Clawd's call of `hire_contractor`: the skill is checked against the installed list, the hire is counted and, from the second hire of
+ * the skill, the offer to make it staff goes on the Office tab. A specialist's call is refused.
  */
 export async function hireContractor(io: ContractorIo, agentId: string | undefined, input: Record<string, unknown>): Promise<{ readonly result: string } | { readonly deny: string }> {
   if (agentId !== undefined) return { deny: CONTRACTOR_DENY }
@@ -90,9 +93,6 @@ export async function hireContractor(io: ContractorIo, agentId: string | undefin
   const found = listed.find(h => h.kind === 'skill' && h.id === skill)
   if (!(engine ? engine.some(s => s.name === skill) : found !== undefined)) return { deny: `"${skill}" is not an installed skill. Call find_helpers for the exact name.` }
   if (found?.status === 'staff' && found.hireAs) return { deny: `"${skill}" is on the team. Hire the agent "${found.hireAs}" instead, and give it a role name.` }
-  const about = found?.about || engine?.find(s => s.name === skill)?.about || skill
-  const isOk = await io.registerHire({ name: contractorName(skill), description: `${role}: ${about}`, prompt: HIRE_PROMPT, skills: [skill] })
-  if (!isOk) return { deny: `The engine could not register a contractor for "${skill}". Hire a staff helper or the general-purpose agent instead.` }
   const times = await countHire(io, skill)
   if (times >= 2 && !putOff.has(skill)) await inLine(() => io.change(list => withOffer(list, { id: skill, role, times })))
   return { result: answerFor(skill, role) }

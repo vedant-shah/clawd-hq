@@ -1,5 +1,5 @@
-// Contractors: Clawd hires an off-team skill for one job. The agent is registered for the session only, never joins the team record,
-// and on the second hire of the same skill the Office tab offers to make it staff.
+// Contractors: Clawd hires an off-team skill for one job, through the one contractor agent the plugin ships. Nothing joins the team
+// record, and on the second hire of the same skill the Office tab offers to make it staff.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { CONTRACTOR_TOOL } from '../hooks/constants'
@@ -18,8 +18,11 @@ const TEAM = {
 }
 const PAYROLL = { laidOff: ['ecc:go-reviewer'], isReviewed: true, stacks: [] }
 const DECK = 'pitch-deck'
-const DECK_TYPE = 'clawd-hq:contractor-pitch-deck'
+const DECK_TYPE = 'clawd-hq:contractor'
+/** The shipped agent file's description (agents/contractor.md). */
+const SHIPPED_BLURB = 'Clawd HQ\'s contractor, hired for one job. Hire it only as the hire_contractor tool says, with the line it gives at the top of the brief.'
 const OFFER = 'Designer has worked here twice. Make them staff?'
+const LOAD_LINE = `Load the skill ${DECK} with the Skill tool before anything else.`
 
 /** A project with a saved team, and a skill the engine lists that is not on it (its description is in its file). */
 function office(on: Parameters<typeof onboardHost>[0], store: Record<string, unknown> = { [`team:${CWD}`]: TEAM, [`payroll:${CWD}`]: PAYROLL }) {
@@ -57,18 +60,50 @@ test('the tool is registered, in front of the search so Clawd needs none to find
   expect(h.toolSpecs.find(t => t.name === 'hire_contractor')?.isDeferred).toBe(false)
 })
 
-test('a hire registers a one-job agent that preloads the skill, has every tool, and is named in the answer', async ($, on) => {
+test('a hire registers no new agent type (the engine would only know it next turn) and names the shipped one, with the brief\'s first line', async ($, on) => {
   const h = office(on)
   await $.session.start(START)
+  const before = h.agentSpecs.length
   const answer = await deck($)
-  const [spec] = contractorSpecs(h)
-  expect(contractorSpecs(h)).toHaveLength(1)
-  expect(spec).toMatchObject({ name: 'contractor-pitch-deck', skills: [DECK] })
-  expect(spec?.description).toMatch(/^Designer: Builds investor pitch decks/)
-  expect(spec?.tools).toBeUndefined()
-  expect(spec?.prompt.length).toBeLessThan(400)
-  expect(answer.result).toContain(DECK_TYPE)
-  expect(answer.result).toContain('Designer')
+  expect(h.agentSpecs).toHaveLength(before)
+  expect(answer.result).toContain(`subagent_type "${DECK_TYPE}"`)
+  expect(answer.result).toContain('name "designer"')
+  expect(answer.result).toContain('The name is required')
+  // Right after the effort line (and a PAIR-UP: or COUNCIL: line), which the office reads only at the very start of a brief.
+  expect(answer.result).toContain('right after the [effort: …] line, and after a PAIR-UP: or COUNCIL: line if there is one')
+  expect(answer.result).toContain(LOAD_LINE)
+})
+
+/** Hires a contractor the way Clawd is told to, runs one model request for it, and gives the efforts sent and the brief it read. */
+async function atWork($: Engine, on: Parameters<typeof host>[0], name?: string) {
+  host(on, [])
+  const briefs: string[] = []
+  const efforts: unknown[] = []
+  on('agent.spawn', (_$, e) => { briefs.push((e as { prompt: string }).prompt); return { model: 'claude-sonnet-5-5', agentId: 'c1' } })
+  on('turn.step', async function* (_$, e) {
+    efforts.push(e.effort)
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
+  })
+  await $.agent.spawn({ prompt: `[effort: high]\n${LOAD_LINE}\nLay out the deck`, description: 'Lay out the deck', subagentType: DECK_TYPE, ...(name ? { name } : {}) } as never)
+  const run = $.turn.step({ turnId: 'r1', index: 0, model: 'claude-opus-5-5', messageCount: 3, agentId: 'c1' } as never)
+  for (let part = await run.next(); !part.done; part = await run.next());
+  return { briefs, efforts }
+}
+
+test('with the effort line first and the load line second, the effort is applied, the contractor reads the load line first, and it shows as a contractor', async ($, on) => {
+  const { briefs, efforts } = await atWork($, on, 'designer')
+  expect(efforts).toEqual(['high'])
+  expect(briefs[0]?.startsWith(`${LOAD_LINE}\nLay out the deck`)).toBe(true)
+  const { texts } = await tab($, 'terminal')
+  expect(texts).toContain('Designer')
+  expect(texts).toContain(' · 🪪 Contractor')
+})
+
+test('a contractor hired with no name shows as a Generalist, still with the visitor badge', async ($, on) => {
+  await atWork($, on)
+  const { texts } = await tab($, 'terminal')
+  expect(texts).toContain('Generalist')
+  expect(texts).toContain(' · 🪪 Contractor')
 })
 
 test('a contractor never joins the team record, the hires kept for next session, or the parked list', async ($, on) => {
@@ -96,15 +131,6 @@ test('the skill must be exactly an installed one, the role plain text, and a ski
   expect((await hire($, { role: 'Designer' })).deny).toMatch(/skill/)
   expect((await hire($, { skill: 'ecc:tdd-workflow', role: 'Tester' })).deny).toContain('clawd-hq:tdd-workflow')
   expect(contractorSpecs(h)).toEqual([])
-  expect(h.saved.get(`contractors:${CWD}`)).toBeUndefined()
-})
-
-test('the engine refusing to register the agent is told to Clawd, and the hire is not counted', async ($, on) => {
-  const h = office(on)
-  await $.session.start(START)
-  h.fail.register = true
-  const answer = await deck($)
-  expect(answer.deny).toMatch(/could not|not register/i)
   expect(h.saved.get(`contractors:${CWD}`)).toBeUndefined()
 })
 
@@ -180,16 +206,16 @@ test('a failing save of the team keeps the card and says so', async ($, on) => {
   expect(h.toasts.some(t => /could not/i.test(t))).toBe(true)
 })
 
-test('a contractor at work reads as its role with a visitor badge, whether or not Clawd gave it a name', async ($, on) => {
+test('a contractor at work reads as the role it was given as its name, with a visitor badge', async ($, on) => {
   host(on, [
-    { id: 'c1', type: DECK_TYPE, description: 'Lay out the deck', status: 'running' },
+    { id: 'c1', type: DECK_TYPE, description: 'Lay out the deck', status: 'running', name: 'designer' },
     { id: 'c2', type: DECK_TYPE, description: 'Lay out the appendix', status: 'running', name: 'editor' },
   ])
   const ids = ['c1', 'c2']
   on('agent.offer', () => ({ isOffered: true }) as never)
   on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: ids.shift() }))
-  await $.agent.offer({ agent: DECK_TYPE, description: 'Designer: Builds investor pitch decks and slide stories.' } as never)
-  await $.agent.spawn({ prompt: 'p', description: 'Lay out the deck', subagentType: DECK_TYPE } as never)
+  await $.agent.offer({ agent: DECK_TYPE, description: SHIPPED_BLURB } as never)
+  await $.agent.spawn({ prompt: 'p', description: 'Lay out the deck', subagentType: DECK_TYPE, name: 'designer' } as never)
   await $.agent.spawn({ prompt: 'p', description: 'Lay out the appendix', subagentType: DECK_TYPE, name: 'editor' } as never)
   for (const surface of SURFACES) {
     const { texts } = await tab($, surface)
@@ -204,7 +230,7 @@ test('a contractor type does not turn up in the search beside its skill', async 
   await $.session.start(START)
   await offerAgents($)
   await deck($)
-  await $.agent.offer({ agent: DECK_TYPE, description: 'Designer: Builds investor pitch decks and slide stories.' } as never)
+  await $.agent.offer({ agent: DECK_TYPE, description: SHIPPED_BLURB } as never)
   const found = JSON.parse(((await $.tool.call({ tool: 'mcp__clawd-hq__find_helpers', job: 'investor pitch deck' } as never)) as { result: string }).result) as { matches: Array<{ name: string }> }
   expect(found.matches.map(m => m.name)).toEqual([DECK])
 })

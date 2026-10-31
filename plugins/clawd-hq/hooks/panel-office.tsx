@@ -72,14 +72,20 @@ function clawdCard({ kit, data, cw }: Ctx) {
         </Box>
         {/* How to hold a council: the /council command (hooks/council.ts) takes the question. */}
         <Text key="clawd-hint" dimColor wrap="wrap">Type /council &lt;question&gt; to hold a council.</Text>
-        {/* After a few quiet minutes: one line on where things stand, until the next turn starts. */}
-        {!boss.isBusy && boss.recap !== undefined && (
-          <Box key="recap" marginTop={kit.isTerminal ? 1 : 0} flexDirection="column">
-            <Text bold dimColor>WHERE WE LEFT OFF</Text>
-            {recapParts(kit, boss.recap)}
-          </Box>
-        )}
       </Box>
+    </Box>
+  )
+}
+
+/** After a few quiet minutes: where things stand, in its own section under the card, until the next turn starts. None, no section. */
+function recapSection({ kit, data }: Ctx) {
+  const { Box, Text } = kit
+  const { boss } = data
+  if (boss.isBusy || boss.recap === undefined) return null
+  return (
+    <Box key="recap" flexDirection="column">
+      <Text bold dimColor>WHERE WE LEFT OFF</Text>
+      {recapParts(kit, boss.recap)}
     </Box>
   )
 }
@@ -190,6 +196,7 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
   return (
     <kit.Box flexDirection="column" gap={1}>
       {clawdCard(ctx)}
+      {recapSection(ctx)}
       {knowSection(kit, data, actions)}
       {ruleSection(kit, data, actions)}
       {contractorSection(kit, data, actions)}

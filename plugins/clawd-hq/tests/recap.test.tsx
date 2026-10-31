@@ -27,7 +27,16 @@ const turns = async ($: Engine, count: number) => { for (let i = 0; i < count; i
 async function wait(clock: { advance: (ms: number) => Promise<unknown> }, ms: number) {
   for (let left = ms; left > 0; left -= 10_000) await clock.advance(Math.min(left, 10_000))
 }
-const cardText = async ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') => {
+type Tree = { props?: Record<string, unknown>; children?: unknown[] }
+/** The first drawn node with this key, anywhere under `node`. */
+const inTree = (node: unknown, key: string): Tree | undefined => {
+  if (typeof node !== 'object' || node === null) return undefined
+  const tree = node as Tree
+  if (tree.props?.key === key) return tree
+  for (const child of tree.children ?? []) { const hit = inTree(child, key); if (hit) return hit }
+  return undefined
+}
+const cardText =async ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') => {
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
   const text = JSON.stringify(await ui.drawn())
   await ui.unmount()
@@ -49,8 +58,21 @@ test('after three turns and three quiet minutes, Clawd\'s card says where things
     expect(await ui.find({ type: 'Text', text: /^Next:$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^Next: review the pull request\.$/ })).toBeDefined()
     expect(await ui.find({ key: 'resume' })).toBeUndefined()
+    // The recap is its own section below the card, not inside it.
+    const tree = await ui.drawn()
+    expect(inTree(inTree(tree, 'clawd-lines'), 'recap')).toBeUndefined()
+    expect(inTree(tree, 'recap')).toBeDefined()
     await ui.unmount()
   }
+})
+
+test('with no recap to show, the Office tab has no recap section at all', async ($, on) => {
+  hostWithModel(on)
+  await $.session.start(START)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  expect(inTree(await ui.drawn(), 'recap')).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^WHERE WE LEFT OFF$/ })).toBeUndefined()
+  await ui.unmount()
 })
 
 test('the recap is made once per pause, goes when the next turn starts, and is made again after that turn', { timeoutMs: 15_000 }, async ($, on) => {

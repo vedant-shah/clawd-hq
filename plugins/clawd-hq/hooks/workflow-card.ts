@@ -54,7 +54,7 @@ export async function workflowSources(io: WorkflowIo): Promise<string> {
 }
 
 /** Control and direction-changing characters, which have no place in a line of plain words. */
-const HIDDEN = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F​-‏‪-‮⁠-⁩﻿]/g
+const HIDDEN = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g
 /** Things a step must not carry: a link, code, markup, or an order aimed at an assistant. */
 const UNSAFE = /https?:|www\.|`|[<>{}[\]]|\b(ignore|disregard|forget)\b.{0,30}\b(previous|above|prior|earlier|instructions|rules)\b|\bsystem prompt\b/i
 

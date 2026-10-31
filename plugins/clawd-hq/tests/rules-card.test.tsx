@@ -97,7 +97,7 @@ test('the same rule offered again is one card; hidden marks and line breaks in i
   await started(on)
   await $.session.start(START)
   await offer($, 'Never use tabs')
-  await offer($, '- Never use\n tabs​')
+  await offer($, '- Never use\n tabs\u200B')
   const { words, buttons } = await seen($, 'terminal')
   expect(words.filter(w => w === '- Never use tabs')).toHaveLength(1) // the card shows the exact line the button writes
   expect(buttons.filter(b => b === 'Add to CLAUDE.md')).toHaveLength(1)

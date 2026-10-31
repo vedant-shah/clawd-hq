@@ -8,7 +8,7 @@ export const PROFILE_BLOCK = 'clawdProfile'
 const ROLE_CHARS = 80
 const STEP_CHARS = 200
 /** Control and direction-changing characters. */
-const HIDDEN = /[\u0000-\u001F\u007F-\u009F​-‏‪-‮⁠-⁩﻿]/g
+const HIDDEN = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g
 
 /** One stored string as a single plain line, or '' when it is not text. */
 const oneLine = (v: unknown, max: number): string =>

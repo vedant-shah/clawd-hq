@@ -108,7 +108,7 @@ test('only the first forty entries are looked at', () => {
 })
 
 test('the file shown beside a reason must be a clean one-line path; one with control, escape or direction marks is left off (the reason stays)', () => {
-  const odd = ['src/a‮b.ts', 'src/a⁦b.ts', 'src/a\u001b[31mb.ts', 'src/a\nb.ts', 'src/a\tb.ts', 'src/a​b.ts', 'src/a  b.ts', 'src/a⁩b.ts']
+  const odd = ['src/a\u202Eb.ts', 'src/a\u2066b.ts', 'src/a\u001b[31mb.ts', 'src/a\nb.ts', 'src/a\tb.ts', 'src/a\u200Bb.ts', 'src/a  b.ts', 'src/a\u2069b.ts']
   const r = scoutPicks(report(odd.map(file => pick('Plan', 'ecc:planner', { reason: 'It has a plan.', evidence: file })), odd.map(file => `/home/me/shop/${file}`)), cands, FOLDER)
   expect(r.picks.map(p => p.reason)).toEqual(odd.map(() => 'It has a plan.'))
   const clean = scoutPicks(report([pick('Plan', 'ecc:planner', { reason: 'It has a plan.', evidence: 'src/my file.ts' })], ['/home/me/shop/src/my file.ts']), cands, FOLDER)

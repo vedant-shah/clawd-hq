@@ -50,13 +50,13 @@ test('a note is made plain: control characters and line breaks become single spa
   expect(parsed).toEqual({ report: { done: 1, total: 3, note: 'Fixing the bug [31mnow' } })
   expect(parseStep({ done: 1, total: 3, note: ' \n\u0000 ' })).toEqual({ report: { done: 1, total: 3 } })
   // Invisible characters that reorder or hide text are dropped too.
-  expect(parseStep({ done: 1, total: 3, note: 'a‮b​c' })).toEqual({ report: { done: 1, total: 3, note: 'a b c' } })
+  expect(parseStep({ done: 1, total: 3, note: 'a\u202Eb\u200Bc' })).toEqual({ report: { done: 1, total: 3, note: 'a b c' } })
   // The count is made on the clean text: a note padded with line breaks is not punished for them.
   expect('report' in parseStep({ done: 1, total: 3, note: `ok${'\n'.repeat(200)}fine` })).toBe(true)
 })
 
 test('every kind of hidden mark is dropped from a note: soft hyphen, Arabic letter mark, Mongolian vowel separator, word joiners, tag characters', () => {
-  const marks = ['­', '؜', '᠎', '⁠', '⁢', '⁤', '‍', '⁧', '\u{e0001}', '\u{e0041}', '\u{e007f}']
+  const marks = ['\u00AD', '\u061C', '\u180E', '\u2060', '\u2062', '\u2064', '\u200D', '\u2067', '\u{e0001}', '\u{e0041}', '\u{e007f}']
   for (const mark of marks) expect(parseStep({ done: 1, total: 3, note: `a${mark}b` })).toEqual({ report: { done: 1, total: 3, note: 'a b' } })
   // A note made only of them is no note.
   expect(parseStep({ done: 1, total: 3, note: marks.join('') })).toEqual({ report: { done: 1, total: 3 } })

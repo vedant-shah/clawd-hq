@@ -7,12 +7,12 @@ test('a rule is made one plain line: hidden marks and line breaks go, a leading 
   expect(parseRule({ rule: '  Always run the tests\n before a commit  ' })).toEqual({ rule: 'Always run the tests before a commit' })
   expect(parseRule({ rule: '- Never push without asking' })).toEqual({ rule: 'Never push without asking' })
   expect(parseRule({ rule: '* Never push without asking' })).toEqual({ rule: 'Never push without asking' })
-  expect(parseRule({ rule: 'Use​ tabs‮\u{e0041} only' })).toEqual({ rule: 'Use tabs only' })
+  expect(parseRule({ rule: 'Use\u200B tabs\u202E\u{e0041} only' })).toEqual({ rule: 'Use tabs only' })
   expect(parseRule({ rule: 'Line one\u0000\u0007 two' })).toEqual({ rule: 'Line one two' })
 })
 
 test('an empty rule, one that is not text, or one that is too long is refused with a plain reason, and never cut', () => {
-  for (const rule of ['', '   ', '\n​', '- ', undefined, 7, null]) expect(parseRule({ rule })).toHaveProperty('error')
+  for (const rule of ['', '   ', '\n\u200B', '- ', undefined, 7, null]) expect(parseRule({ rule })).toHaveProperty('error')
   const edge = 'a'.repeat(MAX_RULE)
   expect(parseRule({ rule: edge })).toEqual({ rule: edge })
   const over = parseRule({ rule: 'a'.repeat(MAX_RULE + 1) })

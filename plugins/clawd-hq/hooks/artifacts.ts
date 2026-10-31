@@ -20,7 +20,7 @@ const LINK_IN_TEXT = /(?<![\w/.@:=?&%#+-])https:\/\/claude\.ai\/\S+/g
 const TRAILING = /[)\]}>"'`.,;:!?*_]+$/
 // Control characters go; the few that separate words become a space first. The soft hyphen, the direction marks, the zero-width characters and the tag characters go too: they can disguise or hide text in a title.
 const SPACING = /[\t\n\r\v\f]+/g
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f­؜᠎​-‏‪-‮⁠-⁤⁦-⁩﻿\u{e0000}-\u{e007f}]/gu
+const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u{e0000}-\u{e007f}]/gu
 /** Only these actions leave a page in the list; a delete takes one out. Every other action is ignored. */
 const KEEPS = new Set(['publish', 'open'])
 

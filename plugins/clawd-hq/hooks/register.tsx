@@ -103,7 +103,7 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 let cwd = ''
 /** The setup scout (hooks/scout-run.ts): no hook of ours runs inside it, so its picks are read from its transcript. It is no hire, so it stays off the books. */
 const scoutHost = ($: EngineInterface): ScoutHost => ({
-  spawn: a => $.agent.spawn(a), list: () => $.agent.list(), messages: id => $.session.messages({ agentId: id }), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn) })
+  spawn: a => $.agent.spawn(a), list: () => $.agent.list(), version: async () => (await $.session.version()).version, messages: id => $.session.messages({ agentId: id }), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn) })
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 

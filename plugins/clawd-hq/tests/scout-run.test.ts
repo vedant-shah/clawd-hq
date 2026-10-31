@@ -29,6 +29,7 @@ function fakeHost(spawnAs: string | null | Error = 'sc1') {
       return spawnAs === null ? {} : { agentId: spawnAs }
     },
     list: async () => listed,
+    version: async () => '2.1.309',
     stop: async (id: string) => { stopped.push(id); if (state.stopFails) throw new Error('no such task') },
     messages: async (_id: string) => { if (state.said instanceof Error) throw state.said; return state.said },
     after(ms: number, fn: () => void) {
@@ -160,4 +161,27 @@ test('a start that is refused, fails, or gives no id is no scout: the reason say
     expect(await runScout(host, 'BRIEF', 90_000)).toEqual({ why: expect.stringMatching(/could not start/i) })
     expect(host.timers).toEqual([])
   }
+})
+
+const SETTINGS = 'engine 2.1.309; scout: sonnet, tools Read, Glob, permissionMode dontAsk, 9 tools withheld'
+
+test('a start that fails keeps the engine\'s own reason, the engine version and the scout\'s settings, in one line', async () => {
+  const refused = { ...fakeHost(), spawn: async () => ({ deny: 'Agent \'clawd-hq:scout\' would be spawned with zero tools\n— refusing.' }) }
+  expect(await runScout(refused, 'BRIEF', 90_000)).toEqual({ why: `The scout could not start: Agent 'clawd-hq:scout' would be spawned with zero tools — refusing. (${SETTINGS})` })
+  expect(await runScout(fakeHost(new Error('clawd-hq: $.agent.spawn refused: 4 spawns are running at once')), 'BRIEF', 90_000))
+    .toEqual({ why: `The scout could not start: clawd-hq: $.agent.spawn refused: 4 spawns are running at once (${SETTINGS})` })
+  expect(await runScout(fakeHost(null), 'BRIEF', 90_000)).toEqual({ why: `The scout could not start: no agent id came back and no new scout was listed (${SETTINGS})` })
+})
+
+test('the engine\'s reason is cut to one short line, and one that looks like it holds a secret is left out', async () => {
+  const long = await runScout(fakeHost(new Error(`refused: ${'word '.repeat(80)}`)), 'BRIEF', 90_000)
+  expect('why' in long && long.why.split(':').slice(1).join(':').length).toBeLessThan(330)
+  expect('why' in long && long.why).toContain('…')
+  const secret = await runScout(fakeHost(new Error('auth failed for sk-ant-api03-abcdef')), 'BRIEF', 90_000)
+  expect(secret).toEqual({ why: `The scout could not start: the engine's words are left out, as they looked like they held a secret (${SETTINGS})` })
+})
+
+test('an engine that cannot say its version is named as unknown', async () => {
+  const host = { ...fakeHost(null), version: async () => { throw new Error('no such call') } }
+  expect(await runScout(host, 'BRIEF', 90_000)).toEqual({ why: expect.stringContaining('(engine unknown; scout: sonnet') })
 })

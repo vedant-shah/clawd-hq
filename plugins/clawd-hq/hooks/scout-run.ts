@@ -5,10 +5,13 @@
 import type { ScoutResult } from './onboard-types'
 import { scoutReport } from './scout-answer'
 import type { ScoutMessage } from './scout-answer'
-import { SCOUT_TYPE } from './scout-spec'
+import { looksSecret } from './scout-pick'
+import { SCOUT_SPEC, SCOUT_TYPE } from './scout-spec'
 
 /** How often the scout's transcript is looked at. */
 export const POLL_MS = 2_000
+/** The engine's reason a start failed is kept to this many characters. */
+const REASON_CHARS = 200
 /** The engine's word for an agent that will not answer any more. */
 const ENDED: ReadonlySet<string> = new Set(['completed', 'failed', 'killed'])
 
@@ -19,6 +22,8 @@ export type ScoutStart = { readonly subagentType: string; readonly description: 
 export type ScoutHost = {
   readonly spawn: (start: ScoutStart) => Promise<{ readonly agentId?: string; readonly deny?: string }>
   readonly list: () => Promise<readonly { readonly id: string; readonly type: string; readonly status?: string }[]>
+  /** The engine's version, named in the note when the scout could not start. */
+  readonly version: () => Promise<string>
   /** The scout's messages so far; anything but a list (a refusal) is no answer yet. */
   readonly messages: (id: string) => Promise<unknown>
   readonly stop: (id: string) => Promise<unknown>
@@ -31,17 +36,33 @@ export const spawnTypeOf = (e: object): unknown => (e as { subagentType?: unknow
 /** The ids of the scouts the engine lists now; a list that fails is none. */
 const scoutIds = async (host: ScoutHost) => new Set((await host.list().catch(() => [])).filter(a => a.type === SCOUT_TYPE).map(a => a.id))
 
+/** The engine's words as one short line, or a plain stand-in when they look like they hold a secret. */
+function reasonLine(text: string): string {
+  const line = text.replace(/\s+/g, ' ').trim()
+  if (looksSecret(line)) return 'the engine\'s words are left out, as they looked like they held a secret'
+  return line.length > REASON_CHARS ? `${line.slice(0, REASON_CHARS - 1)}…` : line
+}
+
 /**
  * The started scout's id: the one the start gave, else the newest running scout the engine lists that was not there before this
- * start (never an ended or older one). `undefined` when it would not start or cannot be told apart.
+ * start (never an ended or older one). Else why it did not start, in the engine's own words where it gave any.
  */
-async function startedId(host: ScoutHost, prompt: string): Promise<string | undefined> {
+async function startedId(host: ScoutHost, prompt: string): Promise<{ readonly id: string } | { readonly reason: string }> {
   const before = await scoutIds(host)
-  const started = await host.spawn({ subagentType: SCOUT_TYPE, description: 'Look around the project', prompt }).catch(() => undefined)
-  if (started === undefined || started.deny !== undefined) return undefined
-  if (started.agentId !== undefined) return started.agentId
+  const started = await host.spawn({ subagentType: SCOUT_TYPE, description: 'Look around the project', prompt })
+    .catch((err: unknown): { readonly agentId?: string; readonly deny?: string } => ({ deny: err instanceof Error ? err.message : String(err) }))
+  if (started.deny !== undefined) return { reason: reasonLine(started.deny) }
+  if (started.agentId !== undefined) return { id: started.agentId }
   const listed = await host.list().catch(() => [])
-  return listed.filter(a => a.type === SCOUT_TYPE && !before.has(a.id) && !ENDED.has(a.status ?? '')).at(-1)?.id
+  const id = listed.filter(a => a.type === SCOUT_TYPE && !before.has(a.id) && !ENDED.has(a.status ?? '')).at(-1)?.id
+  return id === undefined ? { reason: 'no agent id came back and no new scout was listed' } : { id }
+}
+
+/** The engine version and the scout's own settings, for the note on a start that failed. */
+async function startContext(host: ScoutHost): Promise<string> {
+  const version = await host.version().catch(() => 'unknown')
+  const { model, tools = [], permissionMode, disallowedTools = [] } = SCOUT_SPEC
+  return `engine ${version}; scout: ${model}, tools ${tools.join(', ')}, permissionMode ${permissionMode}, ${disallowedTools.length} tools withheld`
 }
 
 const pause = (host: ScoutHost) => new Promise<void>(done => { host.after(POLL_MS, done) })
@@ -64,8 +85,9 @@ async function answerOf(host: ScoutHost, id: string) {
  * so it does not run on and spend; a stop that fails changes nothing.
  */
 export async function runScout(host: ScoutHost, brief: string, timeoutMs: number): Promise<ScoutResult> {
-  const id = await startedId(host, brief)
-  if (id === undefined) return { why: 'The scout could not start.' }
+  const started = await startedId(host, brief)
+  if ('reason' in started) return { why: `The scout could not start: ${started.reason} (${await startContext(host)})` }
+  const { id } = started
   for (let waited = 0; waited < timeoutMs; waited += POLL_MS) {
     await pause(host)
     const ended = await hasEnded(host, id) // asked first, so an answer written just before the end still counts

@@ -131,10 +131,10 @@ export type CompleteRequest = {
   readonly effort?: 'low' | 'medium' | 'high'
   readonly timeoutMs: number
 }
-/** What the scout sent through its pick tool (untrusted: checked against the candidate list) and the files it opened, as absolute paths. */
+/** The picks in the scout's final answer (untrusted: checked against the candidate list) and the files it opened with Read. */
 export type ScoutReport = { readonly picks: unknown; readonly reads: readonly string[] }
-/** Judges the scout's picks as it sends them: the plain problem to send back to it, or `undefined` when they are usable. */
-export type ScoutCheck = (picks: unknown, reads: readonly string[]) => string | undefined
+/** The scout's run: its report, or why there is none, in plain words for the note setup keeps. */
+export type ScoutResult = ScoutReport | { readonly why: string }
 /** `mtimeMs` is filled for session files (`.jsonl`) only, from a stat of each. */
 export type FsListEntry = { readonly name: string; readonly isDir: boolean; readonly size?: number; readonly mtimeMs?: number }
 /** The agents and skills the engine says are loaded, from `$.session.usage({ breakdown })`. */
@@ -167,8 +167,8 @@ export type OnboardIo = {
   /** Agent type to its blurb, as the `agent.offer` hook keeps them. */
   readonly blurbs: () => Readonly<Record<string, string>>
   readonly complete: (req: CompleteRequest) => Promise<string | undefined>
-  /** Starts the scout with the brief and waits for its picks; `undefined` when it could not start, ran out of time or sent nothing the check accepted. */
-  readonly spawnScout: (brief: string, check: ScoutCheck) => Promise<ScoutReport | undefined>
+  /** Starts the scout with the brief and reads its picks from its final answer; or why there are none (it could not start, ran out of time, wrote no team list). */
+  readonly spawnScout: (brief: string) => Promise<ScoutResult>
   /** The Automatic setup switch, read as it is now: off means nothing starts by itself (`/office-setup` still runs). */
   readonly isAutoOn: () => boolean
   readonly registerHire: (spec: HireSpec) => Promise<boolean>

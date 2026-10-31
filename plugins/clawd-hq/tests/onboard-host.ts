@@ -99,13 +99,17 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     calls.tools.push({ tool: (e as { tool: string }).tool, agentId: (e as { agentId?: string }).agentId, input: e as Record<string, unknown> })
     return { result: 'ok' } as never
   })
-  // The scout: `mode` 'deny' refuses its start (setup falls to Opus); 'script' starts it and runs `script` as the scout would, with the id it was given (the test makes the scout's calls through its own engine).
+  // The scout: `mode` 'deny' refuses its start (setup falls to Opus); 'silent' starts it, and the engine lists it as running.
+  // No hook of the plugin runs inside a scout it started itself, so the plugin learns what it found only from its transcript:
+  // `said`, read through `$.session.messages`. `end()` marks it finished in the engine's list.
   const scout = {
-    mode: 'deny' as 'deny' | 'script' | 'silent', id: 'sc1', spawned: [] as Array<{ prompt: string; subagentType?: string }>,
-    script: async (_id: string): Promise<void> => undefined,
+    mode: 'deny' as 'deny' | 'silent', id: 'sc1', spawned: [] as Array<{ prompt: string; subagentType?: string }>,
+    said: [] as Array<{ role: 'user' | 'assistant'; text: string; toolUses: Array<{ tool: string; input: Record<string, unknown> }> }>,
+    end: () => { for (const a of agentList as Array<{ id: string; status: string }>) if (a.id === scout.id) a.status = 'completed' },
     /** The scout's definition, as the plugin registered it at session start. */
     get registered() { return h.agentSpecs.filter(s => s.name === 'scout') },
   }
+  on('session.messages', (_$, e) => ({ value: (e as { agentId?: string }).agentId === scout.id ? scout.said : { deny: 'no such agent here' } }) as never)
   // The engine's command list; a test adds to it for the skills that come past the cut breakdown.
   const commandList = [{ name: 'ecc:tdd-workflow', description: 'Writes tests first, then the code.', source: 'plugin' }]
   on('command.list', () => ({ value: commandList }) as never)
@@ -123,8 +127,6 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     scout.spawned.push({ prompt: spawn.prompt, subagentType: type })
     if (scout.mode === 'deny') return { deny: 'no scout in this host' } as never
     agentList.push({ id: scout.id, type: 'clawd-hq:scout', description: 'Look around the project', status: 'running' })
-    // The scout works on its own, after its start has returned.
-    if (scout.mode === 'script') void (async () => { await realWait(30); await scout.script(scout.id) })()
     return { model: 'claude-sonnet-5-5', agentId: scout.id }
   })
   on('agent.offer', () => ({ isOffered: true }) as never)

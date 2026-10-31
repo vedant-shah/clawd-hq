@@ -5,7 +5,7 @@
 // rests on a file the scout opened; otherwise it comes from facts (team-rules.ts), never from a model's own words.
 // No `$`: the scout and the model call come in through the onboarding io.
 import { withCoreFour } from './core-four'
-import type { CompleteRequest, Helper, OnboardIo, PastUse, Pick as SeatPick, ProjectFacts, ScoutCheck, Seat, Team, TeamBy } from './onboard-types'
+import type { CompleteRequest, Helper, OnboardIo, PastUse, Pick as SeatPick, ProjectFacts, ScoutResult, Seat, Team, TeamBy } from './onboard-types'
 import { SEATS, SEAT_LIMITS, TEAM_LIMIT } from './onboard-types'
 import { scoutPicks } from './scout-pick'
 import { scoutBrief } from './scout-spec'
@@ -18,8 +18,10 @@ const TIMEOUT_MS = 60_000
 /** An answer this long is not a team of eight; it is not read. */
 const MAX_REPLY_CHARS = 100_000
 
-/** The closures the pick needs: the scout, the one model call, and the project folder the scout may look in. */
-export type TeamIo = Readonly<Pick<OnboardIo, 'complete' | 'spawnScout' | 'cwd'>>
+/** The closures the pick needs: the scout, the one model call, the project folder the scout may look in, and the store for the scout's note. */
+export type TeamIo = Readonly<Pick<OnboardIo, 'complete' | 'spawnScout' | 'cwd' | 'set'>>
+/** Where the last scout run's outcome is kept, in plain words: what it picked, or why setup fell back. For a look when a setup goes wrong. */
+export const SCOUT_NOTE_KEY = 'debug:scout'
 
 /** Opus at medium effort, as tested. */
 const opusRequest = (prompt: string): CompleteRequest => ({ model: 'opus', prompt, maxTokens: MAX_TOKENS, effort: 'medium', timeoutMs: TIMEOUT_MS })
@@ -76,18 +78,25 @@ export function teamFrom(raw: readonly RawPick[], cands: readonly Candidate[], f
 
 const usable = (team: Team): Team | undefined => (team.picks.length > 0 ? team : undefined)
 
-/** What the scout's pick tool says back when none of the picks can be used, so the scout can try again. */
-const checkOf = (cands: readonly Candidate[], folder: string): ScoutCheck => (picks, reads) => {
-  const { picks: found, problems } = scoutPicks({ picks, reads }, cands, folder)
-  if (found.length > 0) return undefined
-  return `None of those picks could be used. ${problems.join(' ')} Each pick needs a seat (${SEATS.join(', ')}) and a name copied exactly from the candidate list. Call team_pick again.`
+/**
+ * What the scout's run comes to: its usable picks and the note on it, or only the note on why setup falls back. The note holds
+ * counts and checked candidate names only, never the scout's own words, which may carry anything it read.
+ */
+function scoutOutcome(result: ScoutResult, cands: readonly Candidate[], folder: string): { readonly picks?: readonly RawPick[]; readonly note: string } {
+  if ('why' in result) return { note: `${result.why} Setup falls back to one Opus call.` }
+  const { picks, problems } = scoutPicks(result, cands, folder)
+  const dropped = problems.length === 0 ? '' : ` (${problems.length} dropped)`
+  if (picks.length === 0) return { note: `The scout's answer had no usable pick${dropped}. Setup falls back to one Opus call.` }
+  return { picks, note: `The scout picked ${picks.length}: ${picks.map(p => p.name).join(', ')}${dropped}.` }
 }
 
-/** The scout's team, or `undefined` when it could not start, ran out of time, failed, or named nobody on the list. */
+/** The scout's team, or `undefined` when it could not start, ran out of time, failed, or named nobody on the list. Either way the outcome is noted. */
 async function askScout(io: TeamIo, cands: readonly Candidate[], facts: ProjectFacts, use: PastUse, role: string | undefined): Promise<Team | undefined> {
   const brief = scoutBrief({ facts, use, cands, role, folder: io.cwd })
-  const report = await io.spawnScout(brief, checkOf(cands, io.cwd)).catch(() => undefined)
-  return report ? usable(teamFrom(scoutPicks(report, cands, io.cwd).picks, cands, facts, 'scout')) : undefined
+  const result = await io.spawnScout(brief).catch(() => ({ why: 'The scout could not start.' })) // the error's own words are not kept
+  const { picks, note } = scoutOutcome(result, cands, io.cwd)
+  await io.set(SCOUT_NOTE_KEY, { folder: io.cwd, note }).catch(() => undefined) // a note that cannot be kept never stops setup
+  return picks ? usable(teamFrom(picks, cands, facts, 'scout')) : undefined
 }
 
 /** One Opus call's team, or `undefined` when it fails or its answer has no usable pick. A failed call is the same as no answer. */

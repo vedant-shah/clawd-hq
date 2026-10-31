@@ -1,14 +1,15 @@
 // The scout end to end on the test host: registered at session start, hidden from the chat, started when setup reaches the team step,
-// guarded while it reads, and its picks (or its failure) turning into the card. Nothing is sent for the person.
+// and its final answer (or its failure) turning into the card. Nothing is sent for the person.
+// The plugin starts the scout from its own timer, so in Claude Code none of the plugin's hooks run inside the scout (they are skipped
+// as re-entry). This host cannot show that skip; what it shows is that nothing here needs a hook inside the scout: the picks are read
+// from the scout's transcript.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
+import { TEAM_END, TEAM_START } from '../hooks/scout-answer'
 import { PANE, PEOPLE, START } from './host'
-import { CWD, frames, office, onboardHost, realWait, settle } from './onboard-host'
+import { CWD, frames, office, onboardHost, settle } from './onboard-host'
 import type { OnboardHost } from './onboard-host'
-
-const TEAM = 'mcp__clawd-hq__team_pick'
-type Call = { tool: string; input: Record<string, unknown>; answer: { deny?: string; result?: unknown } }
 
 /** A session on the terminal, set up as the other flow tests do. */
 async function open($: Engine, h: OnboardHost) {
@@ -19,37 +20,33 @@ async function open($: Engine, h: OnboardHost) {
   await frames(h)
 }
 
-/** Runs the scout's moves one by one and keeps what each call was answered with. */
-function moves($: Engine, h: OnboardHost, steps: ReadonlyArray<[string, Record<string, unknown>]>) {
-  const calls: Call[] = []
-  h.scout.mode = 'script'
-  h.scout.script = async id => {
-    for (const [tool, input] of steps) calls.push({ tool, input, answer: (await $.tool.call({ tool, ...input, agentId: id } as never)) as Call['answer'] })
-  }
-  return calls
-}
-/** Lets the scout's script run (it starts a moment after its start returns, in real time) and everything that follows it. */
-const more = async (h: OnboardHost) => { await settle(h, 300); await realWait(120); await settle(h, 300) }
+/** Lets setup reach the scout, then one look at its transcript, and what follows. */
+const more = async (h: OnboardHost) => { await settle(h, 300); await h.clock.advance(2_000); await settle(h, 300) }
 /** The ids the plugin asked the engine to stop (TaskStop calls). */
 const stopsOf = (h: OnboardHost) => h.calls.tools.filter(t => t.tool === 'TaskStop').map(t => String(t.input.task_id))
-const toolsSeen =(h: OnboardHost) => h.calls.tools.map(t => `${t.tool}${t.agentId ? '@' + t.agentId : ''}`)
+const teamOf = (h: OnboardHost) => h.saved.get(`team:${CWD}`) as { by: string; picks: Array<{ name: string; receipt: string }> }
 
-const GOOD_PICKS = [
-  { seat: 'Plan', name: 'planner', reason: 'CLAUDE.md asks for a plan before a big change.', evidence: 'CLAUDE.md' },
-  { seat: 'Check', name: 'ecc:code-reviewer', reason: 'The shop API handles logins, so reviews matter.', evidence: 'src/auth.ts' },
-  { seat: 'Make', name: 'ecc:tdd-workflow', reason: 'No tests yet, so tests come first.', evidence: `${CWD}/package.json` },
-]
-const LOOK_AROUND: ReadonlyArray<[string, Record<string, unknown>]> = [
-  ['Glob', { pattern: '**/*.ts' }], ['Read', { file_path: 'package.json' }], ['Read', { file_path: 'CLAUDE.md' }], ['Glob', { pattern: '*', path: 'src' }],
-]
+/** The scout's transcript: it opened these files with Read, then ended with this answer. */
+function scoutSaid(h: OnboardHost, reads: readonly string[], answer: string) {
+  h.scout.mode = 'silent'
+  h.scout.said = [
+    { role: 'assistant', text: '', toolUses: [{ tool: 'Glob', input: { pattern: '**/*.ts' } }, ...reads.map(file_path => ({ tool: 'Read', input: { file_path } }))] },
+    { role: 'assistant', text: answer, toolUses: [] },
+  ]
+}
+const block = (...lines: string[]) => `I looked around.\n${TEAM_START}\n${lines.join('\n')}\n${TEAM_END}`
+const GOOD_ANSWER = block(
+  'Plan | planner | CLAUDE.md | CLAUDE.md asks for a plan before a big change.',
+  'Check | ecc:code-reviewer | src/auth.ts | The shop API handles logins, so reviews matter.',
+  `Make | ecc:tdd-workflow | ${CWD}/package.json | No tests yet, so tests come first.`,
+)
 
-test('at session start the scout is registered as a Sonnet agent that can only read, and the pick tool is registered for it', async ($, on) => {
+test('at session start the scout is registered as a Sonnet agent whose only tools read and search, and no pick tool is registered', async ($, on) => {
   const h = onboardHost(on)
   await open($, h)
   expect(h.scout.registered).toHaveLength(1)
-  expect(h.scout.registered[0]).toMatchObject({ name: 'scout', model: 'sonnet', omitClaudeMd: true, tools: ['Read', 'Glob', TEAM] })
-  expect(h.tools).toContain('team_pick')
-  expect(h.toolSpecs.find(t => t.name === 'team_pick')?.isDeferred).toBe(false)
+  expect(h.scout.registered[0]).toMatchObject({ name: 'scout', model: 'sonnet', omitClaudeMd: true, tools: ['Read', 'Glob'], permissionMode: 'dontAsk' })
+  expect(h.tools).not.toContain('team_pick')
   expect(h.calls.registered.every(r => (r.skills?.length ?? 0) > 0)).toBe(true) // hires are only for skills (setup runs by itself and hires the skill it picks)
 })
 
@@ -64,9 +61,9 @@ test('the scout is hidden from the main chat: not offered, not on the books, not
   expect(text).not.toMatch(/scout/i)
 })
 
-test('Setup with a scout: it is started on its own type with the full list, looks around, and its picks and reasons make the team; Opus is never called', async ($, on) => {
+test('Setup with a scout: it is started on its own type with the full list, and the team block in its answer makes the team; Opus is never called', async ($, on) => {
   const h = onboardHost(on)
-  const calls = moves($, h, [...LOOK_AROUND, [TEAM, { picks: GOOD_PICKS }]])
+  scoutSaid(h, ['package.json', 'CLAUDE.md'], GOOD_ANSWER)
   await open($, h)
   await more(h)
   expect(h.scout.spawned).toHaveLength(1)
@@ -75,25 +72,25 @@ test('Setup with a scout: it is started on its own type with the full list, look
   expect(spawn?.prompt).toContain('ecc:code-reviewer · agent')
   expect(spawn?.prompt).toContain('The project folder is: /repo')
   expect(spawn?.prompt).not.toContain(BRIEF_NOTE) // no hire notes: it is not a hire
-  expect(calls.map(c => c.tool)).toEqual(['Glob', 'Read', 'Read', 'Glob', TEAM])
-  expect(calls.map(c => c.answer.deny)).toEqual([undefined, undefined, undefined, undefined, undefined])
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(0)
-  expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('scout')
+  expect(teamOf(h).by).toBe('scout')
+  expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: 'The scout picked 3: ecc:planner, ecc:code-reviewer, ecc:tdd-workflow.' })
   // The reasons are kept with the team: the scout's own sentence only where it rests on a file the scout opened.
-  const receipts = (h.saved.get(`team:${CWD}`) as { picks: Array<{ receipt: string }> }).picks.map(p => p.receipt).join('\n')
+  const receipts = teamOf(h).picks.map(p => p.receipt).join('\n')
   expect(receipts).toContain('CLAUDE.md asks for a plan before a big change. (CLAUDE.md)')
   expect(receipts).toContain('No tests yet, so tests come first. (package.json)')
   expect(receipts).not.toContain('The shop API handles logins') // it cites a file the scout never opened: the facts are kept instead
   expect(receipts).toContain('Clawd HQ\'s own Researcher · nothing installed fits')
+  expect(stopsOf(h)).toEqual([]) // it answered: nothing to stop
   // The card afterwards names the team in plain words.
   const tab = await office($, 'terminal')
   expect(tab.joined).toMatch(/Set up your team for this project: Planner, .*Reviewer.*Researcher/)
   expect(h.calls.sent).toEqual([])
 })
 
-test('the scout is not a hire: it never appears at a desk, and its reads are not counted as anyone\'s work', async ($, on) => {
+test('the scout is not a hire: it never appears at a desk', async ($, on) => {
   const h = onboardHost(on)
-  moves($, h, [...LOOK_AROUND, [TEAM, { picks: GOOD_PICKS }]])
+  scoutSaid(h, ['package.json', 'CLAUDE.md'], GOOD_ANSWER)
   await open($, h)
   await more(h)
   await frames(h, 17) // the engine lists the scout, and the office checks that list
@@ -103,99 +100,52 @@ test('the scout is not a hire: it never appears at a desk, and its reads are not
   await ui.unmount()
 })
 
-test('the scout\'s reads are guarded: secrets, outside the folder, .. paths, links that lead out, Grep and every other tool are refused', async ($, on) => {
+test('bad lines are dropped and good ones kept: one usable pick is enough for the scout\'s team', async ($, on) => {
   const h = onboardHost(on)
-  h.files.set(`${CWD}/.env`, 'KEY=1')
-  h.files.set(`${CWD}/prod.env`, 'KEY=2')
-  h.files.set(`${CWD}/notes.txt`, 'a link')
-  h.links[`${CWD}/notes.txt`] = '/home/me/.ssh/id_rsa'
-  const calls = moves($, h, [
-    ['Read', { file_path: '.env' }], ['Read', { file_path: 'prod.env' }], ['Read', { file_path: '/etc/passwd' }], ['Read', { file_path: 'notes.txt' }], ['Read', { file_path: 'missing.md' }],
-    ['Read', { file_path: 'src/../package.json' }], ['Glob', { pattern: '../**/*' }], ['Glob', { pattern: '*', path: 'src/..' }], ['Grep', { pattern: 'KEY' }],
-    ['Bash', { command: 'cat .env' }], ['Write', { file_path: 'a.txt', content: 'x' }],
-    ['Read', { file_path: 'package.json' }], ['Glob', { pattern: '*' }], [TEAM, { picks: GOOD_PICKS.slice(0, 1) }],
-  ])
+  scoutSaid(h, ['package.json'], block('Plan | ecc:nobody | README.md | Not installed.', 'not a pick at all', 'Make | ecc:tdd-workflow | package.json | No tests yet.'))
   await open($, h)
   await more(h)
-  expect(calls.map(c => (c.answer.deny ? 'refused' : 'ran'))).toEqual([...Array(11).fill('refused'), 'ran', 'ran', 'ran'])
-  expect(calls.slice(0, 11).every(c => /^Refused by Clawd HQ: /.test(c.answer.deny ?? ''))).toBe(true)
-  // Only the calls that passed reached the tools.
-  expect(h.calls.tools.filter(t => t.agentId === 'sc1').map(t => t.tool)).toEqual(['Read', 'Glob'])
+  expect(teamOf(h).by).toBe('scout')
+  expect(teamOf(h).picks.map(p => p.name)).toContain('ecc:tdd-workflow')
+  expect(teamOf(h).picks.map(p => p.name)).not.toContain('ecc:nobody')
+  expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: 'The scout picked 1: ecc:tdd-workflow (1 dropped).' })
 })
 
-test('a scout the plugin has not marked yet, which the engine lists by its type, is guarded from its first call and never hired', async ($, on) => {
+test('a scout whose answer holds no usable pick: Opus picks instead, and the note says why', async ($, on) => {
   const h = onboardHost(on)
-  h.files.set(`${CWD}/.env`, 'KEY=1')
-  await open($, h)
-  h.agentList.push({ id: 'sc9', type: 'clawd-hq:scout', description: 'Look around the project', status: 'running' })
-  const call = (input: Record<string, unknown>) => $.tool.call({ tool: 'Read', ...input, agentId: 'sc9' } as never) as Promise<{ deny?: string }>
-  expect((await call({ file_path: '.env' })).deny).toMatch(/^Refused by Clawd HQ/)
-  expect((await call({ file_path: 'package.json' })).deny).toBeUndefined()
-  await frames(h, 17)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  expect(await ui.find({ key: 'desk-sc9' })).toBeUndefined()
-  expect((await ui.findAll({ type: 'Text' })).map(t => String(t.text)).join('\n')).not.toMatch(/scout/i)
-  await ui.unmount()
-})
-
-test('the pick tool is for the scout alone: the main chat and other agents are told so', async ($, on) => {
-  const h = onboardHost(on)
-  await open($, h)
-  const main = (await $.tool.call({ tool: TEAM, picks: GOOD_PICKS } as never)) as { deny?: string; result?: string }
-  const other = (await $.tool.call({ tool: TEAM, picks: GOOD_PICKS, agentId: 'a7' } as never)) as { deny?: string; result?: string }
-  for (const r of [main, other]) expect(r.deny ?? r.result).toMatch(/only the Clawd HQ scout/i)
-})
-
-test('a scout that sends names nobody has is told and may try again; the second try is taken', async ($, on) => {
-  const h = onboardHost(on)
-  const calls = moves($, h, [['Read', { file_path: 'package.json' }], [TEAM, { picks: [{ seat: 'Plan', name: 'ecc:nobody' }] }], [TEAM, { picks: GOOD_PICKS.slice(2) }]])
-  await open($, h)
-  await more(h)
-  expect(calls[1]?.answer.deny).toMatch(/ecc:nobody.*not on the candidate list/)
-  expect(calls[2]?.answer.deny).toBeUndefined()
-  expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('scout')
-  expect(stopsOf(h)).toEqual([]) // it sent its picks: nothing to stop
-})
-
-test('a scout that sends nothing usable three times is finished, and Opus picks instead', async ($, on) => {
-  const h = onboardHost(on)
-  const bad = [TEAM, { picks: [{ seat: 'Plan', name: 'ecc:nobody' }] }] as [string, Record<string, unknown>]
-  moves($, h, [bad, bad, bad])
+  scoutSaid(h, ['package.json'], block('Plan | ecc:nobody | README.md | Not installed.'))
   await open($, h)
   await more(h)
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
-  expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('opus')
-  expect(stopsOf(h)).toEqual(['sc1']) // the scout is stopped, not left to run on
+  expect(teamOf(h).by).toBe('opus')
+  expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: expect.stringMatching(/no usable pick \(1 dropped\)/) })
 })
 
-test('a scout that says nothing for a minute and a half is given up on: Opus picks, and the scout is refused from then on', async ($, on) => {
+test('a scout that ends without a team list hands over to Opus at once, without waiting out the clock', async ($, on) => {
+  const h = onboardHost(on)
+  scoutSaid(h, [], 'The team_pick tool did not accept my picks.')
+  await open($, h)
+  h.scout.end()
+  await more(h)
+  expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
+  expect(teamOf(h).by).toBe('opus')
+  expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: expect.stringMatching(/ended without a team list/) })
+  expect(stopsOf(h)).toEqual([])
+})
+
+test('a scout that says nothing for a minute and a half is given up on: it is stopped, and Opus picks', async ($, on) => {
   const h = onboardHost(on)
   h.scout.mode = 'silent'
   await open($, h)
   await more(h)
   expect(h.scout.spawned).toHaveLength(1)
   expect(h.calls.models).toHaveLength(0) // still waiting, and the card says it is looking
-  await h.clock.advance(89_000)
-  await more(h)
-  expect(h.calls.models).toHaveLength(0)
-  await h.clock.advance(1_500)
-  await more(h)
+  for (let i = 0; i < 44; i += 1) await h.clock.advance(2_000)
+  await settle(h, 300)
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
-  expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('opus')
+  expect(teamOf(h).by).toBe('opus')
   expect(stopsOf(h)).toEqual(['sc1'])
-  const late = (await $.tool.call({ tool: 'Read', file_path: 'package.json', agentId: 'sc1' } as never)) as { deny?: string }
-  expect(late.deny).toMatch(/^Refused by Clawd HQ/)
-})
-
-test('a scout that ends without sending anything hands over to Opus at once, without waiting out the clock', async ($, on) => {
-  const h = onboardHost(on)
-  h.scout.mode = 'silent'
-  await open($, h)
-  await more(h)
-  await $.turn.complete({ reason: 'answer', answer: 'I could not finish.', turnId: 'sc-turn', agentId: 'sc1', isAborted: false } as never)
-  await more(h)
-  expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
-  expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('opus')
+  expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: expect.stringMatching(/no team list within 90 seconds/) })
 })
 
 test('with no scout (the start is refused) and no Opus answer, the rules pick and the core four fill what is left', async ($, on) => {
@@ -203,8 +153,8 @@ test('with no scout (the start is refused) and no Opus answer, the rules pick an
   h.models.opus = undefined
   await open($, h)
   await more(h)
-  const team = h.saved.get(`team:${CWD}`) as { by: string; picks: Array<{ name: string }> }
+  const team = teamOf(h)
   expect(team.by).toBe('rules')
   expect(team.picks.length).toBeGreaterThan(0)
-  expect(toolsSeen(h).filter(t => t.includes('@sc1'))).toEqual([])
+  expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: expect.stringMatching(/could not start/) })
 })

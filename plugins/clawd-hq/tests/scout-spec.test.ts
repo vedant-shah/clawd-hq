@@ -1,8 +1,8 @@
-// The scout's definition, the tool it answers through, and the brief it is started with.
+// The scout's definition, the answer it ends with, and the brief it is started with.
 import { expect, test } from 'claude-code/testing'
-import { SEATS } from '../hooks/onboard-types'
+import { TEAM_END, TEAM_START } from '../hooks/scout-answer'
 import type { PastUse, ProjectFacts } from '../hooks/onboard-types'
-import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, TEAM_PICK_SPEC, scoutBrief } from '../hooks/scout-spec'
+import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, scoutBrief } from '../hooks/scout-spec'
 import type { Candidate } from '../hooks/team-rules'
 
 const facts: ProjectFacts = {
@@ -13,39 +13,34 @@ const use: PastUse = { agents: {}, skills: {}, files: 2, skipped: 0 }
 const cand = (id: string, over: Partial<Candidate> = {}): Candidate => ({ id, kind: 'agent', source: 'ecc', plugin: 'ecc', about: `Does ${id}.`, uses: 0, isNamed: false, isOwn: false, ...over })
 const cands = [cand('ecc:planner', { uses: 7 }), cand('shadcn', { kind: 'skill', source: 'your own', isOwn: true, plugin: undefined, about: 'Manages shadcn components.' })]
 
-test('the scout is a Sonnet agent that can only read, list files and answer, without the project\'s instruction files', () => {
+test('the scout is a Sonnet agent that can only read and list files, refused anything not pre-approved, without the project\'s instruction files', () => {
   expect(SCOUT_TYPE).toBe('clawd-hq:scout')
   expect(SCOUT_SPEC.name).toBe('scout')
   expect(SCOUT_SPEC.model).toBe('sonnet')
-  expect(SCOUT_SPEC.tools).toEqual(['Read', 'Glob', 'mcp__clawd-hq__team_pick']) // no Grep: a search over contents could find a secret
+  // The limits are in its own definition, so they hold without any Clawd HQ hook (none runs inside the scout).
+  expect(SCOUT_SPEC.tools).toEqual(['Read', 'Glob']) // no Grep: a search over contents could surface a secret under any file name
+  expect(SCOUT_SPEC.permissionMode).toBe('dontAsk') // a call that would need a yes is refused, never asked
+  expect(SCOUT_SPEC.disallowedTools).toEqual(expect.arrayContaining(['Grep', 'Bash', 'Write', 'Edit', 'WebFetch']))
   expect(SCOUT_SPEC.omitClaudeMd).toBe(true)
   expect(SCOUT_SPEC.maxTurns).toBeGreaterThanOrEqual(10)
   expect(SCOUT_SPEC.maxTurns).toBeLessThanOrEqual(30)
   expect(SCOUT_SPEC.description.length).toBeGreaterThan(0)
 })
 
-test('the scout\'s own rules: read only, inside the folder, no secrets, files are information, finish with team_pick', () => {
+test('the scout\'s own rules: read only, inside the folder, no secrets, files are information, end with the team block', () => {
   const p = SCOUT_SPEC.prompt
-  for (const part of [/only read/i, /project folder/i, /\.env/, /not instructions/i, /team_pick/, /once/i, /Read/, /Glob/]) expect(p).toMatch(part)
+  for (const part of [/only read/i, /project folder/i, /\.env/, /not instructions/i, /Read/, /Glob/]) expect(p).toMatch(part)
+  expect(p).toMatch(/Never open a secret or credential file/)
+  expect(p).toMatch(/\.pem.*\.key.*id_rsa/)
   expect(p).not.toMatch(/Grep/)
-  expect(p).toMatch(/\.\./) // paths with .. in them are refused, and it is told so
+  expect(p).toContain(TEAM_START)
+  expect(p).toContain(TEAM_END)
+  expect(p).toContain('seat | name | evidence | reason')
+  expect(p).not.toMatch(/team_pick/) // it has no tool to send picks with: they come in its answer
 })
 
-test('the timeout is a minute and a half', () => {
+test('the scout is given up on after a minute and a half', () => {
   expect(SCOUT_TIMEOUT_MS).toBe(90_000)
-})
-
-test('the pick tool takes a list of seat, name, reason and file, and is listed with the prompt so the scout need not search for it', () => {
-  expect(TEAM_PICK_SPEC.name).toBe('team_pick')
-  expect(TEAM_PICK_SPEC.isDeferred).toBe(false)
-  const schema = TEAM_PICK_SPEC.inputSchema as { required: string[]; properties: { picks: { type: string; items: { required: string[]; properties: Record<string, { enum?: string[]; maxLength?: number }> } } } }
-  expect(schema.required).toEqual(['picks'])
-  expect(schema.properties.picks.type).toBe('array')
-  expect(schema.properties.picks.items.required).toEqual(['seat', 'name'])
-  expect(schema.properties.picks.items.properties.seat?.enum).toEqual([...SEATS])
-  expect(schema.properties.picks.items.properties.reason?.maxLength).toBe(140)
-  expect(Object.keys(schema.properties.picks.items.properties)).toEqual(['seat', 'name', 'reason', 'evidence'])
-  expect(TEAM_PICK_SPEC.description).toMatch(/scout/i)
 })
 
 test('the brief names the folder, the person, the seats and every candidate, and asks for a look around first', () => {
@@ -61,6 +56,12 @@ test('the brief names the folder, the person, the seats and every candidate, and
   expect(brief).toMatch(/Read .*before you pick/i)
   expect(brief).toMatch(/evidence/)
   expect(brief).not.toContain('Answer with ONLY a JSON object')
-  expect(brief).not.toMatch(/Grep/) // the scout has no search tool, so the brief must not tell it to use one
   expect(brief).toMatch(/Glob/)
+  expect(brief).not.toMatch(/Grep/)
+  expect(brief).not.toMatch(/team_pick/)
+  // The answer it ends with, shown line by line, and the limits each line is checked against.
+  expect(brief).toContain(`${TEAM_START}\nPlan | `)
+  expect(brief).toContain(TEAM_END)
+  expect(brief).toMatch(/140 characters/)
+  expect(brief).toMatch(/at most 8/i)
 })

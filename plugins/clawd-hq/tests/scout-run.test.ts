@@ -1,241 +1,163 @@
-// Starting the scout and getting its picks back: the mailbox, the timeout, stopping it, and what each call the scout makes is answered with.
+// Starting the scout and reading its picks from its final answer: no Clawd HQ hook runs inside the scout, so nothing here
+// waits on one. The plugin looks at the scout's transcript every few seconds until the team block is there, the scout has
+// ended, or time is up.
 import { expect, test } from 'claude-code/testing'
-import { createScoutBox } from '../hooks/scout-box'
-import { NOT_SCOUT_DENY, runScout, scoutCall, scoutRoute } from '../hooks/scout-run'
+import { POLL_MS, runScout } from '../hooks/scout-run'
+import { TEAM_END, TEAM_START } from '../hooks/scout-answer'
 
-const ROOT = '/home/me/shop'
-const TEAM = 'mcp__clawd-hq__team_pick'
 const SCOUT = 'clawd-hq:scout'
-const io = { real: async (p: string) => p }
 const settle = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve() }
+const ANSWER = `${TEAM_START}\nPlan | ecc:planner | README.md | Plans first.\n${TEAM_END}`
 
 type Spawned = { subagentType: string; description: string; prompt: string }
-/** A host whose start answers the id the test names (`null`: none, an Error: it fails), whose list is `listed`, and whose timers wait until the test fires them. */
-function fakeHost(spawnAs: string | null | Error = 'sc1', listed: Array<{ id: string; type: string }> = []) {
-  const timers: Array<{ ms: number; fn: () => void; isCancelled: boolean }> = []
+type Said = { role: 'user' | 'assistant'; text: string; toolUses: Array<{ tool: string; input: Record<string, unknown> }> }
+/**
+ * A host whose start answers the id the test names (`null`: none, an Error: it fails), whose list is `listed`, whose transcript
+ * is `said` (an Error: the read fails), and whose timers wait until the test fires them.
+ */
+function fakeHost(spawnAs: string | null | Error = 'sc1') {
+  const timers: Array<{ ms: number; fn: () => void; isFired: boolean }> = []
   const spawned: Spawned[] = []
   const stopped: string[] = []
+  const listed: Array<{ id: string; type: string; status: string }> = spawnAs === null || spawnAs instanceof Error ? [] : [{ id: spawnAs, type: SCOUT, status: 'running' }]
+  const state = { said: [] as Said[] | Error, stopFails: false }
   return {
-    timers, spawned, stopped, listed,
+    timers, spawned, stopped, listed, state,
     spawn: async (args: Spawned) => {
       spawned.push(args)
       if (spawnAs instanceof Error) throw spawnAs
       return spawnAs === null ? {} : { agentId: spawnAs }
     },
     list: async () => listed,
-    stop: async (id: string) => { stopped.push(id) },
+    stop: async (id: string) => { stopped.push(id); if (state.stopFails) throw new Error('no such task') },
+    messages: async (_id: string) => { if (state.said instanceof Error) throw state.said; return state.said },
     after(ms: number, fn: () => void) {
-      const t = { ms, fn, isCancelled: false }
+      const t = { ms, fn, isFired: false }
       timers.push(t)
-      return { cancel: () => { t.isCancelled = true } }
+      return { cancel: () => undefined }
     },
   }
 }
 type Host = ReturnType<typeof fakeHost>
-const start = (box: ReturnType<typeof createScoutBox>, host: Host, check: (i: unknown, r: readonly string[]) => string | undefined = () => undefined) =>
-  runScout(box, host, 'BRIEF', check, 90_000)
-const call = (box: ReturnType<typeof createScoutBox>, id: string, tool: string, input: Record<string, unknown>) => scoutCall(box, io, ROOT, id, tool, input)
+/** Fires every timer that is waiting, as time passing would, and lets what follows run. */
+async function tick(host: Host) {
+  for (const t of host.timers.filter(one => !one.isFired)) { t.isFired = true; t.fn() }
+  await settle()
+}
+const waiting = (host: Host) => host.timers.filter(t => !t.isFired)
 
-test('the scout is started on its own type with the brief, and its team_pick call brings the picks back with the files it opened', async () => {
-  const box = createScoutBox()
+test('the scout is started on its own type with the brief; once its answer holds the team block, the picks and the files it read come back', async () => {
   const host = fakeHost()
-  const done = start(box, host)
+  const done = runScout(host, 'BRIEF', 90_000)
   await settle()
   expect(host.spawned).toEqual([{ subagentType: SCOUT, description: 'Look around the project', prompt: 'BRIEF' }])
-  expect(box.isScout('sc1')).toBe(true)
-  expect(await call(box, 'sc1', 'Read', { file_path: 'package.json' })).toEqual({ run: {} })
-  expect(await call(box, 'sc1', 'Glob', { pattern: '*.md' })).toEqual({ run: {} })
-  const input = { picks: [{ seat: 'Plan', name: 'ecc:planner' }] }
-  expect(await call(box, 'sc1', TEAM, input)).toMatchObject({ result: expect.stringMatching(/noted/i) })
-  expect(await done).toEqual({ picks: input, reads: ['/home/me/shop/package.json'] })
-  expect(host.timers.every(t => t.isCancelled)).toBe(true)
-  expect(host.stopped).toEqual([]) // it gave its picks: nothing to stop
+  host.state.said = [{ role: 'assistant', text: '', toolUses: [{ tool: 'Read', input: { file_path: '/repo/README.md' } }] }]
+  await tick(host) // still looking: no block yet
+  // A block it wrote and then went on working past is not its final answer: still waiting.
+  host.state.said = [...host.state.said, { role: 'assistant', text: ANSWER.replace('ecc:planner', 'ecc:early'), toolUses: [] }, { role: 'assistant', text: 'One more look.', toolUses: [{ tool: 'Glob', input: { pattern: '*' } }] }]
+  await tick(host)
+  expect(waiting(host)).toHaveLength(1)
+  host.state.said = [...host.state.said, { role: 'assistant', text: ANSWER, toolUses: [] }]
+  await tick(host)
+  expect(await done).toEqual({ picks: { picks: [{ seat: 'Plan', name: 'ecc:planner', evidence: 'README.md', reason: 'Plans first.' }] }, reads: ['/repo/README.md'] })
+  expect(waiting(host)).toEqual([])
+  expect(host.stopped).toEqual([]) // it answered: nothing to stop
 })
 
-test('the wait is the timeout given, and it is the only timer', async () => {
-  const box = createScoutBox()
+test('the transcript is looked at every two seconds, one timer at a time', async () => {
   const host = fakeHost()
-  void start(box, host)
+  void runScout(host, 'BRIEF', 90_000)
   await settle()
-  expect(host.timers.map(t => t.ms)).toEqual([90_000])
+  expect(POLL_MS).toBe(2_000)
+  expect(waiting(host).map(t => t.ms)).toEqual([2_000])
+  await tick(host)
+  expect(waiting(host).map(t => t.ms)).toEqual([2_000])
 })
 
-test('a start that returns no id is found in the engine\'s list by its type, among scouts not yet known', async () => {
-  const box = createScoutBox()
-  box.mark('old')
-  const host = fakeHost(null, [{ id: 'old', type: SCOUT }, { id: 'other', type: 'ecc:planner' }, { id: 'sc7', type: SCOUT }])
-  const done = start(box, host)
+test('a start that returns no id is found in the engine\'s list: only a scout that was not there before this start', async () => {
+  const host = fakeHost(null)
+  host.listed.push({ id: 'old', type: SCOUT, status: 'completed' }, { id: 'older', type: SCOUT, status: 'running' }, { id: 'a7', type: 'ecc:planner', status: 'running' })
+  const seen: string[] = []
+  const spawn = async (args: Spawned) => { const r = await host.spawn(args); host.listed.push({ id: 'sc2', type: SCOUT, status: 'running' }); return r }
+  const done = runScout({ ...host, spawn, messages: async (id: string) => { seen.push(id); return [{ role: 'assistant', text: ANSWER, toolUses: [] }] } }, 'BRIEF', 90_000)
   await settle()
-  expect(box.isScout('sc7')).toBe(true)
-  await call(box, 'sc7', TEAM, { picks: ['x'] })
-  expect((await done)?.picks).toEqual({ picks: ['x'] })
+  await tick(host)
+  expect(await done).toMatchObject({ reads: [] })
+  expect(seen).toEqual(['sc2'])
 })
 
-test('picks that arrive before the start call has even returned are not lost', async () => {
-  const box = createScoutBox()
+test('with no id back and no new scout listed, an ended or older scout is never taken for it: it could not start', async () => {
+  const host = fakeHost(null)
+  host.listed.push({ id: 'old', type: SCOUT, status: 'completed' }, { id: 'older', type: SCOUT, status: 'running' })
+  expect(await runScout(host, 'BRIEF', 90_000)).toEqual({ why: expect.stringMatching(/could not start/i) })
+  expect(host.timers).toEqual([])
+})
+
+test('a scout that ends without a team block hands over at once, says why, and is not stopped', async () => {
   const host = fakeHost()
-  let release: (r: { agentId: string }) => void = () => undefined
-  host.spawn = () => new Promise(r => { release = r })
-  const done = start(box, host)
+  const done = runScout(host, 'BRIEF', 90_000)
   await settle()
-  box.mark('sc1')
-  await call(box, 'sc1', TEAM, { picks: [{ seat: 'Plan', name: 'ecc:planner' }] })
-  release({ agentId: 'sc1' })
-  expect((await done)?.picks).toEqual({ picks: [{ seat: 'Plan', name: 'ecc:planner' }] })
-})
-
-test('the timeout ends the wait with nothing, stops the scout, and refuses everything it calls from then on', async () => {
-  const box = createScoutBox()
-  const host = fakeHost()
-  const done = start(box, host)
-  await settle()
-  host.timers[0]?.fn()
-  expect(await done).toBeUndefined()
-  expect(host.stopped).toEqual(['sc1'])
-  expect(await call(box, 'sc1', 'Read', { file_path: 'a.md' })).toMatchObject({ deny: expect.stringMatching(/finished|time/i) })
-  expect(await call(box, 'sc1', TEAM, { picks: [{ seat: 'Plan', name: 'ecc:planner' }] })).toMatchObject({ deny: expect.any(String) })
-})
-
-test('a stop that fails changes nothing: the wait still ends with nothing', async () => {
-  const box = createScoutBox()
-  const host = fakeHost()
-  host.stop = async () => { throw new Error('no such task') }
-  const done = start(box, host)
-  await settle()
-  host.timers[0]?.fn()
-  expect(await done).toBeUndefined()
-})
-
-test('a scout that ends without sending picks ends the wait at once', async () => {
-  const box = createScoutBox()
-  const host = fakeHost()
-  const done = start(box, host)
-  await settle()
-  box.finish('someone-else')
-  box.finish('sc1')
-  expect(await done).toBeUndefined()
-  expect(host.timers.every(t => t.isCancelled)).toBe(true)
-})
-
-test('a start that is refused, fails, or gives no id is no scout and leaves no timer running', async () => {
-  for (const spawnAs of [null, new Error('no such agent')] as const) {
-    const box = createScoutBox()
-    const host = fakeHost(spawnAs)
-    expect(await start(box, host)).toBeUndefined()
-    expect(host.timers).toEqual([])
-    expect(host.stopped).toEqual([])
-  }
-})
-
-test('picks the check does not accept are sent back to the scout with the reason; three bad tries end the scout and stop it', async () => {
-  const box = createScoutBox()
-  const host = fakeHost()
-  const done = start(box, host, input => ((input as { ok?: boolean }).ok ? undefined : 'None of those names are on the list.'))
-  await settle()
-  expect(await call(box, 'sc1', TEAM, { ok: false })).toEqual({ deny: 'None of those names are on the list.' })
-  expect(await call(box, 'sc1', TEAM, { ok: false })).toEqual({ deny: 'None of those names are on the list.' })
+  host.state.said = [{ role: 'assistant', text: 'The team_pick tool failed, so nothing was saved.', toolUses: [] }]
+  host.listed[0]!.status = 'completed'
+  await tick(host)
+  expect(await done).toEqual({ why: expect.stringMatching(/ended without a team list/i) })
+  expect(waiting(host)).toEqual([])
   expect(host.stopped).toEqual([])
-  expect(await call(box, 'sc1', TEAM, { ok: false })).toMatchObject({ deny: expect.stringMatching(/enough|finished/i) })
-  expect(await done).toBeUndefined()
+})
+
+test('a scout the engine no longer lists has ended too', async () => {
+  const host = fakeHost()
+  const done = runScout(host, 'BRIEF', 90_000)
+  await settle()
+  host.listed.length = 0
+  await tick(host)
+  expect(await done).toEqual({ why: expect.stringMatching(/ended without a team list/i) })
+})
+
+test('a scout that ends just after its answer is still read: the answer counts', async () => {
+  const host = fakeHost()
+  const done = runScout(host, 'BRIEF', 90_000)
+  await settle()
+  host.state.said = [{ role: 'assistant', text: ANSWER, toolUses: [] }]
+  host.listed[0]!.status = 'completed'
+  await tick(host)
+  expect(await done).toMatchObject({ picks: { picks: [{ name: 'ecc:planner' }] } })
+})
+
+test('with no answer by the time given, the scout is stopped and the reason says it ran out of time', async () => {
+  const host = fakeHost()
+  const done = runScout(host, 'BRIEF', 6_000)
+  await settle()
+  for (let i = 0; i < 3; i += 1) await tick(host)
+  expect(await done).toEqual({ why: expect.stringMatching(/no team list within 6 seconds/i) })
   expect(host.stopped).toEqual(['sc1'])
+  expect(waiting(host)).toEqual([])
 })
 
-test('a second try that the check accepts is taken', async () => {
-  const box = createScoutBox()
+test('a stop that fails changes nothing: the run still ends with the reason', async () => {
   const host = fakeHost()
-  const done = start(box, host, input => ((input as { ok?: boolean }).ok ? undefined : 'Try again.'))
+  host.state.stopFails = true
+  const done = runScout(host, 'BRIEF', 2_000)
   await settle()
-  await call(box, 'sc1', TEAM, { ok: false })
-  await call(box, 'sc1', TEAM, { ok: true })
-  expect((await done)?.picks).toEqual({ ok: true })
+  await tick(host)
+  expect(await done).toEqual({ why: expect.stringMatching(/no team list/i) })
 })
 
-test('only the first accepted picks count; a repeat is told the work is done', async () => {
-  const box = createScoutBox()
+test('a transcript that cannot be read yet is no answer: the scout is looked at again', async () => {
   const host = fakeHost()
-  const done = start(box, host)
+  const done = runScout(host, 'BRIEF', 90_000)
   await settle()
-  await call(box, 'sc1', TEAM, { picks: ['first'] })
-  expect(await call(box, 'sc1', TEAM, { picks: ['second'] })).toMatchObject({ deny: expect.any(String) })
-  expect((await done)?.picks).toEqual({ picks: ['first'] })
+  host.state.said = new Error('not readable')
+  await tick(host)
+  expect(waiting(host)).toHaveLength(1)
+  host.state.said = [{ role: 'assistant', text: ANSWER, toolUses: [] }]
+  await tick(host)
+  expect(await done).toMatchObject({ picks: { picks: [{ name: 'ecc:planner' }] } })
 })
 
-test('a refused read is answered with the guard\'s words and is not counted as read; Grep is refused too', async () => {
-  const box = createScoutBox()
-  const host = fakeHost()
-  const done = start(box, host)
-  await settle()
-  expect(await call(box, 'sc1', 'Read', { file_path: '.env' })).toMatchObject({ deny: expect.stringMatching(/^Refused by Clawd HQ/) })
-  expect(await call(box, 'sc1', 'Read', { file_path: 'src/../README.md' })).toMatchObject({ deny: expect.stringMatching(/^Refused by Clawd HQ/) })
-  expect(await call(box, 'sc1', 'Grep', { pattern: 'KEY' })).toMatchObject({ deny: expect.stringMatching(/^Refused by Clawd HQ/) })
-  expect(await call(box, 'sc1', 'Bash', { command: 'cat .env' })).toMatchObject({ deny: expect.stringMatching(/^Refused by Clawd HQ/) })
-  await call(box, 'sc1', 'Read', { file_path: 'README.md' })
-  await call(box, 'sc1', TEAM, { picks: ['x'] })
-  expect((await done)?.reads).toEqual(['/home/me/shop/README.md'])
-})
-
-test('a real-path lookup that lands outside the folder is refused', async () => {
-  const box = createScoutBox()
-  box.mark('sc1')
-  const linking = { real: async (p: string) => (p.endsWith('notes.txt') ? '/home/me/.ssh/id_rsa' : p) }
-  expect(await scoutCall(box, linking, ROOT, 'sc1', 'Read', { file_path: 'notes.txt' })).toMatchObject({ deny: expect.any(String) })
-})
-
-test('the same id is not a scout until it is marked, and marked ids are remembered for a while', () => {
-  const box = createScoutBox()
-  expect(box.isScout('x1')).toBe(false)
-  for (let i = 0; i < 30; i += 1) box.mark(`s${i}`)
-  expect(box.isScout('s29')).toBe(true)
-  expect(box.isScout('s0')).toBe(false)
-})
-
-// ---- which calls are the scout's: a scout is known by its type from its very first call ----
-
-/** The route's questions: who is on the books as a hire, and what type the engine lists an id as. */
-const route = (over: { hired?: string[]; types?: Record<string, string> } = {}) => {
-  const asked: string[] = []
-  return {
-    asked,
-    io: { real: async (p: string) => p, isHired: async (id: string) => (over.hired ?? []).includes(id), typeOf: async (id: string) => (asked.push(id), over.types?.[id]) },
+test('a start that is refused, fails, or gives no id is no scout: the reason says so, and no timer is left', async () => {
+  for (const host of [fakeHost(new Error('down')), fakeHost(null), { ...fakeHost(), spawn: async () => ({ deny: 'no' }) }]) {
+    expect(await runScout(host, 'BRIEF', 90_000)).toEqual({ why: expect.stringMatching(/could not start/i) })
+    expect(host.timers).toEqual([])
   }
-}
-
-test('a call from an id nobody marked, which the engine lists as a scout, is guarded as one and marks it', async () => {
-  const box = createScoutBox()
-  const r = route({ types: { sc9: SCOUT } })
-  expect(await scoutRoute(box, r.io, ROOT, 'sc9', 'Read', { file_path: '.env' })).toMatchObject({ deny: expect.stringMatching(/^Refused by Clawd HQ/) })
-  expect(box.isScout('sc9')).toBe(true)
-  expect(await scoutRoute(box, r.io, ROOT, 'sc9', 'Read', { file_path: 'README.md' })).toEqual({ run: {} })
-  expect(r.asked).toEqual(['sc9']) // once: after that it is known
-})
-
-test('a specialist on the books, an unknown agent and the main chat are not the scout\'s to guard: the route passes them by', async () => {
-  const box = createScoutBox()
-  const r = route({ hired: ['w1'], types: { a7: 'ecc:planner' } })
-  expect(await scoutRoute(box, r.io, ROOT, 'w1', 'Read', { file_path: '.env' })).toBeUndefined()
-  expect(await scoutRoute(box, r.io, ROOT, 'a7', 'Read', { file_path: '.env' })).toBeUndefined()
-  expect(await scoutRoute(box, r.io, ROOT, 'zz', 'Read', { file_path: '.env' })).toBeUndefined()
-  expect(await scoutRoute(box, r.io, ROOT, undefined, 'Read', { file_path: '.env' })).toBeUndefined()
-  expect(r.asked).toEqual(['a7', 'zz']) // a hire on the books is never looked up
-})
-
-test('the pick tool is turned away from the main chat and from every agent that is not the scout', async () => {
-  const box = createScoutBox()
-  const r = route({ types: { a7: 'ecc:planner' } })
-  expect(await scoutRoute(box, r.io, ROOT, undefined, TEAM, {})).toEqual({ deny: NOT_SCOUT_DENY })
-  expect(await scoutRoute(box, r.io, ROOT, 'a7', TEAM, {})).toEqual({ deny: NOT_SCOUT_DENY })
-})
-
-test('a scout the box knows is guarded without any lookup', async () => {
-  const box = createScoutBox()
-  box.mark('sc1')
-  const r = route()
-  expect(await scoutRoute(box, r.io, ROOT, 'sc1', 'Bash', { command: 'ls' })).toMatchObject({ deny: expect.any(String) })
-  expect(r.asked).toEqual([])
-})
-
-test('a lookup that fails is no scout: the call goes on as any other agent\'s would', async () => {
-  const box = createScoutBox()
-  const io2 = { real: async (p: string) => p, isHired: async () => false, typeOf: async (): Promise<string | undefined> => { throw new Error('list failed') } }
-  expect(await scoutRoute(box, io2, ROOT, 'zz', 'Read', { file_path: 'a.md' })).toBeUndefined()
 })

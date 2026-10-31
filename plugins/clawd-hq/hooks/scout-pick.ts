@@ -1,10 +1,11 @@
 // The scout's answer, checked. Its picks come from a model that read files it does not control, so nothing in them is trusted:
 // the seat must be a seat, the name must be on the candidate list (a name missing its plugin is repaired when one candidate fits),
-// and a reason is kept only when it cites a file the scout really opened. Pure; no `$`.
+// a pick that cites a secret file is not taken, and a reason is kept only when it cites a file the scout really opened and does
+// not look like it holds a secret itself. Pure; no `$`.
 import { SEATS } from './onboard-types'
 import type { ScoutReport, Seat } from './onboard-types'
 import { HIDDEN_MARKS } from './plain'
-import { isInside, resolveIn } from './scout-guard'
+import { isInside, isSecretPath, resolveIn } from './scout-guard'
 import type { Candidate, RawPick } from './team-rules'
 
 /** Only this many entries of an answer are looked at. */
@@ -20,6 +21,13 @@ const isRecord = (v: unknown): v is Entry => typeof v === 'object' && v !== null
 const bare = (id: string) => id.replace(/^.*:/, '')
 /** Untrusted text as one plain line: control characters and hidden marks become spaces, runs of space one. */
 const oneLine = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(HIDDEN_MARKS, ' ').replace(/\s+/g, ' ').trim()
+
+/**
+ * Text that looks like it holds a secret: a known key prefix (sk_, sk-, AKIA, ghp_, xox…-), a PEM block, a long unbroken token,
+ * or a KEY=value pair. A reason like that is not shown, whatever file it cites.
+ */
+const SECRET_TEXT = /\bsk[-_]|\bAKIA[0-9A-Z]{8,}|\bgh[pousr]_|\bxox[a-z]?-|-----BEGIN|[A-Za-z0-9]{24,}|\b[A-Za-z_][A-Za-z0-9_]*\s*=\s*\S/
+export const looksSecret = (text: string): boolean => SECRET_TEXT.test(text)
 
 const seatOf = (v: unknown): Seat | undefined => {
   const said = typeof v === 'string' ? v.trim().toLowerCase() : undefined
@@ -50,18 +58,27 @@ function reasonOf(entry: Entry, folder: string, opened: ReadonlySet<string>): st
   const reason = typeof entry.reason === 'string' ? oneLine(entry.reason) : ''
   const file = typeof entry.evidence === 'string' ? resolveIn(folder, entry.evidence) : undefined
   const root = resolveIn(folder, '.')
-  if (reason === '' || reason.length > REASON_CHARS || file === undefined || root === undefined) return undefined
+  if (reason === '' || reason.length > REASON_CHARS || looksSecret(reason) || file === undefined || root === undefined) return undefined
   if (!opened.has(keyOf(file)) || !isInside(root, file)) return undefined
   const shown = file === root ? file : file.slice(root.length + 1)
   // The path is untrusted text too: one with control, escape or direction marks in it, or one too long, is left off.
   return shown.length <= PATH_CHARS && oneLine(shown) === shown ? `${reason} (${shown})` : reason
 }
 
-/** One entry as a pick, or the problem with its name; an entry that is not a seat and a name is skipped without a word. */
+/** Whether the file an entry cites is a secret; judged on its part under the project folder, so the folder's own name does not count. */
+function citesSecret(entry: Entry, folder: string): boolean {
+  const file = typeof entry.evidence === 'string' ? resolveIn(folder, entry.evidence) : undefined
+  const root = resolveIn(folder, '.')
+  if (file === undefined) return false
+  return isSecretPath(root !== undefined && file !== root && isInside(root, file) ? file.slice(root.length + 1) : file)
+}
+
+/** One entry as a pick, or the problem with it; an entry that is not a seat and a name is skipped without a word. */
 function pickOf(entry: unknown, cands: readonly Candidate[], folder: string, opened: ReadonlySet<string>): { pick?: RawPick; problem?: string } {
   const seat = isRecord(entry) ? seatOf(entry.seat) : undefined
   const given = isRecord(entry) && typeof entry.name === 'string' ? entry.name.trim() : undefined
   if (!isRecord(entry) || seat === undefined || given === undefined) return {}
+  if (citesSecret(entry, folder)) return { problem: 'A pick that cited a secret file was dropped.' }
   const named = nameOf(given, cands)
   if ('problem' in named) return { problem: named.problem }
   const reason = reasonOf(entry, folder, opened)

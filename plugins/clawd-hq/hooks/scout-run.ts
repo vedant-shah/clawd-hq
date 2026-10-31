@@ -1,90 +1,78 @@
-// Running the scout: starting it, waiting for its picks, stopping it when it is given up on, and answering each call it makes.
-// No `$`: the host's calls come in as closures.
-import { TEAM_TOOL } from './constants'
-import type { ScoutCheck, ScoutReport } from './onboard-types'
-import type { After, ScoutBox } from './scout-box'
-import { guardScout } from './scout-guard'
-import type { RealIo } from './scout-guard'
+// Running the scout: starting it, reading its picks from its final answer, and stopping it when it is given up on.
+// The plugin starts the scout from its own timer, so in Claude Code none of the plugin's hooks run inside the scout: nothing
+// here waits on one. The transcript is looked at every few seconds until it holds the team block, the scout has ended, or
+// time is up. No `$`: the host's calls come in as closures.
+import type { ScoutResult } from './onboard-types'
+import { scoutReport } from './scout-answer'
+import type { ScoutMessage } from './scout-answer'
 import { SCOUT_TYPE } from './scout-spec'
 
+/** How often the scout's transcript is looked at. */
+export const POLL_MS = 2_000
+/** The engine's word for an agent that will not answer any more. */
+const ENDED: ReadonlySet<string> = new Set(['completed', 'failed', 'killed'])
+
+type Timer = { readonly cancel: () => void }
 /** What starting a scout asks for. */
 export type ScoutStart = { readonly subagentType: string; readonly description: string; readonly prompt: string }
-/** The host's calls a scout needs: start it, list the agents, stop one, and a timer. */
+/** The host's calls a scout needs: start it, list the agents, read its transcript, stop it, and a timer. */
 export type ScoutHost = {
   readonly spawn: (start: ScoutStart) => Promise<{ readonly agentId?: string; readonly deny?: string }>
-  readonly list: () => Promise<readonly { readonly id: string; readonly type: string }[]>
+  readonly list: () => Promise<readonly { readonly id: string; readonly type: string; readonly status?: string }[]>
+  /** The scout's messages so far; anything but a list (a refusal) is no answer yet. */
+  readonly messages: (id: string) => Promise<unknown>
   readonly stop: (id: string) => Promise<unknown>
-  readonly after: After
+  readonly after: (ms: number, fn: () => void) => Timer
 }
 
-const CLOSED_DENY = 'Refused by Clawd HQ: the scout\'s work is finished.'
-/** What stands in for the guard when the hook holding it fails: the scout's call is refused, never let through unchecked. */
-export const SCOUT_CRASH_DENY = 'Refused by Clawd HQ: that call could not be checked.'
 /** The agent type a start asks for, in the event's spelling or the Agent tool's own (a start the plugin makes itself can reach a hook as either). */
 export const spawnTypeOf = (e: object): unknown => (e as { subagentType?: unknown }).subagentType ?? (e as { subagent_type?: unknown }).subagent_type
-/** What the pick tool says to anyone but the scout. */
-export const NOT_SCOUT_DENY = 'Only the Clawd HQ scout uses this tool, and the plugin starts it itself during setup.'
-const TAKEN = 'Your team is noted. You are done: reply with the single word "done" and stop.'
 
-/** The started scout's id: the one the start gave, else the newest scout the engine lists that is not known yet. `undefined` when it would not start. */
-async function startedId(box: ScoutBox, host: ScoutHost, prompt: string): Promise<string | undefined> {
+/** The ids of the scouts the engine lists now; a list that fails is none. */
+const scoutIds = async (host: ScoutHost) => new Set((await host.list().catch(() => [])).filter(a => a.type === SCOUT_TYPE).map(a => a.id))
+
+/**
+ * The started scout's id: the one the start gave, else the newest running scout the engine lists that was not there before this
+ * start (never an ended or older one). `undefined` when it would not start or cannot be told apart.
+ */
+async function startedId(host: ScoutHost, prompt: string): Promise<string | undefined> {
+  const before = await scoutIds(host)
   const started = await host.spawn({ subagentType: SCOUT_TYPE, description: 'Look around the project', prompt }).catch(() => undefined)
   if (started === undefined || started.deny !== undefined) return undefined
   if (started.agentId !== undefined) return started.agentId
   const listed = await host.list().catch(() => [])
-  return listed.find(a => a.type === SCOUT_TYPE && !box.isScout(a.id))?.id
+  return listed.filter(a => a.type === SCOUT_TYPE && !before.has(a.id) && !ENDED.has(a.status ?? '')).at(-1)?.id
+}
+
+const pause = (host: ScoutHost) => new Promise<void>(done => { host.after(POLL_MS, done) })
+
+/** Whether the engine says the scout is done: listed as ended, or listed no more. A list that fails says nothing. */
+async function hasEnded(host: ScoutHost, id: string): Promise<boolean> {
+  const listed = await host.list().catch(() => undefined)
+  const one = listed?.find(a => a.id === id)
+  return listed !== undefined && (one === undefined || ENDED.has(one.status ?? ''))
+}
+
+/** The scout's report once its transcript holds a team block; `undefined` while it does not (or cannot be read). */
+async function answerOf(host: ScoutHost, id: string) {
+  const said = await host.messages(id).catch(() => undefined)
+  return Array.isArray(said) ? scoutReport(said as readonly ScoutMessage[]) : undefined
 }
 
 /**
- * Starts the scout and waits for its picks; `undefined` when it could not start, ran out of time, or ended with nothing the check accepted.
- * A scout given up on is stopped, so it does not run on and spend; a stop that fails changes nothing.
+ * Starts the scout and reads its picks from its final answer, or says why there are none. A scout given up on is stopped,
+ * so it does not run on and spend; a stop that fails changes nothing.
  */
-export async function runScout(box: ScoutBox, host: ScoutHost, brief: string, check: ScoutCheck, timeoutMs: number): Promise<ScoutReport | undefined> {
-  box.begin(check)
-  const id = await startedId(box, host, brief)
-  if (id === undefined) return undefined
-  box.mark(id)
-  const report = await box.wait(id, timeoutMs, host.after)
-  if (report === undefined) await host.stop(id).catch(() => undefined)
-  return report
-}
-
-/** What a call of the scout's is answered with: refused, answered here (its picks), or run with these fields set over its own. */
-export type ScoutAnswer = { readonly deny: string } | { readonly result: string } | { readonly run: Readonly<Record<string, unknown>> }
-
-/** The scout's call, judged by the guard and the mailbox. Only calls from a scout come here. */
-export async function scoutCall(box: ScoutBox, io: RealIo, folder: string, id: string, tool: string, input: Record<string, unknown>): Promise<ScoutAnswer> {
-  if (box.isClosed(id)) return { deny: CLOSED_DENY }
-  if (tool === TEAM_TOOL) {
-    const sent = box.deliver(id, input)
-    return 'problem' in sent ? { deny: sent.problem } : { result: TAKEN }
+export async function runScout(host: ScoutHost, brief: string, timeoutMs: number): Promise<ScoutResult> {
+  const id = await startedId(host, brief)
+  if (id === undefined) return { why: 'The scout could not start.' }
+  for (let waited = 0; waited < timeoutMs; waited += POLL_MS) {
+    await pause(host)
+    const ended = await hasEnded(host, id) // asked first, so an answer written just before the end still counts
+    const report = await answerOf(host, id)
+    if (report !== undefined) return report
+    if (ended) return { why: 'The scout ended without a team list in its answer.' }
   }
-  const verdict = await guardScout(io, tool, input, folder)
-  if ('deny' in verdict) return verdict
-  if (verdict.read !== undefined) box.noteRead(id, verdict.read)
-  return { run: verdict.run }
-}
-
-/** What the route asks the host: where a path really lands, whether an id is a hire on the books, and what type the engine lists an id as. */
-export type RouteIo = RealIo & {
-  readonly isHired: (id: string) => Promise<boolean>
-  readonly typeOf: (id: string) => Promise<string | undefined>
-}
-
-/** Whether an id is the scout: marked, or, when it is no hire on the books, listed by the engine under the scout's type (then it is marked). */
-async function isScoutId(box: ScoutBox, io: RouteIo, id: string): Promise<boolean> {
-  if (box.isScout(id)) return true
-  if (await io.isHired(id)) return false
-  if ((await io.typeOf(id).catch(() => undefined)) !== SCOUT_TYPE) return false
-  box.mark(id)
-  return true
-}
-
-/**
- * Every tool call goes through here first. A scout's is answered (or has its fields set); the pick tool is turned away from anyone
- * else; `undefined` means the call is not the scout's and goes on as before. A scout is known from its very first call, marked or not.
- */
-export async function scoutRoute(box: ScoutBox, io: RouteIo, folder: string, id: string | undefined, tool: string, input: Record<string, unknown>): Promise<ScoutAnswer | undefined> {
-  if (id !== undefined && (await isScoutId(box, io, id))) return scoutCall(box, io, folder, id, tool, input)
-  return tool === TEAM_TOOL ? { deny: NOT_SCOUT_DENY } : undefined
+  await host.stop(id).catch(() => undefined)
+  return { why: `The scout gave no team list within ${Math.round(timeoutMs / 1000)} seconds, so it was stopped.` }
 }

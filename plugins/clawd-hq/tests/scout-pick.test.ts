@@ -33,10 +33,35 @@ test('a reason that cites a file the scout never opened is dropped; the pick sta
   const r = scoutPicks(report([
     pick('Make', 'ecc:tdd-guide', { reason: 'Looks like Python.', evidence: 'pyproject.toml' }),
     pick('Plan', 'ecc:planner', { reason: 'Because.' }),
-    pick('Check', 'ecc:code-reviewer', { reason: 'Reads secrets.', evidence: '.env' }),
     pick('Specialist', 'shadcn', { reason: 'Far away.', evidence: '../elsewhere/package.json' }),
   ]), cands, FOLDER)
-  expect(r.picks.map(p => [p.name, p.reason])).toEqual([['ecc:tdd-guide', undefined], ['ecc:planner', undefined], ['ecc:code-reviewer', undefined], ['shadcn', undefined]])
+  expect(r.picks.map(p => [p.name, p.reason])).toEqual([['ecc:tdd-guide', undefined], ['ecc:planner', undefined], ['shadcn', undefined]])
+})
+
+test('a pick that cites a secret file is not taken at all, even one the scout opened', () => {
+  const opened = [...reads, '/home/me/shop/.env', '/home/me/shop/certs/server.pem']
+  const r = scoutPicks(report([
+    pick('Check', 'ecc:code-reviewer', { reason: 'The keys are here.', evidence: '.env' }),
+    pick('Plan', 'ecc:planner', { reason: 'Signed builds.', evidence: '/home/me/shop/certs/server.pem' }),
+    pick('Make', 'ecc:tdd-guide', { reason: 'Tests run with vitest.', evidence: 'package.json' }),
+  ], opened), cands, FOLDER)
+  expect(r.picks.map(p => p.name)).toEqual(['ecc:tdd-guide'])
+  expect(r.problems).toHaveLength(2)
+  expect(r.problems.join(' ')).not.toMatch(/keys are here|Signed builds/) // the scout's words are not repeated
+})
+
+test('a reason that looks like it holds a secret is dropped; the pick stays', () => {
+  const secretish = [
+    'The key is sk_live_abc in the config.', 'Uses sk-ant-api03 for the model.', 'AWS access AKIAABCDEFGHIJKLMNOP is set.', 'Token ghp_abcdef is in CI.',
+    'Slack xoxb-1234 posts alerts.', 'Has -----BEGIN RSA PRIVATE KEY----- in it.', 'Hash a1b2c3d4e5f6a7b8c9d0e1f2a3b4 is pinned.',
+    'Sets API_KEY=hunter2 for the app.', 'Sets password = hunter2 here.',
+  ]
+  for (const reason of secretish) {
+    const r = scoutPicks(report([pick('Make', 'ecc:tdd-guide', { reason, evidence: 'package.json' })]), cands, FOLDER)
+    expect([reason, r.picks.map(p => [p.name, p.reason])]).toEqual([reason, [['ecc:tdd-guide', undefined]]])
+  }
+  const plain = scoutPicks(report([pick('Make', 'ecc:tdd-guide', { reason: 'Tests run with vitest, so tests come first.', evidence: 'package.json' })]), cands, FOLDER)
+  expect(plain.picks[0]?.reason).toBe('Tests run with vitest, so tests come first. (package.json)')
 })
 
 test('a reason is one clean line of reasonable length: marks and breaks are cleaned, a long one is dropped', () => {

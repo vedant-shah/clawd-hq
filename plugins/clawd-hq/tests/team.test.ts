@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import type { CompleteRequest, Helper, PastUse, ProjectFacts, ScoutCheck, ScoutReport } from '../hooks/onboard-types'
+import type { CompleteRequest, Helper, PastUse, ProjectFacts, ScoutReport, ScoutResult } from '../hooks/onboard-types'
 import { parseReply, pickTeam, teamFrom } from '../hooks/team'
 import { candidateList } from '../hooks/team-rules'
 
@@ -27,24 +27,26 @@ const CORE = ['clawd-hq:core-planner', 'clawd-hq:core-builder', 'clawd-hq:core-r
 const ownOnly = <T extends { name: string }>(picks: readonly T[]) => picks.filter(p => !p.name.startsWith('clawd-hq:'))
 
 type Reply = string | undefined | Error
-/** A fake io: each model call takes the next canned reply; every request is kept. The scout answers `scout` (nothing, by default). */
-const fakeIo = (replies: Reply[], scout: ScoutReport | undefined | Error = undefined) => {
+/** A fake io: each model call takes the next canned reply; every request is kept. The scout answers `scout` (no start, by default). Saved notes are kept. */
+const fakeIo = (replies: Reply[], scout: ScoutResult | Error = { why: 'The scout could not start.' }) => {
   const asked: CompleteRequest[] = []
-  const scouted: Array<{ brief: string; check: ScoutCheck }> = []
+  const scouted: string[] = []
+  const saved = new Map<string, unknown>()
   const queue = [...replies]
   return {
-    asked, scouted, cwd: '/repo',
+    asked, scouted, saved, cwd: '/repo',
     complete: async (req: CompleteRequest) => {
       asked.push(req)
       const next = queue.shift()
       if (next instanceof Error) throw next
       return next
     },
-    spawnScout: async (brief: string, check: ScoutCheck) => {
-      scouted.push({ brief, check })
+    spawnScout: async (brief: string) => {
+      scouted.push(brief)
       if (scout instanceof Error) throw scout
       return scout
     },
+    set: async (key: string, value: unknown) => { saved.set(key, value) },
   }
 }
 const json = (picks: Array<{ seat: string; name: string; why?: string }>) => JSON.stringify({ picks: picks.map(p => ({ why: 'because', ...p })) })
@@ -192,26 +194,39 @@ test('the scout is asked first; its picks become the team, with its reasons on t
   ])
 })
 
-test('the brief the scout gets holds the full candidate list, and its check sends bad names back', async () => {
+test('the brief the scout gets holds the full candidate list and the folder', async () => {
   const io = fakeIo([], scoutSays([{ seat: 'Plan', name: 'ecc:planner' }]))
   await pickTeam(io, facts, use, helpers, undefined)
-  const [{ brief, check }] = io.scouted as [{ brief: string; check: ScoutCheck }]
+  const [brief] = io.scouted
   expect(brief).toContain('ecc:python-reviewer')
   expect(brief).toContain('/repo')
-  expect(check(scoutSays([{ seat: 'Plan', name: 'ecc:planner' }]).picks, [])).toBeUndefined()
-  expect(check({ picks: [{ seat: 'Plan', name: 'ecc:nobody' }] }, [])).toMatch(/ecc:nobody/)
-  expect(check({ nope: 1 }, [])).toEqual(expect.any(String))
 })
 
-test('a scout that gives nothing, fails, or names nobody on the list falls to the one Opus call', async () => {
-  for (const scout of [undefined, new Error('could not start'), scoutSays([{ seat: 'Plan', name: 'ecc:nobody' }]), { picks: 'garbage', reads: [] }] as const) {
+test('a scout that gives nothing, fails, or names nobody on the list falls to the one Opus call, and why is noted', async () => {
+  const cases: Array<[ScoutResult | Error, RegExp]> = [
+    [{ why: 'The scout ended without a team list in its answer.' }, /ended without a team list/],
+    [new Error('sk_live_SECRET could not start'), /^The scout could not start\. Setup falls back/],
+    [scoutSays([{ seat: 'Plan', name: 'ecc:nobody' }]), /^The scout's answer had no usable pick \(1 dropped\)\. Setup falls back/],
+    [{ picks: 'garbage', reads: [] }, /no usable pick/],
+  ]
+  for (const [scout, why] of cases) {
     const io = fakeIo([good], scout)
     const team = await pickTeam(io, facts, use, helpers, undefined)
     expect(io.scouted).toHaveLength(1)
     expect(io.asked.map(r => r.model)).toEqual(['opus'])
     expect(team.by).toBe('opus')
     expect(team.picks).toHaveLength(7)
+    expect(io.saved.get('debug:scout')).toEqual({ folder: '/repo', note: expect.stringMatching(why) })
   }
+})
+
+test('the note holds counts and checked names only, never the scout\'s own words', async () => {
+  const io = fakeIo([], scoutSays([
+    { seat: 'Plan', name: 'ecc:planner', reason: 'The README lists a roadmap.', evidence: 'package.json' },
+    { seat: 'Plan', name: 'sk_live_LEAKED_NAME' },
+  ]))
+  await pickTeam(io, facts, use, helpers, undefined)
+  expect(io.saved.get('debug:scout')).toEqual({ folder: '/repo', note: 'The scout picked 1: ecc:planner (1 dropped).' })
 })
 
 test('with a scout and Opus both failing, the rules pick and the core four fill what they leave', async () => {

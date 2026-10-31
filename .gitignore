@@ -23,3 +23,6 @@ docs/experiments.md
 
 # Skills installed into this folder by `npx skills add` (local only).
 .agents/
+
+# Launch post drafts (private until posted).
+docs/launch/

@@ -1,96 +1,31 @@
-// The one-minute tour: its script (what each step says and does) and its timing. The office's own actions come in as
-// `io`, so `$` and the state stay in register.tsx. Each step's caption is drawn at the top of every pane while it plays.
-import type { Boss, Employee, Fx, Mood } from '../types'
+// Playing the tour (the script is in hooks/demo-script.ts): stand-in employees on the real panel, one step every few seconds, cleaned up at the end.
+// The office's own actions come in as `io`, so `$` and the state stay in register.tsx. Nothing real is spawned, saved or announced.
+import type { Boss, Employee, Fx } from '../types'
 import { sentenceOf } from './activity'
-import { BRAND, hash } from './office'
-import { quietBoss } from './office-state'
 import { NAP_MS } from './clawd-says'
+import { tourSteps } from './demo-script'
+import type { Cast } from './demo-script'
+import { hash, labelOf } from './office'
+import { freshHire, quietBoss } from './office-state'
 import type { PaneView } from './panes'
 import { DEMO } from './panel-model'
-import { withTool } from './staff-model'
+import { endRun, finishedBoss, withTool } from './staff-model'
+import { withProgress } from './steps'
 
-export type TourIo = {
-  show: (view: PaneView) => Promise<unknown>
-  /** Settings shows the list of finished work (true) or its configs (false). */
-  showLog: (isOpen: boolean) => Promise<unknown>
-  setBusy: () => Promise<unknown>
-  say: (text: string, ticks?: number) => Promise<unknown>
-  /** `n` names a stand-in specialist for the length of the tour. */
-  hire: (n: string, type: string, description: string) => Promise<unknown>
-  work: (n: string, tool: string, input: Record<string, unknown>) => Promise<unknown>
-  finish: (n: string, mood: Mood) => Promise<unknown>
-  goQuiet: () => Promise<unknown>
-}
-
-export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
-  return [
-    [`Welcome to ${BRAND}. Clawd is your chief of staff; you are the CEO; every subagent is an employee.`, async () => {
-      await io.show('office')
-      await io.setBusy()
-      await io.say('Welcome to the office! Mind the claws.')
-    }],
-    ['Hiring: each agent type gets an avatar of its own, with its own outfit, headwear and prop.', async () => {
-      await io.hire('arch', 'ecc:architect', 'Design the scoring API')
-    }],
-    ['Each specialist at work gets a row: its avatar, its task, what it is doing right now, and how long it has been at it.', async () => {
-      await io.work('arch', 'Read', { file_path: 'scoring.ts' })
-      await io.hire('scout', 'Explore', 'Map the backend')
-    }],
-    ['A specialist is known by its role, in one or two plain words, or by the name it was given.', async () => {
-      await io.work('scout', 'Grep', { pattern: 'computeScore' })
-      await io.hire('rev', 'ecc:code-reviewer', 'Review the survey flow')
-    }],
-    ['Hire too many at once and Clawd starts to grumble.', async () => {
-      await io.hire('tdd', 'ecc:tdd-guide', 'Test the review panel')
-      await io.hire('data', 'acme-ops:(o_o) data-analyst', 'Crunch the deal data')
-      await io.work('rev', 'Read', { file_path: 'surveys.ts' })
-      await io.work('arch', 'Edit', { file_path: 'design.md' })
-    }],
-    ['Specialists do not stop to ask you. They make their best call, carry on, and put their questions in their report to Clawd.', async () => {
-      await io.work('tdd', 'Bash', { command: 'npm test', description: 'Run the review panel tests' })
-      await io.work('data', 'Read', { file_path: 'deals.csv' })
-    }],
-    ['Clawd settles what he can and asks you the rest in one question box, at a natural pause. Your answer settles the job at hand only.', async () => {
-      await io.say('Two questions saved up. I’ll ask them in one go.')
-    }],
-    ['When an agent fails, it goes home sick and Clawd reacts.', async () => {
-      await io.finish('tdd', 'failed')
-    }],
-    ['Finishers are listed in Settings, under Finished this session, with how long they took.', async () => {
-      await io.finish('arch', 'done')
-      await io.finish('scout', 'done')
-      await io.showLog(true)
-      await io.show('settings')
-    }],
-    ['People is the payroll: who’s on the team and who’s in the talent pool for this project.', async () => {
-      await io.showLog(false)
-      await io.show('people')
-    }],
-    ['Leave the office quiet for 2 minutes and Clawd gets drowsy.', async () => {
-      await io.show('office')
-      await io.finish('rev', 'done')
-      await io.finish('data', 'done')
-      await io.goQuiet()
-    }],
-    ['That’s the tour! The demo staff are heading home.', async () => {
-      await io.say('Thanks for visiting. Now, back to work!', 12)
-    }],
-  ]
-}
-
-// ---- Playing it: stand-in employees, one step every five seconds, cleaned up at the end ----
+export { onStage } from './demo-cast'
 
 /** What playing the tour needs of the office; every call is a closure built in register.tsx. */
 export type DemoIo = {
-  show: TourIo['show']
-  showLog: TourIo['showLog']
+  show: (view: PaneView) => Promise<unknown>
+  /** Settings shows the list of finished work (true) or its configs (false). */
+  showLog: (isOpen: boolean) => Promise<unknown>
   boss: () => Promise<Boss>
+  fx: () => Promise<Fx>
   setBoss: (fn: (b: Boss) => Boss) => Promise<unknown>
   tick: () => Promise<number>
   now: () => Promise<number>
-  /** `id` is the stand-in's full id (it starts with DEMO). */
-  hire: (id: string, type: string, description: string) => Promise<unknown>
-  finish: (id: string, mood: Mood) => Promise<unknown>
+  /** A stand-in joins the books. It is no hire: nothing is counted, enrolled or announced. */
+  put: (one: Employee) => Promise<unknown>
   editStaff: (id: string, fn: (e: Employee) => Employee) => Promise<unknown>
   dropStandIns: () => Promise<unknown>
   setDemo: (demo: Fx['demo']) => Promise<unknown>
@@ -98,8 +33,11 @@ export type DemoIo = {
   after: (ms: number, fn: () => void) => { cancel: () => void }
 }
 
-const STEP_MS = 5000
+/** DECIDED: twenty steps of 4.5 seconds make the tour about 90 seconds. */
+export const STEP_MS = 4500
 let demoTimers: Array<{ cancel: () => void }> = []
+/** Puts the office back as the running tour found it; none while no tour plays. */
+let endTour: (() => Promise<void>) | undefined
 
 /** A stand-in at work: what it is doing now, and the tokens that go with it. */
 const work = (io: DemoIo, id: string, tool: string, input: Record<string, unknown>) => {
@@ -112,20 +50,41 @@ async function say(io: DemoIo, text: string, ticks = 10) {
   await io.setBoss(b => ({ ...b, quip: { text, until: t + ticks } }))
 }
 
+/** A new stand-in, hired now; a pair-up or council member carries its goal, hired together with the others of its card. */
+async function hire(io: DemoIo, id: string, cast: Cast) {
+  const [now, t] = [await io.now(), await io.tick()]
+  const { type, name, description, model, effort, pair } = cast
+  const group = pair === undefined ? {} : { pair: { goal: pair.goal, at: now, ...(pair.isCouncil ? { isCouncil: true as const } : {}) } }
+  await io.put({ ...freshHire({ id, type, description, name }, now, t), model, effort, ...group })
+}
+
+/** The stand-in's run ends well, with what it reported; Clawd cheers. */
+async function finish(io: DemoIo, id: string, words: Pick<Employee, 'report' | 'choices'> = {}) {
+  const [now, t] = [await io.now(), await io.tick()]
+  let label = ''
+  await io.editStaff(id, one => { label = labelOf(one); return { ...endRun(one, 'done', 'signal', now, t), ...words, counted: one.tokens ?? 0 } })
+  await io.setBoss(b => finishedBoss(b, 'done', t, label))
+}
+
 export async function startDemo(io: DemoIo) {
   for (const timer of demoTimers) timer.cancel()
   demoTimers = []
-  const saved = await io.boss()
+  await endTour?.() // a tour already playing is cleaned up first, so this one saves the office as it really was
+  const [saved, savedFx] = [await io.boss(), await io.fx()]
   const id = (n: string) => `${DEMO}${n}`
   const steps = tourSteps({
     show: io.show,
     showLog: io.showLog,
-    setBusy: () => io.setBoss(b => ({ ...b, isBusy: true })),
+    setBusy: isBusy => io.setBoss(b => ({ ...b, isBusy })),
     say: (text, ticks) => say(io, text, ticks),
-    hire: (n, type, description) => io.hire(id(n), type, description),
+    hire: (n, cast) => hire(io, id(n), cast),
     work: (n, tool, input) => work(io, id(n), tool, input),
-    finish: (n, mood) => io.finish(id(n), mood),
+    report: (n, done, total, note) => io.editStaff(id(n), one => withProgress(one, { done, total, note })),
+    think: n => io.editStaff(id(n), one => ({ ...one, mood: 'thinking' })),
+    finish: (n, words) => finish(io, id(n), words),
+    clearFloor: io.dropStandIns,
     goQuiet: async () => { const now = await io.now(); await io.setBoss(b => quietBoss(b, now, NAP_MS)) },
+    recap: text => io.setBoss(b => ({ ...b, recap: text })),
   })
 
   const total = steps.length
@@ -137,12 +96,13 @@ export async function startDemo(io: DemoIo) {
       })().catch(() => undefined) // a step that fails is skipped; it must not become an unhandled rejection
     }))
   })
-  demoTimers.push(io.after(total * STEP_MS + 1500, () => {
-    void (async () => {
-      await io.dropStandIns()
-      await io.setDemo(undefined)
-      await io.setBoss(b => ({ ...saved, turns: b.turns, recap: b.recap, quip: undefined }))
-      await io.showStatus()
-    })()
-  }))
+  endTour = async () => {
+    endTour = undefined
+    await io.dropStandIns()
+    await io.setDemo(undefined)
+    await io.setBoss(b => ({ ...saved, turns: b.turns }))
+    await io.showLog(savedFx.isLogOpen === true)
+    await io.showStatus()
+  }
+  demoTimers.push(io.after(total * STEP_MS + 1500, () => { void endTour?.() }))
 }

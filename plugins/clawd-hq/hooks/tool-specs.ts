@@ -6,7 +6,7 @@ type ToolSpec = Parameters<EngineInterface['tool']['register']>[0]
 
 export const DEMO_SPEC: ToolSpec = {
   name: 'demo',
-  description: `Plays the ${BRAND} office tour in the side panel (about a minute, stand-in employees, nothing real is spawned). Call only when the user asks to see the office demo.`,
+  description: `Plays the ${BRAND} office tour in the side panel (about a minute and a half, stand-in employees, nothing real is spawned, the office is left as it was found). Call only when the user asks to see the office demo.`,
   inputSchema: { type: 'object', properties: {} },
 }
 

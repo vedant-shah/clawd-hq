@@ -17,7 +17,7 @@ export type OwnToolIo = {
   readonly contractor: (agentId: string | undefined, input: Record<string, unknown>) => Promise<{ readonly result: string } | { readonly deny: string }>
 }
 
-const TOUR_TEXT = `The ${BRAND} tour is playing in the side panel for about a minute. If the panel is not visible, the user can type /office.`
+const TOUR_TEXT = `The ${BRAND} tour is playing in the side panel for about 90 seconds. If the panel is not visible, the user can type /office.`
 
 /** The answer to a call of one of the office's own tools, or `undefined` when the tool is not one of them. */
 export async function ownToolAnswer(io: OwnToolIo, tool: string, agentId: string | undefined, input: Record<string, unknown>): Promise<{ readonly result: string } | { readonly deny: string } | undefined> {

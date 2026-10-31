@@ -23,7 +23,7 @@ claude plugin marketplace add vedant-shah/clawd-hq
 claude plugin install clawd-hq@clawd-hq
 ```
 
-Start a session. The office opens on its own. Type `/office-demo` for a one-minute tour.
+Start a session. The office opens on its own. Type `/office-demo` for a 90-second tour.
 
 Needs Claude Code v2.1.287 or later.
 

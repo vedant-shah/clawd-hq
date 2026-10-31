@@ -52,7 +52,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   for (const [path, text] of Object.entries(PROJECT)) h.files.set(path, text)
   h.session.loaded = LOADED
   const models = { opus: OPUS_TEAM as string | undefined, haiku: undefined as string | undefined, workflow: WORKFLOW_REPLY as string | undefined }
-  const calls = { models: [] as Array<{ model: string; prompt: string }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, configSets: [] as unknown[], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
+  const calls = { models: [] as Array<{ model: string; prompt: string }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, configSets: [] as unknown[], contexts: [] as string[][], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
   const children = (dir: string) => {
     const prefix = `${dir.replace(/\/+$/, '')}/`
     const names = new Map<string, boolean>()
@@ -103,7 +103,8 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   // No hook of the plugin runs inside a scout it started itself, so the plugin learns what it found only from its transcript:
   // `said`, read through `$.session.messages`. `end()` marks it finished in the engine's list.
   const scout = {
-    mode: 'deny' as 'deny' | 'silent', id: 'sc1', spawned: [] as Array<{ prompt: string; subagentType?: string }>,
+    // 'classifier': auto mode refuses the plugin's own start, as the desktop app's server-side classifier does.
+    mode: 'deny' as 'deny' | 'silent' | 'classifier', id: 'sc1', spawned: [] as Array<{ prompt: string; subagentType?: string }>,
     said: [] as Array<{ role: 'user' | 'assistant'; text: string; toolUses: Array<{ tool: string; input: Record<string, unknown> }> }>,
     end: () => { for (const a of agentList as Array<{ id: string; status: string }>) if (a.id === scout.id) a.status = 'completed' },
     /** The scout's definition, as the plugin registered it at session start. */
@@ -114,7 +115,11 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   const commandList = [{ name: 'ecc:tdd-workflow', description: 'Writes tests first, then the code.', source: 'plugin' }]
   on('command.list', () => ({ value: commandList }) as never)
   on('prompt.fill', (_$, e) => (calls.fills.push((e as { text: string }).text), { isFilled: true }) as never)
-  on('prompt.submit', (_$, e) => (calls.sent.push((e as { text: string }).text), { text: (e as { text: string }).text }) as never)
+  on('prompt.submit', (_$, e) => {
+    calls.sent.push((e as { text: string }).text)
+    calls.contexts.push(((e as { context?: unknown[] }).context ?? []).map(String)) // what rode along with it, unseen in the chat
+    return { text: (e as { text: string }).text } as never
+  })
   on('http.fetch', (_$, e) => (calls.fetches.push(String((e as { url: string }).url)), { value: { status: 500 } }) as never)
   on('config.list', () => ({ value: [] }) as never)
   on('config.set', (_$, e) => (calls.configSets.push(e), { value: (e as { value: unknown }).value }) as never)
@@ -126,6 +131,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     if (type !== 'clawd-hq:scout') return { model: 'claude-opus-5-5', agentId: 'a1' }
     scout.spawned.push({ prompt: spawn.prompt, subagentType: type })
     if (scout.mode === 'deny') return { deny: 'no scout in this host' } as never
+    if (scout.mode === 'classifier') return { deny: 'The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one.' } as never
     agentList.push({ id: scout.id, type: 'clawd-hq:scout', description: 'Look around the project', status: 'running' })
     return { model: 'claude-sonnet-5-5', agentId: scout.id }
   })

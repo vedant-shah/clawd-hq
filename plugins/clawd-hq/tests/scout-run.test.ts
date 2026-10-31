@@ -30,6 +30,10 @@ function fakeHost(spawnAs: string | null | Error = 'sc1') {
     },
     list: async () => listed,
     version: async () => '2.1.309',
+    asks: [] as string[],
+    /** Clawd's hire, asked for when the plugin's own start is refused by auto mode: `null`, he made none in time. */
+    clawdHires: null as string | null,
+    async askClawd(brief: string) { this.asks.push(brief); return this.clawdHires ?? undefined },
     stop: async (id: string) => { stopped.push(id); if (state.stopFails) throw new Error('no such task') },
     messages: async (_id: string) => { if (state.said instanceof Error) throw state.said; return state.said },
     after(ms: number, fn: () => void) {
@@ -41,11 +45,11 @@ function fakeHost(spawnAs: string | null | Error = 'sc1') {
 }
 type Host = ReturnType<typeof fakeHost>
 /** Fires every timer that is waiting, as time passing would, and lets what follows run. */
-async function tick(host: Host) {
+async function tick(host: Pick<Host, 'timers'>) {
   for (const t of host.timers.filter(one => !one.isFired)) { t.isFired = true; t.fn() }
   await settle()
 }
-const waiting = (host: Host) => host.timers.filter(t => !t.isFired)
+const waiting = (host: Pick<Host, 'timers'>) => host.timers.filter(t => !t.isFired)
 
 test('the scout is started on its own type with the brief; once its answer holds the team block, the picks and the files it read come back', async () => {
   const host = fakeHost()
@@ -179,6 +183,35 @@ test('the engine\'s reason is cut to one short line, and one that looks like it 
   expect('why' in long && long.why).toContain('…')
   const secret = await runScout(fakeHost(new Error('auth failed for sk-ant-api03-abcdef')), 'BRIEF', 90_000)
   expect(secret).toEqual({ why: `The scout could not start: the engine's words are left out, as they looked like they held a secret (${SETTINGS})` })
+})
+
+// ---- Auto mode: the classifier judges only what a model asks for, so Clawd hires the scout ----
+
+const CLASSIFIER = 'The server-side auto mode classifier gave no verdict for Agent: the request that produced this action did not ask for one.'
+
+test('a start refused by the auto mode classifier is handed to Clawd with the brief; his hire\'s answer is read as usual', async () => {
+  const host = { ...fakeHost(), spawn: async () => ({ deny: CLASSIFIER }) }
+  host.clawdHires = 'scC'
+  const seen: string[] = []
+  const done = runScout({ ...host, messages: async (id: string) => { seen.push(id); return [{ role: 'assistant', text: ANSWER, toolUses: [] }] } }, 'BRIEF', 90_000)
+  await settle()
+  expect(host.asks).toEqual(['BRIEF'])
+  await tick(host)
+  expect(await done).toMatchObject({ picks: { picks: [{ name: 'ecc:planner' }] } })
+  expect(seen).toEqual(['scC'])
+})
+
+test('when Clawd does not hire it in time either, the reason says both', async () => {
+  const host = { ...fakeHost(), spawn: async () => ({ deny: CLASSIFIER }) }
+  const result = await runScout(host, 'BRIEF', 90_000)
+  expect(result).toEqual({ why: expect.stringMatching(/^The scout could not start: The server-side auto mode classifier gave no verdict.*Clawd did not hire it in time either/) })
+  expect(host.timers).toEqual([])
+})
+
+test('any other refusal is not handed to Clawd', async () => {
+  const host = { ...fakeHost(), spawn: async () => ({ deny: 'Agent \'clawd-hq:scout\' would be spawned with zero tools' }) }
+  await runScout(host, 'BRIEF', 90_000)
+  expect(host.asks).toEqual([])
 })
 
 test('an engine that cannot say its version is named as unknown', async () => {

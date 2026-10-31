@@ -5,8 +5,12 @@
 import type { ScoutResult } from './onboard-types'
 import { scoutReport } from './scout-answer'
 import type { ScoutMessage } from './scout-answer'
+import { isClassifierRefusal } from './scout-handoff'
 import { looksSecret } from './scout-pick'
 import { SCOUT_SPEC, SCOUT_TYPE } from './scout-spec'
+
+// The hand-off to Clawd, for register.tsx to reach through this module's one import line.
+export { askClawd, handScoutSpawn, scoutHandoff } from './scout-handoff'
 
 /** How often the scout's transcript is looked at. */
 export const POLL_MS = 2_000
@@ -28,6 +32,8 @@ export type ScoutHost = {
   readonly messages: (id: string) => Promise<unknown>
   readonly stop: (id: string) => Promise<unknown>
   readonly after: (ms: number, fn: () => void) => Timer
+  /** Has Clawd hire the scout with this brief (auto mode refused the plugin's own start): his scout's id, or `undefined` when none came in time. */
+  readonly askClawd: (brief: string) => Promise<string | undefined>
 }
 
 /** The agent type a start asks for, in the event's spelling or the Agent tool's own (a start the plugin makes itself can reach a hook as either). */
@@ -58,6 +64,19 @@ async function startedId(host: ScoutHost, prompt: string): Promise<{ readonly id
   return id === undefined ? { reason: 'no agent id came back and no new scout was listed' } : { id }
 }
 
+/**
+ * The scout's id: started by the plugin, or, when auto mode refused that start (its classifier judges only what a model asks for),
+ * hired by Clawd with the Agent tool on his next turn. Else why there is none, for the note.
+ */
+async function startedOrHired(host: ScoutHost, brief: string): Promise<{ readonly id: string } | { readonly why: string }> {
+  const started = await startedId(host, brief)
+  if ('id' in started) return started
+  const hired = isClassifierRefusal(started.reason) ? await host.askClawd(brief).catch(() => undefined) : undefined
+  if (hired !== undefined) return { id: hired }
+  const either = isClassifierRefusal(started.reason) ? '; Clawd did not hire it in time either' : ''
+  return { why: `The scout could not start: ${started.reason} (${await startContext(host)})${either}` }
+}
+
 /** The engine version and the scout's own settings, for the note on a start that failed. */
 async function startContext(host: ScoutHost): Promise<string> {
   const version = await host.version().catch(() => 'unknown')
@@ -85,8 +104,8 @@ async function answerOf(host: ScoutHost, id: string) {
  * so it does not run on and spend; a stop that fails changes nothing.
  */
 export async function runScout(host: ScoutHost, brief: string, timeoutMs: number): Promise<ScoutResult> {
-  const started = await startedId(host, brief)
-  if ('reason' in started) return { why: `The scout could not start: ${started.reason} (${await startContext(host)})` }
+  const started = await startedOrHired(host, brief)
+  if ('why' in started) return started
   const { id } = started
   for (let waited = 0; waited < timeoutMs; waited += POLL_MS) {
     await pause(host)

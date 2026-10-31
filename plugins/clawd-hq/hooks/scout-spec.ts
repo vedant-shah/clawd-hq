@@ -47,6 +47,9 @@ export const SCOUT_SPEC: AgentSpec = {
   maxTurns: SCOUT_MAX_TURNS,
 }
 
+/** The scout's definition with its brief in it, for a hire by Clawd: his Agent call stays short and is judged as he wrote it. */
+export const scoutSpecWith = (brief: string): AgentSpec => ({ ...SCOUT_SPEC, prompt: `${SCOUT_SPEC.prompt}\n\n${brief}` })
+
 export type ScoutAsk = { readonly facts: ProjectFacts; readonly use: PastUse; readonly cands: readonly Candidate[]; readonly role: string | undefined; readonly folder: string }
 
 /** What the scout is started with: the folder, the quick scan, the seats and the full candidate list, and what a good answer holds. */

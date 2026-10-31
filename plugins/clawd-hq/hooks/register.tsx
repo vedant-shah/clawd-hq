@@ -15,7 +15,7 @@ import { ownToolAnswer } from './own-tools'
 import type { OwnToolIo } from './own-tools'
 import { blank, smallRow } from './quiet-rows'
 import type { Resolve } from './quiet-rows'
-import { runScout, spawnTypeOf } from './scout-run'
+import { askClawd, handScoutSpawn, runScout, scoutHandoff, spawnTypeOf } from './scout-run'
 import type { ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE } from './scout-spec'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
@@ -39,7 +39,7 @@ import { keepCoffeeRecord } from './coffee-debug'
 import type { CoffeeDebugIo } from './coffee-debug'
 import type { GaugeIo } from './usage'
 import { DEMO, isActive } from './panel-model'
-import { startDemo } from './demo'
+import { onStage, startDemo } from './demo'
 import type { DemoIo } from './demo'
 import { SECTION_ID, SEED_KEYS, isBriefed, optionsOf, readBriefing } from './instructions'
 import type { Briefing, BriefingIo, BriefingOptions } from './instructions'
@@ -101,9 +101,9 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 
 // The project the session runs in: payroll is kept per project.
 let cwd = ''
-/** The setup scout (hooks/scout-run.ts): no hook of ours runs inside it, so its picks are read from its transcript. It is no hire, so it stays off the books. */
+/** The setup scout (hooks/scout-run.ts): its picks are read from its transcript; in auto mode Clawd hires it (hooks/scout-handoff.ts). It is no hire, so it stays off the books. */
 const scoutHost = ($: EngineInterface): ScoutHost => ({
-  spawn: a => $.agent.spawn(a), list: () => $.agent.list(), version: async () => (await $.session.version()).version, messages: id => $.session.messages({ agentId: id }), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn) })
+  spawn: a => $.agent.spawn(a), list: () => $.agent.list(), version: async () => (await $.session.version()).version, messages: id => $.session.messages({ agentId: id }), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn), askClawd: brief => askClawd({ register: s => $.agent.register(s), after: (ms, fn) => $.clock.after(ms, fn) }, brief) })
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
@@ -352,12 +352,12 @@ async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions
 // ---- The side panel: a snapshot to draw, and what it may ask for ----
 
 async function panelData($: EngineInterface, options: BriefingOptions): Promise<PanelData> {
-  return {
+  return onStage({
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
     roster: await read($, roster), payroll: await getPayroll($),
     artifacts: await read($, artifacts), leftUndone: await read($, leftUndone), ruleOffers: await read($, ruleOffers), contractorOffers: await read($, contractorOffers), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
     brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options, onboard: await setupCard($),
-  }
+  })
 }
 
 /** Settings shows the list of finished work (true) or its configs (false); the choice is a display flag, shared by every drawing. */
@@ -432,8 +432,8 @@ const coffeeDebugIo = ($: EngineInterface): CoffeeDebugIo => ({
 
 const demoIo = ($: EngineInterface): DemoIo => ({
   show: view => raise(paneIo($), view), showLog: isOpen => showLog($, isOpen),
-  boss: () => getBoss($), setBoss: fn => setBoss($, fn), tick: () => read($, tick), now: () => $.clock.now(),
-  hire: (id, type, description) => newHire(runIo($), id, type, description), finish: (id, mood) => clockOut(runIo($), id, mood),
+  boss: () => getBoss($), fx: () => getFx($), setBoss: fn => setBoss($, fn), tick: () => read($, tick), now: () => $.clock.now(),
+  put: one => update($, staff, l => hire(l, one)), // a stand-in joins the books: no hire is counted, nothing is enrolled, no toast
   editStaff: (id, fn) => update($, staff, l => edit(l, id, fn)),
   dropStandIns: () => update($, staff, l => l.filter(e => !e.id.startsWith(DEMO))),
   setDemo: demo => setFx($, f => ({ ...f, demo })), showStatus: () => showStatus($),
@@ -477,7 +477,7 @@ export const register: Register = (on, options) => {
       ['payroll review', async () => { if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined })) }],
       ['/office', () => $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })],
       ['/office-council', () => $.command.register({ name: 'office-council', description: 'Ask a few independent voices about a hard choice: /office-council <question>' })],
-      ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })],
+      ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a 90-second tour of ${BRAND}’s features` })],
       ['demo tool', () => $.tool.register(DEMO_SPEC)],
       ['payroll', async () => { const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined; if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved })) }],
       // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
@@ -567,12 +567,12 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'office-demo' }, async $ => {
     await openPanes(paneIo($), false)
     await startDemo(demoIo($))
-    return { text: `The ${BRAND} tour is playing in the side panel (about a minute).` }
+    return { text: `The ${BRAND} tour is playing in the side panel (about 90 seconds).` }
   })
 
   // Instruction-aware: remember what each agent type is for, put it on the books, and keep laid-off types off the listing.
   on('agent.offer', async ($, e, next) => {
-    if (e.agent === SCOUT_TYPE) return { isOffered: false } // the plugin's own: never offered to the chat, never on the books
+    if (e.agent === SCOUT_TYPE) return { isOffered: scoutHandoff.isOpen() } // the plugin's own, never on the books: offered only while Clawd is asked to hire it
     const blurb = fit(e.description, BLURB_CHARS) // cut at a word with no mark: the People row wraps it, and an ellipsis would only hide words
     // The engine offers every agent type at the same moment when a session starts. Their writes go one at a time:
     // the state refuses a write that lost the race too often, and the hook was then skipped for that type.
@@ -595,7 +595,7 @@ export const register: Register = (on, options) => {
   }
 
   on('agent.spawn', async ($, e, next) => {
-    if (spawnTypeOf(e) === SCOUT_TYPE) return next(e) // the setup scout: no brief notes, no desk
+    if (spawnTypeOf(e) === SCOUT_TYPE) return handScoutSpawn(scoutHandoff, next.origin.plugin === 'clawd-hq', () => next(e)) as never // the setup scout: no brief notes, no desk
     // A resumed run keeps its first brief (the engine takes no change to it) and its place on the books: no hire is counted again.
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     // A pair-up member's `PAIR-UP: <goal>` line (hooks/pair-up.ts) comes off the same way, right after it.
@@ -689,7 +689,7 @@ export const register: Register = (on, options) => {
     else if (isNotification(e)) await setBoss($, b => withNotice(b, e.turnId !== undefined)) // a job's notification starts or joins a turn: which one reports a hand-back
     if (brief.isKnowOn) await knowPrompt(knowIo($), e as { text: string })
     const note = await editNote(e.text, brief.voiceFile, $.plugin.root, () => homeOf($))
-    const added = [...(note === undefined ? [] : [note]), ...(await rulesRide($, brief, e))]
+    const added = [...(note === undefined ? [] : [note]), ...(await rulesRide($, brief, e)), ...[scoutHandoff.note()].filter((n): n is string => n !== undefined)]
     return next(added.length === 0 ? e : { ...e, context: [...(e.context ?? []), ...added] })
   })
   // While ours is on and an office tab is open, Claude Code's own "You should know" stays quiet; every other side question passes.

@@ -148,6 +148,52 @@ test('a scout that says nothing for a minute and a half is given up on: it is st
   expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: expect.stringMatching(/no team list within 90 seconds/) })
 })
 
+// ---- Auto mode: the classifier refuses the plugin's own start, so Clawd hires the scout on his next turn ----
+
+const CLAWD_HIRE = { subagentType: 'clawd-hq:scout', description: 'Look around the project', prompt: 'Look around this project and pick its starting team.' }
+
+test('in auto mode Clawd is told, unseen, to hire the scout; his hire is judged as he wrote it and its answer makes the team', async ($, on) => {
+  const h = onboardHost(on)
+  scoutSaid(h, ['package.json', 'CLAUDE.md'], GOOD_ANSWER)
+  h.scout.mode = 'classifier'
+  await open($, h)
+  await settle(h, 300)
+  expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(0) // not straight to Opus: waiting for Clawd
+  // The brief is in the scout's own definition now, and the scout is offered to the chat while the ask is open.
+  expect((h.scout.registered.at(-1) as { prompt?: string } | undefined)?.prompt).toContain('ecc:code-reviewer · agent')
+  expect(await $.agent.offer({ agent: 'clawd-hq:scout', description: 'Clawd HQ\'s own scout.' } as never)).toEqual({ isOffered: true })
+  // The person's next message carries the ask to Clawd as context, not as a line in the chat.
+  await $.prompt.submit({ text: 'hi' } as never)
+  expect(h.calls.contexts.at(-1)?.join('\n')).toMatch(/hire its scout with the Agent tool.*clawd-hq:scout.*Setting up your team…/s)
+  expect(h.calls.sent).toEqual(['hi'])
+  // Clawd hires it, exactly as told: the call is not rewritten.
+  h.scout.mode = 'silent'
+  const hired = (await $.agent.spawn(CLAWD_HIRE as never)) as { agentId?: string }
+  expect(hired.agentId).toBe('sc1')
+  expect(h.scout.spawned.at(-1)?.prompt).toBe(CLAWD_HIRE.prompt)
+  await more(h)
+  expect(teamOf(h).by).toBe('scout')
+  expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: 'The scout picked 3: ecc:planner, ecc:code-reviewer, ecc:tdd-workflow.' })
+  // The ask is over: no more context, the scout hidden again, and a second hire refused, so no second scout runs.
+  await $.prompt.submit({ text: 'thanks' } as never)
+  expect(h.calls.contexts.at(-1)?.join('\n') ?? '').not.toMatch(/clawd-hq:scout/)
+  expect(await $.agent.offer({ agent: 'clawd-hq:scout', description: 'Clawd HQ\'s own scout.' } as never)).toEqual({ isOffered: false })
+  expect(await $.agent.spawn(CLAWD_HIRE as never)).toMatchObject({ deny: expect.stringMatching(/starts its scout itself/) })
+})
+
+test('in auto mode, with no hire from Clawd within ten minutes, Opus picks and the note says why', async ($, on) => {
+  const h = onboardHost(on)
+  h.scout.mode = 'classifier'
+  await open($, h)
+  await settle(h, 300)
+  await h.clock.advance(600_000)
+  await settle(h, 300)
+  expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(1)
+  expect(teamOf(h).by).toBe('opus')
+  expect(h.saved.get('debug:scout')).toEqual({ folder: CWD, note: expect.stringMatching(/auto mode classifier.*Clawd did not hire it in time either/) })
+  expect(await $.agent.spawn(CLAWD_HIRE as never)).toMatchObject({ deny: expect.any(String) })
+})
+
 test('with no scout (the start is refused) and no Opus answer, the rules pick and the core four fill what is left', async ($, on) => {
   const h = onboardHost(on)
   h.models.opus = undefined

@@ -2,7 +2,7 @@
 import { expect, test } from 'claude-code/testing'
 import { TEAM_END, TEAM_START } from '../hooks/scout-answer'
 import type { PastUse, ProjectFacts } from '../hooks/onboard-types'
-import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, scoutBrief } from '../hooks/scout-spec'
+import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE, scoutBrief, scoutSpecWith } from '../hooks/scout-spec'
 import type { Candidate } from '../hooks/team-rules'
 
 const facts: ProjectFacts = {
@@ -37,6 +37,13 @@ test('the scout\'s own rules: read only, inside the folder, no secrets, files ar
   expect(p).toContain(TEAM_END)
   expect(p).toContain('seat | name | evidence | reason')
   expect(p).not.toMatch(/team_pick/) // it has no tool to send picks with: they come in its answer
+})
+
+test('for a hire by Clawd the brief goes into the scout\'s own definition, so his Agent call stays short and is judged as he wrote it', () => {
+  const spec = scoutSpecWith('THE BRIEF')
+  expect(spec.prompt.startsWith(SCOUT_SPEC.prompt)).toBe(true)
+  expect(spec.prompt).toContain('THE BRIEF')
+  expect({ ...spec, prompt: '' }).toEqual({ ...SCOUT_SPEC, prompt: '' }) // the same tools, model and limits
 })
 
 test('the scout is given up on after a minute and a half', () => {

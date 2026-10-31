@@ -62,6 +62,13 @@ async function until(_$: Engine, isThere: () => boolean) {
   for (let i = 0; i < 300 && !isThere(); i += 1) await pause()
 }
 const idle = async () => { for (let i = 0; i < 30; i += 1) await pause() }
+/**
+ * The session start opens the tabs in the background, Office asked to the front last: waits for that, so a tab a test
+ * closes afterwards stays closed.
+ */
+async function tabsOpened(h: Pick<ReturnType<typeof host>, 'opened' | 'clock'>) {
+  for (let i = 0; i < 300 && !h.opened.some(o => o.focus === true); i += 1) await h.clock.advance(0)
+}
 type Log = Array<{ outcome: string; who: string; reason?: string; inTokens?: number; outTokens?: number; recordChars?: number; ms?: number }>
 const logOf = (saved: Map<string, unknown>) => (saved.get('know:log:/repo') ?? []) as Log
 
@@ -218,8 +225,10 @@ test('a hand-back where nothing is drawn is not checked, and the log says why', 
 })
 
 test('a hand-back with no office tab open is not checked, and the log says why', async ($, on) => {
-  const { asked, rows, saved, closePane } = office(on)
+  const h = office(on)
+  const { asked, rows, saved, closePane } = h
   await $.session.start(START)
+  await tabsOpened(h)
   await hire($)
   rows.set('a1', run('Fix it.'))
   for (const { id } of PANES) closePane(id)
@@ -799,8 +808,10 @@ test('a check waiting in line reads only what was done up to its own hand-back, 
 })
 
 test('with no office tab open, the built-in asks as usual; with one open behind another tab, it stays quiet', { plugins: [ysk('builtin')] }, async ($, on) => {
-  const { asked, closePane, front } = forks(on)
+  const h = forks(on)
+  const { asked, closePane, front } = h
   await $.session.start(START)
+  await tabsOpened(h)
   front.id = 'clawd-hq-people'
   await turnEnds($)
   expect(asked).toEqual([])

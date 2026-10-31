@@ -21,7 +21,7 @@ export const TOGGLES: readonly ConfigToggle[] = [
   { field: 'autoSetup', title: 'Automatic setup', isOn: o => o.isAutoOn },
 ]
 
-/** A press applies at once (hooks/toggle-store.ts); where the settings list the row, the engine may also reload the plugin. */
+/** A press applies at once (hooks/toggle-store.ts). */
 export const WHEN_APPLIED = 'Changes apply right away.'
 
 /** A reload in the middle of Clawd's turn would lose what the turn holds, so the toggles wait until he is free. */
@@ -63,13 +63,12 @@ export function rowKeys(rows: readonly ListedRow[], plugin: string) {
 }
 
 /**
- * What setting a toggle needs from the engine: this plugin's name, the settings rows and a change to one, the plugin's
+ * What setting a toggle needs from the engine: this plugin's name, the settings rows (read only, for a lock), the plugin's
  * own store (a switch's value, and the rows' keys), and a refresh of what the engine holds from the old value.
  */
 export type ConfigIo = {
   plugin: string
   list: () => Promise<readonly ListedRow[]>
-  set: (args: { key: string; value: boolean }) => Promise<{ deny?: string }>
   save: (key: string, value: boolean) => Promise<unknown>
   keepKeys: (record: ReturnType<typeof rowKeys>) => Promise<unknown>
   refresh: () => Promise<unknown>
@@ -77,10 +76,9 @@ export type ConfigIo = {
 
 /**
  * Sets one of the plugin's on/off switches. The one way in, for the Settings switch and for code (onboarding).
- * It applies at once in this session, is saved in the plugin's store for this machine (the desktop app's SDK session lists
- * no settings rows, so the store is what holds it there), and is written to the settings row too where one is listed, so
- * /config shows it (the engine may then reload the plugin; the store holds the same value). A row a trusted source locks is
- * left alone. Resolves to nothing once kept, or to the plain line on what went wrong; it never rejects.
+ * It applies at once in this session and is saved in the plugin's store for this machine. The Claude Code settings are
+ * never written, so /config does not show a press; the store's value wins over theirs (hooks/toggle-store.ts). A row a
+ * trusted source locks is left alone. Resolves to nothing once kept, or to the plain line on what went wrong; it never rejects.
  */
 export async function setToggle(io: ConfigIo, field: ConfigField, value: boolean): Promise<string | undefined> {
   try {
@@ -91,8 +89,7 @@ export async function setToggle(io: ConfigIo, field: ConfigField, value: boolean
     useSaved({ ...savedNow(), [field]: value }) // every feature reads the saved value first, so this is the change
     const isKept = await io.save(savedKey(field), value).then(() => true, () => false)
     await io.refresh().catch(() => undefined)
-    const isSet = row !== undefined && (await io.set({ key: row.key, value }).then(r => r.deny === undefined, () => false))
-    return isKept || isSet ? undefined : notKept(field)
+    return isKept ? undefined : notKept(field)
   } catch (err) {
     return refusalOf(field, err instanceof Error ? err.message : String(err))
   }
@@ -105,5 +102,5 @@ export function refusalOf(field: ConfigField, reason: string): string {
   return `Could not change ${titleOf(field)}: ${reason}`
 }
 
-/** The line shown when a change holds in this session but neither the store nor the settings took it. */
+/** The line shown when a change holds in this session but the store did not take it. */
 export const notKept = (field: ConfigField) => `${titleOf(field)} is changed for this session only: it could not be saved.`

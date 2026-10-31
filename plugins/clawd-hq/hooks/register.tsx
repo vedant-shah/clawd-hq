@@ -366,11 +366,11 @@ const showLog = ($: EngineInterface, isOpen: boolean) => setFx($, f => ({ ...f, 
 
 /** The settings rows for `setToggle` (hooks/configs.ts): the Settings switch's, and the one to hand any other caller (onboarding). */
 const configIo = ($: EngineInterface): ConfigIo => ({
-  plugin: $.plugin.name, list: () => $.config.list(), set: args => $.config.set(args), keepKeys: record => $.store.set(ROWS_KEY, record),
+  plugin: $.plugin.name, list: () => $.config.list(), keepKeys: record => $.store.set(ROWS_KEY, record),
   save: (key, value) => $.store.set(key, value), refresh: async () => $.ui.invalidate('tool.describe'), // the Agent tool's text follows Clawd's switch
 })
 
-/** A config's toggle pressed: its settings row is changed as in /config, and the plugin reloads with it. A refusal, or a call that fails, is shown plainly. */
+/** A config's toggle pressed: kept in the plugin's own store, never in the settings (hooks/configs.ts). A refusal, or a call that fails, is shown plainly. */
 async function setConfig($: EngineInterface, field: ConfigField, value: boolean) {
   // A toggle drawn before Clawd's turn began: the reload would lose what the turn holds, so nothing changes (the tab says why).
   if ((await getBoss($)).isBusy) return

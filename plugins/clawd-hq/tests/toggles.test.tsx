@@ -5,9 +5,9 @@ import { RULES_FILE, SECTION_ID, VOICE_FILE } from '../hooks/instructions'
 import { RECAP_PROMPT } from '../hooks/recap'
 import { CLEAR, SETTINGS, START, SURFACES, host } from './host'
 
-// Each switch of the Settings tab, end to end: a press saves the other value in the settings under the row the engine
-// names, the plugin loaded with that value (the reload after a press, or a restart) behaves by it, and it holds through
-// a /clear and the next session start. The test kit has no reload, so "after the reload" is a test loaded with the value.
+// Each switch of the Settings tab, end to end: a press saves the other value in the plugin's own store and makes no
+// settings call, the plugin loaded with a value the settings hold (set in /config, then a restart) behaves by it, and it
+// holds through a /clear and the next session start. The test kit has no reload, so "after a restart" is a test loaded with the value.
 
 type On = Parameters<typeof host>[0]
 type Field = 'chiefOfStaff' | 'quietChat' | 'recap' | 'youShouldKnow'
@@ -22,23 +22,18 @@ const ROOT = new URL('..', (import.meta as unknown as { url: string }).url).path
 
 /**
  * The settings as the engine keeps them: every row of this plugin, owned as the real `$.config.list()` names the owner
- * (the loader's key, `clawd-hq@inline` for a plugin run from a folder), holding `values`; a change is written there.
+ * (the loader's key, `clawd-hq@inline` for a plugin run from a folder), holding `values`; every change asked of them is
+ * recorded, and a press asks none.
  */
 function settings(on: On, owner = 'clawd-hq@inline', values: Record<string, boolean> = {}) {
-  const saved = new Map<string, boolean>(FIELDS.map(f => [`clawd-hq.${f}`, values[f] ?? true]))
-  const asked: Array<{ key: string; value: unknown }> = []
+  const asked: unknown[] = []
   const row = (key: string, value: unknown, plugin: string) => ({ key, label: key, kind: 'boolean', value, provider: { plugin, tier: 'user' }, isLocked: false })
   on('config.list', () => ({ value: [
     row('theme', 'dark', 'engine'), row('clawd-hq-extra.recap', true, 'clawd-hq-extra@other'),
-    ...[...saved].map(([key, value]) => row(key, value, owner)),
+    ...FIELDS.map(f => row(`clawd-hq.${f}`, values[f] ?? true, owner)),
   ] }) as never)
-  on('config.set', (_$, e) => {
-    const { key, value } = e as { key: string; value: boolean }
-    asked.push({ key, value })
-    saved.set(key, value)
-    return { value } as never
-  })
-  return { saved, asked }
+  on('config.set', (_$, e) => (asked.push(e), { value: (e as { value: unknown }).value }) as never)
+  return asked
 }
 
 /** Everything the four behaviours need answered: the shipped prompt files, a model, one specialist's run, and the chat's own drawing. */
@@ -123,29 +118,29 @@ async function press($: Engine, field: Field, surface: 'terminal' | 'desktop' = 
   return isNoRow
 }
 
-// ---- The bug: the engine names a row's owner as the loader keys the plugin, never by its bare name ----
+// ---- A press is kept in the plugin's own store; the settings are never written ----
 
-test('a press changes the row the engine lists as ours, owned "clawd-hq@inline" or "clawd-hq@<marketplace>", with no "not listed" line', { timeoutMs: 15_000 }, async ($, on) => {
-  host(on)
+test('a press makes no settings call, whoever the engine names as the rows\' owner, and the plugin\'s store holds it, with no note', { timeoutMs: 15_000 }, async ($, on) => {
+  const h = host(on)
   let owner = 'clawd-hq@inline'
-  const asked: Array<{ key: string; value: unknown }> = []
+  const asked: unknown[] = []
   on('config.list', () => ({ value: [
     { key: 'clawd-hq-extra.recap', label: 'x', kind: 'boolean', value: true, provider: { plugin: 'clawd-hq-extra@other', tier: 'user' }, isLocked: false },
     ...FIELDS.map(f => ({ key: `clawd-hq.${f}`, label: f, kind: 'boolean', value: true, provider: { plugin: owner, tier: 'user' }, isLocked: false })),
   ] }) as never)
-  on('config.set', (_$, e) => (asked.push({ key: (e as { key: string }).key, value: (e as { value: unknown }).value }), { value: (e as { value: unknown }).value }) as never)
+  on('config.set', (_$, e) => (asked.push(e), { value: (e as { value: unknown }).value }) as never)
   await $.session.start(START)
   let round = 0
   for (const name of ['clawd-hq@inline', 'clawd-hq@vedant-shah']) {
     owner = name
     for (const surface of SURFACES) {
-      asked.length = 0
       for (const field of FIELDS) expect(await press($, field, surface)).toBe(false)
       // A press applies at once, so each round turns every switch back the other way.
-      expect(asked).toEqual(FIELDS.map(f => ({ key: `clawd-hq.${f}`, value: round % 2 === 1 })))
+      expect(FIELDS.map(f => h.saved.get(`toggle:${f}`))).toEqual(FIELDS.map(() => round % 2 === 1))
       round += 1
     }
   }
+  expect(asked).toEqual([])
 })
 
 // ---- The desktop app: its SDK session lists no settings rows at all, so a press is kept in the plugin's own store ----
@@ -217,20 +212,21 @@ test('a store that cannot save keeps the change for this session, and the tab sa
 // ---- Each switch: saved, applied, and kept ----
 
 for (const field of FIELDS) {
-  test(`${TITLES[field]}: on by default and at work; a press saves Off under clawd-hq.${field}`, { timeoutMs: 15_000 }, async ($, on) => {
+  test(`${TITLES[field]}: on by default and at work; a press saves Off in the plugin's store, and no settings row is changed`, { timeoutMs: 15_000 }, async ($, on) => {
     const h = stage(on)
-    const { saved } = settings(on)
+    const asked = settings(on)
     await $.session.start(START)
     expect(await labelOf($, field)).toBe('● On')
     expect(await IS_AT_WORK[field]($, h)).toBe(true)
     expect(await press($, field)).toBe(false)
-    expect(saved.get(`clawd-hq.${field}`)).toBe(false)
-    expect([...saved].filter(([k, v]) => k !== `clawd-hq.${field}` && v === false)).toEqual([])
+    expect(h.saved.get(`toggle:${field}`)).toBe(false)
+    expect(FIELDS.filter(f => f !== field && h.saved.has(`toggle:${f}`))).toEqual([])
+    expect(asked).toEqual([])
   })
 
-  test(`${TITLES[field]}: loaded Off, as the settings hold it after a press and a restart, it reads Off and is not at work through a /clear and the next session start; a press saves On`, { timeoutMs: 20_000, options: { [field]: false } }, async ($, on) => {
+  test(`${TITLES[field]}: loaded Off, as the settings hold it when set in /config and after a restart, it reads Off and is not at work through a /clear and the next session start; a press saves On in the store`, { timeoutMs: 20_000, options: { [field]: false } }, async ($, on) => {
     const h = stage(on)
-    const { saved } = settings(on, 'clawd-hq@inline', { [field]: false })
+    const asked = settings(on, 'clawd-hq@inline', { [field]: false })
     await $.session.start(START)
     for (const surface of SURFACES) expect(await labelOf($, field, surface)).toBe('○ Off')
     expect(await IS_AT_WORK[field]($, h)).toBe(false)
@@ -239,6 +235,7 @@ for (const field of FIELDS) {
     expect(await labelOf($, field)).toBe('○ Off')
     expect(await IS_AT_WORK[field]($, h)).toBe(false)
     expect(await press($, field)).toBe(false)
-    expect(saved.get(`clawd-hq.${field}`)).toBe(true)
+    expect(h.saved.get(`toggle:${field}`)).toBe(true)
+    expect(asked).toEqual([])
   })
 }

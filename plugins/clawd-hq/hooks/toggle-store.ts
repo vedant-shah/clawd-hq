@@ -1,5 +1,5 @@
-// The Settings switches as pressed, kept in the plugin's own store for this machine. The desktop app's SDK session lists
-// no settings rows at all, so a press there cannot reach the settings; and where it can, the reload comes later.
+// The Settings switches as pressed, kept in the plugin's own store for this machine: the only place a press is kept,
+// as the plugin never writes the Claude Code settings. Those are still read, for a value set in /config.
 // Every feature reads a switch through `liveOptions`: the saved value first, then the settings' value, then the default.
 import type { ConfigField as ToggleField } from './configs'
 import type { BriefingOptions } from './instructions'

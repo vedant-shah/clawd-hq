@@ -48,6 +48,10 @@ export function frontMatterDescription(text: string): string {
   return value.replace(/^(["'])(.*)\1$/, '$2')
 }
 
+/** Whether a skill's front matter keeps it for the person alone (`disable-model-invocation: true`): no model, and so no hire, can load it. */
+export const isPersonOnly = (text: string): boolean =>
+  /^disable-model-invocation:\s*["']?true["']?\s*$/m.test(text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? '')
+
 const bareOf = (name: string) => name.slice(name.indexOf(':') + 1)
 const pluginOf = (name: string) => (name.includes(':') ? name.slice(0, name.indexOf(':')) : undefined)
 const SOURCE_OF: Readonly<Record<Where, string>> = { own: OWN, project: PROJECT, builtin: BUILT_IN_SOURCE, plugin: 'installed' }
@@ -64,13 +68,15 @@ async function diskHelpers(io: HelpersIo, kind: 'agent' | 'skill'): Promise<read
   const groups = await Promise.all(diskDirs(io, kind === 'agent' ? 'agents' : 'skills').map(async ({ dir, where }) => {
     const entries = await io.list(dir).then(found => found, () => [])
     const wanted = entries.filter(e => (kind === 'skill' ? e.isDir : !e.isDir && e.name.endsWith('.md')))
-    return Promise.all(wanted.map(async (e): Promise<Found> => {
+    return Promise.all(wanted.map(async (e): Promise<Found | undefined> => {
       const file = kind === 'skill' ? `${dir}/${e.name}/SKILL.md` : `${dir}/${e.name}`
-      const about = firstSentence(frontMatterDescription((await io.read(file)) ?? ''))
-      return { name: kind === 'skill' ? e.name : e.name.replace(/\.md$/, ''), kind, where, about }
+      const text = (await io.read(file)) ?? ''
+      // A skill only the person may invoke is their own slash command, not a helper: the engine lists it for no model.
+      if (kind === 'skill' && isPersonOnly(text)) return undefined
+      return { name: kind === 'skill' ? e.name : e.name.replace(/\.md$/, ''), kind, where, about: firstSentence(frontMatterDescription(text)) }
     }))
   }))
-  return groups.flat()
+  return groups.flat().filter((f): f is Found => f !== undefined)
 }
 
 function fromBreakdown(b: UsageBreakdown | undefined, blurbs: Readonly<Record<string, string>>, said: (name: string) => string): readonly Found[] {

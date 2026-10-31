@@ -76,6 +76,20 @@ test('own skills and agents on disk are found when the engine list is missing or
   expect(find(list, 'proj-skill')).toMatchObject({ kind: 'skill', isOwn: false, source: 'this project' })
 })
 
+test('a skill on disk that only the person may invoke (disable-model-invocation) is no candidate: no hire could load it', async () => {
+  // Seen live: Opus picked review-animations from ~/.claude/skills, then setup said "Left out, not installed under that name",
+  // because the engine lists only skills a model may use. Such a skill is the person's own slash command, not a helper.
+  const f = fakeScan({
+    '/home/me/.claude/skills/review-animations/SKILL.md': '---\nname: review-animations\ndescription: Reviews motion code.\ndisable-model-invocation: true\n---\n',
+    '/home/me/.claude/skills/kept/SKILL.md': '---\nname: kept\ndescription: Usable.\ndisable-model-invocation: false\n---\n',
+    '/work/proj/.claude/skills/proj-only/SKILL.md': '---\ndescription: Project, person only.\ndisable-model-invocation: "true"\n---',
+  })
+  const list = await installedHelpers(f.io, none, '')
+  expect(find(list, 'review-animations')).toBeUndefined()
+  expect(find(list, 'proj-only')).toBeUndefined()
+  expect(find(list, 'kept')).toMatchObject({ kind: 'skill', isOwn: true })
+})
+
 test('a helper on disk and in the engine list appears once', async () => {
   const f = fakeScan({ '/home/me/.claude/skills/grill-me/SKILL.md': '---\ndescription: Hi.\n---' }, { breakdown })
   expect((await installedHelpers(f.io, none, '')).filter(h => h.name === 'grill-me')).toHaveLength(1)

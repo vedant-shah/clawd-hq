@@ -1,9 +1,16 @@
 {
   "name": "clawd-hq",
+  "displayName": "Clawd HQ",
+  "version": "1.0.0",
   "description": "A virtual office side panel: Clawd runs the floor, every subagent is an employee at a desk",
   "author": {
     "name": "Vedant Shah"
   },
+  "homepage": "https://github.com/vedant-shah/clawd-hq",
+  "repository": "https://github.com/vedant-shah/clawd-hq",
+  "license": "MIT",
+  "keywords": ["subagents", "side-panel", "pixel-art", "office", "chief-of-staff"],
+  "icon": "./icon.png",
   "types": "./types/index.d.ts",
   "userConfig": {
     "chiefOfStaff": {

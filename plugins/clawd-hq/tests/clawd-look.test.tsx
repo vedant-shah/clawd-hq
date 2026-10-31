@@ -50,9 +50,9 @@ test('free and recently active he holds his logbook; past the nap time he is asl
   expect(asleep.alt).toBe(`${NAME}, asleep at his desk`)
   expect(drawnAt('asleep').svgs).toContain(asleep.source)
   expect(drawnAt('asleep').cells).toContain(asleep.cells)
-  // The size of the picture does not change: 23 by 16 dots at 4 pixels.
+  // The size of the picture does not change: 23 by 20 dots at 4 pixels (his crown adds 4 rows).
   expect(asleep.size).toEqual(awake.size)
-  expect(asleep.size).toEqual([92, 64])
+  expect(asleep.size).toEqual([92, 80])
 })
 
 test('a new turn wakes him at once', async ($, on) => {
@@ -123,7 +123,7 @@ test('after the press he drinks while it compacts, and for two minutes after it 
   expect(coffee.alt).toBe(`${NAME}, drinking coffee`)
   expect(drawnAt('coffee').svgs).toContain(coffee.source)
   expect(drawnAt('coffee').cells).toContain(coffee.cells)
-  expect(coffee.size).toEqual([92, 64])
+  expect(coffee.size).toEqual([92, 80])
   expect(await isOffered($)).toBe(false)
   release()
   await pressing

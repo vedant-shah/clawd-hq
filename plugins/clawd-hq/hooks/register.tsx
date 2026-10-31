@@ -18,6 +18,7 @@ import type { Resolve } from './quiet-rows'
 import { askClawd, handScoutSpawn, runScout, scoutHandoff, spawnTypeOf } from './scout-run'
 import type { ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE } from './scout-spec'
+import { registerScout } from './scout-register'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { holdBack, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
 import { checkOnboard, chooseOnboard, isSetupBusy, restartOnboard, savedOf, startOnboard } from './onboard'
@@ -103,7 +104,7 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 let cwd = ''
 /** The setup scout (hooks/scout-run.ts): its picks are read from its transcript; in auto mode Clawd hires it (hooks/scout-handoff.ts). It is no hire, so it stays off the books. */
 const scoutHost = ($: EngineInterface): ScoutHost => ({
-  spawn: a => $.agent.spawn(a), list: () => $.agent.list(), version: async () => (await $.session.version()).version, messages: id => $.session.messages({ agentId: id }), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn), askClawd: brief => askClawd({ register: s => $.agent.register(s), after: (ms, fn) => $.clock.after(ms, fn) }, brief) })
+  spawn: a => $.agent.spawn({ subagentType: SCOUT_TYPE, description: a.description, prompt: a.prompt }), list: () => $.agent.list(), version: async () => (await $.session.version()).version, messages: id => $.session.messages({ agentId: id }), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn), askClawd: brief => askClawd({ register: s => registerScout($, s.prompt), after: (ms, fn) => $.clock.after(ms, fn) }, brief) })
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
@@ -488,7 +489,7 @@ export const register: Register = (on, options) => {
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['find helpers tool', () => $.tool.register(FIND_HELPERS_SPEC)],
       ['contractor tool', () => $.tool.register(HIRE_CONTRACTOR_SPEC)],
-      ['setup scout', () => $.agent.register(SCOUT_SPEC)],
+      ['setup scout', () => registerScout($, SCOUT_SPEC.prompt)],
       ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames
       ['skill hires', async () => rehire(await onboardIo($, brief))], // the engine forgets registered agents each session
       ['/office-setup', () => $.command.register({ name: 'office-setup', description: `Set up ${BRAND} for this project: a starting team, with no questions` })],

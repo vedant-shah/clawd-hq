@@ -7,6 +7,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
 import { TEAM_END, TEAM_START } from '../hooks/scout-answer'
+import { SCOUT_SPEC, scoutSpecWith } from '../hooks/scout-spec'
 import { PANE, PEOPLE, START } from './host'
 import { CWD, frames, office, onboardHost, settle } from './onboard-host'
 import type { OnboardHost } from './onboard-host'
@@ -45,7 +46,7 @@ test('at session start the scout is registered as a Sonnet agent whose only tool
   const h = onboardHost(on)
   await open($, h)
   expect(h.scout.registered).toHaveLength(1)
-  expect(h.scout.registered[0]).toMatchObject({ name: 'scout', model: 'sonnet', omitClaudeMd: true, tools: ['Read', 'Glob'], permissionMode: 'dontAsk' })
+  expect(h.scout.registered[0]).toEqual(SCOUT_SPEC) // the definition written out in the call is the tested one, field for field
   expect(h.tools).not.toContain('team_pick')
   expect(h.calls.registered.every(r => (r.skills?.length ?? 0) > 0)).toBe(true) // hires are only for skills (setup runs by itself and hires the skill it picks)
 })
@@ -161,6 +162,7 @@ test('in auto mode Clawd is told, unseen, to hire the scout; his hire is judged 
   expect(h.calls.models.filter(m => m.model === 'opus')).toHaveLength(0) // not straight to Opus: waiting for Clawd
   // The brief is in the scout's own definition now, and the scout is offered to the chat while the ask is open.
   expect((h.scout.registered.at(-1) as { prompt?: string } | undefined)?.prompt).toContain('ecc:code-reviewer · agent')
+  expect(h.scout.registered.at(-1)).toEqual(scoutSpecWith(h.scout.spawned[0]!.prompt)) // the refused start carried the same brief; the rest of the definition is unchanged
   expect(await $.agent.offer({ agent: 'clawd-hq:scout', description: 'Clawd HQ\'s own scout.' } as never)).toEqual({ isOffered: true })
   // The person's next message carries the ask to Clawd as context, not as a line in the chat.
   await $.prompt.submit({ text: 'hi' } as never)

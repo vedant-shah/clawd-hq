@@ -33,7 +33,16 @@ export async function runEach(steps: ReadonlyArray<readonly [string, () => Promi
 }
 
 /** The toast for a start-up that partly failed. */
-export const startNote = (failed: readonly string[]) => `Clawd HQ: part of its start-up failed: ${failed.join('; ')}. The rest is running.`
+export function startNote(failed: readonly string[]): string {
+  // A slash command the engine refused (another plugin already has the name) is no broken start-up: it gets a plain line of its own.
+  const commands = failed.filter(f => f.startsWith('/')).map(f => {
+    const [name, ...why] = f.split(' ')
+    return `Clawd HQ: the ${name} command is not available here ${why.join(' ')}.`
+  })
+  const rest = failed.filter(f => !f.startsWith('/'))
+  const tail = rest.length === 0 ? 'Everything else works.' : `Clawd HQ: part of its start-up failed: ${rest.join('; ')}. The rest is running.`
+  return [...commands, tail].join(' ')
+}
 
 /** Runs tasks one after another, in the order asked, whatever each one's outcome: for writes many hooks make at the same moment. */
 let line: Promise<unknown> = Promise.resolve()

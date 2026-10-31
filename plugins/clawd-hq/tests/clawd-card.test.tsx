@@ -16,7 +16,7 @@ async function request($: Engine) {
   await new Promise<void>(resolve => setTimeout(resolve, 25))
 }
 
-test("Clawd's card: name and status, the model, his words in a box, then a dim hint for /council, and no button", async ($, on) => {
+test("Clawd's card: name and status, the model, his words in a box, then a dim hint for /office-council, and no button", async ($, on) => {
   host(on)
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
@@ -36,7 +36,7 @@ test("Clawd's card: name and status, the model, his words in a box, then a dim h
     expect(rows[2]!.props.borderStyle).toBe('round')
     expect(walk(rows[2]!, t => t.type === 'Text')[0]!.props.italic).toBe(true)
     expect(rows[3]!.props.dimColor).toBe(true)
-    expect(rows[3]!.children?.join('')).toBe('Type /council <question> to hold a council.')
+    expect(rows[3]!.children?.join('')).toBe('Type /office-council <question> to hold a council.')
     expect(walk(root, t => t.type === 'Button' && t.props.key === 'clawd-council')).toHaveLength(0)
     await ui.unmount()
   }

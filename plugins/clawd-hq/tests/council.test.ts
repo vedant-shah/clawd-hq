@@ -141,7 +141,7 @@ test('the council picture is not any person\'s: no hand-made character, Clawd or
   expect(trim(clawdAvatar().compact)).not.toEqual(icon)
 })
 
-// ---- The prompt-box fill and the /council command ----
+// ---- The prompt-box fill and the /office-council command ----
 
 const fakeIo = (isFilled = true) => {
   const filledWith: string[] = []
@@ -173,7 +173,7 @@ test('where the box cannot take the words, the person is told what to type', asy
   expect(f.toasts).toEqual(['Type this in the chat: Hold a council on: '])
 })
 
-test('/council with a question sends "Hold a council on: <question>"; with none it fills the box instead', async () => {
+test('/office-council with a question sends "Hold a council on: <question>"; with none it fills the box instead', async () => {
   const f = fakeIo()
   const said = await runCouncil(f.io, '  Should we move to Postgres?  ')
   expect(f.sent).toEqual(['Hold a council on: Should we move to Postgres?'])

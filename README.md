@@ -98,7 +98,7 @@ Clawd HQ follows the "elephants and goldfish" idea from Google ([paper](https://
 
 - **Single specialist.** The usual case. One helper works in the background at its own desk.
 - **Pair-up.** For risky or wide work. Named specialists, such as an author and a critic, message each other directly (helpers that lack Claude Code's messaging tool go through Clawd). After one round of critique, each reports to Clawd. The office shows them as one card.
-- **Council.** For a hard choice that is hard to undo. Press "Hold a council" on Clawd's card (it fills your prompt box) or type `/council <question>`: four fresh voices answer once, without seeing each other, and Clawd sums up without being one of them. You decide. The office shows it as one Council card.
+- **Council.** For a hard choice that is hard to undo. Type `/office-council <question>`, or start a message with "Hold a council on:": four fresh voices answer once, without seeing each other, and Clawd sums up without being one of them. You decide. The office shows it as one Council card.
 - **Agent teams.** Only when Claude Code's experimental agent-teams feature is turned on. It is off by default.
 
 ## 🏢 The office

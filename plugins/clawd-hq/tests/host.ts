@@ -101,7 +101,8 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('prompt.context', ($, e) => ({ blocks: (e as { blocks: never[] }).blocks }))
   on('session.measure', (_$, e) => ({ changed: e.changed }))
   // The surfaces the session draws on, as the engine keeps them: the one it started with, then each client that attaches.
-  const roster: string[] = []
+  // A test that runs a command without starting a session is at the terminal, where the person typed it.
+  const roster: string[] = ['terminal']
   on('session.start', (_$, e) => {
     const { cwd, surface } = e as { cwd: string; surface: string | null }
     roster.splice(0, roster.length, ...(surface === null ? [] : [surface]))

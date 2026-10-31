@@ -25,3 +25,12 @@ test('the start-up note names every part that failed and says the rest runs', ()
     'Clawd HQ: part of its start-up failed: tools (already registered); meters (no reading). The rest is running.',
   )
 })
+
+test('a slash command the engine refuses (another plugin has the name) is one plain line, not a start-up failure', () => {
+  const refused = '/office-council (clawd-hq: $.command.register: "/office-council" refused: it is the plugin\'s /x:office-council)'
+  expect(startNote([refused])).toBe(`Clawd HQ: the /office-council command is not available here (clawd-hq: $.command.register: "/office-council" refused: it is the plugin's /x:office-council). Everything else works.`)
+  expect(startNote([refused, 'meters (no reading)'])).toBe(
+    'Clawd HQ: the /office-council command is not available here (clawd-hq: $.command.register: "/office-council" refused: it is the plugin\'s /x:office-council). '
+    + 'Clawd HQ: part of its start-up failed: meters (no reading). The rest is running.',
+  )
+})

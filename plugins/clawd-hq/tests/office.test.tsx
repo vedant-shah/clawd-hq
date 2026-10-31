@@ -92,7 +92,7 @@ test('a specialist\'s questions stay in its report for Clawd: nothing is filed f
   expect(opened.some(o => /desk/i.test(o.id))).toBe(false)
   expect(toasts.some(t => /for the CEO|DynamoDB|Launch Friday/.test(t))).toBe(false)
   // No command opens a desk, and no tool files a question on one.
-  expect(commands).toEqual(['office', 'council', 'office-demo', 'office-setup'])
+  expect(commands).toEqual(['office', 'office-council', 'office-demo', 'office-setup']) // all under office-: no clash with another plugin's /council
   expect(tools).toEqual(['demo', 'offer_rule', 'step', 'find_helpers', 'hire_contractor'])
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })

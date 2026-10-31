@@ -42,11 +42,15 @@ async function settle($: Engine) {
   }
 }
 
-test('a desktop session start opens the three panes in order, then asks for Office to be shown, whatever old decisions the project has', async ($, on) => {
+test('a desktop session opens the three panes in order once its surface attaches, then asks for Office to be shown, whatever old decisions the project has', async ($, on) => {
   const { opened, panes, files } = host(on)
   seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations' }])
-  // The desktop app runs the session headless: it starts with no surface and attaches after.
+  // The desktop app runs the session headless: it starts with no surface and attaches after. An open before then would be
+  // refused, and the engine would write "ui.open: no-surface" into the chat, so nothing is opened until the attach.
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
+  await settle($)
+  expect(opened).toEqual([])
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' } as never)
   await settle($)
   expect(opened.map(o => o.id)).toEqual([...IDS, 'clawd-hq'])
   expect(opened.map(o => o.title)).toEqual(['Office', 'People', 'Settings', 'Office'])

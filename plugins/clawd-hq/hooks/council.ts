@@ -1,4 +1,4 @@
-// The council: the "Hold a council" button and the /council command (which put `Hold a council on: <question>` in front of Clawd),
+// The council: the "Hold a council" button and the /office-council command (which put `Hold a council on: <question>` in front of Clawd),
 // and what a council voice keeps of its report for the council card (hooks/panel-council.tsx). Grouping lives in hooks/pair-up.ts.
 import type { Employee } from '../types'
 import { fit } from './desk'
@@ -26,7 +26,7 @@ export async function fillCouncil(io: CouncilIo): Promise<boolean> {
 }
 
 /**
- * `/council <question>`: the person typed it, so the question goes to Clawd as their own words, sent just after the command ends (see `later`).
+ * `/office-council <question>`: the person typed it, so the question goes to Clawd as their own words, sent just after the command ends (see `later`).
  * With no question the prompt box is filled instead. A send that fails leaves the words in the prompt box, ready to send, and says so in a toast.
  * Returns the command's one line.
  */

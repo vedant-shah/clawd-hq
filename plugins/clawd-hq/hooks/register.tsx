@@ -208,7 +208,7 @@ const refreshTab = ($: EngineInterface, opts: BriefingOptions, isFresh: boolean)
 const paneIo = ($: EngineInterface): PaneIo => ({
   open: args => $.ui.open(args),
   list: () => $.ui.panes(),
-  close: id => $.ui.close({ id }),
+  close: id => $.ui.close({ id }), hasSurface: async () => (await $.session.surfaces()).length > 0,
 })
 
 /** Set once a write of the artifact list failed this session, so the person is told once. */
@@ -419,7 +419,7 @@ const coffeeIo = ($: EngineInterface): CoffeeIo => ({
   clearReading: async () => { await setBoss($, withNewWork); await update($, gauge, g => ({ ...g, contextPercent: undefined, contextTokens: undefined })) }, // a compaction ends the checkpoint too
 })
 
-/** /council (hooks/council.ts): the box is filled after what is there; a typed question is sent as the person's own words. */
+/** /office-council (hooks/council.ts): the box is filled after what is there; a typed question is sent as the person's own words. */
 const councilIo = ($: EngineInterface): CouncilIo => ({ fill: text => $.prompt.fill({ text, mode: 'append' }), submit: text => $.prompt.submit({ text, asUser: true }), later: fn => $.clock.after(0, fn), toast: text => void $.ui.toast(text) })
 
 /** The record of why the coffee break button shows or not (hooks/coffee-debug.ts), kept at `debug:coffee` in the store. */
@@ -476,7 +476,7 @@ export const register: Register = (on, options) => {
       // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
       ['payroll review', async () => { if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined })) }],
       ['/office', () => $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })],
-      ['/council', () => $.command.register({ name: 'council', description: 'Ask a few independent voices about a hard choice: /council <question>' })],
+      ['/office-council', () => $.command.register({ name: 'office-council', description: 'Ask a few independent voices about a hard choice: /office-council <question>' })],
       ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a one-minute tour of ${BRAND}’s features` })],
       ['demo tool', () => $.tool.register(DEMO_SPEC)],
       ['payroll', async () => { const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined; if (saved) await update($, payroll, () => ({ ...PAYROLL0, ...saved })) }],
@@ -509,11 +509,10 @@ export const register: Register = (on, options) => {
 
     const all = [...failed, ...(await runEach([['agent list', () => reconcile(runIo($))]]))]
     if (all.length > 0) $.ui.toast(startNote(all))
-    // Office is asked to the front on every surface; a refusal is tried once more after the first reply (hooks/panes.ts).
-    void openAtStart(paneIo($))
     void sweepArtifacts(artifactIo($), cwd).catch(() => undefined) // not waited for: session start never holds on it
 
-    return next(e)
+    // Once the engine has the session's surfaces, Office opens and is asked to the front; with none yet, on attach (hooks/panes.ts).
+    return next(e).finally(() => void openAtStart(paneIo($)))
   })
 
   // The agent's own stop signal, beside turn.complete: whichever comes first ends the run, the second finds it ended.
@@ -563,7 +562,7 @@ export const register: Register = (on, options) => {
     return { text: `${BRAND} setup is running for this project. A small card on the Office tab says what was set up.` }
   })
 
-  on('command.run', { command: 'council' }, async ($, e) => ({ text: await runCouncil(councilIo($), e.args) }))
+  on('command.run', { command: 'office-council' }, async ($, e) => ({ text: await runCouncil(councilIo($), e.args) }))
 
   on('command.run', { command: 'office-demo' }, async $ => {
     await openPanes(paneIo($), false)

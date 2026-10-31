@@ -134,30 +134,31 @@ test('a voice that failed shows no report line, and the card says Failed', async
 
 // ---- Clawd's card: no button, a hint for the command ----
 
-test('Clawd\'s card has no council button; a dim line under his words says to type /council <question>', async ($, on) => {
+test('Clawd\'s card has no council button; a dim line under his words says to type /office-council <question>', async ($, on) => {
   office(on)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await ui.find({ key: 'clawd-council' })).toBeUndefined()
     expect((await ui.findAll({ type: 'Button' })).map(b => b.props.label)).not.toContain('Hold a council')
-    const hint = await ui.find({ type: 'Text', text: 'Type /council <question> to hold a council.' })
+    const hint = await ui.find({ type: 'Text', text: 'Type /office-council <question> to hold a council.' })
     expect(hint?.props.dimColor).toBe(true)
     await ui.unmount()
   }
 })
 
-// ---- The /council command ----
+// ---- The /office-council command (not /council: the ECC plugin has one, and the engine refuses a second) ----
 
-test('/council is registered at session start', async ($, on) => {
+test('/office-council is registered at session start, and /council is not', async ($, on) => {
   const { commands } = office(on)
   await $.session.start(START)
-  expect(commands).toContain('council')
+  expect(commands).toContain('office-council')
+  expect(commands).not.toContain('council')
 })
 
-test('/council <question> sends "Hold a council on: <question>" as the person\'s own words', async ($, on) => {
+test('/office-council <question> sends "Hold a council on: <question>" as the person\'s own words', async ($, on) => {
   const { sent, fills, clock } = office(on)
   await $.session.start(START)
-  const r = (await $.command.run({ command: 'council', args: ` ${QUESTION} ` } as never)) as { text: string }
+  const r = (await $.command.run({ command: 'office-council', args: ` ${QUESTION} ` } as never)) as { text: string }
   // The engine refuses a send made inside the command's own hook: it goes just after, as a later event.
   expect(sent).toEqual([])
   await clock.advance(1)
@@ -167,10 +168,10 @@ test('/council <question> sends "Hold a council on: <question>" as the person\'s
   expect(r.text).toContain(QUESTION)
 })
 
-test('/council with no question fills the prompt box and sends nothing', async ($, on) => {
+test('/office-council with no question fills the prompt box and sends nothing', async ($, on) => {
   const { sent, fills } = office(on)
   await $.session.start(START)
-  const r = (await $.command.run({ command: 'council', args: '' } as never)) as { text: string }
+  const r = (await $.command.run({ command: 'office-council', args: '' } as never)) as { text: string }
   expect(sent).toEqual([])
   expect(fills.map(f => f.text)).toEqual(['Hold a council on: '])
   expect(r.text).toMatch(/question/i)

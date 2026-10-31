@@ -70,8 +70,8 @@ function clawdCard({ kit, data, cw }: Ctx) {
         <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>
         </Box>
-        {/* How to hold a council: the /council command (hooks/council.ts) takes the question. */}
-        <Text key="clawd-hint" dimColor wrap="wrap">Type /council &lt;question&gt; to hold a council.</Text>
+        {/* How to hold a council: the /office-council command (hooks/council.ts) takes the question. */}
+        <Text key="clawd-hint" dimColor wrap="wrap">Type /office-council &lt;question&gt; to hold a council.</Text>
       </Box>
     </Box>
   )

@@ -43,6 +43,8 @@ export type PaneIo = {
   list: () => Promise<ReadonlyArray<{ id: string; title: string; isShown: boolean; isPlaced: boolean }>>
   /** Closes a pane; an id that is not open is left alone. */
   close: (id: string) => Promise<unknown>
+  /** Whether a surface is attached. With none, an open is refused and the engine writes an error line into the chat, so none is made. */
+  hasSurface: () => Promise<boolean>
 }
 
 /** A pane is chrome: the host refusing or failing one must never break the turn, command or tour that asked for it. */
@@ -50,8 +52,13 @@ async function attempt(task: () => Promise<unknown>) {
   try { await task() } catch { /* nothing to do: the pane stays as it was */ }
 }
 
-const openPane = (io: PaneIo, p: PaneSpec, isFocused: boolean) =>
-  io.open({ id: p.id, title: p.title, columns: COLUMNS, ...(isFocused ? { focus: true as const } : {}) })
+/** Whether there is a surface to open on; a host that cannot say is taken as having none, so no error line is risked. */
+const surfaced = (io: PaneIo) => io.hasSurface().catch(() => false)
+
+/** Opens one pane, only with a surface attached: every open goes through here. */
+const openPane = async (io: PaneIo, p: PaneSpec, isFocused: boolean) => {
+  if (await surfaced(io)) await io.open({ id: p.id, title: p.title, columns: COLUMNS, ...(isFocused ? { focus: true as const } : {}) })
+}
 
 /**
  * Closes what an earlier version left open, then opens the three in tab order, each on its own so one failure leaves the rest.
@@ -68,6 +75,8 @@ export async function openPanes(io: PaneIo, isFocusing: boolean) {
 
 /** The start's focus request was turned down (the surface was busy), so Office is asked for once more, after the first main-chat reply. */
 let isFocusOwed = false
+/** The start found no surface (the desktop app starts the session before it draws), so the panes open once one is there. */
+let isOpenOwed = false
 
 const officeOf = async (io: PaneIo) => (await io.list()).find(x => x.id === paneOf('office').id)
 
@@ -91,24 +100,35 @@ const isNotFront = async (io: PaneIo) => {
  */
 export async function openAtStart(io: PaneIo) {
   isFocusOwed = false
+  isOpenOwed = !(await surfaced(io))
+  if (isOpenOwed) return
   let isUp = false
   await attempt(async () => { isUp = (await io.list()).some(x => x.id === paneOf('office').id) })
   await openPanes(io, !isUp)
   if (!isUp) await attempt(async () => { isFocusOwed = await isNotFront(io) })
 }
 
-/** After the first main-chat reply: the one second try at the start's refused request. Never more than that in a session. */
+/** The start's open, made now if it found no surface then and there is one now. Whether it was made. */
+async function openOwed(io: PaneIo): Promise<boolean> {
+  if (!isOpenOwed || !(await surfaced(io))) return false
+  await openAtStart(io)
+  return true
+}
+
+/** After the first main-chat reply: the start's open if it is still owed, else the one second try at its refused request. Never more than that in a session. */
 export const askAgain = (io: PaneIo) => attempt(async () => {
+  if (await openOwed(io)) return
   if (!isFocusOwed) return
   isFocusOwed = false
   if (await isBehind(io)) await openPane(io, paneOf('office'), true)
 })
 
 /**
- * A surface attached after the start (the desktop app runs the session before it draws anything): the panes are placed now,
- * with Settings, the one opened last, in front, so Office is asked for. A refusal stays owed for the first reply.
+ * A surface attached after the start (the desktop app runs the session before it draws anything): the panes open now, with
+ * Office asked to the front. A refusal stays owed for the first reply.
  */
 export const askOnAttach = (io: PaneIo) => attempt(async () => {
+  if (await openOwed(io)) return
   if (!isFocusOwed || !(await isBehind(io))) return
   await openPane(io, paneOf('office'), true)
   isFocusOwed = await isBehind(io)

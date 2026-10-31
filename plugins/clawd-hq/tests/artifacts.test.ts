@@ -278,7 +278,7 @@ test('the sweep removes the pages the answer left out, and saves', async () => {
   const d = desk([keep, { url: CODE, title: 'Gone', at: 1 }], { links: [keep, made(1)] })
   await sweepArtifacts(d.io, '/proj')
   expect(d.list).toEqual([keep])
-  expect(d.saved.length).toBe(1)
+  expect(d.saved).toEqual([['/proj', [keep]]])
 })
 
 test('the sweep removes nothing when the engine would ask, there is no folder, or the session moved on', async () => {
@@ -290,4 +290,12 @@ test('the sweep removes nothing when the engine would ask, there is no folder, o
   const moved = desk(start, { folder: '/other', links: [made(1)] })
   await sweepArtifacts(moved.io, '/proj')
   expect([asked, noFolder, moved].map(d => d.list)).toEqual([start, start, start])
+})
+
+test('a list call that fails after an allow removes nothing and saves nothing', async () => {
+  const start = [{ url: CODE, title: 'Stays', at: 1 }]
+  const d = desk(start)
+  await sweepArtifacts({ ...d.io, list: async () => ({ result: 'boom', isError: true, text: listing(1).text }) }, '/proj') // names a page, yet failed
+  expect(d.list).toEqual(start)
+  expect(d.saved).toEqual([])
 })

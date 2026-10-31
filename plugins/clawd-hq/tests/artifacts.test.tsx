@@ -223,16 +223,9 @@ test('a stored list from an earlier run is drawn, and one with bad entries is cl
 })
 
 // ---- A page deleted on claude.ai leaves the list at session start, but only on a call the engine allows unasked ----
+// What happens after an allow (a gone page leaves the list and the store; a failed call removes nothing) is unit-tested
+// with a fake in tests/artifacts.test.ts, so no hook here answers a permission check with allow.
 const GONE = [{ url: PLAIN, title: 'Kept', at: 500 }, { url: CODE, title: 'Deleted elsewhere', at: 400 }]
-const listsOnly = (...urls: string[]) => (input: Record<string, unknown>) => (input.action === 'list' ? { result: 'listed', text: urls.join('\n') } : answer(PLAIN))
-
-test('at session start a page the list call no longer names leaves the list, and the store', async ($, on) => {
-  const h = session(on, listsOnly(PLAIN, link(7)), { 'artifacts:/repo': GONE })
-  on('tool.check', () => ({ decision: 'allow' }) as never)
-  await $.session.start(START)
-  await h.clock.advance(1)
-  expect((await seen($)).links).toEqual([PLAIN])
-})
 
 test('when the engine would ask the person, or the call fails, nothing is listed and nothing leaves', async ($, on) => {
   let listed = 0
@@ -240,14 +233,6 @@ test('when the engine would ask the person, or the call fails, nothing is listed
   on('tool.check', () => ({ decision: 'ask' }) as never)
   await $.session.start(START)
   expect(listed).toBe(0)
-  expect((await seen($)).links).toEqual([PLAIN, CODE])
-})
-
-test('a list call that fails after an allow removes nothing', async ($, on) => {
-  const h = session(on, input => (input.action === 'list' ? { result: 'boom', isError: true, text: 'boom' } : answer(PLAIN)), { 'artifacts:/repo': GONE })
-  on('tool.check', () => ({ decision: 'allow' }) as never)
-  await $.session.start(START)
-  await h.clock.advance(1)
   expect((await seen($)).links).toEqual([PLAIN, CODE])
 })
 

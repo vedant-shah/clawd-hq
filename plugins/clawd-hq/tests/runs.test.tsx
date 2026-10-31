@@ -161,7 +161,6 @@ test('the token figure is what the agent used, not each request\'s whole context
 
 // ---- Lost contact, stop signals, and runs ended by a guess ----
 
-const stopSignal = ($: Eng, id: string) => $.classic.SubagentStop({ stop_hook_active: false, agent_id: id, agent_transcript_path: '', agent_type: 'ecc:tdd-guide' })
 const stepOf = async ($: Eng, id: string, index: number) => {
   const run = $.turn.step({ turnId: 'r1', index, model: 'm', messageCount: 3, agentId: id } as never)
   let part = await run.next()
@@ -249,40 +248,7 @@ test('a run ended by the engine list that then shows life goes on as the same ru
   expect(line).toMatch(/81K tokens/)
 })
 
-test('both stop signals for one stop end it once: one Log row and one toast, in either order', async ($, on) => {
-  const { toasts } = host(on, [])
-  let n = 0
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `s${(n += 1)}` }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.agent.spawn(BUILD)
-  await work($, 's1')
-  await stop($, 's1', 1)
-  await stopSignal($, 's1')
-  await $.agent.spawn(BUILD)
-  await work($, 's2')
-  await stopSignal($, 's2')
-  await stop($, 's2', 1)
-  for (const surface of SURFACES) expect(await logLines($, surface)).toHaveLength(2)
-  expect(toasts.filter(t => t.includes('finished'))).toHaveLength(2)
-})
-
-test('the SubagentStop signal alone ends a run, and one for an agent nobody knows changes nothing', async ($, on) => {
-  host(on, [])
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
-  on('tool.call', () => ({ result: 'ok' }) as never)
-  await $.agent.spawn(BUILD)
-  await work($, 't1')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  await stopSignal($, 'ghost')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  await stopSignal($, 't1')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false, empty: true })
-  expect(await logLines($, 'terminal')).toHaveLength(1)
-  // A message resumes it after a real stop: a new run.
-  await work($, 't1')
-  expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
-  expect(await logLines($, 'terminal')).toEqual([])
-})
+// Two stop signals for one stop, and a stop for an agent nobody knows, are unit-tested on clockOut in tests/run-io.test.ts.
 
 test('a tool call with an agent id nobody announced and the engine does not list hires no one', async ($, on) => {
   const { clock } = host(on, [])

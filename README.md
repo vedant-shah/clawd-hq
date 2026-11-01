@@ -207,7 +207,7 @@ Most of it runs on your machine. Model calls use your plan.
 
 | When | Model | What it sees |
 | --- | --- | --- |
-| Setup picks a team | Sonnet, read-only | Files in this project it opens (no content search, no secret-named files, nothing outside the folder), plus your helpers' names and use counts. About $0.15 per project on API billing ($0.13 to $0.18 across 11 real projects). |
+| Setup picks a team | Sonnet, read-only | Files in this project it opens (Read and Glob only, no content search; it is told to skip secret-named files and stay in the folder), plus your helpers' names and use counts. About $0.15 per project on API billing ($0.13 to $0.18 across 11 real projects). |
 | Setup fallback | Opus, once | A project summary, the README, your instruction files, helper names and counts |
 | Setup writes your workflow | Haiku | Your instruction files |
 | Recap | The session's model | One short question on the cached chat |

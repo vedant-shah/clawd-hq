@@ -31,7 +31,7 @@ It fetches nothing from the network and starts no processes.
 
 What it starts and calls by itself:
 
-- The setup scout: its only tools are Read and Glob (no content search), and it runs in `dontAsk` mode, so a call that would need your approval is refused. It is told to stay in the project folder and not to open secret-named files. It never gains a permission; it only has fewer.
+- The setup scout: its only tools are Read and Glob (no content search), and it runs in `dontAsk` mode, so a call that would need your approval is refused. It is told to stay in the project folder and not to open secret-named files. Reads outside the project are refused because Claude Code asks before them by default; a rule of yours that allows such reads would apply to the scout too. It never gains a permission; it only has fewer.
 - A start of the scout by anyone but the plugin is refused, except while setup has asked Clawd to hire it.
 - TaskStop, for the scout, if it gives no team within 90 seconds.
 - The Artifact tool's `list` action, at session start, only when Claude Code says the call needs no question to you. Pages it no longer lists leave the Artifact Desk.

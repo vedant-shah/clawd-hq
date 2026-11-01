@@ -28,9 +28,6 @@ export const NOTE_WAIT_MS = 10_000
 /** DECIDED: the model's answer is kept to this many characters, by whole lines. */
 export const NOTE_MAX_CHARS = 600
 
-// The runner has a real timer, though its types do not list one.
-declare const setTimeout: (run: () => void, ms: number) => unknown
-
 /** The answer cut to whole lines that fit in `NOTE_MAX_CHARS`; empty when nothing fits. */
 export function trimAnswer(text: string): string {
   const kept: string[] = []
@@ -46,7 +43,7 @@ export function trimAnswer(text: string): string {
 /** The fixed note, then the model's answer when it came in time; any failure, silence or delay leaves the fixed note alone. */
 async function writeNote(io: CoffeeIo, waitMs: number): Promise<string> {
   const none = { isAnswered: false as const }
-  const timeout = new Promise<typeof none>(resolve => { setTimeout(() => resolve(none), waitMs) })
+  const timeout = new Promise<typeof none>(resolve => { io.after(waitMs, () => resolve(none)) })
   const reply = await Promise.race([io.ask(NOTE_QUESTION).catch(() => none), timeout]).catch(() => none)
   const answer = reply.isAnswered && typeof reply.text === 'string' ? trimAnswer(reply.text) : ''
   return answer === '' ? COFFEE_NOTE : `${COFFEE_NOTE}\n${answer}`
@@ -125,6 +122,8 @@ export function isDrinking({ boss, fx, now }: Pick<PanelData, 'boss' | 'fx' | 'n
 export type CoffeeIo = {
   /** The clock, in milliseconds. */
   now: () => Promise<number>
+  /** Runs `fn` once `ms` have passed on the engine's clock: how long the note waits for the model. */
+  after: (ms: number, fn: () => void) => unknown
   /** Still a break right now: the button may have been drawn before Clawd began a turn. */
   isBreak: () => Promise<boolean>
   /** One short question to the model on the cached chat (a fork, as the recap asks). */

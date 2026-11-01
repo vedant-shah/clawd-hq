@@ -12,9 +12,7 @@ const CHAT_LINE = { type: 'Text', text: /^(Opus|Sonnet|Haiku) \d/ }
 const CONTEXT ={ window: 1_000_000, tokens: 169_700, percent: 17 }
 /** A Friday, 07:30 in UTC. */
 const WEEKLY_AT = '2026-10-16T07:30:00Z'
-// The runner has a real timer, though its types do not list one.
-declare const setTimeout: (run: () => void, ms: number) => unknown
-const pause = (ms = 25) => new Promise<void>(resolve => setTimeout(resolve, ms))
+type Clock = ReturnType<typeof host>['clock']
 
 /** The readings of a subscriber: the context, a session window with 3 hr 52 min left, and a weekly one far out. */
 async function measure($: Engine, now: number, withLimits = true) {
@@ -27,12 +25,17 @@ async function measure($: Engine, now: number, withLimits = true) {
   await $.session.measure({ context: CONTEXT, rateLimits, changed: ['context', 'rateLimits'] } as never)
 }
 
-/** A request of the main chat (or of the specialist `agentId`), as the engine is about to send it. The note of it is not waited for by the request, so a moment is given for it to land. */
-async function request($: Engine, model: string, effort: string | number | undefined, agentId?: string) {
+/** A request of the main chat (or of the specialist `agentId`), as the engine is about to send it. */
+async function step($: Engine, model: string, effort: string | number | undefined, agentId?: string) {
   const run = $.turn.step({ turnId: 'r1', index: 0, model, effort, messageCount: 3, ...(agentId ? { agentId } : {}) } as never)
   let part = await run.next()
   while (!part.done) part = await run.next()
-  await pause()
+}
+
+/** A request, then the clock settles: the note of it is not waited for by the request, so it is given the moment to land. */
+async function request($: Engine, clock: Clock, model: string, effort: string | number | undefined, agentId?: string) {
+  await step($, model, effort, agentId)
+  await clock.settle()
 }
 
 const answerSteps = (on: Parameters<typeof host>[0]) => on('turn.step', async function* (_$, e) {
@@ -46,7 +49,7 @@ test('collapsed, the footer shows the model, the effort and exactly one Usage bu
   const { clock } = host(on)
   answerSteps(on)
   await measure($, clock.now())
-  await request($, 'claude-opus-5-5', 'high')
+  await request($, clock, 'claude-opus-5-5', 'high')
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
     const root = (await ui.drawn()) as unknown as Tree
@@ -81,18 +84,18 @@ test('before the first reply there is no model and no effort, and the button has
 })
 
 test('a request of the main chat names the model and effort; a specialist\'s request and a number effort change nothing', async ($, on) => {
-  host(on, [{ id: 'a1', type: 'ecc:planner', description: 'Plan', status: 'running' }])
+  const { clock } = host(on, [{ id: 'a1', type: 'ecc:planner', description: 'Plan', status: 'running' }])
   answerSteps(on)
-  await request($, 'claude-opus-5-5', 'high')
-  await request($, 'claude-haiku-4-5', 'low', 'a1')
+  await request($, clock, 'claude-opus-5-5', 'high')
+  await request($, clock, 'claude-haiku-4-5', 'low', 'a1')
   const ui = await mount($, 'terminal')
   expect((await ui.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
   expect(await ui.find({ type: 'Text', text: /Haiku 4\.5|Low/ })).toBeUndefined()
   // A later request of the main chat moves them.
-  await request($, 'claude-sonnet-5-1', 'xhigh')
+  await request($, clock, 'claude-sonnet-5-1', 'xhigh')
   expect((await ui.find(CHAT_LINE))?.text).toBe('Sonnet 5.1 · Extra high')
   // A thinking budget in tokens is not an effort word: the last effort of the same model stays.
-  await request($, 'claude-sonnet-5-1', 8000)
+  await request($, clock, 'claude-sonnet-5-1', 8000)
   expect((await ui.find(CHAT_LINE))?.text).toBe('Sonnet 5.1 · Extra high')
   await ui.unmount()
 })
@@ -252,7 +255,7 @@ test('a /clear empties the context reading but keeps the model', async ($, on) =
   const { clock } = host(on)
   answerSteps(on)
   await measure($, clock.now())
-  await request($, 'claude-opus-5-5', 'high')
+  await request($, clock, 'claude-opus-5-5', 'high')
   await $.session.end(CLEAR)
   const ui = await mount($, 'terminal')
   expect(await numbersLine(ui)).toBe('– · 44% · 76%')
@@ -266,15 +269,18 @@ test('a /clear empties the context reading but keeps the model', async ($, on) =
 // ---- The request's own note of the model never stands in the request's way ----
 
 test('a request goes through even when the stored gauge never answers a read', async ($, on) => {
-  host(on)
+  const { clock } = host(on)
   answerSteps(on)
   on('state.get', { plugin: 'clawd-hq', key: 'gauge' }, () => new Promise<never>(() => undefined))
-  const outcome = await Promise.race([request($, 'claude-opus-5-5', 'high').then(() => 'went through'), pause(1_000).then(() => 'stuck')])
+  // A request held by the read would still be waiting once everything that can run has run.
+  let outcome = 'stuck'
+  void step($, 'claude-opus-5-5', 'high').then(() => { outcome = 'went through' })
+  await clock.settle()
   expect(outcome).toBe('went through')
 })
 
 test('a read of the gauge that fails during a request neither breaks it nor changes the footer', async ($, on) => {
-  host(on)
+  const { clock } = host(on)
   answerSteps(on)
   const failing = { isOn: true, hits: 0 }
   on('state.get', { plugin: 'clawd-hq', key: 'gauge' }, (_$, e, next) => {
@@ -282,18 +288,18 @@ test('a read of the gauge that fails during a request neither breaks it nor chan
     if (failing.isOn) throw new Error('the state could not be read')
     return next(e)
   })
-  await expect(request($, 'claude-opus-5-5', 'high')).resolves.toBeUndefined()
+  await expect(request($, clock, 'claude-opus-5-5', 'high')).resolves.toBeUndefined()
   expect(failing.hits).toBeGreaterThan(0)
   failing.isOn = false
   // Once the store works again, the next request is noted as usual.
-  await request($, 'claude-opus-5-5', 'high')
+  await request($, clock, 'claude-opus-5-5', 'high')
   const after = await mount($, 'terminal')
   expect((await after.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
   await after.unmount()
 })
 
 test('a write of the gauge that fails during a request neither breaks it nor changes the footer', async ($, on) => {
-  host(on)
+  const { clock } = host(on)
   answerSteps(on)
   const failing = { isOn: true, hits: 0 }
   on('state.set', { plugin: 'clawd-hq', key: 'gauge' }, (_$, e, next) => {
@@ -301,40 +307,40 @@ test('a write of the gauge that fails during a request neither breaks it nor cha
     if (failing.isOn) throw new Error('the state could not be written')
     return next(e)
   })
-  await expect(request($, 'claude-opus-5-5', 'high')).resolves.toBeUndefined()
+  await expect(request($, clock, 'claude-opus-5-5', 'high')).resolves.toBeUndefined()
   expect(failing.hits).toBeGreaterThan(0)
   failing.isOn = false
-  await request($, 'claude-opus-5-5', 'high')
+  await request($, clock, 'claude-opus-5-5', 'high')
   const after = await mount($, 'terminal')
   expect((await after.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
   await after.unmount()
 })
 
 test('a request that changes neither the model nor the effort makes no write', async ($, on) => {
-  host(on)
+  const { clock } = host(on)
   answerSteps(on)
   const writes: string[] = []
   on('state.set', { plugin: 'clawd-hq', key: 'gauge' }, (_$, e, next) => (writes.push('write'), next(e)))
-  await request($, 'claude-opus-5-5', 'high')
+  await request($, clock, 'claude-opus-5-5', 'high')
   expect(writes).toHaveLength(1)
-  await request($, 'claude-opus-5-5', 'high')
+  await request($, clock, 'claude-opus-5-5', 'high')
   // An effort the request does not report keeps the last known one: still nothing to write.
-  await request($, 'claude-opus-5-5', undefined)
-  await request($, 'claude-opus-5-5', 8000)
+  await request($, clock, 'claude-opus-5-5', undefined)
+  await request($, clock, 'claude-opus-5-5', 8000)
   expect(writes).toHaveLength(1)
-  await request($, 'claude-opus-5-5', 'low')
+  await request($, clock, 'claude-opus-5-5', 'low')
   expect(writes).toHaveLength(2)
 })
 
 test('a request with no effort keeps the effort shown for the same model, and drops it for another', async ($, on) => {
-  host(on)
+  const { clock } = host(on)
   answerSteps(on)
-  await request($, 'claude-opus-5-5', 'high')
-  await request($, 'claude-opus-5-5', undefined)
+  await request($, clock, 'claude-opus-5-5', 'high')
+  await request($, clock, 'claude-opus-5-5', undefined)
   const same = await mount($, 'terminal')
   expect((await same.find(CHAT_LINE))?.text).toBe('Opus 5.5 · High')
   await same.unmount()
-  await request($, 'claude-sonnet-5-1', undefined)
+  await request($, clock, 'claude-sonnet-5-1', undefined)
   const other = await mount($, 'terminal')
   expect((await other.find(CHAT_LINE))?.text).toBe('Sonnet 5.1')
   await other.unmount()

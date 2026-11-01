@@ -8,9 +8,6 @@ import { BUILD, endTurn, flowHost, handBack, hire, job, measure, say, startTurn 
 type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const elementsOf = (node: Tree) => (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null && 'props' in c)
 const walk = (node: Tree, hit: (t: Tree) => boolean): Tree[] => [...(hit(node) ? [node] : []), ...elementsOf(node).flatMap(c => walk(c, hit))]
-// The runner has a real timer, though its types do not list one.
-declare const setTimeout: (run: () => void, ms: number) => unknown
-const pause = (ms = 25) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 const BUTTON = { key: 'coffee-break' }
 const LABEL = '☕ Coffee break'
@@ -110,7 +107,7 @@ test('the point where Claude Code compacts is read again when a turn ends, so a 
   h.session.threshold = 200_000
   await startTurn($, 'm3')
   await endTurn($, 'm3', 'Anything else.')
-  await pause()
+  await h.clock.settle()
   expect(await isShown($)).toBe(true)
 })
 
@@ -191,7 +188,7 @@ test('question box open after a hand-back: it stays hidden while the box waits, 
   let answer: (value: unknown) => void = () => undefined
   h.box.open = new Promise(resolve => { answer = resolve })
   const asking = $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Friday or Monday?' }] } as never)
-  await pause()
+  await h.clock.settle()
   expect(await isShown($)).toBe(false)
   answer({ result: { answers: { 'Friday or Monday?': 'Friday' } } })
   await asking
@@ -210,7 +207,7 @@ test('question pending: a question box open in Clawd\'s turn keeps it hidden unt
   let answer: (value: unknown) => void = () => undefined
   h.box.open = new Promise(resolve => { answer = resolve })
   const asking = $.tool.call({ tool: 'AskUserQuestion', questions: [{ question: 'Friday or Monday?' }] } as never)
-  await pause()
+  await h.clock.settle()
   expect(await isShown($)).toBe(false)
   answer({ result: { answers: { 'Friday or Monday?': 'Friday' } } })
   await asking
@@ -426,7 +423,7 @@ test('two presses at once compact once', async ($, on) => {
   await atCheckpoint($, h)
   const [a, b] = [await mount($, 'terminal'), await mount($, 'desktop')]
   const presses = Promise.all([a.press(BUTTON), b.press(BUTTON)])
-  await pause()
+  await h.clock.settle()
   expect(h.compacts).toHaveLength(1)
   // While it works the button gives way to a plain word on every pane, so there is nothing to press twice.
   expect(await a.find(BUTTON)).toBeUndefined()

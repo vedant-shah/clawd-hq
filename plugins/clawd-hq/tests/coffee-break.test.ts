@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { BOX_BUSY, DIALOG_OPEN } from '../hooks/clawd-edit'
 import {
-  AUTO_COMPACT_MARGIN, COFFEE_AFTERGLOW_MS, COFFEE_NOTE, COFFEE_OFFER_LINE, COFFEE_TOKENS, coffeeView, isBreakTime, isDrinking, isOffering, isOverMark, isPersonCompact,
+  AUTO_COMPACT_MARGIN, COFFEE_AFTERGLOW_MS, COFFEE_NOTE, COFFEE_OFFER_LINE, COFFEE_TOKENS, NOTE_WAIT_MS, coffeeView, isBreakTime, isDrinking, isOffering, isOverMark, isPersonCompact,
   takeCoffeeBreak, triggerAt, whileCompacting,
 } from '../hooks/coffee-break'
 import type { CoffeeIo } from '../hooks/coffee-break'
@@ -9,9 +9,8 @@ import { BOSS0, GAUGE0 } from '../hooks/state'
 import type { PanelData } from '../hooks/panel-types'
 import type { Boss, Employee, Fx, Gauge } from '../types'
 
-// The runner has a real timer, though its types do not list one.
-declare const setTimeout: (run: () => void, ms: number) => unknown
-const pause = () => new Promise<void>(resolve => setTimeout(resolve, 10))
+/** Lets the work already started run, one promise turn at a time, until `isDone` holds (or a thousand turns pass). */
+const until = async (isDone: () => boolean) => { for (let turn = 0; turn < 1_000 && !isDone(); turn += 1) await Promise.resolve() }
 
 const worker = (mood: Employee['mood']): Employee => ({ id: 'a1', type: 'ecc:planner', description: 'Plan', mood } as Employee)
 const gauge = (over: Partial<Gauge> = {}): Gauge => ({ ...GAUGE0, ...over })
@@ -178,9 +177,10 @@ const noCompact: CoffeeIo['compact'] = () => { throw new TypeError('$.session.co
 
 /** The calls a press makes, recorded. */
 function fakeIo(over: Partial<CoffeeIo> = {}) {
-  const log = { compacts: [] as string[], notes: [] as Array<{ kind: string; text: string; at?: number } | undefined>, fills: [] as string[], cleared: 0 }
+  const log = { compacts: [] as string[], notes: [] as Array<{ kind: string; text: string; at?: number } | undefined>, fills: [] as string[], cleared: 0, waits: [] as number[] }
   const io: CoffeeIo = {
     now: async () => 777,
+    after: ms => { log.waits.push(ms) }, // a clock that does not move: the wait is noted, and never runs out by itself
     isBreak: async () => true,
     ask: async () => ({ isAnswered: false }),
     compact: async args => { log.compacts.push(args.instructions); return {} },
@@ -199,6 +199,7 @@ test('pressing compacts once, right away, with the note', async () => {
   await takeCoffeeBreak(io, true)
   expect(log.compacts).toEqual([COFFEE_NOTE])
   expect(log.fills).toEqual([])
+  expect(log.waits).toEqual([NOTE_WAIT_MS]) // the note's wait is on the engine's clock
 })
 
 test('a compaction that stands leaves no line, only the time it was done, and the reading of the context starts over', async () => {
@@ -235,7 +236,7 @@ test('a second press while the first is working compacts nothing more', async ()
   const first = takeCoffeeBreak(io, true)
   const second = takeCoffeeBreak(io, true)
   await second
-  await pause()
+  await until(() => log.compacts.length > 0)
   release()
   await first
   expect(log.compacts).toHaveLength(1)
@@ -256,21 +257,24 @@ test('the model\'s answer follows the fixed note, in the compact call and in the
 
 test('a failed, empty or too slow question leaves the fixed note alone', async () => {
   const never = () => new Promise<never>(() => undefined)
+  const waited: number[] = []
   const cases = [
     fakeIo({ ask: () => Promise.reject(new Error('no')) }),
     fakeIo({ ask: async () => ({ isAnswered: true, text: '  \n ' }) }),
-    fakeIo({ ask: never }),
+    fakeIo({ ask: never, after: (ms, runOut) => { waited.push(ms); runOut() } }), // the engine's clock reaches the wait
   ]
   for (const c of cases) await takeCoffeeBreak(c.io, true, 20)
   for (const c of cases) expect(c.log.compacts).toEqual([COFFEE_NOTE])
+  expect(waited).toEqual([20])
 })
 
 test('a second press while the note is being written compacts once', async () => {
   let release: (v: { isAnswered: false }) => void = () => undefined
-  const { io, log } = fakeIo({ ask: () => new Promise(r => { release = r }) })
+  let isAsked = false
+  const { io, log } = fakeIo({ ask: () => new Promise(r => { isAsked = true; release = r }) })
   const first = takeCoffeeBreak(io, true)
   await takeCoffeeBreak(io, true)
-  await pause()
+  await until(() => isAsked)
   release({ isAnswered: false })
   await first
   expect(log.compacts).toHaveLength(1)

@@ -9,9 +9,6 @@ import { endTurn, flowHost, handBack, hire, measure, say, startTurn } from './fl
 const BUTTON = { key: 'coffee-break' }
 const OVER = 480_000
 const DESKTOP = { surface: 'desktop', clientId: 'desktop:default' } as never
-// The runner has a real timer, though its types do not list one.
-declare const setTimeout: (run: () => void, ms: number) => unknown
-const pause = (ms = 25) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 async function isShown($: Engine, surface: 'terminal' | 'desktop' = 'desktop') {
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
@@ -51,7 +48,7 @@ test('a: a background job comes back, its notification starts Clawd\'s turn, he 
   await notify($)
   await startTurn($, 'm2', '<task-notification>a background agent finished</task-notification>')
   const answer = openBox(h, $)
-  await pause()
+  await h.clock.settle()
   expect(await isShown($)).toBe(false)
   await answer()
   await endTurn($, 'm2', 'The panel is built. Anything else?')
@@ -94,7 +91,7 @@ test('d: a second specialist finishes while Clawd waits at the question box; its
   await notify($)
   await startTurn($, 'm2', '<task-notification>w1 finished</task-notification>')
   const answer = openBox(h, $)
-  await pause()
+  await h.clock.settle()
   await handBack($, 'w2', 'w2-turn')
   await notify($, 'm2')
   await answer()
@@ -183,11 +180,11 @@ test('record: each main-chat turn end and the measure after it leave one small r
   await notify($)
   await startTurn($, 'm2', '<task-notification>w1 finished</task-notification>')
   await endTurn($, 'm2', 'The panel is built. Anything else, boss?')
-  await pause()
+  await h.clock.settle()
   // The turn's own record is written before the engine measures, so it knows the reading of the turn before.
   expect(h.saved.get('debug:coffee')).toMatchObject({ by: 'turn', isCheckpoint: true, isBusy: false, turns: 2, handedBackAt: 1, autoCompactAt: 950_000, shown: false, spokeBy: 'composer' })
   await measure($, OVER)
-  await pause()
+  await h.clock.settle()
   const record = h.saved.get('debug:coffee') as Record<string, unknown>
   expect(record).toMatchObject({ by: 'measure', contextTokens: OVER, threshold: 300_000, atWorkCount: 0, demo: false, shown: true })
   expect(Object.keys(record).sort()).toEqual(['at', 'atWorkCount', 'autoCompactAt', 'by', 'carriedAt', 'contextTokens', 'demo', 'handedBackAt', 'isBusy', 'isCheckpoint', 'shown', 'spokeBy', 'threshold', 'turns'])

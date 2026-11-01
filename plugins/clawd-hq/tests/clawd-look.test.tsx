@@ -7,9 +7,6 @@ import { rasterCells, svgOf, trimLike } from '../hooks/pixels'
 import { PANE, PEOPLE, START } from './host'
 import { endTurn, flowHost, job, measure, startTurn } from './flow'
 
-// The runner has a real timer, though its types do not list one.
-declare const setTimeout: (run: () => void, ms: number) => unknown
-const pause = (ms = 25) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 const OVER = 310_000
 const NAME = 'Clawd, the chief of staff'
@@ -118,7 +115,7 @@ test('after the press he drinks while it compacts, and for two minutes after it 
   let release: () => void = () => undefined
   h.compact.hold = new Promise<void>(resolve => { release = resolve })
   const pressing = press($)
-  await pause()
+  await h.clock.settle()
   const coffee = await cardNow($)
   expect(coffee.alt).toBe(`${NAME}, drinking coffee`)
   expect(drawnAt('coffee').svgs).toContain(coffee.source)
@@ -181,7 +178,7 @@ test('desktop: a press that only fills /compact gives no mug; once the person se
 
   const release = holdCompact(h)
   const sending = sendCompact($, { instructions: 'Keep my latest request and any open work.' })
-  await pause()
+  await h.clock.settle()
   expect(await isDrinkingNow($)).toBe(true)
   expect(await isOffered($)).toBe(false)
   release()
@@ -200,7 +197,7 @@ test('desktop: a turn that the /compact itself starts mid-run does not take the 
   await atBreak($, h)
   const release = holdCompact(h)
   const sending = sendCompact($)
-  await pause()
+  await h.clock.settle()
   await startTurn($, 'm-compact', '/compact')
   expect(await isDrinkingNow($)).toBe(true)
   release()
@@ -215,7 +212,7 @@ test('a /compact typed with no text, and with no break on offer, gets the mug to
   await job($, h).ask()
   const release = holdCompact(h)
   const sending = sendCompact($)
-  await pause()
+  await h.clock.settle()
   expect(await isDrinkingNow($)).toBe(true)
   release()
   await sending
@@ -233,7 +230,7 @@ test('a /compact that is skipped, fails or is cancelled leaves no mug and no aft
   h.compact.error = 'Compaction canceled.'
   const release = holdCompact(h)
   const failing = sendCompact($).catch((err: unknown) => err)
-  await pause()
+  await h.clock.settle()
   expect(await isDrinkingNow($)).toBe(true)
   release()
   // The send fails (the test engine names a failing stand-in as "no implementation", not by its words).
@@ -250,7 +247,7 @@ test('the engine compacting by itself, or a specialist\'s own compaction, gives 
   for (const over of [{ trigger: 'auto' }, { trigger: 'manual', agentId: 'w1' }]) {
     const release = holdCompact(h)
     const running = sendCompact($, over)
-    await pause()
+    await h.clock.settle()
     expect(await isDrinkingNow($)).toBe(false)
     release()
     await running

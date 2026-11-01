@@ -8,9 +8,6 @@ import { AMBER } from '../hooks/office'
 import { ALL_PANES, START, SURFACES, host } from './host'
 import { flowHost, job, measure } from './flow'
 
-// The runner has a real timer, though its types do not list one.
-declare const setTimeout: (run: () => void, ms: number) => unknown
-
 type On = Parameters<typeof host>[0]
 
 const ROOT = new URL('..', (import.meta as unknown as { url: string }).url).pathname.replace(/\/$/, '')
@@ -118,7 +115,7 @@ test('the coffee break button, its working word and its amber line draw only Tex
   h.compact.hold = new Promise<void>(resolve => { release = resolve })
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...ALL_PANES[0] })
   const pressing = ui.press({ key: 'coffee-break' })
-  await new Promise<void>(resolve => setTimeout(resolve, 25))
+  await h.clock.settle()
   expect(await ui.find({ type: 'Text', text: /^Compacting the chat/ })).toBeDefined()
   const working = await ui.findAll({ type: 'Text' })
   release()

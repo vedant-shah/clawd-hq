@@ -2,27 +2,25 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { PANE, START, SURFACES, host } from './host'
 
-declare const setTimeout: (run: () => void, ms: number) => unknown
-
 type Tree = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const elementsOf = (node: Tree) => (node.children ?? []).filter((c): c is Tree => typeof c === 'object' && c !== null && 'props' in c)
 const walk = (node: Tree, hit: (t: Tree) => boolean): Tree[] => [...(hit(node) ? [node] : []), ...elementsOf(node).flatMap(c => walk(c, hit))]
 
-/** A main-chat request on a model and effort, so the card knows them. */
-async function request($: Engine) {
+/** A main-chat request on a model and effort, so the card knows them; the clock settles so its note lands. */
+async function request($: Engine, clock: ReturnType<typeof host>['clock']) {
   const run = $.turn.step({ turnId: 'r1', index: 0, model: 'claude-opus-5-5', effort: 'high', messageCount: 3 } as never)
   let part = await run.next()
   while (!part.done) part = await run.next()
-  await new Promise<void>(resolve => setTimeout(resolve, 25))
+  await clock.settle()
 }
 
 test("Clawd's card: name and status, the model, his words in a box, then a dim hint for /office-council, and no button", async ($, on) => {
-  host(on)
+  const { clock } = host(on)
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
   })
   await $.session.start(START)
-  await request($)
+  await request($, clock)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     const root = (await ui.drawn()) as unknown as Tree

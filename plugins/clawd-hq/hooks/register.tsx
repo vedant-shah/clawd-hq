@@ -18,7 +18,6 @@ import type { Resolve } from './quiet-rows'
 import { askClawd, handScoutSpawn, runScout, scoutHandoff, spawnTypeOf } from './scout-run'
 import type { ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE } from './scout-spec'
-import { registerScout } from './scout-register'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
 import { holdBack, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
 import { checkOnboard, chooseOnboard, isSetupBusy, restartOnboard, savedOf, startOnboard } from './onboard'
@@ -102,9 +101,26 @@ async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await update($, fx
 
 // The project the session runs in: payroll is kept per project.
 let cwd = ''
+/**
+ * Registers the setup scout, its definition written out in the call so the plugin directory can read its limits: SCOUT_SPEC's
+ * prompt at session start, or with the brief in it for Clawd's hire. tests/scout-flow.test.tsx holds it equal to SCOUT_SPEC.
+ */
+function registerScout($: EngineInterface, prompt: string) {
+  return $.agent.register({
+    name: 'scout',
+    description: 'Clawd HQ\'s own scout for its setup step. Not for general use: the plugin starts it itself.',
+    prompt: prompt,
+    tools: ['Read', 'Glob'],
+    disallowedTools: ['Grep', 'Bash', 'Write', 'Edit', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task'],
+    permissionMode: 'dontAsk',
+    model: 'sonnet',
+    omitClaudeMd: true,
+    maxTurns: 20,
+  })
+}
 /** The setup scout (hooks/scout-run.ts): its picks are read from its transcript; in auto mode Clawd hires it (hooks/scout-handoff.ts). It is no hire, so it stays off the books. */
 const scoutHost = ($: EngineInterface): ScoutHost => ({
-  spawn: a => $.agent.spawn({ subagentType: SCOUT_TYPE, description: a.description, prompt: a.prompt }), list: () => $.agent.list(), version: async () => (await $.session.version()).version, messages: id => $.session.messages({ agentId: id }), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn), askClawd: brief => askClawd({ register: s => registerScout($, s.prompt), after: (ms, fn) => $.clock.after(ms, fn) }, brief) })
+  spawn: a => $.agent.spawn({ subagentType: SCOUT_TYPE, description: a.description, prompt: a.prompt }), list: () => $.agent.list(), version: async () => { const v = await $.session.version(); return v.version }, messages: id => $.session.messages({ agentId: id }), stop: id => $.tool.call({ tool: 'TaskStop', task_id: id }), after: (ms, fn) => $.clock.after(ms, fn), askClawd: brief => askClawd({ register: s => registerScout($, s.prompt), after: (ms, fn) => $.clock.after(ms, fn) }, brief) })
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 const efforts = new Map<string, Effort>()
 
@@ -323,7 +339,7 @@ const onboardIo = async ($: EngineInterface, opts: BriefingOptions): Promise<Onb
     breakdown: async () => breakdownOf(await $.session.usage({ breakdown: 'summary' })), commands: async () => commandsOf(await $.command.list()),
     complete: async req => answerText(await $.model.complete(req)),
     spawnScout: brief => runScout(scoutHost($), brief, SCOUT_TIMEOUT_MS),
-    registerHire: ({ name, description, prompt, skills }) => $.agent.register({ name, description, prompt, skills }).then(() => true, () => false),
+    registerHire: ({ name, description, prompt, skills }) => $.agent.register({ name: name, description: description, prompt: prompt, skills: skills }).then(() => true, () => false),
     savePayroll: laidOff => savePayroll(payrollIo($), { ...p, laidOff: [...laidOff], isReviewed: true }), // its stacks kept
     card: () => setupCard($), setCard: async card => { await update($, onboard, () => card ?? null) },
   }

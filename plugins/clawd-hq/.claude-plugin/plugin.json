@@ -2,12 +2,15 @@
   "name": "clawd-hq",
   "displayName": "Clawd HQ",
   "version": "1.0.0",
-  "description": "A virtual office side panel: Clawd runs the floor, every subagent is an employee at a desk",
+  "description": "A chief of staff for Claude Code: keep talking while Clawd hands work to specialists from your installed helpers and runs them in the background, with a live pixel-art office panel.",
   "author": {
     "name": "Vedant Shah"
   },
   "homepage": "https://github.com/vedant-shah/clawd-hq",
   "repository": "https://github.com/vedant-shah/clawd-hq",
+  "supportUrl": "https://github.com/vedant-shah/clawd-hq/issues",
+  "documentationUrl": "https://github.com/vedant-shah/clawd-hq#readme",
+  "privacyPolicyUrl": "https://github.com/vedant-shah/clawd-hq/blob/main/plugins/clawd-hq/README.md#what-it-reads-sends-runs-and-writes",
   "license": "MIT",
   "keywords": ["subagents", "side-panel", "pixel-art", "office", "chief-of-staff"],
   "icon": "./icon.png",

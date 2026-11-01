@@ -10,7 +10,7 @@
     {
       "name": "clawd-hq",
       "source": "./plugins/clawd-hq",
-      "description": "A side panel pixel-art office: Clawd runs the floor, every subagent is an employee at a desk.",
+      "description": "A chief of staff for Claude Code: keep talking while Clawd hands work to specialists from your installed helpers and runs them in the background, with a live pixel-art office panel.",
       "author": {
         "name": "Vedant Shah"
       }

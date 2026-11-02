@@ -412,3 +412,124 @@ test('a save that fails keeps the item for the session and says nothing', async 
   expect((await seen($)).words).toContain('LEFT UNDONE · 1')
   expect(h.toasts).toEqual([])
 })
+
+// ---- The log of the checks: when, what came of it, how many; never the request or the report ----
+
+type LogRow = { at: number; outcome: string; reason?: string; count: number }
+const logOf = (h: Office, folder = '/repo') => (h.saved.get(`leftUndone:log:${folder}`) ?? []) as LogRow[]
+
+test('a check that lists an item is logged as found with its count, and the log holds neither the request nor the report', async ($, on) => {
+  const h = office(on, () => undone('The tests you asked for were not written.'))
+  await $.session.start(START)
+  await clawdTurn($, h, { request: 'Add login and SECRETREQUEST', tools: 5, answer: 'SECRETREPORT done' })
+  const [row] = logOf(h)
+  expect(logOf(h)).toHaveLength(1)
+  expect(row).toMatchObject({ outcome: 'found', count: 1 })
+  expect(typeof row!.at).toBe('number')
+  expect(JSON.stringify(logOf(h))).not.toMatch(/SECRETREQUEST|SECRETREPORT|tests you asked/)
+})
+
+test('a check that finds nothing is logged as none with a count of 0', async ($, on) => {
+  const h = office(on, () => undone())
+  await $.session.start(START)
+  await clawdTurn($, h, { tools: 5 })
+  expect(logOf(h)).toMatchObject([{ outcome: 'none', count: 0 }])
+})
+
+test('a model that does not answer, and one that throws, are logged as failed with a reason', async ($, on) => {
+  const replies = [() => ({ isAnswered: false, reason: 'api-error' }), () => { throw new Error('down') }]
+  let call = 0
+  const h = office(on, () => replies[call++]!())
+  await $.session.start(START)
+  await clawdTurn($, h, { tools: 5 })
+  await clawdTurn($, h, { tools: 5 })
+  expect(logOf(h)).toMatchObject([{ outcome: 'failed', reason: 'api-error', count: 0 }, { outcome: 'failed', count: 0 }])
+  expect(logOf(h)[1]!.reason).toBeTruthy()
+})
+
+test('a long turn that is not checked is logged as skipped with the reason; short turns and a switched-off check leave no row', async ($, on) => {
+  const h = office(on, () => undone('Add the tests'))
+  await $.session.start(START)
+  await clawdTurn($, h, { tools: 5, extra: [{ tool: 'Agent', prompt: 'Do it', description: 'Do it', subagentType: 'ecc:tdd-guide' }] })
+  await clawdTurn($, h, { tools: 2 })
+  expect(logOf(h)).toMatchObject([{ outcome: 'skipped', reason: 'the work was handed to a specialist', count: 0 }])
+})
+
+test('with the setting off nothing is logged', { options: { leftUndone: false } }, async ($, on) => {
+  const h = office(on, () => undone('Add the tests'))
+  await $.session.start(START)
+  await clawdTurn($, h, { tools: 6 })
+  expect(logOf(h)).toEqual([])
+})
+
+test('the log is capped at 20, keeps the newest, and adds to what an earlier session stored', async ($, on) => {
+  const h = office(on, () => undone())
+  await $.session.start(START)
+  h.saved.set('leftUndone:log:/repo', Array.from({ length: 19 }, (_, i) => ({ at: i, outcome: 'none', count: 0 })))
+  for (let i = 0; i < 3; i += 1) await clawdTurn($, h, { tools: 5 })
+  expect(logOf(h)).toHaveLength(20)
+  expect(logOf(h)[0]!.at).toBe(2)
+})
+
+test('a log that cannot be saved never breaks the check, and a stored log of the wrong shape is replaced', async ($, on) => {
+  const replies = ['Add the tests', 'Write the docs for the API']
+  let call = 0
+  const h = office(on, () => undone(replies[call++]!))
+  await $.session.start(START)
+  h.saved.set('leftUndone:log:/repo', 'junk')
+  await clawdTurn($, h, { tools: 5 })
+  expect(logOf(h)).toMatchObject([{ outcome: 'found' }])
+  h.kv.failKeys.add('leftUndone:log:/repo')
+  await clawdTurn($, h, { request: 'Another job', tools: 5 })
+  expect(stored(h).map(i => i.text)).toEqual(['Write the docs for the API', 'Add the tests'])
+  expect(logOf(h)).toHaveLength(1)
+})
+
+test('a long turn with an empty report, one that did not end in an answer, and one with no request are each logged as skipped', async ($, on) => {
+  const h = office(on, () => undone('Add the tests'))
+  await $.session.start(START)
+  await clawdTurn($, h, { tools: 5, answer: '' })
+  await $.turn.start({ text: 'Do it', turnId: 'z1' } as never)
+  for (let i = 0; i < 6; i += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/${i}.ts` } as never)
+  await $.turn.complete({ reason: 'aborted', answer: 'Partial.', turnId: 'z1', isAborted: true, durationMs: 1 } as never)
+  await settle(h)
+  await $.session.start(START)
+  await $.turn.start({ text: 'Do it', turnId: 'n1' } as never)
+  for (let i = 0; i < 5; i += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/${i}.ts` } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 'n1', isAborted: false, durationMs: 1 } as never)
+  await settle(h)
+  expect(logOf(h).map(r => [r.outcome, r.reason])).toEqual([
+    ['skipped', 'the report was empty'],
+    ['skipped', 'the turn did not end with an answer'],
+    ['skipped', 'there was no request to compare with'],
+  ])
+})
+
+test('a check pushed out of a full line is logged as skipped, and a model that throws as failed with its reason', async ($, on) => {
+  let call = 0
+  const h = office(on, () => { if (call++ === 0) return undone(); throw new Error('down') })
+  await $.session.start(START)
+  let free = () => {}
+  h.kv.held = new Promise<void>(done => { free = done })
+  for (let i = 0; i < 5; i += 1) await clawdTurn($, h, { tools: 5 })
+  free()
+  await settle(h)
+  const rows = logOf(h).map(r => [r.outcome, r.reason])
+  expect(rows).toContainEqual(['skipped', 'too many checks waiting'])
+  expect(rows).toContainEqual(['failed', 'the check stopped on an error'])
+})
+
+test('a row written after the project changed goes to the log of the project the check was made in', async ($, on) => {
+  const h = office(on, () => undone())
+  await $.session.start(START)
+  let free = () => {}
+  h.kv.held = new Promise<void>(done => { free = done })
+  for (let i = 0; i < 5; i += 1) await clawdTurn($, h, { tools: 5 })
+  const started = $.session.start(OTHER)
+  free()
+  await started
+  await settle(h)
+  expect(logOf(h, '/other')).toEqual([])
+  expect(logOf(h).map(r => r.outcome)).toContain('skipped')
+  expect(logOf(h).length).toBeGreaterThan(1)
+})

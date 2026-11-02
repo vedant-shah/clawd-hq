@@ -50,7 +50,7 @@ What it writes:
 
 - `~/.clawd-hq/chief-of-staff.md` and `~/.clawd-hq/soul.md`: your copies of Clawd's rules and voice, which the main chat follows. Made only when you press Edit; saved as `.bak` and emptied only when you press Reset.
 - Your project's CLAUDE.md: only the exact rule line shown, when you press "Add to CLAUDE.md".
-- The plugin's own store in your Claude Code config folder, never your project: setup's team and profile, who you laid off, hire counts, the Artifact Desk list, "You should know" notes, the Left undone list, and the Settings switches.
+- The plugin's own store in your Claude Code config folder, never your project: setup's team and profile, who you laid off, hire counts, the Artifact Desk list, "You should know" notes, the Left undone list and a short log of its checks (when, what came of it, how many items; never your request or its report), and the Settings switches.
 
 What it changes as text passes through:
 

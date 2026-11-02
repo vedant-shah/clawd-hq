@@ -6,6 +6,7 @@ import { fit } from './desk'
 import { CHECK_MAX_TOKENS, CHECK_MODEL, CHECK_TIMEOUT_MS, checkAsk, leftStart as resetCheck, parseUndone, takeCheck } from './left-check'
 import { cleanLeft, promptOf, withLeft } from './left-list'
 import type { FreshItem } from './left-list'
+import { logCheck } from './left-log'
 import { isProjectCode, linesWritten } from './left-scan'
 import type { FileHit } from './left-scan'
 import { plainText } from './know'
@@ -26,6 +27,9 @@ export function leftStart(raw: unknown): LeftItem[] {
 export type LeftIo = {
   folder: () => string
   now: () => Promise<number>
+  /** The store, for the log of the checks (hooks/left-log.ts). */
+  get: (key: string) => Promise<unknown>
+  set: (key: string, value: unknown) => Promise<unknown>
   /** The list as it stands when the write lands: the change is made on that, so changes made at the same moment all land. */
   change: (fn: (list: LeftItem[]) => LeftItem[]) => Promise<LeftItem[]>
   save: (folder: string, list: LeftItem[]) => Promise<unknown>
@@ -122,12 +126,14 @@ export async function leftWatch<R>(io: LeftIo, call: WriteCall, run: () => Promi
 
 // ---- Source 2: the strict second check, and the end of Clawd's own turn ----
 
-/** The one question to the small model; what it lists joins the list. Whatever goes wrong, nothing is added. */
+/** The one question to the small model; what it lists joins the list. Whatever goes wrong, nothing is added; every check leaves a row in the log (hooks/left-log.ts). */
 async function runCheck(io: LeftIo, folder: string, job: { request: string; report: string }) {
   const ask = checkAsk(job.request, job.report)
   const reply = await io.complete({ model: CHECK_MODEL, system: ask.system, prompt: ask.prompt, maxTokens: CHECK_MAX_TOKENS, timeoutMs: CHECK_TIMEOUT_MS })
-  if (!reply.isAnswered) return
-  await add(io, folder, parseUndone(reply.text).map((text): FreshItem => ({ text, source: 'check', by: 'Clawd' })))
+  if (!reply.isAnswered) return logCheck(io, { outcome: 'failed', reason: String(reply.reason) }, folder)
+  const found = parseUndone(reply.text)
+  await add(io, folder, found.map((text): FreshItem => ({ text, source: 'check', by: 'Clawd' })))
+  await logCheck(io, { outcome: found.length > 0 ? 'found' : 'none', count: found.length }, folder)
 }
 
 /**
@@ -136,6 +142,11 @@ async function runCheck(io: LeftIo, folder: string, job: { request: string; repo
  */
 export function leftOwnTurn(io: LeftIo, e: { reason: string; answer: string }, isCheckOn: boolean): Promise<void> {
   const [folder, job] = [io.folder(), takeCheck(e)]
-  if (isCheckOn && job) side.queue(() => runCheck(io, folder, job).catch(() => undefined))
+  if (!isCheckOn || !job) return Promise.resolve()
+  if ('skip' in job) return logCheck(io, { outcome: 'skipped', reason: job.skip }, folder)
+  side.queue(
+    () => runCheck(io, folder, job).catch(() => logCheck(io, { outcome: 'failed', reason: 'the check stopped on an error' }, folder)),
+    () => void logCheck(io, { outcome: 'skipped', reason: 'too many checks waiting' }, folder),
+  )
   return Promise.resolve()
 }

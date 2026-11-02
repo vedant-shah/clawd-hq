@@ -260,7 +260,7 @@ const artifactIo = ($: EngineInterface): ArtifactIo => ({
 /** Left undone (hooks/left-io.ts): work put off, kept per project folder. The Do it now button reuses the heads-up card's prompt fill. */
 const leftIo = ($: EngineInterface): LeftIo => ({
   folder: () => cwd, now: () => $.clock.now(), change: fn => update($, leftUndone, fn), save: (folder, list) => $.store.set(`leftUndone:${folder}`, list),
-  read: path => $.fs.read(path), complete: ask => $.model.complete(ask), fillPrompt: text => knowIo($).fillPrompt(text), byOf: id => byOf($, id),
+  read: path => $.fs.read(path), complete: ask => $.model.complete(ask), fillPrompt: text => knowIo($).fillPrompt(text), byOf: id => byOf($, id), get: key => $.store.get(key), set: (key, value) => $.store.set(key, value),
 })
 
 /**

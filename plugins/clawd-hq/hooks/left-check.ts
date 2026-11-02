@@ -107,11 +107,18 @@ export function leftToolUsed(tool: string) {
   turn = { tools: turn.tools + 1, hasHired: turn.hasHired || tool === 'Agent' || tool === 'Task' }
 }
 
-/** The turn that just ended, as the check needs it, and the count starts over. Nothing when the turn does not call for a check. */
-export function takeCheck(e: { reason: string; answer: string }): { request: string; report: string } | undefined {
+/**
+ * The turn that just ended, as the check needs it, and the count starts over. Nothing when the turn is too short to call for a
+ * check; `skip` (the reason, for the log) when it was long enough but cannot be checked.
+ */
+export function takeCheck(e: { reason: string; answer: string }): { request: string; report: string } | { skip: string } | undefined {
   const done = turn
   turn = TURN0
   const report = e.answer.trim()
-  if (e.reason !== 'answer' || done.tools < CHECK_TOOLS || done.hasHired || report === '' || asks.length === 0) return undefined
+  if (done.tools < CHECK_TOOLS) return undefined
+  if (done.hasHired) return { skip: 'the work was handed to a specialist' }
+  if (e.reason !== 'answer') return { skip: 'the turn did not end with an answer' }
+  if (report === '') return { skip: 'the report was empty' }
+  if (asks.length === 0) return { skip: 'there was no request to compare with' }
   return { request: asks.join('\n---\n'), report }
 }

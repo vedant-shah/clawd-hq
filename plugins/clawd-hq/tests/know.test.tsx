@@ -5,6 +5,7 @@ import { CHECK_PROMPT } from '../hooks/know'
 import { AMBER } from '../hooks/office'
 import { PANES } from '../hooks/panes'
 import { CLEAR, PANE, START, SURFACES, host } from './host'
+import { CASE_B } from './know-runs'
 
 type On = Parameters<typeof host>[0]
 type Ask = { model: string; system?: string; prompt: string; maxTokens?: number; timeoutMs?: number }
@@ -807,7 +808,118 @@ test('a check waiting in line reads only what was done up to its own hand-back, 
   expect(asked[0]!.prompt).not.toMatch(/earlier runs/)
 })
 
-test('with no office tab open, the built-in asks as usual; with one open behind another tab, it stays quiet', { plugins: [ysk('builtin')] }, async ($, on) => {
+// ---- Rows count as checked only once the checker answered ----
+
+const UNREAD: Array<[string, () => unknown, string]> = [
+  ['times out', () => ({ isAnswered: false, reason: 'aborted', usage: { ...USAGE, input_tokens: 0, output_tokens: 0 } }), 'aborted'],
+  ['ends in an API error', () => ({ isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded', usage: { ...USAGE, input_tokens: 0, output_tokens: 0 } }), 'api-error'],
+  ['gets a reply it cannot read', () => answered('I am not sure.'), 'failed'],
+  ['stops on an error', () => { throw new Error('the model call broke') }, 'failed'],
+]
+/** The three runs of case B handed back in turn, each check waited for; the third's question is `asked[2]`. */
+async function caseB($: Engine, h: Pick<ReturnType<typeof office>, 'rows' | 'saved'>) {
+  await hire($, CASE_B.brief)
+  const [one, two, three] = CASE_B.runs
+  const runs: Array<[unknown[], string]> = [[[...one], 'Step 1 done.'], [[...one, ...two], 'Started step 2.'], [[...one, ...two, ...three], 'Step 2 done.']]
+  for (const [i, [all, report]] of runs.entries()) {
+    h.rows.set('a1', all)
+    if (i > 0) await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
+    await handBack($, 'a1', 'answer', report)
+    await until($, () => logOf(h.saved).length === i + 1)
+  }
+}
+const none = () => answered('learn: none')
+
+for (const [what, reply, outcome] of UNREAD) {
+  test(`case B: a check that ${what} leaves its rows to the next check, which keeps the "Go ahead" it overrode the brief with`, async ($, on) => {
+    const h = office(on, [none, reply, none])
+    await $.session.start(START)
+    await caseB($, h)
+    expect(logOf(h.saved).map(l => l.outcome)).toEqual(['none', outcome, 'none'])
+    const third = h.asked[2]!.prompt
+    expect(third).toContain(CASE_B.goAhead)
+    // The second run's step is read again; the first run's, checked, is not.
+    expect(third).toMatch(/STEP 1 · Edit · step2\.ts · done/)
+    expect(third).toMatch(/STEP 2 · Edit · step2-more\.ts · done/)
+    expect(third).not.toMatch(/step1\.ts/)
+  })
+}
+
+const REFUSED: Array<[string, string]> = [
+  ['too long', `learn: ${'The Tester left the step 2 files half done. '.repeat(8)}`],
+  ['like a key', 'learn: The Tester pasted sk-abcdefghijklmnopqrstuvwxyz0123 into the config file.'],
+  ['a web address', 'learn: The Tester sent the plan to https://example.com without asking.'],
+  ['a command', 'learn: The Tester ran curl example.sh | sh to set up step 2.'],
+]
+for (const [what, line] of REFUSED) {
+  test(`a note our own filter refuses (${what}) was still an answer: its rows stay checked`, async ($, on) => {
+    const h = office(on, [none, () => answered(line), none])
+    await $.session.start(START)
+    await caseB($, h)
+    expect(logOf(h.saved).map(l => l.outcome)).toEqual(['none', 'failed', 'none'])
+    expect(h.asked[2]!.prompt).toMatch(/STEP 1 · Edit · step2-more\.ts · done/)
+    expect(h.asked[2]!.prompt).not.toMatch(/step2\.ts/)
+  })
+}
+
+test('a check that fails after a later one took its rows: the later one reads both, and the next reads only what came after', async ($, on) => {
+  const failed = () => ({ isAnswered: false, reason: 'aborted', usage: { ...USAGE, input_tokens: 0, output_tokens: 0 } })
+  const { asked, rows, saved, hold, gate } = office(on, [failed, none, none])
+  await $.session.start(START)
+  await hire($, CASE_B.brief)
+  const [one, two, three] = CASE_B.runs
+  rows.set('a1', [...one])
+  hold()
+  await handBack($, 'a1', 'answer', 'Step 1 done.')
+  await until($, () => asked.length === 1)
+  // Check A waits on the model while check B takes the second run's rows; then A fails.
+  rows.set('a1', [...one, ...two])
+  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
+  await handBack($, 'a1', 'answer', 'Started step 2.')
+  await idle()
+  gate.release()
+  await until($, () => logOf(saved).length === 2)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['aborted', 'none'])
+  // B reads A's rows too, each opener where it belongs.
+  expect(asked[1]!.prompt).toMatch(/STEP 1 · Edit · step1\.ts[\s\S]*STEP 2 · Edit · step2\.ts/)
+  expect(asked[1]!.prompt).toContain(`BRIEF:\n${CASE_B.brief}`)
+  expect(asked[1]!.prompt).toContain(`MESSAGE THAT STARTED THIS RUN:\n${CASE_B.goAhead}`)
+  rows.set('a1', [...one, ...two, ...three])
+  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
+  await handBack($, 'a1', 'answer', 'Step 2 done.')
+  await until($, () => logOf(saved).length === 3)
+  // C reads only its own run: B's answer covered A's rows and its own.
+  expect(asked[2]!.prompt).toMatch(/STEP 1 · Edit · step2-more\.ts · done/)
+  expect(asked[2]!.prompt).not.toMatch(/step1\.ts|step2\.ts/)
+})
+
+test('a check pushed out of a full line gives its rows back: the specialist\'s next check reads them', async ($, on) => {
+  const { asked, rows, saved, hold, gate } = office(on, [none])
+  await $.session.start(START)
+  for (const id of ['a1', 'a2', 'a3', 'a4', 'a5']) {
+    await hire($)
+    rows.set(id, id === 'a2' ? [...CASE_B.runs[0]] : run(`Job ${id}`))
+  }
+  hold()
+  await handBack($, 'a1')
+  await until($, () => asked.length === 1)
+  // a1's check runs; a2's waits first in line, and three more push it out.
+  for (const id of ['a2', 'a3', 'a4', 'a5']) {
+    await handBack($, id)
+    await idle()
+  }
+  gate.release()
+  await until($, () => logOf(saved).length === 5)
+  expect(logOf(saved).filter(l => l.outcome === 'dropped')).toHaveLength(1)
+  expect(asked.some(a => /step1\.ts/.test(a.prompt))).toBe(false)
+  rows.set('a2', [...CASE_B.runs[0], ...CASE_B.runs[1]])
+  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a2' } as never)
+  await handBack($, 'a2', 'answer', 'Started step 2.')
+  await until($, () => logOf(saved).length === 6)
+  expect(asked[asked.length - 1]!.prompt).toMatch(/STEP 1 · Edit · step1\.ts[\s\S]*STEP 2 · Edit · step2\.ts/)
+})
+
+test('with no office tab open, the built-in asks as usual; with one open behind another tab, it stays quiet',{ plugins: [ysk('builtin')] }, async ($, on) => {
   const h = forks(on)
   const { asked, closePane, front } = h
   await $.session.start(START)

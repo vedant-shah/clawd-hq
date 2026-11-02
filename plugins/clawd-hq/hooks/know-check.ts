@@ -4,7 +4,7 @@
 import type { ModelCompleteResult, SessionMessage } from 'claude-code'
 import type { KnowNote, KnowState } from '../types'
 import {
-  BACKOFF0, KNEW_KEEP, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
+  BACKOFF0, KNEW_KEEP, NO_LEARN, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
   keepLast, listFrom, nextCheck, parseNote, withLog, withNote, withOpened, withoutNote,
 } from './know'
 import type { Backoff, KnowLogEntry } from './know'
@@ -64,6 +64,8 @@ let lists: Lists | undefined
 /** Each specialist's brief as it was sent, and how many of its rows were already checked. */
 const briefs = new Map<string, string>()
 const checkedRows = new Map<string, number>()
+/** Where the oldest rows given back by a check that got no answer start, by specialist: the next check to run reads them. */
+const givenBack = new Map<string, number>()
 let notes = 0
 /** A note was shown since the person's last message: no other until the next one, even if that note is gone. */
 let isNoteSent = false
@@ -158,19 +160,29 @@ export async function checkHandback(io: KnowIo, h: Handback, who: string) {
     if (isSkipped) return await addLog(io, { at, who, outcome: 'skipped', reason: 'notes were passed over' })
     const asked = epoch
     const job: Taken = { ...(taken as Taken), asked: prompts }
-    side.queue(() => runCheck(io, h, who, asked, job), () => void addLog(io, { at, who, outcome: 'dropped', reason: 'too many checks waiting' }))
+    const dropped = () => {
+      // A /clear or a resume empties the line too: then nothing is given back, as nothing is kept.
+      if (asked === epoch) giveBack(h.agentId, job.from)
+      void addLog(io, { at, who, outcome: 'dropped', reason: 'too many checks waiting' })
+    }
+    side.queue(() => runCheck(io, h, who, asked, job), dropped)
   } catch {
     // A check is a nicety: it never stops a hand-back, but the log still says it did not get far.
     await addLog(io, { at, who, outcome: 'failed', reason: 'the check stopped on an error before it started' }).catch(() => undefined)
   }
 }
 
-/** The rows a check reads, as they stood at the hand-back, and what was left out before them. */
-type Taken = { rows: RecordInput['rows']; isResumed?: boolean; leftOut?: LeftOut; asked: readonly string[] }
+/** The rows a check reads, as they stood at the hand-back, what was left out before them, and where they start. */
+type Taken = {
+  rows: RecordInput['rows']; earlier?: RecordInput['earlier']; from?: number; rerun?: number; isResumed?: boolean; leftOut?: LeftOut
+  asked: readonly string[]
+}
 
 /**
- * The rows of this run: for a resumed specialist, those since its last check; for a turn of Clawd's own, the main chat's
- * from the message that opened it. None, with why, when the session will not say.
+ * The rows of this run: for a resumed specialist, those since its last check, with the earlier ones beside them; for a
+ * turn of Clawd's own, the main chat's from the message that opened it. None, with why, when the session will not say.
+ * A specialist's rows are taken up to here at once and for good, so a check that starts later reads only what came
+ * after; a check that gets no answer gives them back (`giveBack`) to the next one to run.
  */
 async function takeRows(io: KnowIo, h: Handback): Promise<Partial<Taken> & { why?: string }> {
   const id = h.agentId
@@ -179,40 +191,72 @@ async function takeRows(io: KnowIo, h: Handback): Promise<Partial<Taken> & { why
   if (id === undefined) return turnRows(all, h.turnText ?? '')
   const from = checkedRows.get(id) ?? 0
   checkedRows.set(id, all.length)
-  return { rows: all.slice(from), isResumed: from > 0, leftOut: from > 0 ? 'earlier-runs' : undefined }
+  return { rows: all.slice(from), earlier: all.slice(0, from), from, isResumed: from > 0, leftOut: from > 0 ? 'earlier-runs' : undefined }
 }
 
-async function runCheck(io: KnowIo, h: Handback, who: string, asked: number, { rows, isResumed, leftOut, asked: said }: Taken) {
+/**
+ * The checker gave no answer that was read: it timed out, failed, sent nothing, or sent no learn line. A note our own
+ * filter refused was an answer: its rows stay checked.
+ */
+const isUnread = (entry: KnowLogEntry) =>
+  ['api-error', 'empty-reply', 'aborted'].includes(entry.outcome) || (entry.outcome === 'failed' && entry.reason === NO_LEARN)
+
+/** A check that got no answer, or never ran, gives its rows back: the specialist's next check to run reads them again. */
+function giveBack(id: string | undefined, from: number | undefined) {
+  if (id === undefined || from === undefined) return
+  givenBack.set(id, Math.min(givenBack.get(id) ?? from, from))
+}
+
+/**
+ * The check as it runs: when rows before its own were given back since it took them, it reads those too, from where
+ * they start, and they are no longer waiting. Its own end stays where it was taken.
+ */
+function withGivenBack(id: string | undefined, job: Taken): Taken {
+  const back = id === undefined ? undefined : givenBack.get(id)
+  if (id === undefined || back === undefined || job.from === undefined || back >= job.from) return job
+  givenBack.delete(id)
+  const all = [...(job.earlier ?? []), ...job.rows]
+  return { ...job, rows: all.slice(back), earlier: all.slice(0, back), from: back, rerun: job.from - back, leftOut: back > 0 ? 'earlier-runs' : undefined }
+}
+
+async function runCheck(io: KnowIo, h: Handback, who: string, asked: number, taken: Taken) {
   const at = await io.now()
+  let job = taken
   try {
     // A check that waited in the line may start after an earlier one left a note: it is skipped before it is paid for.
     const held = await whyHeld(io)
     if (held) return await addLog(io, { at, who, outcome: 'skipped', reason: held })
+    job = withGivenBack(h.agentId, taken)
     const u = h.usage
     const tokens = u ? { input: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), output: u.output_tokens } : undefined
     const brief = h.agentId === undefined ? undefined : briefs.get(h.agentId)
-    const record = buildRecord({ who, isClawd: h.agentId === undefined, ended: h.reason, rows, brief, isResumed, leftOut, report: h.answer, prompts: said, durationMs: h.durationMs, tokens })
+    const { rows, earlier, rerun, isResumed, leftOut, asked: said } = job
+    const record = buildRecord({ who, isClawd: h.agentId === undefined, ended: h.reason, rows, earlier, rerun, brief, isResumed, leftOut, report: h.answer, prompts: said, durationMs: h.durationMs, tokens })
     if (record.chars > 2 * CAP_CHARS) return await addLog(io, { at, who, outcome: 'skipped', recordChars: record.chars, reason: 'the record was too long' })
-    await askModel(io, record, who, at, asked)
+    const entry = await askModel(io, record, who, at, asked)
+    if (isUnread(entry)) giveBack(h.agentId, job.from)
+    await addLog(io, entry)
   } catch {
+    giveBack(h.agentId, job.from)
     await addLog(io, { at, who, outcome: 'failed', reason: 'the check stopped on an error' })
   }
 }
 
-async function askModel(io: KnowIo, record: { text: string; chars: number }, who: string, at: number, asked: number) {
+/** Asks the checker and acts on its reply; the log entry that says how it went. */
+async function askModel(io: KnowIo, record: { text: string; chars: number }, who: string, at: number, asked: number): Promise<KnowLogEntry> {
   const { shown, knew } = await loadLists(io)
   const ask = checkAsk(record.text, shown, knew)
   const reply = await io.complete({ model: MODEL, system: ask.system, prompt: ask.prompt, maxTokens: MAX_TOKENS, timeoutMs: TIMEOUT_MS })
   const base = { at, who, inTokens: reply.usage.input_tokens, outTokens: reply.usage.output_tokens, ms: (await io.now()) - at, recordChars: record.chars }
   // The conversation it was asked for is over: what it says is not this one's.
-  if (asked !== epoch) return addLog(io, { ...base, outcome: 'stale' })
-  if (!reply.isAnswered) return addLog(io, { ...base, outcome: reply.reason })
+  if (asked !== epoch) return { ...base, outcome: 'stale' }
+  if (!reply.isAnswered) return { ...base, outcome: reply.reason }
   const parsed = parseNote(reply.text)
-  if (parsed.kind !== 'note') return addLog(io, { ...base, outcome: parsed.kind, ...(parsed.kind === 'failed' ? { reason: parsed.why } : {}) })
+  if (parsed.kind !== 'note') return { ...base, outcome: parsed.kind, ...(parsed.kind === 'failed' ? { reason: parsed.why } : {}) }
   const now = await loadLists(io)
-  if (isRepeat(parsed.line, now.shown, now.knew)) return addLog(io, { ...base, outcome: 'repeat' })
+  if (isRepeat(parsed.line, now.shown, now.knew)) return { ...base, outcome: 'repeat' }
   const { kind: _, ...said } = parsed
-  return addLog(io, { ...base, ...(await showNote(io, { ...said, id: `k${(notes += 1)}`, who, at })) })
+  return { ...base, ...(await showNote(io, { ...said, id: `k${(notes += 1)}`, who, at })) }
 }
 
 /** The note takes Clawd's card and joins the shown list, unless one is held (checked once more, as the reply was paid for). */
@@ -277,6 +321,7 @@ export async function forgetKnow(io: KnowIo) {
   isNoteSent = false
   briefs.clear()
   checkedRows.clear()
+  givenBack.clear()
   side.clear()
   if ((await io.card()).note) await io.setCard(withoutNote)
 }

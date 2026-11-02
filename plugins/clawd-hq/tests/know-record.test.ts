@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
 import { CAP_CHARS, buildRecord, turnRows } from '../hooks/know-record'
 import type { RecordInput } from '../hooks/know-record'
+import { CASE_A, CASE_B, CASE_C, CASE_D } from './know-runs'
 
 type Row = RecordInput['rows'][number]
 type Use = Row['toolUses'][number]
@@ -193,6 +194,80 @@ test('rows left out before the run are marked in words, by why', () => {
   expect(record(steps, { leftOut: 'earlier-turns' }).text).toMatch(/\[trimmed: earlier turns of the main chat, not shown\]/)
   expect(record(steps, { leftOut: 'earlier-turns-guess' }).text).toMatch(/\[trimmed: earlier turns of the main chat, not shown; where this turn began is a best guess\]/)
   expect(record(steps).text).not.toMatch(/earlier/)
+})
+
+// ---- A specialist sent back to work: Clawd's messages of earlier runs stay in the record ----
+
+/** The record of run `n` (from 0) of `runs`, read as the check reads it: the earlier runs' rows beside this one's. */
+const runRecord = (runs: readonly (readonly Row[])[], n: number, over: Partial<RecordInput> = {}) =>
+  record([...runs[n]!], { earlier: runs.slice(0, n).flat(), isResumed: n > 0, leftOut: n > 0 ? 'earlier-runs' : undefined, ...over })
+const LATER = 'LATER MESSAGE TO THE SPECIALIST (may change the brief):'
+
+test('case A: a run after the second still shows Clawd\'s later message, and no step of the earlier runs', () => {
+  const second = runRecord(CASE_A.runs, 1, { brief: CASE_A.brief, report: 'Made the three edits.' }).text
+  expect(second).toMatch(/BRIEF:\nMake two edits/)
+  expect(second).toContain(`MESSAGE THAT STARTED THIS RUN:\n${CASE_A.later}`)
+  expect(second).toMatch(/\[trimmed: the steps of earlier runs, already checked, not shown\]/)
+  expect(second).not.toMatch(/STEP \d+ · Edit · (a|b)\.ts/)
+  const third = runRecord(CASE_A.runs, 2, { brief: CASE_A.brief, report: 'All 12 tests pass.' })
+  expect(third.steps).toBe(1)
+  // In order: the brief, the later message, the message that started this run, then the steps.
+  const at = [`BRIEF:\n${CASE_A.brief}`, `${LATER}\n${CASE_A.later}`, 'MESSAGE THAT STARTED THIS RUN:\nNow run the tests', 'STEP 1 · Bash · npm test']
+    .map(part => third.text.indexOf(part))
+  expect(at.every(i => i > 0)).toBe(true)
+  expect(at).toEqual([...at].sort((a, b) => a - b))
+  // The brief that opened the first run is the brief, not a later message; our note on reporting is not shown.
+  expect(third.text.match(/Make two edits/g)).toHaveLength(1)
+  expect(third.text).not.toContain(BRIEF_NOTE.trim().slice(0, 40))
+  expect(third.text).not.toMatch(/STEP \d+ · Edit/)
+})
+
+test('case B: the third run\'s record keeps the second run\'s "Go ahead" beside the brief it overrides', () => {
+  const { text } = runRecord(CASE_B.runs, 2, { brief: CASE_B.brief, report: 'Step 2 done.' })
+  expect(text).toContain(`BRIEF:\n${CASE_B.brief}`)
+  expect(text).toContain(`${LATER}\n${CASE_B.goAhead}`)
+  expect(text).toContain('MESSAGE THAT STARTED THIS RUN:\ncontinue step 2')
+})
+
+test('case C: a message Clawd sent mid-run is kept in that run, and in every later run as a later message', () => {
+  expect(runRecord(CASE_C.runs, 0, { report: 'Tidied; payroll card removed.' }).text).toContain(`MESSAGE TO THE SPECIALIST: ${CASE_C.later}`)
+  const { text } = runRecord(CASE_C.runs, 1, { report: 'The layout is fine.' })
+  // With no brief kept from the hire, the message that opened the first run is the brief.
+  expect(text).toMatch(/BRIEF:\nTidy the dashboard\. Keep the payroll card\./)
+  expect(text).toContain(`${LATER}\n${CASE_C.later}`)
+})
+
+test('a run whose check got no answer is read again with the next: its opener goes with the later messages, this run\'s opener starts this run', () => {
+  const [one, two, three] = CASE_B.runs
+  const { text, steps } = record([...two, ...three], { earlier: [...one], isResumed: true, leftOut: 'earlier-runs', rerun: two.length, brief: CASE_B.brief, report: 'Step 2 done.' })
+  expect(steps).toBe(2)
+  const at = [`BRIEF:\n${CASE_B.brief}`, `${LATER}\n${CASE_B.goAhead}`, 'MESSAGE THAT STARTED THIS RUN:\ncontinue step 2', 'STEP 1 · Edit · step2.ts', 'STEP 2 · Edit · step2-more.ts']
+    .map(part => text.indexOf(part))
+  expect(at.every(i => i > 0)).toBe(true)
+  expect(at).toEqual([...at].sort((a, b) => a - b))
+  // Each opener is given once, in its section, not again among the steps.
+  expect(text).not.toMatch(/\nMESSAGE TO THE SPECIALIST:/)
+  expect(text.match(/Go ahead/g)).toHaveLength(1)
+  // When the run read again is the first, its opener is the brief, and nothing is a later message.
+  const fromStart = record([...one, ...two], { isResumed: true, rerun: one.length, report: 'Started step 2.' }).text
+  expect(fromStart).toContain(`BRIEF:\n${CASE_B.brief}`)
+  expect(fromStart).toContain(`MESSAGE THAT STARTED THIS RUN:\n${CASE_B.goAhead}`)
+  expect(fromStart).not.toMatch(/LATER MESSAGE|MESSAGE TO THE SPECIALIST/)
+  expect(fromStart).toMatch(/STEP 1 · Edit · step1\.ts[\s\S]*STEP 2 · Edit · step2\.ts/)
+})
+
+test('case D: a resumed run\'s own failing test output stays in the record beside a report that says all pass', () => {
+  const { text } = runRecord(CASE_D.runs, 1, { report: CASE_D.report })
+  expect(text).toContain(CASE_D.failing)
+  expect(text).toMatch(/STEP 1 · Bash · npm test · done/)
+  expect(text).toMatch(/REPORT HANDED BACK:\nAll tests pass\.$/)
+})
+
+test('a run cut short by an error or a stop is still written up, and says plainly which, and that unfinished work is no gap', () => {
+  const early = (why: string) => `THIS RUN ENDED EARLY (${why}): unfinished work is not a gap; a crash or wrong claim still is.`
+  expect(record([brief()], { ended: 'error' }).text).toContain(`HOW IT ENDED: It stopped on an error before it finished.\n${early('an error stopped it')}`)
+  expect(record([brief()], { ended: 'aborted' }).text).toContain(`HOW IT ENDED: It was stopped before it finished.\n${early('it was stopped')}`)
+  for (const ended of ['answer', 'refusal'] as const) expect(record([brief()], { ended }).text).not.toMatch(/ENDED EARLY/)
 })
 
 test('the cap never swaps a short output for a longer mark', () => {

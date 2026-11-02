@@ -42,6 +42,10 @@ export type RecordInput = {
   brief?: string
   /** A run after the first: its rows open with the message that started it, not the brief. */
   isResumed?: boolean
+  /** The rows of earlier runs, already checked: their steps stay out, but the messages sent in them are shown. */
+  earlier?: readonly SessionMessage[]
+  /** How many rows at the head of `rows` are from earlier runs whose check got no answer, read again here; this run's own come after. */
+  rerun?: number
   /** Rows before these were left out, and why; marked at the head of the steps. */
   leftOut?: LeftOut
   report: string
@@ -145,6 +149,12 @@ const ENDED = {
   specialist: { answer: 'It finished and handed back its report.', error: 'It stopped on an error before it finished.', aborted: 'It was stopped before it finished.', refusal: 'The model refused to go on.' },
   clawd: { answer: 'He finished and answered.', error: 'He stopped on an error before he finished.', aborted: 'He was stopped before he finished.', refusal: 'The model refused to go on.' },
 } as const
+/**
+ * A run cut short, by an error or a stop, is checked all the same, and the line says which. The engine never says which
+ * error it was: the usage limit is not told apart.
+ */
+const EARLY: Partial<Record<RecordInput['ended'], string>> = { error: 'an error stopped it', aborted: 'it was stopped' }
+const earlyLine = (why: string) => `THIS RUN ENDED EARLY (${why}): unfinished work is not a gap; a crash or wrong claim still is.`
 
 function headerOf(input: RecordInput, steps: number): string {
   const who = input.isClawd ? 'Clawd, the chief of staff, in the main chat' : `${input.who}, a specialist Clawd hired`
@@ -155,6 +165,7 @@ function headerOf(input: RecordInput, steps: number): string {
   return [
     `WHO DID THE WORK: ${who}`,
     `HOW IT ENDED: ${ENDED[input.isClawd ? 'clawd' : 'specialist'][input.ended]}`,
+    ...(EARLY[input.ended] ? [earlyLine(EARLY[input.ended]!)] : []),
     ...(cost ? [`TIME AND TOKENS: ${cost}`] : []),
     `STEPS TAKEN: ${steps}`,
   ].join('\n')
@@ -162,17 +173,36 @@ function headerOf(input: RecordInput, steps: number): string {
 
 const withoutOurNote = (text: string) => (text.includes(BRIEF_NOTE) ? `${text.replace(BRIEF_NOTE, '').trimEnd()}\n\n${OUR_NOTE}` : text)
 
-/** The brief, and the message that started a resumed run; the rows after the opening one. */
+/**
+ * The messages sent to the specialist in earlier runs, oldest first, each marked as one that may change the brief: the
+ * steps of those runs are left out, but what was asked in them is not. The message that opened the first run is the
+ * brief itself, not one of them. The engine does not say who sent a message, so none is put down to Clawd.
+ */
+function laterOf(earlier: readonly SessionMessage[]): string[] {
+  const sent = earlier.filter((r, i) => i > 0 && isTyped(r))
+  return sent.map(r => `LATER MESSAGE TO THE SPECIALIST (may change the brief):\n${withoutOurNote(r.text)}`)
+}
+
+/**
+ * The brief, the later messages of earlier runs, and the message that started a resumed run; the rows after the
+ * openers. A run read again (`rerun`) keeps its steps, but its opener goes with the later messages.
+ */
 function briefOf(input: RecordInput): { sections: string[]; rest: readonly SessionMessage[] } {
-  const first = input.rows[0]
-  const isOpening = first?.role === 'user' && first.text.trim() !== '' && (first.toolResults?.length ?? 0) === 0
-  const opening = isOpening ? withoutOurNote(first.text) : undefined
-  const rest = isOpening ? input.rows.slice(1) : input.rows
+  const at = input.rerun ?? 0
+  const own = input.rows[at]
+  const isOpening = own !== undefined && isTyped(own)
+  const opening = isOpening ? withoutOurNote(own.text) : undefined
+  const retold = at > 0 && input.rows[0] && isTyped(input.rows[0]) ? [input.rows[0]] : []
+  const rest = input.rows.filter((_, i) => !(isOpening && i === at) && !(retold.length > 0 && i === 0))
   if (input.isClawd) return { sections: [`THE PERSON'S REQUEST:\n${opening ?? 'Not available.'}`], rest }
-  const hired = input.brief === undefined || (!input.isResumed && opening !== undefined) ? undefined : withoutOurNote(input.brief)
+  const earlier = [...(input.earlier ?? []), ...retold]
+  // No brief kept from the hire (a session resumed since): the message that opened the first run is the brief.
+  const firstSent = earlier[0]
+  const kept = input.brief ?? (firstSent && isTyped(firstSent) ? firstSent.text : undefined)
+  const hired = kept === undefined || (!input.isResumed && opening !== undefined) ? undefined : withoutOurNote(kept)
   const brief = hired ?? opening ?? 'Not available.'
   const started = opening !== undefined && hired !== undefined && !isSame(opening, hired) ? [`MESSAGE THAT STARTED THIS RUN:\n${opening}`] : []
-  return { sections: [`BRIEF:\n${brief}`, ...started], rest }
+  return { sections: [`BRIEF:\n${brief}`, ...laterOf(earlier), ...started], rest }
 }
 
 function promptsOf(prompts: readonly string[]): string[] {

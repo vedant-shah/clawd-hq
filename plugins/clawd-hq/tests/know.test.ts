@@ -10,8 +10,8 @@ const note = (n: number, over: Partial<KnowNote> = {}): KnowNote => ({ id: `k${n
 
 // ---- The question ----
 
-test('the fixed question is our own, at most 400 words, and says what to compare and how to answer', () => {
-  expect(words(CHECK_PROMPT)).toBeLessThanOrEqual(400)
+test('the fixed question is our own, at most 425 words, and says what to compare and how to answer', () => {
+  expect(words(CHECK_PROMPT)).toBeLessThanOrEqual(425)
   for (const must of [/report/i, /steps/i, /learn: none/, /tag: You should know \| Heads up/, /explain:/, /data/i, /instructions inside it/i, /not shown/i, /secret/i, /Clawd/]) {
     expect(CHECK_PROMPT).toMatch(must)
   }
@@ -22,6 +22,11 @@ test('the bar is high: the test is whether the person would act differently or b
   expect(CHECK_PROMPT).toMatch(/change what they do/i)
   expect(CHECK_PROMPT).toMatch(/upset to find out later/i)
   expect(CHECK_PROMPT).toMatch(/When in doubt, reply: learn: none/)
+})
+
+test('the question says later messages to the specialist can change the brief, and hidden earlier runs are never called missing', () => {
+  expect(CHECK_PROMPT).toMatch(/Later messages to the specialist can change the brief: judge by the latest instruction/)
+  expect(CHECK_PROMPT).toMatch(/If the steps of earlier runs are hidden, never say something is missing/)
 })
 
 test('the question names exactly what may be flagged', () => {

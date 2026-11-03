@@ -1,4 +1,4 @@
-// The plugin's on/off configs as the Settings tab shows them, and how a press finds the settings row to change.
+// The plugin's on/off configs as the Settings tab shows them, and how pressing a toggle changes the corresponding value in the plugin's own store.
 // `setToggle` makes a change through the io register.tsx builds (`configIo`); nothing here touches `$`.
 import type { BriefingOptions } from './instructions'
 import { savedKey, savedNow, useSaved } from './toggle-store'

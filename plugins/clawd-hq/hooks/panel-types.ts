@@ -52,10 +52,11 @@ export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleAction
   coffeeBreak: (isTerminal: boolean) => unknown
   /** Settings shows the list of finished work (true) or its configs again (false). */
   showLog: (isOpen: boolean) => unknown
-  /** A config's toggle pressed: the settings row is set to `value`; a refusal is kept as the tab's note. */
+  /** A config's toggle handler: changes the plugin's own store to the specified value. Resolves to nothing on success or a plain string on error, and never rejects. */
   setConfig: (field: ConfigField, value: boolean) => unknown
   /** ▼ (1) or ▲ (-1) pressed under a file's box in Settings: its window moves about 10 lines. */
   scrollClawd: (part: BriefPart, dir: 1 | -1) => unknown
   /** A button on the setup card pressed: the whole button, so a role choice carries its label. */
   choose: (button: OnboardButton) => unknown
 }
+ 

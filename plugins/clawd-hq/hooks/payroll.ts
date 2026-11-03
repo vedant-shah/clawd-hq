@@ -2,10 +2,8 @@
 // register.tsx hands over the calls it may make (PayrollIo); nothing here touches `$` or an atom.
 import type { Fx, Payroll } from '../types'
 import { projectFiles, proposeLayoffs } from './desk'
-import { isBuiltIn } from './helpers'
 import { withLaidOff } from './office-state'
-
-const OWN_PLUGIN = 'clawd-hq'
+import { isHireType, isStanding } from './standing'
 
 export type PayrollIo = {
   /** The project folder; payroll is kept per project. */
@@ -19,6 +17,8 @@ export type PayrollIo = {
   types: () => Promise<string[]>
   /** The agent types the setup picked for this project, or none when no team was written down. */
   picks: () => Promise<readonly string[] | undefined>
+  /** The agent types of this folder's own saved hires, as listed (`clawd-hq:<name>`): the only hires of Clawd HQ on this team. */
+  hires: () => Promise<readonly string[]>
   list: (path: string) => Promise<ReadonlyArray<{ name: string; kind: string }>>
   fx: () => Promise<Fx>
   setFx: (fn: (f: Fx) => Fx) => Promise<void>
@@ -28,7 +28,11 @@ export type PayrollIo = {
 
 /** The review is filed once a session. */
 let isFiled = false
-export const resetPayroll = () => { isFiled = false }
+/** The skill hires the routine check has found to be this folder's own this session: not asked about again. */
+let ownFound: ReadonlySet<string> = new Set()
+/** A failed check is told once a session. */
+let isFailureTold = false
+export const resetPayroll = () => { isFiled = false; ownFound = new Set(); isFailureTold = false }
 
 export async function savePayroll(io: PayrollIo, p: Payroll) {
   await io.set(p)
@@ -40,8 +44,17 @@ export async function savePayroll(io: PayrollIo, p: Payroll) {
 
 const planOf = async (io: PayrollIo, types: string[]) => proposeLayoffs(types, await projectFiles(io.cwd, io.list))
 
-/** Built-in agents and this plugin's own hires are always on the team. */
-const isStanding = (type: string) => isBuiltIn(type) || type.startsWith(`${OWN_PLUGIN}:`)
+/** Who is on the team here, whatever the picks say, and which Clawd HQ types belong to another project's team. */
+type Standing = { readonly isOn: (type: string) => boolean; readonly isStale: (type: string) => boolean }
+
+/**
+ * Built-in agents, the shipped helpers, the contractor and this folder's own hires are always on the team; a skill hire made in another
+ * project is stale: it cannot be used here. A failed read of the folder's hires is thrown, so an own hire is never set aside for want of it.
+ */
+async function standingFor(io: PayrollIo): Promise<Standing> {
+  const own = new Set(await io.hires())
+  return { isOn: t => isStanding(t, own), isStale: t => isHireType(t) && !own.has(t) }
+}
 
 /**
  * A payroll settled before the team was written down: the team is the setup's picks (else what is not laid off now), and every other
@@ -51,26 +64,58 @@ async function settleTeam(io: PayrollIo, p: Payroll) {
   const types = await io.types()
   if (types.length === 0) return // nothing offered yet: try again on the next look
   const picks = await io.picks()
+  const { isOn, isStale } = await standingFor(io)
   const laid = new Set(p.laidOff)
-  const kept = types.filter(t => isStanding(t) || (picks ? picks.includes(t) : !laid.has(t)))
+  const kept = types.filter(t => isOn(t) || (!isStale(t) && (picks ? picks.includes(t) : !laid.has(t))))
   await savePayroll(io, { ...p, kept, laidOff: [...new Set([...p.laidOff, ...types.filter(t => !kept.includes(t))])] })
+}
+
+/** A settled payroll: the skill hires of other projects the office knows of are laid off, so an older project is cleaned up too. */
+async function setAsideStale(io: PayrollIo, p: Payroll) {
+  const maybe = (await io.types()).filter(t => isHireType(t) && !p.laidOff.includes(t) && !ownFound.has(t))
+  if (maybe.length === 0) return // the common look: nothing to ask the store
+  const { isStale } = await standingFor(io)
+  const stale = maybe.filter(isStale)
+  ownFound = new Set([...ownFound, ...maybe.filter(t => !isStale(t))])
+  if (stale.length > 0) await savePayroll(io, { ...p, laidOff: [...p.laidOff, ...stale], ...(p.kept ? { kept: p.kept.filter(t => !stale.includes(t)) } : {}) })
 }
 
 export async function reviewPayroll(io: PayrollIo) {
   const first = await io.get()
   if (first.isReviewed && first.kept === undefined) return settleTeam(io, first)
-  if (isFiled || first.isReviewed) return
+  if (first.isReviewed) return setAsideStale(io, first)
+  if (isFiled) return
   const types = await io.types()
   if (types.length < 15) return
-  isFiled = true
   const plan = await planOf(io, types)
   // The files took a moment to list: a payroll the person settled by hand meanwhile is left as it is.
   const now = await io.get()
   if (now.isReviewed) return
+  const { isStale } = await standingFor(io)
   // No question is asked: the types this project has no use for are laid off at once. A search in the People tab still finds them to rehire.
-  const laidOff = [...new Set([...now.laidOff, ...plan.laidOff])]
+  const laidOff = [...new Set([...now.laidOff, ...plan.laidOff, ...types.filter(isStale)])]
   await savePayroll(io, { laidOff, isReviewed: true, stacks: plan.stacks, kept: types.filter(t => !laidOff.includes(t)) })
+  isFiled = true // only once it is filed: a read that failed above is tried again on the next look
 }
+
+/**
+ * The routine look, as the frame clock makes it. A failure is not thrown into the frame: it is told once a session, in plain words
+ * through `tell`, and the next look tries again.
+ */
+export async function checkPayroll(io: PayrollIo, tell: (text: string) => void): Promise<void> {
+  try {
+    await reviewPayroll(io)
+  } catch {
+    if (isFailureTold) return
+    isFailureTold = true
+    tell('Clawd HQ could not check who is on the team just now. It tries again shortly.')
+  }
+}
+
+const NO_HIRES: ReadonlySet<string> = new Set()
+
+/** Whether a skill hire is one of this folder's own. A read that fails counts as own: an offer is never laid off for want of the read (the routine check tells of it). */
+const isOwnHire = (io: PayrollIo, type: string): Promise<boolean> => io.hires().then(h => h.includes(type), () => true)
 
 /**
  * Whether an offered type is held back from Clawd. A type the settled team does not know is new: it is laid off at once, so it waits
@@ -79,7 +124,10 @@ export async function reviewPayroll(io: PayrollIo) {
 export async function holdBack(io: PayrollIo, type: string): Promise<boolean> {
   const p = await io.get()
   if (p.laidOff.includes(type)) return true
-  if (p.kept === undefined || p.kept.includes(type) || isStanding(type)) return false
+  // Only a skill hire of Clawd HQ needs the folder's saved hires: every other type is answered without a store read. A skill hire of
+  // another project is held back whatever the team held before; any other type only when the settled team does not know it.
+  const isKept = isHireType(type) ? await isOwnHire(io, type) : isStanding(type, NO_HIRES) || p.kept === undefined || p.kept.includes(type)
+  if (isKept) return false
   await savePayroll(io, { ...p, laidOff: [...p.laidOff, type] })
   return true
 }

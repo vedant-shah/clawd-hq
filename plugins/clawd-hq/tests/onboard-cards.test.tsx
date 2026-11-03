@@ -3,7 +3,7 @@
 // The drawing is mounted in a pane of the test's own, on both surfaces the test kit mounts, from fake OnboardCard data.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { DONE_HEAD, DONE_TAIL, doneCard, failedCard, hireNote, scanCard, teamNames, QUIET } from '../hooks/onboard-cards'
+import { ALWAYS_ON_LINE, DONE_HEAD, DONE_TAIL, doneCard, failedCard, hireNote, scanCard, teamNames, QUIET } from '../hooks/onboard-cards'
 import type { OnboardButton, OnboardCard, Team } from '../hooks/onboard-types'
 import { onboardSection } from '../hooks/panel-onboard'
 import { kitOf } from '../hooks/panel-kit'
@@ -64,16 +64,22 @@ test('the team is told in plain role words, in the card\'s seat order, each role
 test('the after-card says what was set up, with the names, and offers one Dismiss', () => {
   const card = doneCard(['Planner', 'Builder', 'Reviewer'])
   expect(card.step).toBe('done')
-  expect(card.lines).toEqual([`${DONE_HEAD}Planner, Builder, Reviewer.`, DONE_TAIL])
+  expect(card.lines).toEqual([`${DONE_HEAD}Planner, Builder, Reviewer.`, ALWAYS_ON_LINE, DONE_TAIL])
   expect(card.buttons).toEqual([{ action: 'dismiss', label: 'Dismiss' }])
   expect(DONE_HEAD).toBe('Set up your team for this project: ')
   expect(DONE_TAIL).toBe('Change it in People or Settings, or run /office-setup again.')
 })
 
+test('the after-card says who is always on the team', () => {
+  expect(ALWAYS_ON_LINE).toBe('Also on the team: Claude\'s built-in agents and Clawd HQ\'s own helpers.')
+  expect(doneCard(['Planner']).lines).toContain(ALWAYS_ON_LINE)
+})
+
 test('with no team names the after-card still says setup ran and how to run it again', () => {
   const card = doneCard([])
   expect(card.lines[0]).toMatch(/Set up this project/)
-  expect(card.lines[1]).toBe(DONE_TAIL)
+  expect(card.lines).toContain(ALWAYS_ON_LINE)
+  expect(card.lines[card.lines.length - 1]).toBe(DONE_TAIL)
 })
 
 test('a note on the after-card is kept for the draw', () => {
@@ -112,6 +118,7 @@ test('the after-card draws its two lines and one dim Dismiss, and the press says
     const ui = await draw($, surface, doneCard(['Planner', 'Builder']))
     const all = await textsOf(ui)
     expect(all).toContain(`${DONE_HEAD}Planner, Builder.`)
+    expect(all).toContain(ALWAYS_ON_LINE)
     expect(all).toContain(DONE_TAIL)
     const buttons = await buttonsOf(ui)
     expect(buttons.map(b => String(b.props.label))).toEqual(['Dismiss'])

@@ -164,8 +164,7 @@ const parkedBy = (io: OnboardIo, team: Team) => {
 async function hire(io: OnboardIo, team: Team): Promise<string | undefined> {
   if (team.picks.length === 0) return undefined
   const fresh = parkedBy(io, team)
-  const keepParked = (list: readonly string[]) => io.savePayroll([...new Set([...io.parked(), ...list])])
-  const report = await hireTeam({ ...io, savePayroll: keepParked }, team)
+  const report = await hireTeam(io, team)
   return hireNote(report, report.parked > 0 ? fresh : 0)
 }
 

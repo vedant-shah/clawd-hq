@@ -15,6 +15,8 @@ export const LOOKING_LINE = 'Looking around…'
 /** The card afterwards: what was set up, then where to change it. DECIDED wording. */
 export const DONE_HEAD = 'Set up your team for this project: '
 export const DONE_TAIL = 'Change it in People or Settings, or run /office-setup again.'
+/** Who is on the team without being picked: the built-ins and the shipped helpers. */
+export const ALWAYS_ON_LINE = 'Also on the team: Claude\'s built-in agents and Clawd HQ\'s own helpers.'
 export const NO_TEAM_LINE = 'Set up this project with no extra helpers: none were found, so the team is Claude\'s built-in agents.'
 
 const DISMISS: OnboardButton = { action: 'dismiss', label: 'Dismiss' }
@@ -24,7 +26,7 @@ export const scanCard = (): OnboardCard => ({ step: 'scan', lines: [], buttons: 
 
 /** The after-card: the team by name, then how to change it. A note (a hire that failed) sits dim beneath. */
 export const doneCard = (names: readonly string[], note?: string): OnboardCard =>
-  withNote({ step: 'done', lines: [names.length === 0 ? NO_TEAM_LINE : `${DONE_HEAD}${names.join(', ')}.`, DONE_TAIL], buttons: [DISMISS] }, note)
+  withNote({ step: 'done', lines: [names.length === 0 ? NO_TEAM_LINE : `${DONE_HEAD}${names.join(', ')}.`, ALWAYS_ON_LINE, DONE_TAIL], buttons: [DISMISS] }, note)
 
 /** Runs that may stop before only /office-setup starts setup again: the first stop gets one more try by itself next session. */
 export const MAX_FAILURES = 2

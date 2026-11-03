@@ -451,8 +451,12 @@ test('a People row picture is described by the name, so a desktop that skips pic
   await ui.unmount()
 })
 
-test('a People row ends with the total tokens that type has used, dim, and shows none when it has used none', async ($, on) => {
-  host(on, [], { roster: { 'ecc:planner': { jobs: 3, tokens: 1_234_567 }, 'ecc:architect': { jobs: 1, tokens: 0 }, 'ecc:tdd-guide': { jobs: 0 } } })
+test('a People row ends with the tokens that type has used in this project, dim, and shows none when it has used none here', async ($, on) => {
+  // The machine-wide record's lifetime totals (from every project) are not what the row shows.
+  host(on, [], {
+    roster: { 'ecc:planner': { jobs: 3, tokens: 9_000_000 }, 'ecc:architect': { jobs: 1, tokens: 800_000 }, 'ecc:tdd-guide': { jobs: 0 } },
+    'tokens:/repo': { 'ecc:planner': 1_234_567 },
+  })
   on('agent.offer', () => ({ isOffered: true }) as never)
   await $.session.start(START)
   for (const agent of ['ecc:planner', 'ecc:architect', 'ecc:tdd-guide']) await $.agent.offer({ agent, description: 'Does work.' } as never)
@@ -480,16 +484,59 @@ test('a run that ends adds its tokens to its type once, and a second run adds it
     while (!part.done) part = await steps.next()
   }
   const end = (turnId: string) => $.turn.complete({ reason: 'answer', answer: 'ok', turnId, agentId: 'a1', isAborted: false } as never)
+  const here = () => (h.saved.get('tokens:/repo') as Record<string, number> | undefined)?.['ecc:planner']
   await run('t1')
   await end('t1')
   expect(kept()).toBe(5_000)
+  expect(here()).toBe(5_000)
   // The same stop heard twice counts once.
   await end('t1')
   expect(kept()).toBe(5_000)
+  expect(here()).toBe(5_000)
   // The specialist is sent back to work after a real stop: a new run, counted on top.
   await run('t2')
   await end('t2')
   expect(kept()).toBe(10_000)
+  expect(here()).toBe(10_000)
+  // The People row shows this project's total.
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  expect((await ui.findAll({ type: 'Text', text: /tokens$/ })).map(t => t.text)).toEqual(['10K tokens'])
+  await ui.unmount()
+})
+
+test('a brand-new project shows no token line, though the machine-wide record and another project have totals', async ($, on) => {
+  host(on, [], { roster: { 'ecc:planner': { jobs: 3, tokens: 1_234_567 } }, 'tokens:/elsewhere': { 'ecc:planner': 400_000 } })
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.session.start(START)
+  await $.agent.offer({ agent: 'ecc:planner', description: 'Plans work.' } as never)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
+    expect(await ui.find({ type: 'Text', text: /^Planner$/ })).toBeDefined()
+    expect(await ui.findAll({ type: 'Text', text: /tokens$/ })).toEqual([])
+    await ui.unmount()
+  }
+})
+
+test('a run whose session moved to another folder before it ended counts for the folder it ran in, and the new folder shows none', async ($, on) => {
+  const h = host(on, [{ id: 'a1', type: 'ecc:planner', description: 'Plan it', status: 'running' }])
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'claude-opus-5-5', input_tokens: 4_900, output_tokens: 100 } } as never
+  })
+  await $.session.start(START)
+  await $.agent.spawn({ prompt: 'Plan', description: 'Plan it', subagentType: 'ecc:planner' } as never)
+  const steps = $.turn.step({ turnId: 't1', index: 0, model: 'm', messageCount: 3, agentId: 'a1' } as never)
+  let part = await steps.next()
+  while (!part.done) part = await steps.next()
+  await $.session.start({ ...(START as object), cwd: '/other' } as never)
+  await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't1', agentId: 'a1', isAborted: false } as never)
+  expect(h.saved.get('tokens:/repo')).toEqual({ 'ecc:planner': 5_000 })
+  expect(h.saved.get('tokens:/other')).toBeUndefined()
+  // The machine-wide record counts it as before.
+  expect((h.saved.get('roster') as Record<string, { tokens?: number }>)['ecc:planner']?.tokens).toBe(5_000)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  expect(await ui.findAll({ type: 'Text', text: /tokens$/ })).toEqual([])
+  await ui.unmount()
 })
 
 test('a People row keeps picture, text and button on one line at any width: the row never wraps, the ends never shrink, the text does', async ($, on) => {

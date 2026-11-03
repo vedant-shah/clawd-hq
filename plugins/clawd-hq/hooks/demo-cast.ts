@@ -12,10 +12,11 @@ const CAST: ReadonlyArray<readonly [type: string, blurb: string, tokens: number]
 ]
 
 const BLURBS: Record<string, string> = Object.fromEntries(CAST.map(([type, blurb]) => [type, blurb]))
-const ROSTER: Record<string, Badge> = Object.fromEntries(CAST.map(([type, , tokens], i) => [type, { jobs: 3 + i, tokens }]))
+const ROSTER: Record<string, Badge> = Object.fromEntries(CAST.map(([type], i) => [type, { jobs: 3 + i }]))
+const TOKENS: Record<string, number> = Object.fromEntries(CAST.map(([type, , tokens]) => [type, tokens]))
 
 /** The panel's data while the tour plays: the stand-in team stands in for the real one. Outside the tour, the data as it is. */
 export function onStage(data: PanelData): PanelData {
   if (data.fx.demo === undefined) return data
-  return { ...data, blurbs: BLURBS, roster: ROSTER, payroll: { ...data.payroll, laidOff: [] } }
+  return { ...data, blurbs: BLURBS, roster: ROSTER, projectTokens: TOKENS, payroll: { ...data.payroll, laidOff: [] } }
 }

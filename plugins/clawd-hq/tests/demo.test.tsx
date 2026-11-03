@@ -263,6 +263,15 @@ test('People shows the stand-in team with short descriptions and token totals, n
   await r.ui.unmount()
 })
 
+test('People on the tour shows each stand-in\'s token line, though this project has used no tokens', async ($, on) => {
+  const t = await tour(on)
+  await $.command.run({ command: 'office-demo', args: '' } as never)
+  await t.to(19)
+  const r = await t.read($, PEOPLE)
+  expect(r.texts.filter(x => / tokens$/.test(x)).sort()).toEqual(['177K tokens', '268K tokens', '412K tokens', '530K tokens', '96K tokens'])
+  await r.ui.unmount()
+})
+
 // ---- Nothing real: no spawn, no toast, no saved change; and the office is as it was ----
 
 test('nothing real is spawned, saved or announced, and every card has the caption on top', async ($, on) => {

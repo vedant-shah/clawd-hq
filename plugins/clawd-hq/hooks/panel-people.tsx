@@ -41,9 +41,9 @@ function section(title: string, people: Person[], kit: Kit, actions: PanelAction
 
 export function peopleTab(kit: Kit, data: PanelData, actions: PanelActions) {
   const { Box, Text, Input } = kit
-  const { staff, blurbs, roster, payroll } = data
+  const { staff, blurbs, roster, payroll, projectTokens } = data
   const types = [...Object.keys(blurbs), ...Object.keys(roster), ...staff.map(e => e.type)]
-  const everyone = buildPeople(types, blurbs, roster, payroll.laidOff)
+  const everyone = buildPeople(types, blurbs, roster, payroll.laidOff, projectTokens)
   const query = data.fx.finds?.people ?? ''
   const found = splitPeople(everyone, query)
   // Laid-off helpers (the pool) are listed only under a search.

@@ -191,6 +191,14 @@ test('people are built from the books: a plain role name, the plugin, the hire c
   expect(people.find(p => p.type === 'Explore')).toMatchObject({ plugin: 'built in', jobs: 0, isOff: true })
 })
 
+test('a person\'s tokens are what that type used in this project, not the machine-wide total; none when it used none here', () => {
+  const roster = { 'ecc:planner': { jobs: 4, tokens: 9_000_000 }, 'ecc:architect': { jobs: 1, tokens: 800_000 } }
+  const people = buildPeople(['ecc:planner', 'ecc:architect'], {}, roster, [], { 'ecc:planner': 5_000 })
+  expect(people.find(p => p.type === 'ecc:planner')).toMatchObject({ jobs: 4, tokens: 5_000 })
+  expect(people.find(p => p.type === 'ecc:architect')?.tokens).toBeUndefined()
+  expect(buildPeople(['ecc:planner'], {}, roster, [])[0]?.tokens).toBeUndefined()
+})
+
 test('two types with the same role are told apart on the People tab by their type; a role held by one stands alone', () => {
   const people = buildPeople(['acme:foo', 'acme:bar', 'ecc:planner'], {}, {}, [])
   const names = people.map(p => p.name)

@@ -36,6 +36,8 @@ export type Employee = {
   peakInput?: number
   /** How much of this run's `tokens` was already added to its type's total, so an end heard twice, or a run that goes on after a guessed end, counts once. A new run starts again. */
   counted?: number
+  /** The project folder this run was hired (or resumed) in: its tokens count there, even if the session moves before it ends. None on books from before it was kept. */
+  folder?: string
   context?: number
   /** What the specialist itself reports with the step tool: steps done, the plan's size (1 to 12), and a few plain words on the step. None until it reports. */
   stepDone?: number
@@ -243,6 +245,8 @@ declare module 'claude-code' {
       tick: number
       blurbs: Record<string, string>
       roster: Record<string, Badge>
+      /** The tokens each type used in this session's project folder (hooks/project-tokens.ts), for the People tab. */
+      projectTokens: Record<string, number>
       payroll: Payroll
       gauge: Gauge
       artifacts: Artifact[]

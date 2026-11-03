@@ -27,10 +27,11 @@ export const turnEndBoss = (b: Boss, reason: string, now: number): Boss => ({
 export const quietBoss = (b: Boss, now: number, napMs: number): Boss =>
   ({ ...b, isBusy: false, proudUntil: 0, oopsUntil: 0, quip: undefined, idleSince: now - napMs - 1 })
 
-/** A specialist just hired, arriving now (`now`, tick `t`), its name and task cut to size. */
-export function freshHire(a: { id: string; type: string; description: string; name?: string }, now: number, t: number): Employee {
+/** A specialist just hired, arriving now (`now`, tick `t`), its name and task cut to size, and the project folder it was hired in when known. */
+export function freshHire(a: { id: string; type: string; description: string; name?: string; folder?: string }, now: number, t: number): Employee {
   const named = a.name ? { name: fit(a.name, NAME_CHARS) } : {}
-  return { id: a.id, type: a.type, description: fit(a.description, DESCRIPTION_CHARS), ...named, mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
+  const placed = a.folder ? { folder: a.folder } : {}
+  return { id: a.id, type: a.type, description: fit(a.description, DESCRIPTION_CHARS), ...named, ...placed, mood: 'arriving', tools: 0, startedAt: now, lastSeen: now, joinedTick: t }
 }
 
 /** The books with `jobs` more, and `tokens` more used, for this type; a type not there yet starts at them. */

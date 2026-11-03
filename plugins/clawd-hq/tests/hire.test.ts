@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { hireTeam, installedSkills, parkList, rehire, skillHires } from '../hooks/hire'
+import { addSkillHire, hireTeam, installedSkills, parkList, rehire, skillHires } from '../hooks/hire'
 import type { HireSpec, Pick as SeatPick, Team } from '../hooks/onboard-types'
 import { teamKey } from '../hooks/onboard-types'
 
@@ -20,7 +20,7 @@ const installed = [
 const allTypes = ['general-purpose', 'Explore', 'Plan', 'statusline-setup', 'ecc:planner', 'ecc:tdd-guide', 'ecc:architect', 'code-reviewer', 'ecc:security-reviewer', 'clawd-hq:seo-audit']
 
 /** A fake io: a store in a map, every registration and payroll save kept. */
-const fakeIo = (over: { breakdownSkills?: string[]; commands?: string[]; refuse?: string[]; throws?: string[] } = {}) => {
+const fakeIo = (over: { breakdownSkills?: string[]; commands?: string[]; refuse?: string[]; throws?: string[]; types?: string[]; parked?: string[] } = {}) => {
   const store = new Map<string, unknown>()
   const registered: HireSpec[] = []
   const paid: (readonly string[])[] = []
@@ -31,7 +31,8 @@ const fakeIo = (over: { breakdownSkills?: string[]; commands?: string[]; refuse?
     set: async (key: string, value: unknown) => { store.set(key, value) },
     breakdown: async () => (over.breakdownSkills ? { agents: [], skills: over.breakdownSkills.map(name => ({ name, source: 'plugin' })) } : undefined),
     commands: async () => (over.commands ?? []).map(name => ({ name, description: `About ${name}. More text.` })),
-    allAgentTypes: () => allTypes,
+    allAgentTypes: () => over.types ?? allTypes,
+    parked: () => over.parked ?? [],
     savePayroll: async (laidOff: readonly string[]) => { paid.push(laidOff) },
     registerHire: async (spec: HireSpec) => {
       if (over.throws?.includes(spec.name)) throw new Error('boom')
@@ -52,6 +53,64 @@ test('parkList parks nothing when the team holds every type', () => {
 test('a skill is never parked even if an agent type shares its name', () => {
   const t: Team = { picks: [pick('Plan', 'copywriting', 'skill')], empty: [], by: 'rules' }
   expect(parkList(['copywriting'], t)).toEqual(['copywriting'])
+})
+
+const FOREIGN = ['clawd-hq:tdd-workflow', 'clawd-hq:legacy-notes']
+const ALWAYS_ON = ['clawd-hq:core-builder', 'clawd-hq:core-planner', 'clawd-hq:core-researcher', 'clawd-hq:core-reviewer', 'clawd-hq:contractor']
+
+test('parkList sets aside a skill hire made in another project, and keeps this folder\'s own', () => {
+  // clawd-hq:seo-audit is this team's own hire (it picked that skill); the two others came from another project.
+  expect(parkList([...allTypes, ...FOREIGN], team)).toEqual(['ecc:architect', 'ecc:security-reviewer', ...FOREIGN])
+})
+
+test('parkList keeps the core helpers and the contractor in every project', () => {
+  const bare: Team = { picks: [pick('Plan', 'a')], empty: [], by: 'rules' }
+  expect(parkList([...ALWAYS_ON, 'a'], bare)).toEqual([])
+})
+
+test('parkList keeps the hires it is handed, whatever the team says', () => {
+  const bare: Team = { picks: [], empty: [], by: 'rules' }
+  const hires: HireSpec[] = [{ name: 'seo-audit', description: 'd', prompt: 'p', skills: ['x'] }]
+  expect(parkList(['clawd-hq:seo-audit', 'clawd-hq:other'], bare, hires)).toEqual(['clawd-hq:other'])
+})
+
+test('hireTeam parks the skill hires of other projects, not its own or the always-on helpers', async () => {
+  const io = fakeIo({ breakdownSkills: ['marketing:seo-audit'], types: [...allTypes, ...FOREIGN, ...ALWAYS_ON] })
+  await hireTeam(io, team)
+  expect(io.paid).toEqual([['ecc:architect', 'ecc:security-reviewer', ...FOREIGN]])
+})
+
+test('hireTeam keeps what was parked before and parks the rest on top of it', async () => {
+  const io = fakeIo({ breakdownSkills: ['marketing:seo-audit'], parked: ['legal:old'] })
+  await hireTeam(io, team)
+  expect(io.paid).toEqual([['legal:old', 'ecc:architect', 'ecc:security-reviewer']])
+})
+
+test('hireTeam takes its own hire off the laid-off list, so an old layoff does not hide a new hire', async () => {
+  // Another project's hire of the same skill was laid off here earlier; this folder now hires it itself.
+  const io = fakeIo({ breakdownSkills: ['marketing:seo-audit'], parked: ['clawd-hq:seo-audit', 'legal:old'] })
+  await hireTeam(io, team)
+  expect(io.paid).toEqual([['legal:old', 'ecc:architect', 'ecc:security-reviewer']])
+})
+
+test('addSkillHire takes the new hire off the laid-off list and leaves the rest of it', async () => {
+  const io = fakeIo({ breakdownSkills: ['copywriting'], parked: ['clawd-hq:copywriting', 'legal:old'] })
+  const report = await addSkillHire(io, 'copywriting', 'hired 2× as a contractor here')
+  expect(report.hired).toEqual(['clawd-hq:copywriting'])
+  expect(io.paid).toEqual([['legal:old']])
+})
+
+test('addSkillHire does not touch the laid-off list when the hire was not on it', async () => {
+  const io = fakeIo({ breakdownSkills: ['copywriting'], parked: ['legal:old'] })
+  await addSkillHire(io, 'copywriting', 'r')
+  expect(io.paid).toEqual([])
+})
+
+test('addSkillHire for a skill that is not installed changes nothing', async () => {
+  const io = fakeIo({ breakdownSkills: ['other'], parked: ['clawd-hq:copywriting'] })
+  const report = await addSkillHire(io, 'copywriting', 'r')
+  expect(report.dropped).toEqual(['copywriting'])
+  expect(io.paid).toEqual([])
 })
 
 test('skillHires makes one hire per skill with seat, description and the skill preloaded', () => {

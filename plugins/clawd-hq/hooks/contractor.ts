@@ -19,7 +19,7 @@ export const MAX_OFFERS = 5
 export const CONTRACTOR_DENY = 'Only Clawd hires contractors. Put what you need in your report and Clawd will staff it.'
 
 /** What the contractor calls may do. */
-export type ContractorIo = FindIo & Pick<OnboardIo, 'set' | 'registerHire'> & {
+export type ContractorIo = FindIo & Pick<OnboardIo, 'set' | 'registerHire' | 'savePayroll'> & {
   /** Changes the list of offers on the Office tab and gives the list as it stands after. */
   readonly change: (fn: (list: ContractorOffer[]) => ContractorOffer[]) => Promise<ContractorOffer[]>
   readonly toast: (text: string) => void

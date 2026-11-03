@@ -19,10 +19,10 @@ import { askClawd, handScoutSpawn, runScout, scoutHandoff, spawnTypeOf } from '.
 import type { ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE } from './scout-spec'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
-import { holdBack, resetPayroll, reviewPayroll, savePayroll, setLaidOff } from './payroll'
+import { checkPayroll, holdBack, resetPayroll, savePayroll, setLaidOff } from './payroll'
 import { checkOnboard, chooseOnboard, isSetupBusy, restartOnboard, savedOf, startOnboard } from './onboard'
 import { ancestorPaths, answerText, breakdownOf, commandsOf, listEntries } from './onboard-adapt'
-import { rehire } from './hire'
+import { hireTypes, rehire, type SavedTeam } from './hire'
 import { PROFILE_BLOCK, profileBlock } from './profile'
 import { PROFILE_KEY, teamKey } from './onboard-types'
 import type { OnboardCard, OnboardIo, Profile, Team } from './onboard-types'
@@ -72,8 +72,7 @@ import { offerRule, ruleActions } from './rule-io'
 import type { RuleIo } from './rule-io'
 import { hire, withReport, withSaid, withStep, withTool } from './staff-model'
 import { runCouncil, withVoiceNotes, type CouncilIo } from './council'
-import { clockOut, hireListed, newHire, reconcile, signOfLife, specialistOf } from './run-io'
-import type { RunIo } from './run-io'
+import { clockOut, hireListed, loadTokens, newHire, reconcile, signOfLife, specialistOf, type RunIo } from './run-io'
 import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0, edit, inLine, reasonOf, runEach, startNote } from './state'
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
@@ -82,6 +81,7 @@ const fx = atom({ plugin: 'clawd-hq', key: 'fx' } as const, FX0)
 const tick = atom({ plugin: 'clawd-hq', key: 'tick' } as const, 0)
 const blurbs = atom({ plugin: 'clawd-hq', key: 'blurbs' } as const, {} as Record<string, string>)
 const roster = atom({ plugin: 'clawd-hq', key: 'roster' } as const, {} as Record<string, Badge>)
+const projectTokens = atom({ plugin: 'clawd-hq', key: 'projectTokens' } as const, {} as Record<string, number>)
 const payroll = atom({ plugin: 'clawd-hq', key: 'payroll' } as const, PAYROLL0)
 const gauge = atom({ plugin: 'clawd-hq', key: 'gauge' } as const, GAUGE0)
 const artifacts = atom({ plugin: 'clawd-hq', key: 'artifacts' } as const, [] as Artifact[])
@@ -148,14 +148,14 @@ async function enrollNow($: EngineInterface, type: string, jobs: number, tokens 
 const runIo = ($: EngineInterface): RunIo => ({
   now: () => $.clock.now(), tick: () => read($, tick), staff: () => read($, staff), changeStaff: fn => update($, staff, fn),
   blurbs: () => read($, blurbs), enroll: (type, jobs, tokens) => enroll($, type, jobs, tokens), setBoss: fn => setBoss($, fn),
-  toast: text => void $.ui.toast(text), agents: () => $.agent.list(),
+  toast: text => void $.ui.toast(text), agents: () => $.agent.list(), folder: () => cwd, get: key => $.store.get(key), set: (key, value) => $.store.set(key, value), showTokens: m => update($, projectTokens, () => m),
 })
 
 /** A resumed specialist is at work again, on a new run; one the books lost (from before a reload) joins them, not counted as a hire. */
 async function rejoin<R extends { agentId?: string }>($: EngineInterface, r: R, e: { subagentType: string; description: string; name?: string; resume?: { agentId: string } }, said?: Effort) {
   if (!r.agentId) return r
   const [now, t] = [await $.clock.now(), await read($, tick)]
-  if (!(await read($, staff)).some(one => one.id === r.agentId)) await update($, staff, l => hire(l, freshHire({ ...e, id: r.agentId!, type: e.subagentType }, now, t)))
+  if (!(await read($, staff)).some(one => one.id === r.agentId)) await update($, staff, l => hire(l, freshHire({ ...e, id: r.agentId!, type: e.subagentType, folder: cwd }, now, t)))
   // The level it was hired with (or the follow-up's new one) goes on; the books are the copy that outlives a reload.
   const level = resumedEffort(said, [r.agentId, e.resume?.agentId], await read($, staff), efforts)
   if (level) { efforts.set(r.agentId, level); await update($, staff, l => edit(l, r.agentId!, one => ({ ...one, effort: level }))) }
@@ -243,7 +243,7 @@ const payrollIo = ($: EngineInterface): PayrollIo => ({
   cwd, get: () => getPayroll($), set: async p => { await update($, payroll, () => p) }, keep: (key, p) => $.store.set(key, p),
   types: async () => [...new Set([...Object.keys(await read($, blurbs)), ...Object.keys(await read($, roster))])],
   picks: async () => ((await $.store.get(teamKey(cwd))) as Team | undefined)?.picks?.filter(p => p.kind === 'agent').map(p => p.name),
-  list: path => $.fs.list(path), fx: () => getFx($), setFx: fn => setFx($, fn),
+  hires: async () => hireTypes((await $.store.get(teamKey(cwd))) as SavedTeam | undefined), list: path => $.fs.list(path), fx: () => getFx($), setFx: fn => setFx($, fn),
   invalidate: () => { $.ui.invalidate('tool.describe'); $.ui.invalidate('prompt.attachment') },
 })
 
@@ -355,7 +355,7 @@ async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions
     if (isDrawn && !(await read($, onboard))) void onboardIo($, opts).then(checkOnboard).catch(() => undefined) // slow steps never hold a frame
   }
   if (frames % 25 === 0) {
-    if (!isSetupBusy(await savedOf({ cwd, get: async key => (await $.store.get(key)) as never }), opts.isAutoOn)) await reviewPayroll(payrollIo($))
+    if (!isSetupBusy(await savedOf({ cwd, get: async key => (await $.store.get(key)) as never }), opts.isAutoOn)) await checkPayroll(payrollIo($), text => void $.ui.toast(text))
     // The model takes its time: the frames go on meanwhile, and a recap that fails is simply not shown.
     void maybeRecap(recapIo($)).catch(() => undefined)
   }
@@ -371,7 +371,7 @@ async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions
 async function panelData($: EngineInterface, options: BriefingOptions): Promise<PanelData> {
   return onStage({
     staff: await read($, staff), boss: await getBoss($), fx: await getFx($), tick: await read($, tick), blurbs: await read($, blurbs),
-    roster: await read($, roster), payroll: await getPayroll($),
+    roster: await read($, roster), projectTokens: await read($, projectTokens), payroll: await getPayroll($),
     artifacts: await read($, artifacts), leftUndone: await read($, leftUndone), ruleOffers: await read($, ruleOffers), contractorOffers: await read($, contractorOffers), gauge: await read($, gauge), now: await $.clock.now(), know: await knowIo($).card(),
     brief: { ...BRIEF0, ...(await read($, clawdBrief)) }, options, onboard: await setupCard($),
   })
@@ -393,7 +393,6 @@ async function setConfig($: EngineInterface, field: ConfigField, value: boolean)
   const note = await setToggle(configIo($), field, value)
   await setFx($, f => ({ ...f, configNote: note }))
 }
-
 
 function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
   return {
@@ -500,6 +499,7 @@ export const register: Register = (on, options) => {
       // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
       ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${cwd}`)); await update($, leftUndone, () => items) }],
+      ['project tokens', () => loadTokens(runIo($))], // this folder's totals only: a new project shows none
       ['offer rule tool', () => $.tool.register(OFFER_RULE_SPEC)],
       ['old decisions card', () => checkOld(oldIo($))],
       ['step tool', () => $.tool.register(STEP_SPEC)],

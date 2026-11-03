@@ -3,12 +3,13 @@
 // `clawd-hq:<name>`. A skill name the engine does not know fails silently, so every name is checked against the
 // installed list first and a name that is not there is dropped and reported. Skills cannot be hidden, only agents parked.
 // No `$` here: the engine is reached through OnboardIo closures that register.tsx fills.
-import { firstSentence, isBuiltIn } from './helpers'
+import { firstSentence } from './helpers'
 import type { CommandEntry, HireSpec, OnboardIo, Pick as SeatPick, Seat, Team } from './onboard-types'
 import { teamKey } from './onboard-types'
+import { isStanding } from './standing'
 
 /** The calls hiring needs. */
-export type HireIo = Readonly<Pick<OnboardIo, 'cwd' | 'get' | 'set' | 'breakdown' | 'commands' | 'allAgentTypes' | 'savePayroll' | 'registerHire'>>
+export type HireIo = Readonly<Pick<OnboardIo, 'cwd' | 'get' | 'set' | 'breakdown' | 'commands' | 'allAgentTypes' | 'parked' | 'savePayroll' | 'registerHire'>>
 /** The calls a rehire at session start needs. */
 export type RehireIo = Readonly<Pick<OnboardIo, 'cwd' | 'get' | 'breakdown' | 'commands' | 'registerHire'>>
 
@@ -38,10 +39,15 @@ const bareOf = (name: string) => name.slice(name.indexOf(':') + 1)
 
 // ---- Parking ----
 
-/** Agent types not on the team, minus built-ins and this plugin's own hires. Only agents are parked: a skill on the team never protects or hides an agent type. */
-export function parkList(allAgentTypes: readonly string[], team: Team): readonly string[] {
+/**
+ * Agent types not on the team, minus built-ins, the shipped helpers and the contractor, and this folder's own hires (`hires`; by default
+ * the ones the team's skills make). A skill hire made in another project is parked. Only agents are parked: a skill on the team never
+ * protects or hides an agent type.
+ */
+export function parkList(allAgentTypes: readonly string[], team: Team, hires: readonly HireSpec[] = skillHires(team, undefined).hires): readonly string[] {
   const kept = new Set(team.picks.filter(p => p.kind === 'agent').map(p => p.name))
-  return allAgentTypes.filter(t => !isBuiltIn(t) && !t.startsWith(`${OWN_PLUGIN}:`) && !kept.has(t))
+  const own = new Set(hires.map(h => listedAs(h.name)))
+  return allAgentTypes.filter(t => !isStanding(t, own) && !kept.has(t))
 }
 
 // ---- Hires ----
@@ -104,11 +110,22 @@ async function register(io: Pick<OnboardIo, 'registerHire'>, hires: readonly Hir
   return { hired: results.filter(([, ok]) => ok).map(([n]) => n), failed: results.filter(([, ok]) => !ok).map(([n]) => n) }
 }
 
-/** "Hire this team": park the rest, register the skill hires, keep the team with its hires. Each part carries on if another fails. */
+/** Takes types off this folder's laid-off list; the rest of the list stays. Nothing is saved when none of them is on it. */
+async function unpark(io: Pick<HireIo, 'parked' | 'savePayroll'>, types: ReadonlySet<string>): Promise<void> {
+  const laid = io.parked()
+  if (laid.some(t => types.has(t))) await io.savePayroll(laid.filter(t => !types.has(t)))
+}
+
+/**
+ * "Hire this team": park the rest on top of what was parked before (but not this folder's own hires: a layoff of the same skill's hire
+ * from another project must not hide a new one), register the skill hires, keep the team with its hires. Each part carries on if another fails.
+ */
 export async function hireTeam(io: HireIo, team: Team): Promise<HireReport> {
   const { hires, dropped } = skillHires(team, await installedSkills(io))
-  const parkedList = parkList(io.allAgentTypes(), team)
-  const isParked = await io.savePayroll(parkedList).then(() => true, () => false)
+  const parkedList = parkList(io.allAgentTypes(), team, hires)
+  const own = new Set(hires.map(h => listedAs(h.name)))
+  const laidOff = [...new Set([...io.parked().filter(t => !own.has(t)), ...parkedList])]
+  const isParked = await io.savePayroll(laidOff).then(() => true, () => false)
   await io.set(teamKey(io.cwd), { ...team, hires } satisfies SavedTeam).catch(() => undefined)
   const { hired, failed } = await register(io, hires)
   return { parked: isParked ? parkedList.length : 0, hired, dropped, failed, ...(isParked ? {} : { isParkFailed: true as const }) }
@@ -119,15 +136,17 @@ export async function hireTeam(io: HireIo, team: Team): Promise<HireReport> {
  * as they were. This is how a contractor is made staff. A skill that is not in the installed list is not added (a wrong name fails silently).
  * A save that fails is thrown, so the caller can say so.
  */
-export async function addSkillHire(io: Pick<HireIo, 'cwd' | 'get' | 'set' | 'breakdown' | 'commands' | 'registerHire'>, skill: string, receipt: string): Promise<HireReport> {
+export async function addSkillHire(io: Pick<HireIo, 'cwd' | 'get' | 'set' | 'breakdown' | 'commands' | 'registerHire' | 'parked' | 'savePayroll'>, skill: string, receipt: string): Promise<HireReport> {
   const saved = await io.get<SavedTeam>(teamKey(io.cwd)).then(s => s, () => undefined)
   const base: SavedTeam = Array.isArray(saved?.picks) && Array.isArray(saved.empty) ? saved : { picks: [], empty: [], by: 'rules' }
   const isThere = base.picks.some(p => p.kind === 'skill' && p.name === skill)
   const team: Team = { ...base, picks: isThere ? base.picks : [...base.picks, { seat: 'Specialist', name: skill, kind: 'skill', receipt }] }
   const { hires, dropped } = skillHires(team, await installedSkills(io))
   if (dropped.includes(skill)) return { ...EMPTY_REPORT, dropped: [skill] }
+  const added = hires.filter(h => h.skills.includes(skill))
+  await unpark(io, new Set(added.map(h => listedAs(h.name))))
   await io.set(teamKey(io.cwd), { ...team, hires } satisfies SavedTeam)
-  const { hired, failed } = await register(io, hires.filter(h => h.skills.includes(skill)))
+  const { hired, failed } = await register(io, added)
   return { parked: 0, hired, dropped, failed }
 }
 
@@ -140,6 +159,10 @@ const isSpec = (v: unknown): v is HireSpec => {
   return isText(s.name) && /^[A-Za-z0-9_-]{1,64}$/.test(s.name) && isText(s.description) && isText(s.prompt)
     && Array.isArray(s.skills) && s.skills.length > 0 && s.skills.every(isText)
 }
+
+/** The agent types (`clawd-hq:<name>`) of the hires kept with a saved team; none for a team that has none or junk. */
+export const hireTypes = (saved: SavedTeam | undefined): readonly string[] =>
+  Array.isArray(saved?.hires) ? saved.hires.filter(isSpec).map(h => listedAs(h.name)) : []
 
 /** Registers the saved hires again: the engine forgets them each session. Names are re-checked when the skill list is there. */
 export async function rehire(io: RehireIo): Promise<HireReport> {

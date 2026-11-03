@@ -17,6 +17,8 @@ export type PanelData = {
   tick: number
   blurbs: Record<string, string>
   roster: Record<string, Badge>
+  /** The tokens each type used in this project, for the People tab; none for a type with no runs here. */
+  projectTokens: Record<string, number>
   payroll: Payroll
   /** The pages Claude published or opened in this project, newest first. */
   artifacts: Artifact[]

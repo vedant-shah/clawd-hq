@@ -5,6 +5,8 @@ import type { Boss, EndedBy, Employee, Mood } from '../types'
 import { labelOf, roleOf } from './office'
 import { freshHire } from './office-state'
 import { DEMO, isActive } from './panel-model'
+import { keepTokens } from './project-tokens'
+import type { TokensIo } from './project-tokens'
 import { SCOUT_TYPE } from './scout-spec'
 import { edit } from './state'
 import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEngine, quietFor, restart, touch, verdict } from './staff-model'
@@ -12,8 +14,11 @@ import { QUIET_MS, endOfStatus, endRun, finishedBoss, finishedText, hire, markEn
 /** An agent as the engine lists it. */
 export type ListedAgent = { id: string; type: string; description: string; name?: string; status: AgentStatus }
 
-/** What the books of specialists may do. */
-export type RunIo = {
+/** This project's token totals, read at session start (hooks/project-tokens.ts). */
+export { loadTokens } from './project-tokens'
+
+/** What the books of specialists may do, with the per-project token totals (`folder` is the session's folder now). */
+export type RunIo = TokensIo & {
   readonly now: () => Promise<number>
   readonly tick: () => Promise<number>
   readonly staff: () => Promise<Employee[]>
@@ -30,7 +35,7 @@ export type RunIo = {
 /** Puts a specialist on the books. One already there keeps its progress and takes the new facts; a new one is counted as a hire and Clawd waves. */
 export async function newHire(io: RunIo, id: string, type: string, description: string, name?: string) {
   const [now, t] = [await io.now(), await io.tick()]
-  const fresh = freshHire({ id, type, description, name }, now, t)
+  const fresh = freshHire({ id, type, description, name, folder: io.folder() }, now, t)
   if ((await io.staff()).some(e => e.id === id)) {
     await io.changeStaff(list => hire(list, fresh))
     return
@@ -62,7 +67,11 @@ export async function clockOut(io: RunIo, id: string, mood: Mood, how: EndedBy =
   const e = ended as Employee | undefined
   // What this run used joins its type's total, less what an earlier end of the same run already added. A stand-in adds none.
   const added = e ? (e.tokens ?? 0) - (e.counted ?? 0) : 0
-  if (e && added > 0 && !id.startsWith(DEMO)) await io.enroll(e.type, 0, added)
+  if (e && added > 0 && !id.startsWith(DEMO)) {
+    await io.enroll(e.type, 0, added)
+    // The People tab's line: the folder the run was hired in, not where the session is now. One on the books from before folders were kept counts here.
+    await keepTokens(io, e.folder ?? io.folder(), e.type, added)
+  }
   // Lost contact is neither a win nor a failure: no toast, no cheer.
   if (!e || mood === 'lost') return
   const blurb = (await io.blurbs())[e.type] ?? ''
@@ -74,8 +83,12 @@ export async function clockOut(io: RunIo, id: string, mood: Mood, how: EndedBy =
 /** Any sign of life from a specialist (a tool call, a model step): it is heard from now, and a finished one is back at work. */
 export async function signOfLife(io: RunIo, id: string, activity?: string) {
   const [now, t] = [await io.now(), await io.tick()]
+  const folder = io.folder()
   await io.changeStaff(l => edit(l, id, one => {
-    const back = touch(restart(one, now, t), now)
+    const restarted = restart(one, now, t)
+    // A new run (a resume after a real end) belongs to the folder it starts in; a run that goes on after a guessed end keeps its own.
+    const placed = restarted.startedAt !== one.startedAt && folder !== '' ? { ...restarted, folder } : restarted
+    const back = touch(placed, now)
     return activity === undefined ? back : { ...back, activity }
   }))
 }

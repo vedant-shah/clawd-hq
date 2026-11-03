@@ -117,7 +117,7 @@ const match = (haystack: string[], query: string) => {
   return q === '' || haystack.some(h => h.toLowerCase().includes(q))
 }
 
-export type Person = { type: string; name: string; plugin: string; jobs: number; blurb: string; isOff: boolean; /** Everything its runs have used. */ tokens?: number }
+export type Person = { type: string; name: string; plugin: string; jobs: number; blurb: string; isOff: boolean; /** What its runs have used in this project. */ tokens?: number }
 
 const SHORT_CHARS = 80
 /** Where a clause ends: a full stop, a colon, a semicolon, a bracket, or a dash with spaces round it. */
@@ -172,8 +172,8 @@ export function splitPeople(people: Person[], query: string): { team: Person[]; 
   return { team: found.filter(p => !p.isOff), pool: found.filter(p => p.isOff) }
 }
 
-/** Every agent type on the books, as a person: "Planner", where it comes from, how often it was hired. */
-export function buildPeople(types: string[], blurbs: Record<string, string>, roster: Record<string, Badge>, laidOff: string[]): Person[] {
+/** Every agent type on the books, as a person: "Planner", where it comes from, how often it was hired, and the tokens it used in this project. */
+export function buildPeople(types: string[], blurbs: Record<string, string>, roster: Record<string, Badge>, laidOff: string[], used: Record<string, number> = {}): Person[] {
   const off = new Set(laidOff)
   const roles = [...new Set(types)].sort().map(type => ({ type, title: roleOf(type, blurbs[type] ?? '').title }))
   return roles.map(({ type, title }) => {
@@ -182,7 +182,7 @@ export function buildPeople(types: string[], blurbs: Record<string, string>, ros
     const bare = bareType(type)
     const tag = bare.toLowerCase() === title.toLowerCase() ? pluginOf(type) : bare
     return {
-      type, blurb: blurbs[type] ?? '', plugin: pluginOf(type), jobs: roster[type]?.jobs ?? 0, tokens: roster[type]?.tokens, isOff: off.has(type),
+      type, blurb: blurbs[type] ?? '', plugin: pluginOf(type), jobs: roster[type]?.jobs ?? 0, tokens: used[type], isOff: off.has(type),
       name: shared ? `${title} (${tag})` : title,
     }
   })

@@ -15,8 +15,8 @@ export const LOOKING_LINE = 'Looking around…'
 /** The card afterwards: what was set up, then where to change it. DECIDED wording. */
 export const DONE_HEAD = 'Set up your team for this project: '
 export const DONE_TAIL = 'Change it in People or Settings, or run /office-setup again.'
-/** Who is on the team without being picked: the built-ins and the shipped helpers. */
-export const ALWAYS_ON_LINE = 'Also on the team: Claude\'s built-in agents and Clawd HQ\'s own helpers.'
+/** Who is on the team without being picked: the built-ins always, and the shipped helpers as backups for any role nothing installed fills. */
+export const ALWAYS_ON_LINE = 'Also on the team: Claude\'s built-in agents. Clawd HQ\'s own helpers cover any role nothing installed fills.'
 export const NO_TEAM_LINE = 'Set up this project with no extra helpers: none were found, so the team is Claude\'s built-in agents.'
 
 const DISMISS: OnboardButton = { action: 'dismiss', label: 'Dismiss' }

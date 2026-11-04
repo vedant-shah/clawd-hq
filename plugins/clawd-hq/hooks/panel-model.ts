@@ -2,6 +2,7 @@
 import type { Badge, Employee } from '../types'
 import { READING_BRIEF } from './activity'
 import { isContractorType } from './contractor-name'
+import { isBuiltIn } from './helpers'
 import { ago, bareType, labelOf, roleOf, typeTag } from './office'
 import type { PanelData } from './panel-types'
 import { withoutStepPrefix } from './steps'
@@ -164,12 +165,14 @@ export function shortLine(text: string): string {
 
 export const pluginOf = (type: string) => (type.includes(':') ? type.split(':')[0]! : 'built in')
 
-/** Built-in agents are never laid off. */
-export const canLayOff = (type: string) => type.includes(':')
+/** Built-in agents are never laid off; any other type may be, a personal agent with no plugin part too. */
+export const canLayOff = (type: string) => !isBuiltIn(type)
 
-export function splitPeople(people: Person[], query: string): { team: Person[]; pool: Person[] } {
+/** The people a search finds: the team, Claude's built-in agents (always on, kept apart), and the laid-off pool. */
+export function splitPeople(people: Person[], query: string): { team: Person[]; builtIn: Person[]; pool: Person[] } {
   const found = people.filter(p => match([p.name, p.type, p.plugin, p.blurb], query))
-  return { team: found.filter(p => !p.isOff), pool: found.filter(p => p.isOff) }
+  const hired = found.filter(p => !isBuiltIn(p.type))
+  return { team: hired.filter(p => !p.isOff), builtIn: found.filter(p => isBuiltIn(p.type)), pool: hired.filter(p => p.isOff) }
 }
 
 /** Every agent type on the books, as a person: "Planner", where it comes from, how often it was hired, and the tokens it used in this project. */

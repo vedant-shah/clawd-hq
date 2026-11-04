@@ -1,6 +1,7 @@
 // Payroll: which agent types Clawd is offered in this project, and the review that lays off, by itself, the types it does not use.
 // register.tsx hands over the calls it may make (PayrollIo); nothing here touches `$` or an atom.
 import type { Fx, Payroll } from '../types'
+import { isSkillCover, withCoverRule, withHandChoice } from './core-cover'
 import { projectFiles, proposeLayoffs } from './desk'
 import { withLaidOff } from './office-state'
 import { isHireType, isStanding } from './standing'
@@ -32,7 +33,9 @@ let isFiled = false
 let ownFound: ReadonlySet<string> = new Set()
 /** A failed check is told once a session. */
 let isFailureTold = false
-export const resetPayroll = () => { isFiled = false; ownFound = new Set(); isFailureTold = false }
+/** Every type offered this session (each passes through holdBack): what the cover rule counts as installed. */
+let offered: ReadonlySet<string> = new Set()
+export const resetPayroll = () => { isFiled = false; ownFound = new Set(); isFailureTold = false; offered = new Set() }
 
 export async function savePayroll(io: PayrollIo, p: Payroll) {
   await io.set(p)
@@ -80,7 +83,22 @@ async function setAsideStale(io: PayrollIo, p: Payroll) {
   if (stale.length > 0) await savePayroll(io, { ...p, laidOff: [...p.laidOff, ...stale], ...(p.kept ? { kept: p.kept.filter(t => !stale.includes(t)) } : {}) })
 }
 
+/**
+ * The cover rule (hooks/core-cover.ts) on the payroll as it is now: saved only when it changes something. The folder's hires are read
+ * only when an offered skill hire could fill a role.
+ */
+async function applyCover(io: PayrollIo) {
+  const own = [...offered].some(isSkillCover) ? new Set(await io.hires()) : new Set<string>()
+  const next = withCoverRule(await io.get(), offered, own)
+  if (next) await savePayroll(io, next)
+}
+
 export async function reviewPayroll(io: PayrollIo) {
+  await reviewTeam(io)
+  await applyCover(io)
+}
+
+async function reviewTeam(io: PayrollIo) {
   const first = await io.get()
   if (first.isReviewed && first.kept === undefined) return settleTeam(io, first)
   if (first.isReviewed) return setAsideStale(io, first)
@@ -122,6 +140,7 @@ const isOwnHire = (io: PayrollIo, type: string): Promise<boolean> => io.hires().
  * in the pool until the person hires it. Before the team is settled, only what was laid off is held back.
  */
 export async function holdBack(io: PayrollIo, type: string): Promise<boolean> {
+  if (!offered.has(type)) offered = new Set([...offered, type])
   const p = await io.get()
   if (p.laidOff.includes(type)) return true
   // Only a skill hire of Clawd HQ needs the folder's saved hires: every other type is answered without a store read. A skill hire of
@@ -132,4 +151,6 @@ export async function holdBack(io: PayrollIo, type: string): Promise<boolean> {
   return true
 }
 
-export const setLaidOff = async (io: PayrollIo, type: string, isOff: boolean) => savePayroll(io, withLaidOff(await io.get(), type, isOff))
+/** A layoff or rehire by hand; for one of Clawd HQ's own four it is also recorded as a hand choice, which the cover rule leaves alone. */
+export const setLaidOff = async (io: PayrollIo, type: string, isOff: boolean) =>
+  savePayroll(io, withHandChoice(withLaidOff(await io.get(), type, isOff), type, isOff))

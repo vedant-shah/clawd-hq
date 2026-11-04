@@ -34,8 +34,9 @@ test('a description is read from front matter: plain, quoted, or folded over lin
 })
 
 test('the built-in helpers are known by name', () => {
-  expect([...BUILT_INS].sort()).toEqual(['Explore', 'Plan', 'general-purpose', 'statusline-setup'])
+  expect([...BUILT_INS].sort()).toEqual(['Explore', 'Plan', 'claude-code-guide', 'general-purpose', 'statusline-setup'])
   expect(isBuiltIn('Explore')).toBe(true)
+  expect(isBuiltIn('claude-code-guide')).toBe(true)
   expect(isBuiltIn('planner')).toBe(false)
 })
 

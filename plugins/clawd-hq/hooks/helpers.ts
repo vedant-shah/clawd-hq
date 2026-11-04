@@ -5,7 +5,7 @@ import type { CommandEntry, Helper, OnboardIo, PastUse, UsageBreakdown } from '.
 export type HelpersIo = Pick<OnboardIo, 'cwd' | 'home' | 'configDir' | 'list' | 'read' | 'breakdown' | 'commands' | 'blurbs'>
 
 /** Always on, never hired or parked. */
-export const BUILT_INS: ReadonlySet<string> = new Set(['general-purpose', 'Explore', 'Plan', 'statusline-setup'])
+export const BUILT_INS: ReadonlySet<string> = new Set(['general-purpose', 'Explore', 'Plan', 'statusline-setup', 'claude-code-guide'])
 export const isBuiltIn = (name: string) => BUILT_INS.has(name)
 
 const ABOUT_CHARS = 160
@@ -17,6 +17,9 @@ const NO_ABOUT = 'Used here before; no description available.'
 const KNOWN_ABOUT: Readonly<Record<string, string>> = {
   'claude-code-guide': 'Answers questions about Claude Code, its settings and hooks, and the Agent SDK.',
 }
+
+/** A built-in agent setup leaves out of its candidates: one Clawd HQ wrote a description for (claude-code-guide) is still one a team may name. */
+const isLeftOut = (name: string) => isBuiltIn(name) && KNOWN_ABOUT[name] === undefined
 
 const BUILT_IN_SOURCE = 'built in'
 
@@ -139,7 +142,7 @@ function toHelper(f: Found, past: PastUse, instructions: string, descriptions: R
 function usedButMissing(past: PastUse, installed: readonly Helper[]): readonly Helper[] {
   const known = (kind: 'agent' | 'skill', name: string) => installed.some(h => h.kind === kind && (h.name === name || (h.name.includes(':') && bareOf(h.name) === name)))
   const rows = [...Object.entries(past.agents).map(([n, c]) => ['agent', n, c] as const), ...Object.entries(past.skills).map(([n, c]) => ['skill', n, c] as const)]
-  return rows.filter(([kind, name]) => !isBuiltIn(name) && !known(kind, name)).map(([kind, name, uses]) => ({
+  return rows.filter(([kind, name]) => !isLeftOut(name) && !known(kind, name)).map(([kind, name, uses]) => ({
     name, kind, source: NOT_ON_DISK, about: KNOWN_ABOUT[name] ?? NO_ABOUT, uses, isNamed: false, isOwn: false,
   }))
 }
@@ -159,7 +162,7 @@ export async function installedHelpers(io: HelpersIo, past: PastUse, instruction
   const disk = new Map([...agentFiles, ...skillFiles].map(f => [`${f.kind}:${f.name}`, f.about]))
   const listed = fromBreakdown(breakdown, io.blurbs(), name => disk.get(`skill:${name}`) ?? '')
   // Built-in agents (general-purpose, Explore, Plan) are always on and stay out; built-in skills (plugin-authoring) are real candidates.
-  const found = merge([...listed, ...agentFiles, ...skillFiles]).filter(f => f.kind === 'skill' || !isBuiltIn(f.name))
+  const found = merge([...listed, ...agentFiles, ...skillFiles]).filter(f => f.kind === 'skill' || !isLeftOut(f.name))
   const helpers = found.map(f => toHelper(f, past, instructions, descriptions))
   return [...helpers, ...usedButMissing(past, helpers)]
 }

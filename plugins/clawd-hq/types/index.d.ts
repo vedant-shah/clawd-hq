@@ -104,6 +104,10 @@ export type Payroll = {
   stacks: string[]
   /** The agent types on this project's team once it was settled: a type offered later is not on it, and is laid off at once. Absent until then. */
   kept?: string[]
+  /** Clawd HQ's own helpers laid off by the cover rule (hooks/core-cover.ts) because an installed helper fills their role; brought back when nothing does. */
+  ruleLaidOff?: string[]
+  /** Clawd HQ's own helpers brought back by hand: the cover rule leaves them on while a cover stays, and forgets the return once none is on the team. */
+  handHired?: string[]
 }
 
 /** An agent type's place on the books, kept across sessions. */

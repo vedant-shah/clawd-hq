@@ -71,7 +71,7 @@ test('the after-card says what was set up, with the names, and offers one Dismis
 })
 
 test('the after-card says who is always on the team', () => {
-  expect(ALWAYS_ON_LINE).toBe('Also on the team: Claude\'s built-in agents and Clawd HQ\'s own helpers.')
+  expect(ALWAYS_ON_LINE).toBe('Also on the team: Claude\'s built-in agents. Clawd HQ\'s own helpers cover any role nothing installed fills.')
   expect(doneCard(['Planner']).lines).toContain(ALWAYS_ON_LINE)
 })
 

@@ -120,11 +120,32 @@ test('the panel has no decisions to group, list or filter any more: those helper
   for (const name of ['dayLabel', 'groupByDay', 'newestFirst', 'filterMemory']) expect(model).not.toHaveProperty(name)
 })
 
-test('a type shows its plugin, and only plugin types can be laid off', () => {
+test('a type shows its plugin, and every type but the built-ins can be laid off', () => {
   expect(pluginOf('ecc:planner')).toBe('ecc')
   expect(pluginOf('Explore')).toBe('built in')
   expect(canLayOff('ecc:planner')).toBe(true)
   expect(canLayOff('general-purpose')).toBe(false)
+  expect(canLayOff('Plan')).toBe(false)
+  expect(canLayOff('claude-code-guide')).toBe(false)
+  expect(canLayOff('researcher')).toBe(true) // a personal agent has no plugin part, and is no built-in
+})
+
+test('Claude\'s built-in agents get their own group, not the team; a personal agent stays on the team, and search covers both', () => {
+  const people: Person[] = [
+    { type: 'ecc:planner', name: 'Planner', plugin: 'ecc', jobs: 3, blurb: 'Plans work', isOff: false },
+    { type: 'Explore', name: 'Explorer', plugin: 'built in', jobs: 0, blurb: 'Maps a codebase', isOff: false },
+    { type: 'Plan', name: 'Plan', plugin: 'built in', jobs: 0, blurb: 'Designs plans', isOff: false },
+    { type: 'researcher', name: 'Researcher', plugin: 'built in', jobs: 0, blurb: 'Looks things up', isOff: false },
+    { type: 'claude-code-guide', name: 'Guide', plugin: 'built in', jobs: 0, blurb: 'Answers questions about Claude Code', isOff: false },
+  ]
+  const all = splitPeople(people, '')
+  expect(all.team.map(p => p.type)).toEqual(['ecc:planner', 'researcher'])
+  expect(all.builtIn.map(p => p.type)).toEqual(['Explore', 'Plan', 'claude-code-guide'])
+  expect(all.pool).toEqual([])
+  expect(splitPeople(people, 'codebase').builtIn.map(p => p.type)).toEqual(['Explore'])
+  expect(splitPeople(people, 'codebase').team).toHaveLength(0)
+  expect(splitPeople(people, 'looks').team.map(p => p.type)).toEqual(['researcher'])
+  expect(splitPeople(people, 'looks').builtIn).toHaveLength(0)
 })
 
 test('people split into team and talent pool, and the search covers name, plugin and blurb', () => {

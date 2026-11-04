@@ -48,7 +48,7 @@ export function peopleTab(kit: Kit, data: PanelData, actions: PanelActions) {
   const found = splitPeople(everyone, query)
   // Laid-off helpers (the pool) are listed only under a search.
   const isSearching = query.trim() !== ''
-  const team = found.team
+  const { team, builtIn } = found
   const pool = isSearching ? found.pool : []
   return (
     <Box flexDirection="column" gap={1}>
@@ -57,8 +57,9 @@ export function peopleTab(kit: Kit, data: PanelData, actions: PanelActions) {
           onSubmit={v => actions.setFind('people', v)} />
       )}
       {everyone.length === 0 && <Text dimColor>No one on the books yet. Agents appear here once they are offered to Clawd.</Text>}
-      {isSearching && team.length + pool.length === 0 && <Text dimColor wrap="wrap">{`Nothing matches "${query.trim()}".`}</Text>}
+      {isSearching && team.length + builtIn.length + pool.length === 0 && <Text dimColor wrap="wrap">{`Nothing matches "${query.trim()}".`}</Text>}
       {team.length > 0 && section('TEAM', team, kit, actions)}
+      {builtIn.length > 0 && section('BUILT IN', builtIn, kit, actions)}
       {pool.length > 0 && section('TALENT POOL', pool, kit, actions)}    </Box>
   )
 }

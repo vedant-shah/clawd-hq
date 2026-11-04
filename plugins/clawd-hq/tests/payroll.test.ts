@@ -1,7 +1,7 @@
 // Payroll: a skill hire or contractor of another project is not on this project's team. It is set aside by the routine check
 // and when it is offered, while the built-ins, the core helpers, the generic contractor and this folder's own hires stay.
 import { expect, test } from 'claude-code/testing'
-import { checkPayroll, holdBack, resetPayroll, reviewPayroll } from '../hooks/payroll'
+import { checkPayroll, holdBack, resetPayroll, reviewPayroll, setLaidOff } from '../hooks/payroll'
 import type { PayrollIo } from '../hooks/payroll'
 import type { Fx, Payroll } from '../types'
 
@@ -154,4 +154,84 @@ test('the routine check still finds a stale hire that shows up after the first l
   types.push(STALE)
   await reviewPayroll(io)
   expect(box.payroll.laidOff).toEqual([STALE])
+})
+
+// ---- The cover rule: an installed helper on the team takes the place of Clawd HQ's own one for its role ----
+
+const REVIEWER = 'clawd-hq:core-reviewer'
+const PLANNER = 'clawd-hq:core-planner'
+const COVER = 'ecc:code-reviewer'
+/** The engine offers each type through holdBack, as at a session's start. */
+const offerAll = async (io: PayrollIo, types: readonly string[]) => { for (const t of types) await holdBack(io, t) }
+
+/** A settled team with an installed code reviewer, every type offered this session. */
+async function withCover(over: Partial<PayrollIo> = {}) {
+  const types = [COVER, ...ALWAYS_ON, ...BUILT_IN]
+  const made = fakeIo(settled(types), types, over)
+  await offerAll(made.io, types)
+  return made
+}
+
+test('with an installed code reviewer on the team, the routine check sets Clawd HQ\'s Reviewer aside', async () => {
+  resetPayroll()
+  const { io, box } = await withCover()
+  await reviewPayroll(io)
+  expect(box.payroll.laidOff).toEqual([REVIEWER])
+  expect(box.payroll.ruleLaidOff).toEqual([REVIEWER])
+})
+
+test('once its cover is laid off by hand, the Reviewer comes back by itself', async () => {
+  resetPayroll()
+  const { io, box } = await withCover()
+  await reviewPayroll(io)
+  expect(box.payroll.laidOff).toEqual([REVIEWER])
+  await setLaidOff(io, COVER, true)
+  await reviewPayroll(io)
+  expect(box.payroll.laidOff).toEqual([COVER])
+  expect(box.payroll.kept).toContain(REVIEWER)
+})
+
+test('a Reviewer brought back by hand stays, checked three times, with no save after the hand return', async () => {
+  resetPayroll()
+  let saves = 0
+  const { io, box } = await withCover()
+  await reviewPayroll(io)
+  const set = io.set
+  io.set = async p => { saves += 1; await set(p) }
+  await setLaidOff(io, REVIEWER, false)
+  for (let i = 0; i < 3; i += 1) await reviewPayroll(io)
+  expect(box.payroll.laidOff).toEqual([])
+  expect(box.payroll.handHired).toEqual([REVIEWER])
+  expect(saves).toBe(1)
+})
+
+test('a saved planner skill hire of this folder sets Clawd HQ\'s Planner aside', async () => {
+  resetPayroll()
+  const types = ['clawd-hq:planner', ...ALWAYS_ON]
+  const { io, box } = fakeIo(settled(types), types, { hires: async () => ['clawd-hq:planner'] })
+  await offerAll(io, types)
+  await reviewPayroll(io)
+  expect(box.payroll.laidOff).toEqual([PLANNER])
+})
+
+test('the rule waits until one of the four is offered this session', async () => {
+  resetPayroll()
+  const types = [COVER, ...ALWAYS_ON]
+  const { io, box } = fakeIo(settled(types), types)
+  await offerAll(io, [COVER])
+  await reviewPayroll(io)
+  expect(box.payroll.laidOff).toEqual([])
+  resetPayroll() // a new session: nothing offered yet
+  await offerAll(io, ALWAYS_ON)
+  await reviewPayroll(io)
+  expect(box.payroll.laidOff).toEqual([])
+})
+
+test('the cover check reads the folder\'s hires only when a skill hire could fill a role', async () => {
+  resetPayroll()
+  let reads = 0
+  const { io } = await withCover({ hires: async () => { reads += 1; return [MINE] } })
+  await reviewPayroll(io)
+  await reviewPayroll(io)
+  expect(reads).toBe(0)
 })

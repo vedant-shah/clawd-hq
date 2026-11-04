@@ -43,6 +43,34 @@ test('a better fit wins over a status; at the same fit, staff come before not on
   expect(rankHelpers('design system', list).map(h => h.id)).toEqual(['a:design-system', 'a:design-staff', 'a:design-team', 'a:design-off'])
 })
 
+const CORE_REVIEWER = item('clawd-hq:core-reviewer', 'Reviews the changes, tests and diffs.', { kind: 'agent', status: 'staff' })
+
+test('an installed helper that fills a role ranks above Clawd HQ\'s own one for it, even when that one fits the job better', () => {
+  const cover = item('ecc:code-reviewer', 'Reviews code.', { kind: 'agent', covers: 'clawd-hq:core-reviewer' })
+  expect(rankHelpers('review the changes, tests and diffs', [CORE_REVIEWER, cover]).map(h => h.id)).toEqual(['ecc:code-reviewer', 'clawd-hq:core-reviewer'])
+})
+
+test('with no cover on the team, Clawd HQ\'s own helper ranks by its own fit', () => {
+  const laidOff = item('ecc:code-reviewer', 'Reviews code.', { kind: 'agent', status: 'laid off' })
+  expect(rankHelpers('review the changes, tests and diffs', [laidOff, CORE_REVIEWER]).map(h => h.id)).toEqual(['clawd-hq:core-reviewer', 'ecc:code-reviewer'])
+})
+
+test('a cover that shares no word with the job leaves Clawd HQ\'s own helper ranked by its own fit, in the top five', () => {
+  const cover = item('ecc:code-reviewer', 'Reviews code.', { kind: 'agent', covers: 'clawd-hq:core-reviewer' })
+  const others = Array.from({ length: 5 }, (_, i) => item(`p:helper-${i}`, 'Reads diffs.'))
+  const top = rankHelpers('check the tests and diffs', [cover, ...others, CORE_REVIEWER]).map(h => h.id)
+  expect(top[0]).toBe('clawd-hq:core-reviewer')
+  expect(top).toHaveLength(MATCHES)
+})
+
+test('a cover that fits the job but falls outside the top five does not pull Clawd HQ\'s own helper down', () => {
+  const cover = item('ecc:code-reviewer', 'Reviews code.', { kind: 'agent', covers: 'clawd-hq:core-reviewer' })
+  const others = Array.from({ length: 4 }, (_, i) => item(`p:test-${i}`, 'Diffs and changes.'))
+  const top = rankHelpers('review the changes, tests and diffs', [cover, ...others, CORE_REVIEWER]).map(h => h.id)
+  expect(top[0]).toBe('clawd-hq:core-reviewer')
+  expect(top).not.toContain('ecc:code-reviewer')
+})
+
 test('keywords widen the search: a paraphrased job finds the helper through the field\'s own words', () => {
   const list = [item('emil-design-eng', 'UI polish, layout and CSS details.'), item('ecc:postgres-patterns', 'Database tuning.')]
   expect(rankHelpers('make the settings screen look nicer', list)).toEqual([])

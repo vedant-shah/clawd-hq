@@ -100,6 +100,39 @@ test('the shipped four are always staff, and the plugin\'s own skill hires are n
   expect(found.some(m => m.name === 'clawd-hq:tdd-workflow')).toBe(false)
 })
 
+const CORE_REVIEWER = 'clawd-hq:core-reviewer'
+const REVIEW_JOB = 'review the changes, tests and diffs'
+/** One sentence, since only the first is kept: it shares four of the job's words, where the code reviewer's shares one. */
+const REVIEWER_ABOUT = 'Reviews the changes, tests and diffs.'
+
+/** The office above with this payroll, every agent offered, and Clawd HQ's Reviewer described so it fits the review job best by its words. */
+async function reviewOffice($: Engine, on: Parameters<typeof onboardHost>[0], payroll: Record<string, unknown>) {
+  onboardHost(on, { [`team:${CWD}`]: TEAM, [`payroll:${CWD}`]: { ...PAYROLL, ...payroll } })
+  await $.session.start(START)
+  await offerAgents($)
+  await $.agent.offer({ agent: CORE_REVIEWER, description: REVIEWER_ABOUT } as never)
+  return (await matchesOf($, REVIEW_JOB)).map(m => m.name)
+}
+
+test('an installed code reviewer on the team ranks above Clawd HQ\'s Reviewer, though the Reviewer fits the words better', async ($, on) => {
+  const names = await reviewOffice($, on, {})
+  expect(names.indexOf('ecc:code-reviewer')).toBeLessThan(names.indexOf(CORE_REVIEWER))
+  expect(names).toContain(CORE_REVIEWER)
+})
+
+test('with the code reviewer laid off, Clawd HQ\'s Reviewer ranks by its own fit', async ($, on) => {
+  const names = await reviewOffice($, on, { laidOff: ['ecc:go-reviewer', 'ecc:code-reviewer'] })
+  expect(names[0]).toBe(CORE_REVIEWER)
+})
+
+test('Clawd HQ\'s Reviewer, set aside for an installed one, shows as laid off', async ($, on) => {
+  onboardHost(on, { [`team:${CWD}`]: TEAM, [`payroll:${CWD}`]: { ...PAYROLL, laidOff: [CORE_REVIEWER], ruleLaidOff: [CORE_REVIEWER] } })
+  await $.session.start(START)
+  await $.agent.offer({ agent: CORE_REVIEWER, description: REVIEWER_ABOUT } as never)
+  const found = await matchesOf($, REVIEW_JOB)
+  expect(found.find(m => m.name === CORE_REVIEWER)).toMatchObject({ status: 'laid off' })
+})
+
 test('at most five come back, and a job nothing fits says so and points to the general agent', async ($, on) => {
   await office(on)
   await $.session.start(START)

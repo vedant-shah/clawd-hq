@@ -384,7 +384,9 @@ test('People lists a team member and a laid-off one in their sections, and lay o
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
-    expect(await ui.find({ type: 'Text', text: /TEAM · 3/ })).toBeDefined()
+    // Explore is a built-in agent: under its own heading, after the team.
+    expect(await ui.find({ type: 'Text', text: /TEAM · 2/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^BUILT IN · 1$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
     // A row is the name and one line of what they do: no "Hired" mark, no plugin or hire-count line, no total.
     expect(await ui.find({ type: 'Text', text: /^Plans work before anyone builds$/ })).toBeDefined()
@@ -400,7 +402,7 @@ test('People lists a team member and a laid-off one in their sections, and lay o
 
     await ui.press({ key: 'layoff-legal:review-contract' })
     // A laid-off helper leaves the screen: the pool is hidden until a search, with one line saying how many wait.
-    expect(await ui.find({ type: 'Text', text: /TEAM · 2/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /TEAM · 1/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
     expect(await ui.find({ key: 'hire-legal:review-contract' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /more installed|Search to find/ })).toBeUndefined()
@@ -419,7 +421,7 @@ test('People lists a team member and a laid-off one in their sections, and lay o
 
     await ui.press({ key: 'hire-legal:review-contract' })
     await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface })
-    expect(await ui.find({ type: 'Text', text: /TEAM · 3/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /TEAM · 2/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /TALENT POOL/ })).toBeUndefined()
     await ui.unmount()
   }
@@ -701,8 +703,8 @@ test('the payroll is trimmed by itself: no card, no pop-up, and a search finds t
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PEOPLE })
     expect(await ui.find({ key: 'payroll-review' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /Payroll review/ })).toBeUndefined()
-    // 15 offered types less the 7 laid off, and the built-in general agent that is always on the books.
-    expect(await ui.find({ type: 'Text', text: /^TEAM · 9$/ })).toBeDefined()
+    // 15 offered types less the 7 laid off; the built-in general agent, always on the books, is under BUILT IN.
+    expect(await ui.find({ type: 'Text', text: /^TEAM · 8$/ })).toBeDefined()
     expect(await ui.find({ key: 'hire-ecc:go-reviewer' })).toBeUndefined()
     await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'go-reviewer', kind: 'change', surface })
     expect(await ui.find({ key: 'hire-ecc:go-reviewer' })).toBeDefined()
@@ -715,32 +717,32 @@ test('laying one type off by hand still works, and rehiring from a search brings
   await untilReview($, on)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
   await ui.press({ key: 'layoff-ecc:planner' })
-  expect(await ui.find({ type: 'Text', text: /^TEAM · 8$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^TEAM · 7$/ })).toBeDefined()
   await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'planner', kind: 'change', surface: 'terminal' })
   await ui.press({ key: 'hire-ecc:planner' })
   await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /^TEAM · 9$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^TEAM · 8$/ })).toBeDefined()
   await ui.unmount()
 })
 
 test('a small team is left whole; the trim is made once the team grows past 15 types', async ($, on) => {
   // Fewer than 15 agent types: nothing to trim.
   const { toasts, clock } = await untilReview($, on, MANY.slice(0, 10))
-  expect(await teamSize($)).toBe(11)
+  expect(await teamSize($)).toBe(10)
   // Six more types join: the team is large enough now, and seven of its types are of no use here.
   for (const n of [1, 2, 3, 4, 5, 6]) await $.agent.offer({ agent: `ecc:planner-${n}`, description: 'Plans' } as never)
   await clock.advance(25 * 400)
-  expect(await teamSize($)).toBe(10)
+  expect(await teamSize($)).toBe(9)
   expect(toasts.some(t => /Payroll review|laid off/.test(t))).toBe(false)
 })
 
 test('a team with nothing to lay off keeps everyone, and types that arrive later wait in the pool', async ($, on) => {
   const useful = Array.from({ length: 16 }, (_, i) => `ecc:planner-${i}`)
   const { clock } = await untilReview($, on, useful)
-  expect(await teamSize($)).toBe(17)
+  expect(await teamSize($)).toBe(16)
   for (const agent of MANY.slice(0, 7)) await $.agent.offer({ agent, description: 'x' } as never)
   await clock.advance(50 * 400)
-  expect(await teamSize($)).toBe(17)
+  expect(await teamSize($)).toBe(16)
 })
 
 test('the team is the picked team plus what the person hired: a type offered later is not on it, and a team that had grown goes back by itself', async ($, on) => {
@@ -753,23 +755,23 @@ test('the team is the picked team plus what the person hired: a type offered lat
   await $.session.start(START)
   for (const agent of ['ecc:planner', 'ecc:architect', 'ecc:go-reviewer', 'legal:contracts', 'Explore']) offered[agent] = await $.agent.offer({ agent, description: `Does ${agent}` } as never)
   await h.clock.advance(25 * 400 + 100)
-  // The picked agent, the built-in general agent and Explore: not the 2 types that crept in.
-  expect(await teamSize($)).toBe(3)
+  // The picked agent (the built-in general agent and Explore are under BUILT IN): not the 2 types that crept in.
+  expect(await teamSize($)).toBe(1)
   expect(toasts.filter(t => /laid off|Payroll/.test(t))).toEqual([])
   // A type offered after that is not on the team and is not listed to Clawd.
   expect(await $.agent.offer({ agent: 'ecc:fresh', description: 'New' } as never)).toMatchObject({ isOffered: false })
-  expect(await teamSize($)).toBe(3)
+  expect(await teamSize($)).toBe(1)
   // It is in the pool, found by a search, and hiring it by hand puts it on the team for good.
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
   await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: 'fresh', kind: 'change', surface: 'terminal' })
   await ui.press({ key: 'hire-ecc:fresh' })
   await $.ui.input({ plugin: 'clawd-hq', key: 'find-people', text: '', kind: 'change', surface: 'terminal' })
   await ui.unmount()
-  expect(await teamSize($)).toBe(4)
+  expect(await teamSize($)).toBe(2)
   expect(await $.agent.offer({ agent: 'ecc:fresher', description: 'Newer' } as never)).toMatchObject({ isOffered: false })
   await $.session.start(START)
   await h.clock.advance(60 * 400)
-  expect(await teamSize($)).toBe(4)
+  expect(await teamSize($)).toBe(2)
   expect(await $.agent.offer({ agent: 'ecc:fresh', description: 'New' } as never)).not.toMatchObject({ isOffered: false })
 })
 
@@ -803,7 +805,31 @@ test('a trimmed payroll is not trimmed again in a new session: what the person r
   await ui.unmount()
   await $.session.start(START)
   await clock.advance(60 * 400)
-  expect(await teamSize($)).toBe(10)
+  expect(await teamSize($)).toBe(9)
+})
+
+test('an installed code reviewer takes the place of Clawd HQ\'s Reviewer after a routine check, and laying it off brings the Reviewer back', async ($, on) => {
+  const [backup, cover] = ['clawd-hq:core-reviewer', 'ecc:code-reviewer']
+  const h = host(on, [], { 'payroll:/repo': { laidOff: [], isReviewed: true, stacks: [], kept: [backup, cover] }, 'onboard:/repo': { step: 'skipped', pending: [], at: 1 } })
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.session.start(START)
+  for (const agent of [backup, cover]) await $.agent.offer({ agent, description: `Does ${agent}` } as never)
+  const onTeam = async (type: string) => {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+    const row = await ui.find({ key: `person-${type}` })
+    await ui.unmount()
+    return row !== undefined
+  }
+  expect(await onTeam(backup)).toBe(true)
+  await h.clock.advance(25 * 400 + 100)
+  expect(await onTeam(backup)).toBe(false)
+  expect(await onTeam(cover)).toBe(true)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
+  await ui.press({ key: `layoff-${cover}` })
+  await ui.unmount()
+  await h.clock.advance(25 * 400)
+  expect(await onTeam(backup)).toBe(true)
+  expect(await onTeam(cover)).toBe(false)
 })
 
 test('a specialist\'s turn starting is not Clawd\'s: his card stays free to talk, with its green dot', async ($, on) => {

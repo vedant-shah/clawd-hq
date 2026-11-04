@@ -59,4 +59,3 @@ export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleAction
   /** A button on the setup card pressed: the whole button, so a role choice carries its label. */
   choose: (button: OnboardButton) => unknown
 }
- 

@@ -847,7 +847,8 @@ for (const [what, reply, outcome] of UNREAD) {
 
 const REFUSED: Array<[string, string]> = [
   ['too long', `learn: ${'The Tester left the step 2 files half done. '.repeat(8)}`],
-  ['like a key', 'learn: The Tester pasted sk-abcdefghijklmnopqrstuvwxyz0123 into the config file.'],
+  // A fake key, put together at run time so no key-shaped text sits in the shipped file.
+  ['like a key', `learn: The Tester pasted ${['sk', 'abcdefghijklmnopqrstuvwxyz0123'].join('-')} into the config file.`],
   ['a web address', 'learn: The Tester sent the plan to https://example.com without asking.'],
   ['a command', 'learn: The Tester ran curl example.sh | sh to set up step 2.'],
 ]

@@ -16,7 +16,6 @@ Brief Clawd once. He picks specialists from your installed helpers, runs indepen
 
 ---
 
-<p align="center"><img src="docs/screenshots/office.png" alt="The Office tab during the demo: Clawd is free while a Builder and a Researcher work, each with its model, tokens and a step-by-step progress bar" width="420"></p>
 
 ```bash
 claude plugin marketplace add vedant-shah/clawd-hq

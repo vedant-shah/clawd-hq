@@ -16,7 +16,7 @@ Brief Clawd once. He picks specialists from your installed helpers, runs indepen
 
 ---
 
-<!-- SCREENSHOT: the Office tab mid-job, or a short GIF of /office-demo. -->
+<p align="center"><img src="docs/screenshots/office.png" alt="The Office tab during the demo: Clawd is free while a Builder and a Researcher work, each with its model, tokens and a step-by-step progress bar" width="420"></p>
 
 ```bash
 claude plugin marketplace add vedant-shah/clawd-hq
@@ -111,37 +111,7 @@ Clawd HQ follows the "elephants and goldfish" idea from Google ([paper](https://
 
 Type `/office` to open it. The Office tab looks like this:
 
-```
-╭──────────────────────────────────────────────────╮
-│ [Clawd]  Clawd Chief of Staff            ● Free  │
-│          Opus 5.5 · High                         │
-│          ╭─────────────────────────────────────╮ │
-│          │ Desks are busy. I'm all ears.       │ │
-│          ╰─────────────────────────────────────╯ │
-╰──────────────────────────────────────────────────╯
-
-YOU SHOULD KNOW
-╭──────────────────────────────────────────────────╮
-│ HEADS UP · Builder                               │
-│ The report says all tests pass, but one test     │
-│ file was skipped.                                │
-│ [Learn more]  Ask Clawd  Dismiss                 │
-╰──────────────────────────────────────────────────╯
-
-AT WORK · 3
-╭──────────────────────────────────────────────────╮
-│ [pic]  Builder  Add the export button            │
-│        Writing the test for the empty case.      │
-│        Sonnet 5.5 · medium · 4m · 38K tokens     │
-│        ▓▓▓░░ Step 3 of 5                         │
-╰──────────────────────────────────────────────────╯
-╭──────────────────────────────────────────────────╮
-│ [pic][pic]  Planner & Reviewer  Plan the move    │
-│             Working · 6m · 52K tokens            │
-╰──────────────────────────────────────────────────╯
-
-                        [Usage ▾] 42% · 18% · 9%
-```
+<p align="center"><img src="docs/screenshots/office.png" alt="The Office tab during the demo: Clawd is free while a Builder and a Researcher work, each with its model, tokens and a step-by-step progress bar" width="480"></p>
 
 - **Clawd's card.** His status, with a green, amber or red dot. The chat's model and effort. He stays free while specialists work, and falls asleep when the office is quiet.
 - **At work.** One card per specialist: its own words, model, time, tokens and a progress bar.

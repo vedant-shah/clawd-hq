@@ -27,6 +27,12 @@ Start a session. The office opens on its own. Type `/office-demo` for a 90-secon
 
 Needs Claude Code v2.1.287 or later.
 
+## 💡 Why
+
+When Claude is doing a long job in your main conversation, new requests pile up behind it. To change an instruction mid-job, you stop it and say it again.
+
+Clawd works like a good chief of staff. He finds the right person for each job and rarely does the work himself. He settles small decisions with his team, and comes to you only when he needs you.
+
 ## ✨ What it does
 
 Clawd HQ isn't a new agent runtime. It packages Claude Code's native agents into an opinionated project workflow: delegation by default for larger jobs, model and effort sizing, quiet progress, and a live office panel.
@@ -43,10 +49,10 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 
 ### 2. Right team, right size
 
-- **Uses what you already have.** Setup picks your team from the agents and skills you have installed. Each brief names the installed skills that fit the job. Nothing new to download.
+- **Uses what you already have.** Setup picks your team from the agents and skills you have installed, whether that's ECC or your own. You might have 200 installed, but a project realistically uses 5 to 10, and those are the team. Each brief names the installed skills that fit the job. Nothing new to download.
 - **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort. When nothing installed fits, he says so and recommends the `find-skills` skill to search the public skill registry. If you say yes, he installs it for you, and any skill it finds. Nothing is downloaded without your yes.
 - **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus. Skills are attached only when they add knowledge, not process: at most two, and none for a one-file edit or a job on the smallest model.
-- **Pair-ups.** Two or more specialists check each other on risky work.
+- **Pair-ups.** Some jobs need more than one kind of specialist. They work on it together, check each other, and come back with one conclusion.
 - **Lay off unused helpers.** Helpers outside the team are laid off on their own, which keeps Clawd's choices short. Search brings any back.
 - **Edit Clawd.** Change his rules or voice in plain words, from Settings. A short set of core rules is locked in code, so no edit can remove them. One click on Reset goes back to the built-in text.
 

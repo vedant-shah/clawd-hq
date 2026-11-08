@@ -40,6 +40,18 @@ export const failedCard = (reason: string, failures: number): OnboardCard => ({
   buttons: [DISMISS],
 })
 
+/** A path echoed back is kept to about this many characters, its end kept: the folder's own name is the useful part. */
+const SHOWN_PATH_CHARS = 120
+const shownPath = (path: string) => (path.length <= SHOWN_PATH_CHARS ? path : `…${path.slice(-(SHOWN_PATH_CHARS - 1))}`)
+/** What `/office-setup <folder>` answers for a folder that is not there. */
+export const noFolderLine = (folder: string) => `Setup did not start: there is no folder at ${shownPath(folder)}.`
+/** `/office-setup <folder>` named a folder that is not there: nothing started, and nothing counted as a failure of this project's setup. */
+export const noFolderCard = (folder: string): OnboardCard => ({
+  step: 'failed',
+  lines: [`${noFolderLine(folder)} Run /office-setup again with a folder that exists, or on its own for this project.`],
+  buttons: [DISMISS],
+})
+
 /** One plain word for a pick: Clawd HQ's own helpers by their label, the rest by the role their name reads as. */
 const nameOf = (name: string, blurbs: Readonly<Record<string, string>>) =>
   CORE_FOUR.find(h => h.type === name)?.label ?? roleOf(name, blurbs[name] ?? '').title

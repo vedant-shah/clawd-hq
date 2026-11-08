@@ -97,8 +97,8 @@ async function runFrom(io: OnboardIo, step: OnboardStep): Promise<void> {
 
 type Found = { readonly facts: ProjectFacts; readonly use: PastUse; readonly helpers: readonly Helper[]; readonly guess: RoleGuess }
 
-async function lookAround(io: OnboardIo): Promise<Found> {
-  const facts = await projectFacts(io)
+async function lookAround(io: OnboardIo, folder: string): Promise<Found> {
+  const facts = await projectFacts({ ...io, cwd: folder }) // only the quick scan looks at the folder given: past use and helpers stay the project's
   const use = await pastUse(io)
   await io.set(usageKey(io.cwd), use).catch(() => undefined)
   const helpers = await installedHelpers(io, use, facts.instructions)
@@ -129,9 +129,12 @@ const notParked = (io: OnboardIo, helpers: readonly Helper[]) => {
  */
 async function scanAndPick(io: OnboardIo): Promise<void> {
   await saveStep(io, { step: 'scan' })
-  const found = await lookAround(io)
+  // The folder looked at must be there: a scout briefed with a folder that is gone finds nothing (issue #5).
+  const folder = io.scanFolder ?? io.cwd
+  if (!(await io.isFolder(folder))) throw new Error(`there is no folder at ${folder}`)
+  const found = await lookAround(io, folder)
   const kept = (await savedOf(io))?.role
-  const team = await pickTeam(io, found.facts, found.use, notParked(io, found.helpers), kept ?? found.guess.role)
+  const team = await pickTeam({ ...io, cwd: folder }, found.facts, found.use, notParked(io, found.helpers), kept ?? found.guess.role)
   const old = await io.get<SavedTeam>(teamKey(io.cwd)).catch(() => undefined)
   await io.set(teamKey(io.cwd), { ...team, ...(Array.isArray(old?.hires) ? { hires: old.hires } : {}) } satisfies SavedTeam)
   await saveStep(io, { step: 'team', ...(kept === undefined && found.guess.isThin ? {} : { role: kept ?? found.guess.role }) })

@@ -34,6 +34,8 @@ export type ScoutHost = {
   readonly after: (ms: number, fn: () => void) => Timer
   /** Has Clawd hire the scout with this brief (auto mode refused the plugin's own start): his scout's id, or `undefined` when none came in time. */
   readonly askClawd: (brief: string) => Promise<string | undefined>
+  /** The setup that started the scout was dropped (the session moved to another folder): the scout is stopped. */
+  readonly isDropped?: () => boolean
 }
 
 /** The agent type a start asks for, in the event's spelling or the Agent tool's own (a start the plugin makes itself can reach a hook as either). */
@@ -109,6 +111,10 @@ export async function runScout(host: ScoutHost, brief: string, timeoutMs: number
   const { id } = started
   for (let waited = 0; waited < timeoutMs; waited += POLL_MS) {
     await pause(host)
+    if (host.isDropped?.() === true) {
+      await host.stop(id).catch(() => undefined)
+      return { why: 'The session moved to another folder, so the scout was stopped.' }
+    }
     const ended = await hasEnded(host, id) // asked first, so an answer written just before the end still counts
     const report = await answerOf(host, id)
     if (report !== undefined) return report

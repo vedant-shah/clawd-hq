@@ -19,8 +19,10 @@ import { askClawd, handScoutSpawn, runScout, scoutHandoff, spawnTypeOf } from '.
 import type { ScoutHost } from './scout-run'
 import { SCOUT_SPEC, SCOUT_TIMEOUT_MS, SCOUT_TYPE } from './scout-spec'
 import { freshHire, isLively, isSettling, settle, turnEndBoss, withBlurb, withJobs } from './office-state'
-import { checkPayroll, holdBack, resetPayroll, savePayroll, setLaidOff } from './payroll'
+import { checkPayroll, holdBack, resetFolderPayroll, resetPayroll, savePayroll, setLaidOff } from './payroll'
 import { checkOnboard, chooseOnboard, isSetupBusy, restartOnboard, savedOf, startOnboard } from './onboard'
+import { noFolderCard, noFolderLine } from './onboard-cards'
+import { followFolder, guardRun, setupFolder, startFolderWatch, type FolderIo } from './session-folder'
 import { ancestorPaths, answerText, breakdownOf, commandsOf, listEntries } from './onboard-adapt'
 import { hireTypes, rehire, type SavedTeam } from './hire'
 import { PROFILE_BLOCK, profileBlock } from './profile'
@@ -330,29 +332,59 @@ const setupCard = async ($: EngineInterface) => ((await read($, onboard)) ?? und
 const onboardIo = async ($: EngineInterface, opts: BriefingOptions): Promise<OnboardIo> => {
   const [now, home, config, known, p] = [await $.clock.now(), await homeOf($), await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined), await read($, blurbs), await getPayroll($)]
   const types = [...new Set([...Object.keys(known), ...Object.keys(await read($, roster))])]
-  return {
-    now: () => now, cwd, home: () => home, configDir: () => config || undefined, blurbs: () => known, allAgentTypes: () => types, parked: () => p.laidOff,
+  const at = cwd // a run whose session has since moved to another folder is dropped (hooks/session-folder.ts)
+  return guardRun(() => cwd !== at, {
+    now: () => now, cwd, home: () => home, isFolder: path => $.fs.stat(path).then(s => s.kind === 'dir', () => false), configDir: () => config || undefined, blurbs: () => known, allAgentTypes: () => types, parked: () => p.laidOff,
     get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value),
     isShown: async () => (await $.session.surfaces().catch(() => [])).length > 0, isAutoOn: () => opts.isAutoOn,
     list: dir => listEntries(dir, d => $.fs.list(d), path => $.fs.stat(path)), read: path => $.fs.read(path).catch(() => undefined), exists: path => $.fs.exists(path),
     ancestors: async name => ancestorPaths(await $.fs.ancestors({ names: [name] })),
     breakdown: async () => breakdownOf(await $.session.usage({ breakdown: 'summary' })), commands: async () => commandsOf(await $.command.list()),
     complete: async req => answerText(await $.model.complete(req)),
-    spawnScout: brief => runScout(scoutHost($), brief, SCOUT_TIMEOUT_MS),
+    spawnScout: brief => runScout({ ...scoutHost($), isDropped: () => cwd !== at }, brief, SCOUT_TIMEOUT_MS),
     registerHire: ({ name, description, prompt, skills }) => $.agent.register({ name: name, description: description, prompt: prompt, skills: skills }).then(() => true, () => false),
     savePayroll: laidOff => savePayroll(payrollIo($), { ...p, laidOff: [...laidOff], isReviewed: true }), // its stacks kept
     card: () => setupCard($), setCard: async card => { await update($, onboard, () => card ?? null) },
-  }
+  })
 }
+
+/**
+ * The session's folder as the engine has it now (issue #5). A move files everything under the new folder and reloads what is kept per
+ * folder, as session start does, setup first: its card is cleared, so the frames start setup again for the new folder.
+ */
+const folderIo = ($: EngineInterface, opts: BriefingOptions): FolderIo => ({
+  folder: () => cwd, root: () => $.session.root(), real: path => $.fs.stat(path, { resolve: true }).then(s => s.realPath),
+  warn: text => { try { $.ui.log(text, { to: 'debug' }) } catch { /* a host with no log: the folder simply stays */ } }, after: (ms, fn) => $.clock.after(ms, fn),
+  moveTo: async folder => {
+    cwd = folder
+    scoutHandoff.drop() // a setup waiting for Clawd's hire was the old folder's
+    resetFolderPayroll() // the review and the own-hire checks were the old folder's; the types offered this session stay
+    const failed = await runEach([
+      ['setup', async () => startOnboard(await onboardIo($, opts))],
+      ['payroll review', async () => { if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined })) }],
+      ['check on finished work', () => startKnow(knowIo($), cwd)],
+      ['payroll', async () => { const saved = (await $.store.get(`payroll:${cwd}`)) as Payroll | undefined; await update($, payroll, () => ({ ...PAYROLL0, ...saved })); payrollIo($).invalidate() }],
+      ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${cwd}`)); await update($, artifacts, () => pages) }],
+      ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${cwd}`)); await update($, leftUndone, () => items) }],
+      ['project tokens', () => loadTokens(runIo($))],
+      ['old decisions card', () => checkOld(oldIo($))],
+      ['skill hires', async () => rehire(await onboardIo($, opts))],
+    ])
+    if (failed.length > 0) $.ui.toast(startNote(failed))
+    void sweepArtifacts(artifactIo($), cwd).catch(() => undefined)
+  },
+})
 
 // ---- The frame clock ----
 
 async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions) {
   const [list, f, b, t0] = [await read($, staff), await getFx($), await getBoss($), await read($, tick)]
   if (frames % 8 === 0) {
+    const followed = followFolder(folderIo($, opts)).catch(() => false) // not waited for: a slow check never holds a frame
     await reconcile(runIo($))
     const isDrawn = (await $.session.surfaces().catch(() => [])).length > 0 // the desktop attaches after session start
-    if (isDrawn && !(await read($, onboard))) void onboardIo($, opts).then(checkOnboard).catch(() => undefined) // slow steps never hold a frame
+    // Setup is looked at once the folder check is done: a move clears the setup card, which this reads. Slow steps never hold a frame.
+    if (isDrawn) void followed.then(async () => { if (!(await read($, onboard))) await checkOnboard(await onboardIo($, opts)) }).catch(() => undefined)
   }
   if (frames % 25 === 0) {
     if (!isSetupBusy(await savedOf({ cwd, get: async key => (await $.store.get(key)) as never }), opts.isAutoOn)) await checkPayroll(payrollIo($), text => void $.ui.toast(text))
@@ -475,7 +507,8 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
-    cwd = e.cwd
+    cwd = (await $.session.root().catch(() => '')) || e.cwd // the root, as the folder checks later read it, so one folder is never two spellings
+    startFolderWatch()
     briefing = undefined
     reach = REACH0
     isEditTurn = false
@@ -508,7 +541,7 @@ export const register: Register = (on, options) => {
       ['setup scout', () => registerScout($, SCOUT_SPEC.prompt)],
       ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames
       ['skill hires', async () => rehire(await onboardIo($, brief))], // the engine forgets registered agents each session
-      ['/office-setup', () => $.command.register({ name: 'office-setup', description: `Set up ${BRAND} for this project: a starting team, with no questions` })],
+      ['/office-setup', () => $.command.register({ name: 'office-setup', description: `Set up ${BRAND} for this project: a starting team, with no questions: /office-setup [folder]` })],
       ['roster', () => enroll($, 'general-purpose', 0)],
       ['meters', () => startGauge(gaugeIo($))],
       ['instructions', () => refreshTab($, brief, true)],
@@ -536,6 +569,14 @@ export const register: Register = (on, options) => {
   on('classic.SubagentStop', async ($, e, next) => {
     await clockOut(runIo($), e.agent_id, 'done')
     return next(e)
+  })
+
+  // The host moved the session (the desktop app can start it in a spare folder): what is kept per folder follows (issue #5).
+  // The host's own handling (the settings hooks beneath) goes first; the move is followed after it.
+  on('classic.CwdChanged', async ($, e, next) => {
+    const result = await next(e)
+    await followFolder(folderIo($, brief)).catch(() => undefined)
+    return result
   })
 
   // The desktop app starts the session before it draws anything: when it attaches, Office is asked to the front (hooks/panes.ts).
@@ -573,9 +614,17 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'office-setup' }, async $ => {
+  // `/office-setup <folder>` looks at the folder given; the team and the rest stay filed under the session's own (hooks/session-folder.ts).
+  on('command.run', { command: 'office-setup' }, async ($, e) => {
     await openPanes(paneIo($), true)
-    void restartOnboard(await onboardIo($, brief)).catch(() => undefined) // the model calls are not waited for
+    await followFolder(folderIo($, brief)) // the host may have moved the session since it started
+    const io = await onboardIo($, brief)
+    const { folder, refused } = await setupFolder(e.args, cwd, io.home(), io.isFolder)
+    if (refused !== undefined) {
+      if ((await io.card())?.step !== 'scan') await io.setCard(noFolderCard(refused)) // a setup already running keeps its card: the answer says it
+      return { text: `${BRAND} ${noFolderLine(refused).replace(/^Setup/, 'setup')}` }
+    }
+    void restartOnboard(folder === undefined ? io : { ...io, scanFolder: folder }).catch(() => undefined) // the model calls are not waited for
     return { text: `${BRAND} setup is running for this project. A small card on the Office tab says what was set up.` }
   })
 

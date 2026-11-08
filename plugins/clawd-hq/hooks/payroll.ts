@@ -36,6 +36,8 @@ let isFailureTold = false
 /** Every type offered this session (each passes through holdBack): what the cover rule counts as installed. */
 let offered: ReadonlySet<string> = new Set()
 export const resetPayroll = () => { isFiled = false; ownFound = new Set(); isFailureTold = false; offered = new Set() }
+/** The session moved to another folder (hooks/session-folder.ts): the review and the own-hire checks start over, the types offered this session stay. */
+export const resetFolderPayroll = () => { isFiled = false; ownFound = new Set() }
 
 export async function savePayroll(io: PayrollIo, p: Payroll) {
   await io.set(p)

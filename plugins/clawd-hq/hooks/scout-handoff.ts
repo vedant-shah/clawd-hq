@@ -30,6 +30,8 @@ export type ScoutHandoff = {
   readonly note: () => string | undefined
   /** A scout Clawd started: taken when an ask is open, which it closes; `false` when none is. */
   readonly take: (id: string) => boolean
+  /** Closes an open ask as if no hire came: the setup that asked was for a folder the session has left (issue #5). */
+  readonly drop: () => void
 }
 
 export function createScoutHandoff(): ScoutHandoff {
@@ -55,6 +57,7 @@ export function createScoutHandoff(): ScoutHandoff {
       close(id)
       return true
     },
+    drop: () => close(undefined),
   }
 }
 

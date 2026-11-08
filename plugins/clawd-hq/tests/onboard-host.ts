@@ -78,13 +78,16 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     return best === undefined ? given : `${CWD}/${best}`
   }
   // `links`: a path that really lands somewhere else, as a symbolic link would. A path asked to resolve lands where it is, if it is a file here or the folder of some.
+  // A folder of some file here (or the project) is a `dir`; a path that is nowhere is refused, as the engine refuses it.
   const links: Record<string, string> = {}
   on('fs.stat', (_$, e) => {
     const { path: given, resolve } = e as { path: string; resolve: boolean }
     const path = projectPath(given)
-    const isThere = h.files.has(path) || path === CWD || [...h.files.keys()].some(p => p.startsWith(`${path.replace(/\/+$/, '')}/`))
+    const isDir = path === CWD || [...h.files.keys()].some(p => p.startsWith(`${path.replace(/\/+$/, '')}/`))
+    const isThere = h.files.has(path) || isDir
+    if (!isThere && links[path] === undefined) throw new Error(`ENOENT: ${path}`)
     const real = links[path] ?? (isThere ? path : undefined)
-    return { value: { kind: 'file', size: (h.files.get(path) ?? '').length, mtimeMs: 0, isLink: links[path] !== undefined, ...(resolve && real !== undefined ? { realPath: real } : {}) } } as never
+    return { value: { kind: isDir && !h.files.has(path) ? 'dir' : 'file', size: (h.files.get(path) ?? '').length, mtimeMs: 0, isLink: links[path] !== undefined, ...(resolve && real !== undefined ? { realPath: real } : {}) } } as never
   })
   on('fs.ancestors', (_$, e) => ({ value: (e as { names: string[] }).names.flatMap(name => (h.files.has(`${CWD}/${name}`) ? [{ dir: CWD, name, content: h.files.get(`${CWD}/${name}`), parts: [] }] : [])) }) as never)
   on('env.get', (_$, e) => ({ value: (e as { name: string }).name === 'HOME' ? HOME : undefined }) as never)

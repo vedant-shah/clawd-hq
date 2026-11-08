@@ -151,6 +151,10 @@ export type OnboardIo = {
   readonly now: () => number
   /** The project folder; every per-project key hangs off it. */
   readonly cwd: string
+  /** The folder setup looks at and briefs the scout with, from `/office-setup <folder>`; `cwd` when absent. Everything is still filed under `cwd`. */
+  readonly scanFolder?: string
+  /** Whether the path is a folder that is there. */
+  readonly isFolder: (path: string) => Promise<boolean>
   readonly get: <T>(key: string) => Promise<T | undefined>
   readonly set: (key: string, value: unknown) => Promise<void>
   /** A view is attached (the desktop attaches after session start). */

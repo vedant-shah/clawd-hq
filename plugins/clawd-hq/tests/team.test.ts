@@ -249,3 +249,42 @@ test('the scout\'s team is cut to the seat limits like any other, and core seats
 test('a huge reply is not read', () => {
   expect(parseReply('{"picks":[' + '{"seat":"Plan","name":"ecc:planner"},'.repeat(20000) + '{}]}')).toBeUndefined()
 })
+
+// ---- an empty or missing project folder ----
+
+const noProject: ProjectFacts = { tells: [], fileTypes: {}, outline: [], deps: [], readmeHead: '', instructions: '', codeFiles: 0 }
+
+test('an empty or missing project folder gets the standard team, marked as not based on the project; no scout and no Opus', async () => {
+  for (const cwd of ['/repo', '']) {
+    const io = { ...fakeIo([good], scoutSays([{ seat: 'Plan', name: 'ecc:planner' }])), cwd }
+    const team = await pickTeam(io, noProject, use, helpers, undefined)
+    expect(io.scouted).toHaveLength(0)
+    expect(io.asked).toHaveLength(0)
+    expect(team.by).toBe('default')
+    expect(team.picks.map(p => [p.seat, p.name, p.kind])).toEqual([
+      ['Plan', CORE[0], 'agent'], ['Make', CORE[1], 'agent'], ['Check', CORE[2], 'agent'], ['Find out', CORE[3], 'agent'],
+    ])
+    expect(team.picks.every(p => /standard team without project reference/i.test(p.receipt))).toBe(true)
+    expect(team.empty).toEqual(['Specialist'])
+    expect(io.saved.get('debug:scout')).toEqual({ folder: cwd, note: expect.stringMatching(/empty or missing.*standard team without project reference/i) })
+  }
+})
+
+test('a real project still gets a project-based team from the scout, with a reason for every member', async () => {
+  const io = fakeIo([good], scoutSays([
+    { seat: 'Plan', name: 'ecc:planner', reason: 'The README lists a roadmap.', evidence: 'package.json' },
+    { seat: 'Make', name: 'ecc:tdd-guide', reason: 'Tests run with vitest.', evidence: 'package.json' },
+    { seat: 'Check', name: 'ecc:code-reviewer', reason: 'The code handles logins.', evidence: 'package.json' },
+    { seat: 'Find out', name: 'ecc:code-explorer', reason: 'The code base is large.', evidence: 'package.json' },
+  ]))
+  const team = await pickTeam(io, facts, use, helpers, undefined)
+  expect(io.scouted).toHaveLength(1)
+  expect(team.by).toBe('scout')
+  expect(team.picks.map(p => [p.seat, p.name, p.receipt])).toEqual([
+    ['Plan', 'ecc:planner', 'The README lists a roadmap. (package.json)'],
+    ['Make', 'ecc:tdd-guide', 'Tests run with vitest. (package.json)'],
+    ['Check', 'ecc:code-reviewer', 'The code handles logins. (package.json)'],
+    ['Find out', 'ecc:code-explorer', 'The code base is large. (package.json)'],
+  ])
+  expect(team.picks.some(p => /without project reference/i.test(p.receipt))).toBe(false)
+})

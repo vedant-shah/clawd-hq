@@ -24,7 +24,7 @@ import { folderIo, onboardIo, registerScout } from './register-setup'
 import { forgetQuiet, getBoss, getFx, readOnboard, readStaff, readTick, ses, setFx, updateArtifacts, updateGauge, updateLeftUndone, updatePayroll, updateStaff, updateTick } from './register-state'
 import { reconcile, loadTokens } from './run-io'
 import { BYPASS_KEY, REACH0, withNewConversation } from './rules-reach'
-import { SCOUT_SPEC } from './scout-spec'
+import { scoutPromptNow } from './scout-run'
 import { followFolder, startFolderWatch } from './session-folder'
 import { PAYROLL0, runEach, startNote } from './state'
 import { DEMO_SPEC, FIND_HELPERS_SPEC, HIRE_CONTRACTOR_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
@@ -93,7 +93,7 @@ export function registerSession(on: On, brief: BriefingOptions) {
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['find helpers tool', () => $.tool.register(FIND_HELPERS_SPEC)],
       ['contractor tool', () => $.tool.register(HIRE_CONTRACTOR_SPEC)],
-      ['setup scout', () => registerScout($, SCOUT_SPEC.prompt)],
+      ['setup scout', () => registerScout($, scoutPromptNow())], // an ask to Clawd still open keeps its brief
       ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames
       ['skill hires', async () => rehire(await onboardIo($, brief))], // the engine forgets registered agents each session
       ['/office-setup', () => $.command.register({ name: 'office-setup', description: `Set up ${BRAND} for this project: a starting team, with no questions: /office-setup [folder]` })],

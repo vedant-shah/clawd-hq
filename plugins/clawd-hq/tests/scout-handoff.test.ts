@@ -1,7 +1,8 @@
 // When the plugin cannot start the scout itself (in auto mode the classifier judges only what a model asks for), Clawd hires it:
 // one ask at a time, a note for his next turn while it is open, his hire taken by the agent.spawn hook, and nothing else let in.
 import { expect, test } from 'claude-code/testing'
-import { CLAWD_WAIT_MS, askClawd, createScoutHandoff, handScoutSpawn, isClassifierRefusal } from '../hooks/scout-handoff'
+import { CLAWD_WAIT_MS, askClawd, createScoutHandoff, handScoutSpawn, isClassifierRefusal, scoutPromptNow } from '../hooks/scout-handoff'
+import { SCOUT_SPEC } from '../hooks/scout-spec'
 
 const settle = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve() }
 function timers() {
@@ -97,4 +98,20 @@ test('a hire Clawd makes that the engine refuses leaves the ask open for the tim
   void handoff.ask(600_000, t.after)
   expect(await handScoutSpawn(handoff, false, async () => ({ deny: 'denied by auto mode' }))).toEqual({ deny: 'denied by auto mode' })
   expect(handoff.isOpen()).toBe(true)
+})
+
+test('while an ask is open the scout\'s definition keeps its brief, so registering it again (a new session start) does not drop the candidate list', async () => {
+  const handoff = createScoutHandoff()
+  const t = timers()
+  expect(scoutPromptNow(handoff)).toBe(SCOUT_SPEC.prompt)
+  const asked = askClawd({ register: async () => undefined, after: t.after }, 'THE BRIEF', handoff)
+  await settle()
+  expect(scoutPromptNow(handoff)).toContain('THE BRIEF')
+  expect(scoutPromptNow(handoff).startsWith(SCOUT_SPEC.prompt)).toBe(true)
+  handoff.take('sc1')
+  expect(await asked).toBe('sc1')
+  expect(scoutPromptNow(handoff)).toBe(SCOUT_SPEC.prompt) // the ask is over: the bare definition again
+  void handoff.ask(600_000, t.after, 'LATE BRIEF')
+  t.fire()
+  expect(scoutPromptNow(handoff)).toBe(SCOUT_SPEC.prompt) // an ask that timed out keeps no brief either
 })

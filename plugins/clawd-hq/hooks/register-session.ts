@@ -66,6 +66,7 @@ export function registerSession(on: On, brief: BriefingOptions) {
     ses.isEditTurn = false
     resetPayroll()
     ses.isArtifactsWarned = false
+    ses.artifactPrefix = undefined
     forgetQuiet()
     // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.
     setRecapOn(() => brief.isRecapOn)

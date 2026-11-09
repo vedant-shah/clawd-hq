@@ -79,6 +79,7 @@ export async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await updat
  * - wasBypassed: what an earlier session learnt of this machine.
  * - isEditTurn: the main chat's turn began with an edit request from the Settings tab, so the plugin's own instruction files are off limits until it ends.
  * - isArtifactsWarned: set once a write of the artifact list failed this session, so the person is told once.
+ * - artifactPrefix: the tool-name prefix of the claude-artifacts connector as a recorded publish showed it; none until one has.
  * - quietLog, agentList: the quiet chat's record of its decisions (`debug:quiet`, hooks/quiet-debug.ts) and its short-lived read of the agent list; both start over with each conversation.
  */
 export const ses = {
@@ -88,6 +89,7 @@ export const ses = {
   wasBypassed: undefined as boolean | undefined,
   isEditTurn: false,
   isArtifactsWarned: false,
+  artifactPrefix: undefined as string | undefined,
   quietLog: quietRecorder(),
   agentList: agentListCache(),
 }

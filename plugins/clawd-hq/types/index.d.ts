@@ -53,7 +53,7 @@ export type Employee = {
   choices?: string[]
 }
 
-/** A page on claude.ai that Claude published or opened with the Artifact tool in this project, newest first. */
+/** A page on claude.ai that Claude published or opened with the Artifact tool (or published with the claude-artifacts connector) in this project, newest first. */
 export type Artifact = {
   /** Its link, one of the two shapes hooks/artifacts.ts accepts. */
   url: string
@@ -61,6 +61,8 @@ export type Artifact = {
   title: string
   /** When it was last published or opened. */
   at: number
+  /** The page's id on the claude-artifacts connector (a uuid): set only for a page the connector published or edited, so a later edit finds this row. */
+  slug?: string
 }
 
 /** One piece of work Claude or a specialist left unfinished in this project (hooks/left-list.ts). */

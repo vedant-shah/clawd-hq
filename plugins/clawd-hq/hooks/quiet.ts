@@ -56,20 +56,53 @@ const isOfficeSender = (from: ChatRow['from'], staff: Employee[]): boolean =>
 const isPeerFiller = (row: ChatRow, staff: Employee[]): boolean =>
   row.originKind === 'peer-send-message' && !ASKS.test(row.text) && !TROUBLE.test(row.text) && isOfficeSender(row.from, staff)
 
+/** An agent of this session as `$.agent.list()` names it. */
+export type ListedAgent = { id: string; name?: string }
+
+/** The line the engine puts first in a subagent's final report when it hands it back to the main chat (report lines under it are indented). */
+const HANDBACK_LINE = '[Subagent hand-back]'
+
+/** The row opens with the engine's hand-back line. */
+export const hasHandbackLine = (text: string) => text.trimStart().startsWith(HANDBACK_LINE)
+
+/** A sender the office hired: by the name it was hired under, or an agent this session lists under that name whose id is on the staff. */
+const isHiredName = (name: string, staff: Employee[], agents: readonly ListedAgent[]): boolean =>
+  staff.some(one => one.name !== undefined && same(one.name, name)) ||
+  agents.some(a => a.name !== undefined && same(a.name, name) && staff.some(one => one.id === a.id))
+
+/**
+ * A specialist's final report handed back to Clawd: stamped `peer`, opening with the engine's hand-back line, from one the office hired.
+ * Like a finished notice of the office's own, its words are not checked: Clawd reads every report and says what matters in it.
+ */
+const isStaffHandback = (row: ChatRow, staff: Employee[], agents: readonly ListedAgent[]): boolean =>
+  row.originKind === 'peer' && row.from !== undefined && hasHandbackLine(row.text) && isHiredName(row.from.name, staff, agents)
+
+/**
+ * A finished shell's notice quotes its command (`Background command "…" completed (exit code 0)`): a `?` in the command is not a
+ * question. Only the command is set aside, up to the first quote the status word follows, so inner and escaped quotes stay inside it
+ * and quoted words after the status still count. With no such quote nothing is set aside.
+ */
+const QUOTED_COMMAND = /^(\s*Background command )"[\s\S]*?"(?= (?:completed|failed|was|stopped|killed|exited|timed out)\b)/
+const withoutQuotedCommand = (text: string) => text.replace(QUOTED_COMMAND, '$1""')
+
+/** A peer row whose sender only the session's agent list can place: it opens with the hand-back line, and no one on the books has its name. */
+export const needsAgentList = (row: ChatRow, staff: Employee[]): boolean =>
+  row.originKind === 'peer' && !row.isExpanded && row.from !== undefined && hasHandbackLine(row.text) && !isHiredName(row.from.name, staff, [])
+
 /**
  * A row that only hands work back to Clawd: the "finished" notice of a job that ended well (a specialist the office
- * hired, or a background shell or monitor it did not), or a message from a teammate the office hired by name. Clawd
- * reports on it and the Settings tab lists it, so the raw row can go. A hidden request would be a lost action, so the
- * rule is narrow: anything it is unsure of is shown.
+ * hired, or a background shell or monitor it did not), a hired specialist's handed-back report, or a message from a
+ * teammate the office hired by name. Clawd reports on it and the Settings tab lists it, so the raw row can go. A hidden
+ * request would be a lost action, so the rule is narrow: anything it is unsure of is shown.
  */
-export function isHandback(row: ChatRow, staff: Employee[]): boolean {
+export function isHandback(row: ChatRow, staff: Employee[], agents: readonly ListedAgent[] = []): boolean {
   if (row.isExpanded) return false
-  if (isMergedDone(row) || isPeerFiller(row, staff)) return true
+  if (isMergedDone(row) || isPeerFiller(row, staff) || isStaffHandback(row, staff, agents)) return true
   if (row.task) {
     if (row.originKind !== 'task-notification' || row.task.status !== 'completed') return false
     if (staff.some(one => one.id === row.task!.id)) return true
     // A job the office did not hire: only a plain one (no kind of its own), and never a notice that asks for something.
-    return row.task.type === undefined && !ASKS.test(row.text)
+    return row.task.type === undefined && !ASKS.test(withoutQuotedCommand(row.text))
   }
   const name = row.from?.name
   // A teammate's message carries no stamp of where it came from; another session's, a channel's or the person's does.

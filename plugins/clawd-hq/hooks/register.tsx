@@ -51,7 +51,9 @@ import type { ClawdIo } from './clawd-edit'
 import { maybeRecap, noteRecapTurn, resetRecap, setRecapOn } from './recap'
 import { liveOptions, loadSaved, useSaved } from './toggle-store'
 import type { RecapIo } from './recap'
-import { isBackgroundHint, isHandback, isNoUpdate, rowLook } from './quiet'
+import { isBackgroundHint, isHandback, isNoUpdate, needsAgentList, rowLook } from './quiet'
+import { agentListCache } from './quiet-agents'
+import { quietRecorder } from './quiet-debug'
 import { checkHandback, checkOwnTurn, forgetKnow, isWatching, keepBrief, knowActions, knowPrompt, knowToolUsed, knowTurnStart, startKnow } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
@@ -232,6 +234,11 @@ const paneIo = ($: EngineInterface): PaneIo => ({
 
 /** Set once a write of the artifact list failed this session, so the person is told once. */
 let isArtifactsWarned = false
+
+/** The quiet chat's record of its decisions (`debug:quiet`, hooks/quiet-debug.ts) and its short-lived read of the agent list: both start over with each conversation. */
+const quietLog = quietRecorder()
+let agentList = agentListCache()
+const forgetQuiet = () => { quietLog.reset(); agentList = agentListCache() }
 
 /** The name an agent's work is filed under; 'agent' when it is not on the books. */
 const byOf = async ($: EngineInterface, id: string) => {
@@ -517,6 +524,7 @@ export const register: Register = (on, options) => {
     isEditTurn = false
     resetPayroll()
     isArtifactsWarned = false
+    forgetQuiet()
     // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.
     setRecapOn(() => brief.isRecapOn)
     // Each step stands on its own: one that fails stops none after it (the Settings tab still fills), and the person is told which.
@@ -615,7 +623,7 @@ export const register: Register = (on, options) => {
       await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined, contextTokens: undefined }))
     }
     // Another conversation takes over this process without a session.start: its recap and its turns are its own.
-    if (e.reason === 'clear' || e.reason === 'resume') { reach = withNewConversation(reach); await resetRecap(recapIo($)); await forgetCoffee($) }
+    if (e.reason === 'clear' || e.reason === 'resume') { reach = withNewConversation(reach); forgetQuiet(); await resetRecap(recapIo($)); await forgetCoffee($) }
     await forgetKnow(knowIo($))
     return next(e)
   })
@@ -824,11 +832,17 @@ export const register: Register = (on, options) => {
   {
     on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
       const p = e.props
-      // Most rows are the person's own or already in full: nothing is read for them. A notification may be a merged line (no task), a peer message may come with no sender.
-      const isOwn = !p.task && !p.from && p.origin.kind !== 'task-notification' && p.origin.kind !== 'peer-send-message'
-      if (!isQuiet() || p.isExpanded || isOwn) return next(e)
-      if (!isHandback({ isExpanded: p.isExpanded, originKind: p.origin.kind, text: p.text, task: p.task, from: p.from }, await read($, staff))) return next(e)
-      return blank(resolver($), e)
+      // Most rows are the person's own: nothing is read for them. A notification may be a merged line (no task), a peer message may come with no sender.
+      const isOwn = !p.task && !p.from && !['task-notification', 'peer-send-message', 'peer'].includes(p.origin.kind)
+      if (!isQuiet() || isOwn) return next(e)
+      const row = { isExpanded: p.isExpanded, originKind: p.origin.kind, text: p.text, task: p.task, from: p.from }
+      const books = await read($, staff)
+      // A hand-back whose sender the books do not name may be known to the session's agent list, read at most once a short while.
+      const agents = needsAgentList(row, books) ? await agentList(await $.clock.now(), () => $.agent.list()) : []
+      const isHidden = !row.isExpanded && isHandback(row, books, agents)
+      // What it decided for peer and notification rows, kept at `debug:quiet` without a word of the row; never waited for.
+      quietLog.keep({ now: () => $.clock.now(), get: key => $.store.get(key), save: (key, value) => $.store.set(key, value) }, row, isHidden ? 'hide' : 'show')
+      return isHidden ? blank(resolver($), e) : next(e)
     })
     on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => (isQuiet() && isNoUpdate(e.props.text) ? blank(resolver($), e) : next(e)))
     // Small rows: the office's own bookkeeping calls are hidden or dimmed (hooks/quiet.ts says which). Errors always show.

@@ -12,6 +12,8 @@ Brief Clawd once. He picks specialists from your installed helpers, runs indepen
 
 [What it does](#-what-it-does) · [How it runs](#-how-clawd-runs-the-work) · [The office](#-the-office) · [Setup](#-first-time-setup) · [Privacy](#-privacy)
 
+[![Featured on ClaudeMods](https://claudemods.dev/badge/clawd-hq-0299b6.svg?style=large&theme=dark)](https://claudemods.dev/en/builds/clawd-hq-0299b6)
+
 </div>
 
 ---

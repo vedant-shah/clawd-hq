@@ -25,6 +25,8 @@ export type CoffeeRecord = {
   /** The origin kind of the person's latest message (`none` where the engine named none); null before any. */
   spokeBy: string | null
   demo: boolean
+  /** A compaction stood and no reading of the compacted chat has come since: the button waits for one. */
+  isReadingOld: boolean
   /** The button (or its working word) is on the pane right now. */
   shown: boolean
 }
@@ -41,7 +43,7 @@ export function coffeeRecord(data: Pick<PanelData, 'boss' | 'staff' | 'fx' | 'ga
     at, by, contextTokens: tokensOf(gauge) ?? null, threshold: triggerAt(gauge), autoCompactAt: gauge.autoCompactAt ?? null,
     isBusy: boss.isBusy, atWorkCount: atWork(staff).length, handedBackAt: boss.handedBackAt ?? null, turns: boss.turns,
     isCheckpoint: boss.isCheckpoint === true, carriedAt: boss.carriedAt ?? null, spokeBy: boss.spokeBy ?? null,
-    demo: fx.demo !== undefined, shown: coffeeView(data).state !== 'hidden',
+    demo: fx.demo !== undefined, isReadingOld: fx.coffee?.isReadingOld === true, shown: coffeeView(data).state !== 'hidden',
   }
 }
 

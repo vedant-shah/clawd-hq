@@ -90,7 +90,7 @@ export type CoffeeView = {
  */
 export function coffeeView(data: Pick<PanelData, 'boss' | 'staff' | 'fx' | 'gauge'>): CoffeeView {
   const { boss, staff, fx, gauge } = data
-  const isTime = isOverMark(gauge) && isBreakTime(boss, staff, fx)
+  const isTime = isOverMark(gauge) && isBreakTime(boss, staff, fx) && fx.coffee?.isReadingOld !== true
   const here = fx.coffee !== undefined && fx.coffee.turns === boss.turns ? fx.coffee : undefined
   const left = here?.kind === 'done' ? undefined : here
   if (!isTime) return left?.kind === 'problem' ? { state: 'hidden', note: { text: left.text, isProblem: true } } : { state: 'hidden' }
@@ -98,8 +98,49 @@ export function coffeeView(data: Pick<PanelData, 'boss' | 'staff' | 'fx' | 'gaug
   return left === undefined ? { state: 'ready' } : { state: 'ready', note: { text: left.text, isProblem: left.kind === 'problem' } }
 }
 
-/** `done` is no line at all: it only keeps `at`, the time a compaction stood, so Clawd can go on drinking for a while. */
-type Note = { kind: 'running' | 'ready' | 'problem' | 'done'; text: string; at?: number; isPerson?: boolean }
+/**
+ * `done` is no line at all: it only keeps `at`, the time a compaction stood, so Clawd can go on drinking for a while. `isReadingOld`: no
+ * reading of the compacted chat has come since it stood, and no turn of Clawd's has begun after it, so a reading near `oldTokens` (the
+ * chat's size just before) may still be the chat from before (see `withFreshReading` and `withTurnStarted`).
+ */
+type Note = { kind: 'running' | 'ready' | 'problem' | 'done'; text: string; at?: number; isPerson?: boolean; isReadingOld?: boolean; oldTokens?: number }
+
+/** What a compaction that stood leaves: Clawd's mug from `at`, and no button until a reading of the compacted chat comes in. */
+const stood = (at: number, oldTokens: number | undefined): Note =>
+  ({ kind: 'done', text: '', at, isReadingOld: true, ...(oldTokens === undefined ? {} : { oldTokens }) })
+
+/**
+ * The engine can measure right after a compaction (in the desktop app the `/compact` runs inside a turn of Clawd's, and a measure follows
+ * every turn) with the reading from before it, and that turn ends at a checkpoint like any other. So after a compaction stands the button
+ * waits for a reading of the compacted chat: one under the mark, or one at least `FRESH_DROP` smaller than the size just before (a
+ * compaction that left the chat over the mark still lets the button back); with no size kept, any reading. The very same `fx` when
+ * nothing changes. A reading near the old size, a little over or under it, waits on: for it or the next turn (`withTurnStarted`).
+ */
+export function withFreshReading(fx: Fx, g: Gauge): Fx {
+  const c = fx.coffee
+  const tokens = tokensOf(g)
+  if (c?.isReadingOld !== true || tokens === undefined) return fx
+  const isNew = !isOverMark(g) || c.oldTokens === undefined || tokens <= c.oldTokens * (1 - FRESH_DROP)
+  return isNew ? endWait(fx, c) : fx
+}
+
+/** DECIDED: a reading at least this share smaller than the chat before the compaction is the compacted chat, even over the mark. */
+export const FRESH_DROP = 0.1
+
+/**
+ * A turn of Clawd's began (`text`, its prompt). Any one but the `/compact`'s own (in the desktop app it runs inside a turn, which can begin
+ * after the compaction stood) ends the wait: from then on the readings are the compacted chat's, so the button is never hidden longer than
+ * before the wait existed. The very same `fx` when nothing changes.
+ */
+export function withTurnStarted(fx: Fx, text: string): Fx {
+  const c = fx.coffee
+  return c?.isReadingOld !== true || text.trimStart().startsWith(COMPACT_COMMAND) ? fx : endWait(fx, c)
+}
+
+const endWait = (fx: Fx, c: NonNullable<Fx['coffee']>): Fx => ({ ...fx, coffee: { ...c, isReadingOld: undefined, oldTokens: undefined } })
+
+/** Another conversation (a new session, `/clear`, `/resume`) starts with no coffee note: the mug and the wait were the last one's. */
+export const withoutCoffee = (fx: Fx): Fx => (fx.coffee === undefined ? fx : { ...fx, coffee: undefined })
 
 /** DECIDED: after a compaction that stood, Clawd keeps the mug this long, then goes back to his normal look. */
 export const COFFEE_AFTERGLOW_MS = 120_000
@@ -136,6 +177,8 @@ export type CoffeeIo = {
   setNote: (note: Note | undefined) => Promise<unknown>
   /** The context reading starts over until the engine's next measure, so the button does not wait on a number from before. */
   clearReading: () => Promise<unknown>
+  /** The chat's size as last measured, in tokens (`tokensOf` the gauge); none with no reading. Read just before `clearReading`. */
+  tokens: () => Promise<number | undefined>
 }
 
 const problem = (text: string): Note => ({ kind: 'problem', text })
@@ -195,7 +238,7 @@ async function runPress(io: CoffeeIo, isTerminal: boolean, waitMs: number): Prom
     const note = await writeNote(io, waitMs)
     await io.setNote({ kind: 'running', text: WORKING })
     const left = await compactNow(io.compact, note)
-    await io.setNote(left === 'missing' ? await fillCommand(io, isTerminal, note) : left ?? { kind: 'done', text: '', at: await io.now() })
+    await io.setNote(left === 'missing' ? await fillCommand(io, isTerminal, note) : left ?? stood(await io.now(), await io.tokens().catch(() => undefined)))
     if (left === undefined) await io.clearReading()
   } catch (err) {
     await io.setNote(undefined).catch(() => undefined)
@@ -214,7 +257,7 @@ export const isPersonCompact = (e: { trigger: string; agentId?: string }): boole
  * after a press. A skip, a failure or a cancel takes the mug away. The engine's answer or failure passes on untouched: a mug that cannot
  * be shown never stops a compaction.
  */
-export async function whileCompacting<T extends { skip?: string }>(io: Pick<CoffeeIo, 'now' | 'setNote' | 'clearReading'>, run: () => Promise<T>): Promise<T> {
+export async function whileCompacting<T extends { skip?: string }>(io: Pick<CoffeeIo, 'now' | 'tokens' | 'setNote' | 'clearReading'>, run: () => Promise<T>): Promise<T> {
   const drop = () => io.setNote(undefined).catch(() => undefined)
   await io.setNote({ kind: 'running', text: WORKING, isPerson: true }).catch(() => undefined)
   const r = await run().catch(async (err: unknown) => { await drop(); throw err })
@@ -222,7 +265,8 @@ export async function whileCompacting<T extends { skip?: string }>(io: Pick<Coff
     await drop()
     return r
   }
-  await io.now().then(at => io.setNote({ kind: 'done', text: '', at })).then(() => io.clearReading()).catch(() => undefined)
+  const oldTokens = await io.tokens().catch(() => undefined)
+  await io.now().then(at => io.setNote(stood(at, oldTokens))).then(() => io.clearReading()).catch(() => undefined)
   return r
 }
 

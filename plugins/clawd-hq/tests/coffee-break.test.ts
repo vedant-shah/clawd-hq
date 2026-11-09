@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import { BOX_BUSY, DIALOG_OPEN } from '../hooks/clawd-edit'
 import {
   AUTO_COMPACT_MARGIN, COFFEE_AFTERGLOW_MS, COFFEE_NOTE, COFFEE_OFFER_LINE, COFFEE_TOKENS, NOTE_WAIT_MS, coffeeView, isBreakTime, isDrinking, isOffering, isOverMark, isPersonCompact,
-  takeCoffeeBreak, triggerAt, whileCompacting,
+  takeCoffeeBreak, triggerAt, whileCompacting, withFreshReading, withoutCoffee, withTurnStarted,
 } from '../hooks/coffee-break'
 import type { CoffeeIo } from '../hooks/coffee-break'
 import { BOSS0, GAUGE0 } from '../hooks/state'
@@ -157,6 +157,46 @@ test('a finished drink is never drawn as a line under the footer', () => {
   expect(coffeeView(data({ boss: boss({ turns: 3 }), fx }))).toEqual({ state: 'ready' })
 })
 
+test('after a compaction stood, the button waits for a reading of the compacted chat, however the turn around it ended', () => {
+  const old: Fx = { coffee: { kind: 'done', text: '', turns: 3, at: NOW, isReadingOld: true, oldTokens: 480_000 } }
+  expect(coffeeView(data({ boss: boss({ turns: 3 }), fx: old }))).toEqual({ state: 'hidden' })
+  // The size from before the compaction, a little more than it, a little less, or no reading may still be the chat from before: the same fx.
+  expect(withFreshReading(old, gauge({ contextTokens: 480_000 }))).toBe(old)
+  expect(withFreshReading(old, gauge({ contextTokens: 489_600 }))).toBe(old) // +2%
+  expect(withFreshReading(old, gauge({ contextTokens: 432_001 }))).toBe(old) // just under 10% smaller
+  expect(withFreshReading(old, gauge())).toBe(old)
+  // A reading under the mark is the compacted chat: the wait is over, the mug's time is kept.
+  const fresh = withFreshReading(old, gauge({ contextTokens: 40_000 }))
+  expect(fresh.coffee).toEqual({ kind: 'done', text: '', turns: 3, at: NOW })
+  expect(coffeeView(data({ boss: boss({ turns: 3 }), fx: fresh }))).toEqual({ state: 'ready' })
+  // So is one at least 10% smaller, even still over the mark (a compaction point set low).
+  expect(withFreshReading(old, gauge({ contextTokens: 408_000 })).coffee).toEqual({ kind: 'done', text: '', turns: 3, at: NOW }) // ×0.85
+  expect(withFreshReading(old, gauge({ contextTokens: 432_000 })).coffee?.isReadingOld).toBeUndefined() // exactly 10% smaller
+  // With no size known before the compaction, any reading is a new one.
+  const unknown: Fx = { coffee: { kind: 'done', text: '', turns: 3, at: NOW, isReadingOld: true } }
+  expect(withFreshReading(unknown, gauge({ contextTokens: 480_000 })).coffee?.isReadingOld).toBeUndefined()
+  // Nothing else is touched.
+  const none: Fx = {}
+  expect(withFreshReading(none, gauge({ contextTokens: 40_000 }))).toBe(none)
+})
+
+test('the next turn of Clawd\'s after the compaction\'s own ends the wait, so the readings need not shrink; the /compact turn does not', () => {
+  const old: Fx = { coffee: { kind: 'done', text: '', turns: 3, at: NOW, isReadingOld: true, oldTokens: 480_000 } }
+  expect(withTurnStarted(old, '/compact Keep my latest request and any open work.')).toBe(old)
+  expect(withTurnStarted(old, '  /compact')).toBe(old)
+  expect(withTurnStarted(old, 'Now the tests').coffee).toEqual({ kind: 'done', text: '', turns: 3, at: NOW })
+  expect(withTurnStarted(old, '').coffee?.isReadingOld).toBeUndefined() // a turn started with no typed prompt is a turn all the same
+  const none: Fx = { isUsageOpen: true }
+  expect(withTurnStarted(none, 'Now the tests')).toBe(none)
+})
+
+test('another conversation starts with no coffee note; with none there, the very same fx', () => {
+  const fx: Fx = { coffee: { kind: 'done', text: '', turns: 3, at: NOW, isReadingOld: true, oldTokens: 480_000 }, isUsageOpen: true }
+  expect(withoutCoffee(fx)).toEqual({ isUsageOpen: true })
+  const none: Fx = { isUsageOpen: true }
+  expect(withoutCoffee(none)).toBe(none)
+})
+
 // ---- The note sent with the compaction ----
 
 test('the note asks the summary to keep what the next step needs, in a few plain lines', () => {
@@ -188,6 +228,7 @@ function fakeIo(over: Partial<CoffeeIo> = {}) {
     fill: async text => { log.fills.push(text); return { isFilled: true } },
     setNote: async note => { log.notes.push(note) },
     clearReading: async () => { log.cleared += 1 },
+    tokens: async () => 480_000,
     ...over,
   }
   return { io, log }
@@ -206,7 +247,7 @@ test('a compaction that stands leaves no line, only the time it was done, and th
   const { io, log } = fakeIo()
   await takeCoffeeBreak(io, true)
   expect(log.notes.map(n => n?.kind)).toEqual(['running', 'running', 'done'])
-  expect(lastNote(log)).toEqual({ kind: 'done', text: '', at: 777 })
+  expect(lastNote(log)).toEqual({ kind: 'done', text: '', at: 777, isReadingOld: true, oldTokens: 480_000 })
   expect(log.cleared).toBe(1)
 })
 
@@ -451,7 +492,7 @@ test('while the person\'s /compact runs he holds the mug; when it stands it is k
   const seen: Array<string | undefined> = []
   const r = await whileCompacting(io, async () => { seen.push(lastNote(log)?.kind); return STOOD })
   expect(seen).toEqual(['running'])
-  expect(log.notes).toEqual([{ kind: 'running', text: 'Compacting the chat…', isPerson: true }, { kind: 'done', text: '', at: 777 }])
+  expect(log.notes).toEqual([{ kind: 'running', text: 'Compacting the chat…', isPerson: true }, { kind: 'done', text: '', at: 777, isReadingOld: true, oldTokens: 480_000 }])
   expect(log.cleared).toBe(1)
   expect(r).toBe(STOOD)
 })

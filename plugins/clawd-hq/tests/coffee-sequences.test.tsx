@@ -172,6 +172,115 @@ test('h: a reading that names the percent and the window but no token count stil
   expect(await isShown($)).toBe(true)
 })
 
+/** The desktop app refuses the plugin's compact call in its SDK session, so a press only fills `/compact` into the prompt box. */
+const HEADLESS = 'clawd-hq: $.session.compact: not available in a headless (-p / SDK) session yet: compaction here runs inside a turn (a /compact prompt); catch it and carry on.'
+const COMPACT_LINE = '/compact Keep my latest request and any open work.'
+/** The person sends the `/compact` the button filled: the engine's own compaction, trigger `manual`. */
+const sendCompact = ($: Engine) =>
+  $.session.compact({ trigger: 'manual', instructions: 'Keep my latest request and any open work.', messages: [{ role: 'user', text: 'Build both panels', toolUses: [] }] } as never)
+
+/** At a break past the mark, the button pressed on the desktop: the engine refuses the call, and `/compact` goes in the prompt box. */
+async function pressOnDesktop($: Engine, h: ReturnType<typeof flowHost>) {
+  await startBackground($, h, ['w1'])
+  await handBack($, 'w1', 'w1-turn')
+  await notify($)
+  await startTurn($, 'm2', '<task-notification>w1 finished</task-notification>')
+  await endTurn($, 'm2', 'The panel is built.')
+  await measure($, OVER)
+  expect(await isShown($)).toBe(true)
+  h.compact.error = HEADLESS
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...PANE })
+  await ui.press(BUTTON)
+  await ui.unmount()
+  h.compact.error = undefined
+  await $.prompt.submit({ text: COMPACT_LINE, origin: { kind: 'composer' } } as never)
+}
+
+// In the desktop's SDK session the /compact runs inside a turn of Clawd's, and the engine measures after that turn as after any other.
+// That turn ends in an answer and edits nothing, and the reading can still be the chat from before: neither brings the button back.
+test('i: the person sends the filled /compact, it runs inside a turn, and the measure after it is the old one: the button is gone at once', async ($, on) => {
+  const h = flowHost(on)
+  await pressOnDesktop($, h)
+  await startTurn($, 'm3', COMPACT_LINE)
+  await sendCompact($)
+  await endTurn($, 'm3', '')
+  await measure($, OVER)
+  expect(await isShown($)).toBe(false)
+})
+
+test('i2: the same, with the turn begun only after the compaction stood', async ($, on) => {
+  const h = flowHost(on)
+  await pressOnDesktop($, h)
+  await sendCompact($)
+  await startTurn($, 'm3', COMPACT_LINE)
+  await endTurn($, 'm3', '')
+  await measure($, OVER)
+  expect(await isShown($)).toBe(false)
+})
+
+test('i3: once a reading of the compacted chat comes in, the button can come back when the chat grows past the mark again', async ($, on) => {
+  const h = flowHost(on)
+  await pressOnDesktop($, h)
+  await startTurn($, 'm3', COMPACT_LINE)
+  await sendCompact($)
+  await endTurn($, 'm3', '')
+  await measure($, OVER)
+  await say($, 'Now the tests')
+  await startTurn($, 'm4', 'Now the tests')
+  await endTurn($, 'm4', 'Here is how they look.')
+  await measure($, 40_000)
+  expect(await isShown($)).toBe(false)
+  await say($, 'And the docs')
+  await startTurn($, 'm5', 'And the docs')
+  await endTurn($, 'm5', 'Done, boss.')
+  await measure($, OVER)
+  expect(await isShown($)).toBe(true)
+})
+
+test('i4: a compaction that leaves the chat at a new size still over the mark (a low compaction point) lets the button back', async ($, on) => {
+  const h = flowHost(on)
+  await pressOnDesktop($, h)
+  await startTurn($, 'm3', COMPACT_LINE)
+  await sendCompact($)
+  await endTurn($, 'm3', '')
+  await measure($, OVER)
+  expect(await isShown($)).toBe(false)
+  await measure($, 350_000) // the compacted chat, smaller but still over the mark
+  expect(await isShown($)).toBe(true)
+})
+
+test('i5: after a compaction, /resume to a chat already over the mark: the wait was the last chat\'s, and the button shows', async ($, on) => {
+  const h = flowHost(on)
+  await pressOnDesktop($, h)
+  await startTurn($, 'm3', COMPACT_LINE)
+  await sendCompact($)
+  await endTurn($, 'm3', '')
+  await measure($, OVER)
+  expect(await isShown($)).toBe(false)
+  await $.session.end({ reason: 'resume', sessionId: 's1', resume: { id: 's2' } } as never)
+  await say($, 'Where were we?')
+  await startTurn($, 'm4', 'Where were we?')
+  await endTurn($, 'm4', 'The panel is built; the tests are next.')
+  await measure($, OVER) // the resumed chat happens to be as large as the one before
+  expect(await isShown($)).toBe(true)
+})
+
+test('i6: the readings after the compaction never shrink (a little over the old size): the next real turn ends the wait', async ($, on) => {
+  const h = flowHost(on)
+  const ABOUT = Math.round(OVER * 1.02)
+  await pressOnDesktop($, h)
+  await sendCompact($)
+  await startTurn($, 'm3', COMPACT_LINE)
+  await endTurn($, 'm3', '')
+  await measure($, ABOUT)
+  expect(await isShown($)).toBe(false)
+  await say($, 'Now the tests')
+  await startTurn($, 'm4', 'Now the tests')
+  await endTurn($, 'm4', 'Here is how they look.')
+  await measure($, ABOUT + 1_000)
+  expect(await isShown($)).toBe(true)
+})
+
 test('record: each main-chat turn end and the measure after it leave one small record of why the button shows or not, over the last', async ($, on) => {
   const h = flowHost(on)
   h.session.threshold = 950_000
@@ -187,7 +296,7 @@ test('record: each main-chat turn end and the measure after it leave one small r
   await h.clock.settle()
   const record = h.saved.get('debug:coffee') as Record<string, unknown>
   expect(record).toMatchObject({ by: 'measure', contextTokens: OVER, threshold: 300_000, atWorkCount: 0, demo: false, shown: true })
-  expect(Object.keys(record).sort()).toEqual(['at', 'atWorkCount', 'autoCompactAt', 'by', 'carriedAt', 'contextTokens', 'demo', 'handedBackAt', 'isBusy', 'isCheckpoint', 'shown', 'spokeBy', 'threshold', 'turns'])
+  expect(Object.keys(record).sort()).toEqual(['at', 'atWorkCount', 'autoCompactAt', 'by', 'carriedAt', 'contextTokens', 'demo', 'handedBackAt', 'isBusy', 'isCheckpoint', 'isReadingOld', 'shown', 'spokeBy', 'threshold', 'turns'])
   // Only the latest is kept: one key, and nothing of what was said.
   expect([...h.saved.keys()].filter(key => key.startsWith('debug:coffee'))).toEqual(['debug:coffee'])
   expect(JSON.stringify(record)).not.toMatch(/panel is built|Anything else|Build both/)

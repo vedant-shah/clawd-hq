@@ -17,8 +17,16 @@ test('the record has the numbers behind the button and nothing of what was said'
   }), 1234, 'turn')
   expect(r).toEqual({
     at: 1234, by: 'turn', contextTokens: 480_000, threshold: 300_000, autoCompactAt: 950_000, isBusy: false, atWorkCount: 2,
-    handedBackAt: 6, turns: 7, isCheckpoint: true, carriedAt: 7, spokeBy: 'composer', demo: false, shown: false,
+    handedBackAt: 6, turns: 7, isCheckpoint: true, carriedAt: 7, spokeBy: 'composer', demo: false, isReadingOld: false, shown: false,
   })
+})
+
+test('a button hidden while it waits for a reading of the compacted chat says so', () => {
+  const waiting = data({
+    boss: { turns: 3, isCheckpoint: true }, gauge: { contextTokens: 480_000 },
+    fx: { coffee: { kind: 'done', text: '', turns: 3, at: 1, isReadingOld: true, oldTokens: 480_000 } },
+  })
+  expect(coffeeRecord(waiting, 1, 'measure')).toMatchObject({ shown: false, isReadingOld: true, isCheckpoint: true, contextTokens: 480_000 })
 })
 
 test('it says shown when the button is on the pane, and what it lacked when it is not', () => {

@@ -344,6 +344,7 @@ test('pressing compacts the main chat right away, once, with the note, and the b
     expect(await ui.find(BUTTON)).toBeUndefined()
     expect(await lineOf(ui)).toBeUndefined()
     await ui.unmount()
+    await measure($, 40_000) // the compacted chat's own reading: until it comes, a reading over the mark may be the chat from before
   }
   expect(h.compacts).toHaveLength(2)
 })

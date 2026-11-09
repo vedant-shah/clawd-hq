@@ -35,7 +35,7 @@ import { BRAND, labelOf } from './office'
 import { renderPanel } from './panel'
 import { limitsOf } from './meters'
 import { contextOf, noteRequest, noteThreshold, startGauge } from './usage'
-import { isBreakTime, isPersonCompact, takeCoffeeBreak, whileCompacting, type CoffeeIo } from './coffee-break'
+import { isBreakTime, isPersonCompact, takeCoffeeBreak, tokensOf, whileCompacting, withFreshReading, withoutCoffee, withTurnStarted, type CoffeeIo } from './coffee-break'
 import { isNotification, isPersonMessage, withHandBack, withNewWork, withNotice, withPersonSpoke, withToolUsed, withTurnEnd } from './checkpoint'
 import { keepCoffeeRecord } from './coffee-debug'
 import type { CoffeeDebugIo } from './coffee-debug'
@@ -465,7 +465,10 @@ const coffeeIo = ($: EngineInterface): CoffeeIo => ({
   promptRead: () => $.prompt.read(), fill: text => $.prompt.fill({ text, mode: 'append' }),
   setNote: async note => { const { turns } = await getBoss($); await setFx($, f => ({ ...f, coffee: note && { ...note, turns } })) },
   clearReading: async () => { await setBoss($, withNewWork); await update($, gauge, g => ({ ...g, contextPercent: undefined, contextTokens: undefined })) }, // a compaction ends the checkpoint too
+  tokens: async () => tokensOf(await read($, gauge)),
 })
+/** Another conversation takes over: the coffee note (the mug, the wait for a fresh reading) was the last one's. */
+const forgetCoffee = async ($: EngineInterface) => { const f = await getFx($); if (withoutCoffee(f) !== f) await setFx($, withoutCoffee) }
 
 /** /office-council (hooks/council.ts): the box is filled after what is there; a typed question is sent as the person's own words. */
 const councilIo = ($: EngineInterface): CouncilIo => ({ fill: text => $.prompt.fill({ text, mode: 'append' }), submit: text => $.prompt.submit({ text, asUser: true }), later: fn => $.clock.after(0, fn), toast: text => void $.ui.toast(text) })
@@ -524,6 +527,7 @@ export const register: Register = (on, options) => {
       ['check on finished work', () => startKnow(knowIo($), cwd)],
       // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
       ['payroll review', async () => { if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined })) }],
+      ['coffee break', () => forgetCoffee($)],
       ['/office', () => $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })],
       ['/office-council', () => $.command.register({ name: 'office-council', description: 'Ask a few independent voices about a hard choice: /office-council <question>' })],
       ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a 90-second tour of ${BRAND}’s features` })],
@@ -594,6 +598,8 @@ export const register: Register = (on, options) => {
   // The header's context bar and limit countdowns follow the engine's own readings.
   on('session.measure', async ($, e, next) => {
     await update($, gauge, g => ({ ...g, ...contextOf(e.context), limits: limitsOf(e.rateLimits) }))
+    const [measured, effects] = [await read($, gauge), await getFx($)] // a reading of the chat after a compaction lets the button back (hooks/coffee-break.ts)
+    if (withFreshReading(effects, measured) !== effects) await setFx($, f => withFreshReading(f, measured))
     void keepCoffeeRecord(coffeeDebugIo($), 'measure') // the reading of the turn that just ended, which the turn's own record could not have yet
     return next(e)
   })
@@ -609,7 +615,7 @@ export const register: Register = (on, options) => {
       await update($, gauge, g => ({ ...g, startedAt: now, contextPercent: undefined, contextTokens: undefined }))
     }
     // Another conversation takes over this process without a session.start: its recap and its turns are its own.
-    if (e.reason === 'clear' || e.reason === 'resume') { reach = withNewConversation(reach); await resetRecap(recapIo($)) }
+    if (e.reason === 'clear' || e.reason === 'resume') { reach = withNewConversation(reach); await resetRecap(recapIo($)); await forgetCoffee($) }
     await forgetKnow(knowIo($))
     return next(e)
   })
@@ -777,6 +783,8 @@ export const register: Register = (on, options) => {
     leftTurnStart()
     isEditTurn = editPartOf(e.text ?? '') !== undefined
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, recap: undefined, activity: e.text ? READING_BRIEF : 'Back at it' }))
+    const effects = await getFx($) // a turn after a compaction's own ends the coffee break button's wait for a fresh reading
+    if (withTurnStarted(effects, e.text ?? '') !== effects) await setFx($, f => withTurnStarted(f, e.text ?? ''))
     return next(e)
   })
 

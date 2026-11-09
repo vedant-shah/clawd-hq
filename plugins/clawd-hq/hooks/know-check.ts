@@ -1,5 +1,5 @@
 // The check on finished work: after a specialist hands its work back, Haiku reads the whole record of what it did and
-// may leave one note on Clawd's card. register.tsx holds the hooks, the card's state and every `$` call, and hands
+// may leave one note on Clawd's card. register-know.ts holds the hooks and every `$` call (register-state.ts the card's state), and hands
 // them in as `KnowIo`; the rules are in hooks/know.ts and the write-up in hooks/know-record.ts.
 import type { ModelCompleteResult, SessionMessage } from 'claude-code'
 import type { KnowNote, KnowState } from '../types'
@@ -24,7 +24,7 @@ const PROMPTS_KEPT = 2
 const KEYS = { shown: 'know:shown', knew: 'know:knew', backoff: 'know:backoff', log: 'know:log' } as const
 type Key = (typeof KEYS)[keyof typeof KEYS]
 
-/** What the check may do, each one a `$` call made in register.tsx. */
+/** What the check may do, each one a `$` call made in register-know.ts. */
 export type KnowIo = {
   now: () => Promise<number>
   get: (key: string) => Promise<unknown>

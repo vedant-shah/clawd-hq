@@ -1,5 +1,5 @@
 // Left undone, the list (pure): what is kept, how near-identical items are one, how the store's copy is cleaned, and the
-// words the panel and the Do it now button use. register.tsx holds the atom; hooks/left-io.ts changes it through closures.
+// words the panel and the Do it now button use. register-state.ts holds the atom; hooks/left-io.ts changes it through closures.
 import type { LeftItem } from '../types'
 import { fit } from './desk'
 import { plainText } from './know'

@@ -1,5 +1,5 @@
 // The lasting rules Clawd offers to put in the project's CLAUDE.md, pure: what a rule may say, and how the list of offers changes.
-// register.tsx holds the list's atom; hooks/rule-io.ts changes it and writes the file through closures.
+// register-state.ts holds the list's atom; hooks/rule-io.ts changes it and writes the file through closures.
 import type { RuleOffer } from '../types'
 import { hash } from './office'
 import { HIDDEN_MARKS } from './plain'

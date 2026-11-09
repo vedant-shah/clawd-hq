@@ -1,4 +1,4 @@
-// Onboarding, piece 8: the engine's answers turned into the loose shapes OnboardIo uses, so register.tsx's closures stay
+// Onboarding, piece 8: the engine's answers turned into the loose shapes OnboardIo uses, so register-setup.ts's closures stay
 // one line each. Each takes the engine call as a closure; no `$` here.
 import type { CommandEntry, FsListEntry, UsageBreakdown } from './onboard-types'
 

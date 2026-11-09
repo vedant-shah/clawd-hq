@@ -1,5 +1,5 @@
 // The elements a pane draws with on the surface it is drawn on, and sprites drawn the best way that surface can.
-// register.tsx resolves them (`$` never leaves that file) and hands them over as PanelTools.
+// register-panes.ts resolves them (`$` never leaves the register-*.ts files) and hands them over as PanelTools.
 import type { Elements } from 'claude-code'
 import { BAR_H, WIDTH, barGlyphs, barSvg } from './meters'
 import type { BarSize } from './meters'

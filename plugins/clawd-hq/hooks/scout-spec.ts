@@ -1,5 +1,5 @@
 // The scout, as data: the agent definition, the answer it ends with, and the brief it is started with. The scout is hidden
-// from the main chat and started by the plugin when setup reaches the team step (register.tsx); it looks around the project
+// from the main chat and started by the plugin when setup reaches the team step (register-setup.ts); it looks around the project
 // with Read and Glob and ends with its picks in a team block (scout-answer.ts). No `$` here.
 import type { EngineInterface } from 'claude-code'
 import { TEAM_LIMIT } from './onboard-types'

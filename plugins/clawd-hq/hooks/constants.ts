@@ -1,4 +1,4 @@
-// The office's fixed numbers and tool names. register.tsx holds the hooks that use them.
+// The office's fixed numbers and tool names. the register-*.ts files hold the hooks that use them.
 export const FRAME_MS = 400
 export const CHEER_TICKS = 5
 /** A given name is a word or two; anything longer is cut. */

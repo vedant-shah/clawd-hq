@@ -1,5 +1,5 @@
 // The plugin's on/off configs as the Settings tab shows them, and how pressing a toggle changes the corresponding value in the plugin's own store.
-// `setToggle` makes a change through the io register.tsx builds (`configIo`); nothing here touches `$`.
+// `setToggle` makes a change through the io register-panes.ts builds (`configIo`); nothing here touches `$`.
 import type { BriefingOptions } from './instructions'
 import { savedKey, savedNow, useSaved } from './toggle-store'
 
@@ -30,7 +30,7 @@ export const WAIT_FOR_FREE = 'You can change these when Clawd is free.'
 /** The reason shown when a trusted source (managed settings, the organization's policy) owns the row. */
 export const LOCKED = 'your organization manages this setting.'
 
-/** The store key of the last settings list's row keys (hooks/register.tsx writes it at each press). */
+/** The store key of the last settings list's row keys (hooks/register-panes.ts writes it at each press). */
 export const ROWS_KEY = 'debug:config-rows'
 
 /** A settings row as `$.config.list()` gives it: its key, the plugin that owns it, and whether a trusted source holds it. */

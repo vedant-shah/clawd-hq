@@ -130,7 +130,7 @@ export function usageView(g: Gauge, now: number, offsetAt: (at: number) => numbe
   return { model: modelLabel(g.model), effort: effortLabel(g.effort), button: `Usage ${readings.map(r => r.text).join(' · ')}`, readings, rows }
 }
 
-// ---- Keeping the gauge, through plain calls register.tsx hands in (`$` never leaves that file) ----
+// ---- Keeping the gauge, through plain calls register-io.ts hands in (`$` never leaves the register-*.ts files) ----
 
 export type GaugeIo = {
   now: () => Promise<number>

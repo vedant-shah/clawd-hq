@@ -198,7 +198,7 @@ test('the model and effort are worded for a person; an effort that is not known 
   expect(usageView({ startedAt: 0, limits: [], effort: 'xhigh' }, NOW, utc).effort).toBe('Extra high')
 })
 
-// ---- Reading the meters through plain calls (register.tsx spells each one) ----
+// ---- Reading the meters through plain calls (register-io.ts spells each one) ----
 
 function gaugeIo(over: Partial<GaugeIo> = {}) {
   let held: Gauge = { startedAt: 0, limits: [] }

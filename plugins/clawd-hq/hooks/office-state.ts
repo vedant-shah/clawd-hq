@@ -1,4 +1,4 @@
-// Pure changes to the office's state: register.tsx applies them through its atoms. (No `$` and no atoms here: the
+// Pure changes to the office's state: the register-*.ts files apply them through register-state.ts's atoms. (No `$` and no atoms here: the
 // engine's scan follows those only within one file.)
 import type { Badge, Boss, Employee, Fx, Payroll } from '../types'
 import { CHEER_TICKS, DESCRIPTION_CHARS, MAX_BLURBS, NAME_CHARS } from './constants'

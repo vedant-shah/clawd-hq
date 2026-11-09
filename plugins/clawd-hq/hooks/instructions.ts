@@ -1,6 +1,6 @@
 // Clawd's standing instructions for the main chat, pure: the rules (the person's own copy, or the shipped ones), the fixed
 // rules from code, then a voice (the voice file setting, the person's own copy, or the shipped one).
-// register.tsx hands in the reads, the seeds and the warning (`$` never leaves that file).
+// register-rules.ts hands in the reads, the seeds and the warning (`$` never leaves the register-*.ts files).
 import { NO_UPDATE } from './quiet'
 
 export const SECTION_ID = 'clawd-hq:chief-of-staff'

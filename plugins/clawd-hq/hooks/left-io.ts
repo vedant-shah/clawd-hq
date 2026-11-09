@@ -1,5 +1,5 @@
-// Left undone, the work (no `$`): what each source adds to the list, and the two buttons. register.tsx holds the list's
-// atom and the hooks and hands in what each call may do as `LeftIo`; the pure parts are in left-scan.ts, left-list.ts and left-check.ts.
+// Left undone, the work (no `$`): what each source adds to the list, and the two buttons. register-state.ts holds the list's
+// atom, register-left.ts the hooks, and it hands in what each call may do as `LeftIo`; the pure parts are in left-scan.ts, left-list.ts and left-check.ts.
 import type { ModelCompleteResult } from 'claude-code'
 import type { LeftItem } from '../types'
 import { fit } from './desk'
@@ -13,7 +13,7 @@ import { plainText } from './know'
 import { side } from './side-ask'
 import { inLine } from './state'
 
-// What register.tsx's hooks need besides the work below, in one import.
+// What the register-*.ts hooks need besides the work below, in one import.
 export { leftAsked, leftToolUsed, leftTurnStart } from './left-check'
 export { FILE_TOOLS } from './left-scan'
 
@@ -23,7 +23,7 @@ export function leftStart(raw: unknown): LeftItem[] {
   return cleanLeft(raw)
 }
 
-/** What the list may do, each one a `$` call made in register.tsx. */
+/** What the list may do, each one a `$` call made in register-left.ts. */
 export type LeftIo = {
   folder: () => string
   now: () => Promise<number>
@@ -71,7 +71,7 @@ export function leftActions(io: LeftIo): LeftActions {
 
 /**
  * A specialist handed its report back. Nothing is read from an answer any more (phrase matching listed descriptions of the
- * work as if they were unfinished work); this stays so register.tsx's call to it still holds, and does nothing.
+ * work as if they were unfinished work); this stays so register-turns.ts's call to it still holds, and does nothing.
  */
 export function leftAnswer(_io: LeftIo, _e: { reason: string; answer: string }, _by: string): Promise<void> {
   return Promise.resolve()

@@ -1,6 +1,6 @@
 // The coffee break button, pure: when the footer offers it, what pressing it does, and the one line it leaves when it cannot. It is offered
 // when the chat has grown past a mark AND a piece of work has just closed (hooks/checkpoint.ts), so a compaction never lands between the
-// steps of a job. register.tsx hands in every call as `io` (`$` never leaves that file).
+// steps of a job. register-coffee.ts hands in every call as `io` (`$` never leaves the register-*.ts files).
 import type { Boss, Employee, Fx, Gauge } from '../types'
 import { BOX_BUSY, DIALOG_OPEN } from './clawd-edit'
 import { atWork } from './panel-model'

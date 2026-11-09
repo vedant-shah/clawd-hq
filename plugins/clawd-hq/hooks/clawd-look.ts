@@ -10,7 +10,7 @@ export type Look = 'normal' | 'asleep' | 'coffee'
 export const lookOf = (mood: ClawdMood, isBreak: boolean): Look => (isBreak ? 'coffee' : mood === 'sleepy' ? 'asleep' : 'normal')
 
 /**
- * The z's and the steam move one step every this many ticks. A quiet office ticks about every 1.2 seconds (hooks/register.tsx writes a
+ * The z's and the steam move one step every this many ticks. A quiet office ticks about every 1.2 seconds (hooks/register-session.ts writes a
  * tick on every third frame even when nothing else moves), so a step is a slow drift of a few seconds and no extra redraw is made.
  */
 export const STEP_TICKS = 2

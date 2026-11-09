@@ -1,5 +1,5 @@
 // The Artifact Desk: the pages on claude.ai that Claude published or opened with the Artifact tool in this project.
-// Pure: which calls count, which link and title they leave, and how the list is kept and shown. register.tsx keeps the list.
+// Pure: which calls count, which link and title they leave, and how the list is kept and shown. register-artifacts.ts keeps the list (register-state.ts holds it).
 import type { Artifact } from '../types'
 import { fit } from './desk'
 import { inLine } from './state'

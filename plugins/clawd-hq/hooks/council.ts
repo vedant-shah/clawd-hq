@@ -7,7 +7,7 @@ import { withChoices } from './staff-model'
 /** The words Clawd reads as a request for a council (his rules, prompts/chief-of-staff.md, say what he does with them). */
 export const COUNCIL_LEAD = 'Hold a council on: '
 
-/** The calls behind the button and the command; register.tsx fills them in. */
+/** The calls behind the button and the command; register-io.ts fills them in. */
 export type CouncilIo = {
   /** Puts text in the prompt box after what is there; never sends. */
   fill: (text: string) => Promise<{ isFilled: boolean }>

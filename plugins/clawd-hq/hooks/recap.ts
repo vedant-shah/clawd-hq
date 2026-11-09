@@ -1,5 +1,5 @@
 // The recap on Clawd's card: one line on where things stand, made the way Claude Code's own session recap is.
-// When one is due, how its line reads, and the steps of asking for one. `$` never leaves register.tsx: it hands in
+// When one is due, how its line reads, and the steps of asking for one. `$` never leaves the register-*.ts files: register-io.ts hands in
 // the calls as `io`.
 import type { Boss } from '../types'
 import { fit } from './desk'

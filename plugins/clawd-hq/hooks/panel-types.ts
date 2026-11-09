@@ -1,4 +1,4 @@
-// What the side panel is handed to draw, and the things it may ask for; register.tsx fills both.
+// What the side panel is handed to draw, and the things it may ask for; register-panes.ts fills both.
 import type { Artifact, Badge, Boss, ClawdBrief, ContractorOffer, Employee, Fx, Gauge, KnowState, LeftItem, Payroll, RuleOffer } from '../types'
 import type { ClawdActions } from './clawd-edit'
 import type { ConfigField } from './configs'

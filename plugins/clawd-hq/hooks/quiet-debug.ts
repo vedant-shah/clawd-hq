@@ -1,6 +1,6 @@
 // A small record of what the quiet chat decided for peer and notification rows, so a live session (the desktop app's above all) can be
 // read and not guessed. Kept in the store under one key, the latest few only, never holding a word of the row: its kind, sender, flags and look.
-// register.tsx hands in every call as `io` (`$` never leaves that file).
+// register-quiet.ts hands in every call as `io` (`$` never leaves the register-*.ts files).
 import { hasHandbackLine } from './quiet'
 import type { ChatRow } from './quiet'
 

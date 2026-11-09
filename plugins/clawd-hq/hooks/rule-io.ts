@@ -1,7 +1,7 @@
 // The "Add to CLAUDE.md" card, the work (no `$`): Clawd's offer, and the two buttons. The press writes the exact line shown into the
 // project's CLAUDE.md, straight from the plugin, with no model in between: the press is the consent. This is the one place the
 // plugin writes that file; it only ever adds a line, and it will not write when it cannot first read what is there.
-// register.tsx holds the list's atom and hands in what each call may do as `RuleIo`.
+// register-state.ts holds the list's atom and register-io.ts hands in what each call may do as `RuleIo`.
 import type { RuleOffer } from '../types'
 import { parseRule, ruleKey, ruleLine, withOffer, withProblem, withoutOffer } from './rule-offers'
 import { inLine, reasonOf } from './state'
@@ -44,7 +44,7 @@ export async function appendRule(io: ClaudeMdIo, path: string, rule: string): Pr
   }
 }
 
-/** What the card may do, each one a `$` call made in register.tsx. */
+/** What the card may do, each one a `$` call made in register-io.ts. */
 export type RuleIo = ClaudeMdIo & {
   /** The project's CLAUDE.md; '' when the session has no project folder. */
   path: () => string

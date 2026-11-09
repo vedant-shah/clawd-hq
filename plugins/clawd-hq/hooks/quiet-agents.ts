@@ -1,5 +1,5 @@
 // The session's agent list as the quiet chat reads it: at most once a short while, so a redraw or a scroll of the same rows does not ask
-// again. Not pure: the cache is the caller's (register.tsx keeps one, emptied at a session start, a clear or a resume).
+// again. Not pure: the cache is the caller's (register-state.ts keeps one, emptied at a session start, a clear or a resume).
 import type { ListedAgent } from './quiet'
 
 /** How long one read of the list serves. */

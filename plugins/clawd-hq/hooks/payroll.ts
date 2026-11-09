@@ -1,5 +1,5 @@
 // Payroll: which agent types Clawd is offered in this project, and the review that lays off, by itself, the types it does not use.
-// register.tsx hands over the calls it may make (PayrollIo); nothing here touches `$` or an atom.
+// register-io.ts hands over the calls it may make (PayrollIo); nothing here touches `$` or an atom.
 import type { Fx, Payroll } from '../types'
 import { isSkillCover, withCoverRule, withHandChoice } from './core-cover'
 import { projectFiles, proposeLayoffs } from './desk'

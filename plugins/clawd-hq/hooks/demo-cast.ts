@@ -1,5 +1,5 @@
 // The team the People tab shows while the tour plays: five stand-ins with a short line each and a token total, in place of the real books.
-// Nothing here is saved; the panel's data is dressed on its way to the drawing (hooks/register.tsx), and the real books are untouched.
+// Nothing here is saved; the panel's data is dressed on its way to the drawing (hooks/register-panes.ts), and the real books are untouched.
 import type { Badge } from '../types'
 import type { PanelData } from './panel-types'
 

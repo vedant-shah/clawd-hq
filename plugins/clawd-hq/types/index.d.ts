@@ -262,7 +262,7 @@ declare module 'claude-code' {
       know: KnowState
       brief: ClawdBrief
       /**
-       * The setup step on Clawd's card, an OnboardCard (hooks/onboard-types.ts; this file may import nothing, so register.tsx
+       * The setup step on Clawd's card, an OnboardCard (hooks/onboard-types.ts; this file may import nothing, so register-state.ts
        * reads it as one); null until the frames look for it this session.
        */
       onboard: { step: string; lines: readonly string[]; buttons: readonly unknown[] } | null

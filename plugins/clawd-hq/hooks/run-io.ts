@@ -1,5 +1,5 @@
 // How a specialist joins the books, shows signs of life and leaves them, and how the books are matched with the engine's agent list.
-// No `$` and no atoms: register.tsx hands in what each step may do as closures (`RunIo`).
+// No `$` and no atoms: register-io.ts hands in what each step may do as closures (`RunIo`).
 import type { AgentStatus } from 'claude-code'
 import type { Boss, EndedBy, Employee, Mood } from '../types'
 import { labelOf, roleOf } from './office'

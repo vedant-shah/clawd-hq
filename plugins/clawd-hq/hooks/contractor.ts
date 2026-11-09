@@ -1,7 +1,7 @@
 // Contractors: an installed skill that is not on the team, hired for one job. `hire_contractor` checks the skill and answers with the one
 // contractor agent the plugin ships and the first line of its brief, which has it load the skill. Nothing is registered: a type registered
 // now would reach the Agent tool only next turn. Hires are counted per project and skill; on the second hire of a skill the Office tab
-// offers to make it staff, and "Make staff" adds it to the saved team through the existing hire path. No `$` here: register.tsx hands in
+// offers to make it staff, and "Make staff" adds it to the saved team through the existing hire path. No `$` here: register-setup.ts hands in
 // the calls as closures.
 import type { ContractorOffer } from '../types'
 import { CONTRACTOR_TYPE } from './contractor-name'

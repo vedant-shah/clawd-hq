@@ -1,6 +1,6 @@
 // One small record of why the coffee break button is or is not on the pane, so a live failure can be read and not guessed. Kept under one
 // key, the latest only, never growing and never holding a word of the chat: numbers, flags and the origin kind of the person's last message.
-// register.tsx hands in every call as `io` (`$` never leaves that file).
+// register-coffee.ts hands in every call as `io` (`$` never leaves the register-*.ts files).
 import { coffeeView, tokensOf, triggerAt } from './coffee-break'
 import { atWork } from './panel-model'
 import type { PanelData } from './panel-types'

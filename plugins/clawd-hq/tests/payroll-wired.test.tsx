@@ -1,4 +1,4 @@
-// Payroll through the plugin's own wiring (hooks/register.tsx): the routine check lays off another project's skill hire in an existing
+// Payroll through the plugin's own wiring (hooks/register-session.ts, hooks/register-io.ts): the routine check lays off another project's skill hire in an existing
 // folder, and keeps this folder's own saved hire, the shipped helpers and the contractor. Nothing here is offered by the engine in
 // this session: the types are only on the machine-wide record, as a hire made in another project is.
 import { expect, test } from 'claude-code/testing'

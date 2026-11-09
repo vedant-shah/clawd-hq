@@ -1,5 +1,5 @@
 // Playing the tour (the script is in hooks/demo-script.ts): stand-in employees on the real panel, one step every few seconds, cleaned up at the end.
-// The office's own actions come in as `io`, so `$` and the state stay in register.tsx. Nothing real is spawned, saved or announced.
+// The office's own actions come in as `io`, so `$` and the state stay in the register-*.ts files. Nothing real is spawned, saved or announced.
 import type { Boss, Employee, Fx } from '../types'
 import { sentenceOf } from './activity'
 import { NAP_MS } from './clawd-says'
@@ -14,7 +14,7 @@ import { withProgress } from './steps'
 
 export { onStage } from './demo-cast'
 
-/** What playing the tour needs of the office; every call is a closure built in register.tsx. */
+/** What playing the tour needs of the office; every call is a closure built in register-io.ts. */
 export type DemoIo = {
   show: (view: PaneView) => Promise<unknown>
   /** Settings shows the list of finished work (true) or its configs (false). */

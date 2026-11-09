@@ -1,4 +1,4 @@
-// Starting values for the office's state, and a pure list helper. (The atoms and helpers that take `$` stay in register.tsx:
+// Starting values for the office's state, and a pure list helper. (The atoms and helpers that take `$` stay in register-state.ts:
 // the engine's scan follows `$` and atoms only within one file.)
 import type { Boss, ClawdBrief, Employee, Fx, Gauge, Payroll } from '../types'
 

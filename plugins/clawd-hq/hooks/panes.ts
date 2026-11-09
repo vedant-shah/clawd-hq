@@ -34,7 +34,7 @@ export function pinHeight(surface: string, placement: 'dock' | 'inline', bodyRow
   return surface === 'terminal' ? undefined : '100%'
 }
 
-// ---- Opening and raising. The host's calls come in as `io`: `$` and the state atoms stay in register.tsx. ----
+// ---- Opening and raising. The host's calls come in as `io`: `$` and the state atoms stay in the register-*.ts files. ----
 
 const COLUMNS = 60
 

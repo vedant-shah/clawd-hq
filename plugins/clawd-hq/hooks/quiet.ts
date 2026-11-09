@@ -1,4 +1,4 @@
-// The quiet chat: which rows of the main chat are filler the person need not see. Pure; register.tsx draws (or hides) them.
+// The quiet chat: which rows of the main chat are filler the person need not see. Pure; register-quiet.ts draws (or hides) them.
 // The full view (ctrl+o, --verbose) is never changed, and a failure is never hidden.
 import type { Employee } from '../types'
 

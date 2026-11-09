@@ -1,6 +1,6 @@
 // The tokens each agent type used in one project folder, kept in the store under `tokens:<folder>`: the People tab's token line.
 // The machine-wide record (`roster`) keeps its own lifetime counts as before; those cannot be split by project, so a project
-// counts from the day this was added. No `$` and no atoms: register.tsx hands in what may be done as closures (`TokensIo`).
+// counts from the day this was added. No `$` and no atoms: register-io.ts hands in what may be done as closures (`TokensIo`).
 import { inLine } from './state'
 
 /** What the per-project totals may do: the session's folder now, the store, the People tab's copy of this folder's totals, and a toast. */

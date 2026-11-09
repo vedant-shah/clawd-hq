@@ -1,4 +1,4 @@
-// The one-time card for a project that still has an old decisions file (no `$`; register.tsx hands in what each call may do).
+// The one-time card for a project that still has an old decisions file (no `$`; register-io.ts hands in what each call may do).
 // Clawd HQ no longer reads that file. The card says so and offers to turn what is in it into CLAUDE.md rules: the button puts a
 // prompt in the prompt box, never sends it. The plugin never reads, changes or removes the file; this is the only place that names it.
 import { reasonOf } from './state'

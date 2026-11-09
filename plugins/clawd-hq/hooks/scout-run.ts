@@ -9,7 +9,7 @@ import { isClassifierRefusal } from './scout-handoff'
 import { looksSecret } from './scout-pick'
 import { SCOUT_SPEC, SCOUT_TYPE } from './scout-spec'
 
-// The hand-off to Clawd, for register.tsx to reach through this module's one import line.
+// The hand-off to Clawd, for the register-*.ts files to reach through this module's one import line.
 export { askClawd, handScoutSpawn, scoutHandoff } from './scout-handoff'
 
 /** How often the scout's transcript is looked at. */

@@ -2,8 +2,8 @@
 // built-in security plugin, cc-plugin-sec-default, sits outermost for Team and Enterprise organizations and on machines
 // with managed settings, and sends prompt.compose and prompt.context past every plugin a person installs
 // (`next.to(e, 'append')`), so those hooks of ours never run there. Then the rules ride with a prompt instead: once per
-// conversation, and again once the conversation has shrunk (a compaction, a rewind, /clear). register.tsx keeps the
-// value, hands in what it saw, and does the reads and writes.
+// conversation, and again once the conversation has shrunk (a compaction, a rewind, /clear). register-state.ts keeps the
+// value, register-rules.ts hands in what it saw, and does the reads and writes.
 
 /** What this session has seen of the two roads. */
 export type Reach = {

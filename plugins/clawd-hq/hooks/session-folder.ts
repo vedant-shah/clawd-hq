@@ -1,7 +1,7 @@
 // The session's project folder, followed (issue #5). The desktop app can start a session in a spare folder and move it to the project
 // afterwards, while session start fires only once, in the spare folder. So the folder is read again from the engine (its project root,
 // which follows a host's move but not a shell `cd`), and a move files everything under the new folder. A setup run begun in the old
-// folder is dropped. Also: the folder `/office-setup <folder>` looks at. No `$`: register.tsx fills the io.
+// folder is dropped. Also: the folder `/office-setup <folder>` looks at. No `$`: register-setup.ts fills the io.
 import type { OnboardIo } from './onboard-types'
 
 export type FolderIo = {

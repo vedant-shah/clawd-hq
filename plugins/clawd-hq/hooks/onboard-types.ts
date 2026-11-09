@@ -1,5 +1,5 @@
 // Onboarding: the names shared by the scan, team pick, hiring, workflow, cards and flow pieces. Types and tiny constants only.
-// Nothing here touches `$` or an atom; register.tsx fills OnboardIo with closures (see docs/research/onboarding-step1-plan.md).
+// Nothing here touches `$` or an atom; register-setup.ts fills OnboardIo with closures (see docs/research/onboarding-step1-plan.md).
 
 /**
  * Where setup stands: it runs by itself, scan → team (picked, then hired) → workflow → done. `done` ends it; `/office-setup` starts
@@ -146,7 +146,7 @@ export type UsageBreakdown = {
   readonly totalSkills?: number
 }
 
-/** The closures register.tsx fills; every onboarding module works through these and never sees `$`. */
+/** The closures register-setup.ts fills; every onboarding module works through these and never sees `$`. */
 export type OnboardIo = {
   readonly now: () => number
   /** The project folder; every per-project key hangs off it. */

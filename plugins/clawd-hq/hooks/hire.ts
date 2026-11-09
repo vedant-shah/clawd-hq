@@ -2,7 +2,7 @@
 // (one tap in People brings each back). Skills on the team become hires: an agent with the skill preloaded, listed as
 // `clawd-hq:<name>`. A skill name the engine does not know fails silently, so every name is checked against the
 // installed list first and a name that is not there is dropped and reported. Skills cannot be hidden, only agents parked.
-// No `$` here: the engine is reached through OnboardIo closures that register.tsx fills.
+// No `$` here: the engine is reached through OnboardIo closures that register-setup.ts fills.
 import { firstSentence } from './helpers'
 import type { CommandEntry, HireSpec, OnboardIo, Pick as SeatPick, Seat, Team } from './onboard-types'
 import { teamKey } from './onboard-types'

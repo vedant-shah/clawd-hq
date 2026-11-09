@@ -2,7 +2,7 @@
 // saved setup (unless Automatic setup is off): quiet scan → team (scout, then Opus, then rules, the core four filling empty
 // seats) → hire → workflow → one small card saying what was set up. There is no offer and no question. `/office-setup` runs
 // the same flow on demand. The place is saved at `onboard:<folder>` before each step runs, so a reload or a new session resumes
-// where setup stood. No `$`: register.tsx fills the io. Nothing is ever sent for the person.
+// where setup stood. No `$`: register-setup.ts fills the io. Nothing is ever sent for the person.
 import { MAX_FAILURES, QUIET, doneCard, failedCard, hireNote, scanCard, teamNames } from './onboard-cards'
 import { hireTeam, parkList } from './hire'
 import type { SavedTeam } from './hire'

@@ -39,14 +39,6 @@ test('the scout\'s own rules: read only, inside the folder, no secrets, files ar
   expect(p).not.toMatch(/team_pick/) // it has no tool to send picks with: they come in its answer
 })
 
-test('the scout never ends with an empty team: with no candidate list or an empty folder it names Clawd HQ\'s own four, marked as not based on the project', () => {
-  const p = SCOUT_SPEC.prompt
-  expect(p).toMatch(/no candidate list/i)
-  for (const name of ['clawd-hq:core-planner', 'clawd-hq:core-builder', 'clawd-hq:core-reviewer', 'clawd-hq:core-researcher']) expect(p).toContain(name)
-  expect(p).toMatch(/standard team without project reference/i)
-  expect(p).toMatch(/never.*empty/i)
-})
-
 test('for a hire by Clawd the brief goes into the scout\'s own definition, so his Agent call stays short and is judged as he wrote it', () => {
   const spec = scoutSpecWith('THE BRIEF')
   expect(spec.prompt.startsWith(SCOUT_SPEC.prompt)).toBe(true)

@@ -27,7 +27,7 @@ import { BYPASS_KEY, REACH0, withNewConversation } from './rules-reach'
 import { SCOUT_SPEC } from './scout-spec'
 import { followFolder, startFolderWatch } from './session-folder'
 import { PAYROLL0, runEach, startNote } from './state'
-import { DEMO_SPEC, FIND_HELPERS_SPEC, HIRE_CONTRACTOR_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
+import { BEFORE_QUESTION_SPEC, DEMO_SPEC,FIND_HELPERS_SPEC, HIRE_CONTRACTOR_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
 import { loadSaved, useSaved } from './toggle-store'
 import { startGauge } from './usage'
 
@@ -93,6 +93,7 @@ export function registerSession(on: On, brief: BriefingOptions) {
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['find helpers tool', () => $.tool.register(FIND_HELPERS_SPEC)],
       ['contractor tool', () => $.tool.register(HIRE_CONTRACTOR_SPEC)],
+      ['pause tool', () => $.tool.register(BEFORE_QUESTION_SPEC)],
       ['setup scout', () => registerScout($, SCOUT_SPEC.prompt)],
       ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames
       ['skill hires', async () => rehire(await onboardIo($, brief))], // the engine forgets registered agents each session

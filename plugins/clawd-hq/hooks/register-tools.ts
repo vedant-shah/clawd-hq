@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 import { sentenceOf } from './activity'
 import { withToolUsed } from './checkpoint'
 import { SHIPPED_DENY, guardOnCrash, isShippedWrite } from './clawd-edit'
-import { STEP_TOOL } from './constants'
+import { PAUSE_TOOL, STEP_TOOL } from './constants'
 import type { BriefingOptions } from './instructions'
 import { knowToolUsed } from './know-check'
 import { leftToolUsed } from './left-io'
@@ -27,8 +27,8 @@ export function registerTools(on: On, brief: BriefingOptions) {
     // The running tally of agent and skill use (hooks/use-tally.ts): names and counts only, for what session files are too big to show. Never waited for.
     if (isCountedTool(tool)) void (async () => recordUse({ get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value) }, ses.cwd, await $.session.id(), tool, input))().catch(() => undefined)
     if (ses.isEditTurn && isShippedWrite(tool, input)) return { deny: SHIPPED_DENY } as never
-    // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report is no work.
-    if (id === undefined && tool !== STEP_TOOL) { knowToolUsed(); leftToolUsed(tool); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
+    // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report and the pause before a question are no work.
+    if (id === undefined && tool !== STEP_TOOL && tool !== PAUSE_TOOL) { knowToolUsed(); leftToolUsed(tool); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
     const own = await ownToolAnswer(ownToolIo($, brief), tool, id, input) // the tour, the offer of a rule, a specialist's step report, and Clawd's search
     if (own) return own as never
     // What the person answers in Clawd's question box settles the job at hand only: nothing is saved, and his status line stays as it was.

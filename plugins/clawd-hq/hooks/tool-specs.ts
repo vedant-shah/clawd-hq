@@ -30,6 +30,16 @@ export const STEP_SPEC: ToolSpec = {
   },
 }
 
+export const BEFORE_QUESTION_SPEC: ToolSpec = {
+  name: 'before_question',
+  // In the prompt's own list: Clawd calls it at every pause, so he should not have to search for it first.
+  isDeferred: false,
+  description:
+    'For Clawd, in the main chat: call it once, right after your catch-up and right before the question box (AskUserQuestion), so the catch-up shows as written. ' +
+    'It takes no input and does nothing; it answers "Ready." A specialist has no use for it.',
+  inputSchema: { type: 'object', properties: {} },
+}
+
 export const FIND_HELPERS_SPEC: ToolSpec = {
   name: 'find_helpers',
   // In the prompt's own list: Clawd calls it before every hire, so he should not have to search for it first.

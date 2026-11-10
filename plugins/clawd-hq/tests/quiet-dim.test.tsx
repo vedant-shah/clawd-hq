@@ -33,6 +33,7 @@ const DIMMED: Array<[string, Record<string, unknown>]> = [
   [FIND, { job: 'Research macOS cleanup options', keywords: ['macOS', 'cleanup'] }],
   ['mcp__clawd-hq__offer_rule', { rule: 'Never use tabs' }],
   ['mcp__clawd-hq__hire_contractor', { skill: 'shadcn', role: 'Designer' }],
+  ['mcp__clawd-hq__before_question', {}],
   ['TodoWrite', { todos: [] }],
   ['TaskCreate', { subject: 'Write the tests' }],
   ['SendMessage', { to: '@judge', message: 'Score round 2.' }],

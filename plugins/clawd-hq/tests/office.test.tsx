@@ -620,6 +620,13 @@ test('no decision rides along any more: Clawd\'s context has no memory block, an
 
 
 
+test('with Clawd not running the chat, the setup profile is not added to the chat', { options: { chiefOfStaff: false } }, async ($, on) => {
+  host(on, [], { profile: { role: 'Tool or plugin builder', workflow: ['Ask about anything unclear'] } })
+  await $.session.start(START)
+  const ctx = await $.prompt.context({ blocks: [] } as never)
+  expect(ctx.blocks).toEqual([])
+})
+
 test('the toasts and Clawd say the role, never a made-up name', async ($, on) => {
   const { toasts } = host(on, [])
   let n = 0

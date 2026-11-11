@@ -71,9 +71,10 @@ export function registerRules(on: On, brief: BriefingOptions) {
     return text === undefined ? base : { sections: [...base.sections, { id: SECTION_ID, scope: 'session', text } as const] }
   })
 
-  // Who the person is, from setup, rides at the top of every conversation.
+  // While Clawd runs the chat, who the person is (from setup) rides at the top of every conversation. Off: nothing is added.
   on('prompt.context', async ($, e, next) => {
     const r = await next(e)
+    if (!brief.isOn) return r
     const profile = profileBlock((await $.store.get(PROFILE_KEY).catch(() => undefined)) as Profile | undefined)
     return profile ? { ...r, blocks: [...r.blocks, { name: PROFILE_BLOCK, text: profile }] } : r
   })

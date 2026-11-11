@@ -58,7 +58,7 @@ What it changes as text passes through:
 - Agent tool description: while Clawd runs the chat, it adds a note on choosing each hire's model and effort and a standing instruction that you want work handed to agents without being asked each time. With it off, the description is left as it is.
 - Hire briefs: it removes Clawd's `[effort: …]` and `PAIR-UP:` lines and adds a short note on how to report questions and choices. The agent type, tools, model and permission mode are never changed. The specialist's requests use the effort Clawd chose.
 - Your messages: they may carry, unseen, an edit note when you edit Clawd's files from Settings, and setup's ask to hire the scout.
-- Every conversation: your role and way of working, from setup, ride along as one block.
+- Every conversation: while Clawd runs the chat, your role and way of working, from setup, ride along as one block. With it off, nothing is added.
 - Agent list: while Clawd runs the chat, helpers you laid off are hidden from the model. With it off, none are hidden.
 - Quiet chat: it hides specialists' finished notices, Clawd's no-update lines and background hints, and hides or dims the office's own bookkeeping rows. Errors always show, and the expanded view (ctrl+o) shows everything.
 - "You should know": while this one is on and an office tab is open, Claude Code's own "You should know" question gets a quiet answer.

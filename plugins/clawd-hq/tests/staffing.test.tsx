@@ -32,10 +32,11 @@ test('the staffing note names concrete Haiku jobs and says read-only jobs start 
   expect(STAFFING_NOTE).toMatch(/a job that only reads and reports starts at `haiku` unless it needs judgment/i)
 })
 
-test('with the chief of staff option off, the hiring tool keeps its own rule about when to hire',{ options: { chiefOfStaff: false } }, async ($, on) => {
+test('with the chief of staff option off, the hiring tool keeps its own text', { options: { chiefOfStaff: false } }, async ($, on) => {
   host(on)
   on('tool.describe', (_$, e) => ({ description: (e as { description: string }).description }) as never)
-  const { description } = await describe($, 'Agent')
-  expect(description).toContain(STAFFING_NOTE)
-  expect(description).not.toContain(HANDOVER_NOTE)
+  for (const tool of ['Agent', 'Task']) {
+    const { description } = await describe($, tool)
+    expect(description).toBe(BUILT_IN)
+  }
 })

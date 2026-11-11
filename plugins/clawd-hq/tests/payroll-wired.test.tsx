@@ -2,6 +2,7 @@
 // folder, and keeps this folder's own saved hire, the shipped helpers and the contractor. Nothing here is offered by the engine in
 // this session: the types are only on the machine-wide record, as a hire made in another project is.
 import { expect, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import { START, host } from './host'
 
 const MINE = 'clawd-hq:copywriting'
@@ -24,4 +25,21 @@ test('the routine check lays off a hire made in another project and keeps this f
   await $.agent.offer({ agent: 'ecc:planner', description: 'Plans work.' } as never)
   await h.clock.advance(25 * 400 + 100)
   expect((h.saved.get('payroll:/repo') as { laidOff: string[] }).laidOff).toEqual([STALE])
+})
+
+const LAID_OFF = 'ecc:planner'
+const offerPlanner = ($: Engine) => $.agent.offer({ agent: LAID_OFF, description: 'Plans work.' } as never) as Promise<{ isOffered?: boolean }>
+const laidOffStore = { 'payroll:/repo': { laidOff: [LAID_OFF], isReviewed: true, stacks: [] }, 'onboard:/repo': { step: 'skipped', pending: [], at: 1 } }
+
+test('with Clawd running the chat, a laid-off agent is kept off the list', async ($, on) => {
+  host(on, [], laidOffStore)
+  await $.session.start(START)
+  expect((await offerPlanner($)).isOffered).toBe(false)
+})
+
+test('with Clawd not running the chat, a laid-off agent is listed as usual', { options: { chiefOfStaff: false } }, async ($, on) => {
+  host(on, [], laidOffStore)
+  on('agent.offer', () => ({ isOffered: true }) as never)
+  await $.session.start(START)
+  expect((await offerPlanner($)).isOffered).toBe(true)
 })

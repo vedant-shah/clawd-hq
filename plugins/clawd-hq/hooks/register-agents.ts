@@ -56,15 +56,16 @@ export function registerAgents(on: On, brief: BriefingOptions) {
       }
       if (!(await readRoster($))[e.agent]) await enrollNow($, e.agent, 0)
     })
-    if (await inLine(() => holdBack(payrollIo($), e.agent))) return { isOffered: false }
+    // With Clawd off, the list is the engine's own: nobody is hidden, and no layoff is made.
+    if (brief.isOn && (await inLine(() => holdBack(payrollIo($), e.agent)))) return { isOffered: false }
     return next(e)
   })
 
-  // Clawd learns to pick each hire's model and effort, and, while he runs the chat, that handing work over needs no asking.
+  // While Clawd runs the chat, he learns to pick each hire's model and effort, and that handing work over needs no asking. Off: the tool's text is left alone.
   for (const tool of ['Agent', 'Task']) {
     on('tool.describe', { tool }, async ($, e, next) => {
       const r = await next(e)
-      return { ...r, description: r.description + STAFFING_NOTE + (brief.isOn ? HANDOVER_NOTE : '') }
+      return brief.isOn ? { ...r, description: r.description + STAFFING_NOTE + HANDOVER_NOTE } : r
     })
   }
 

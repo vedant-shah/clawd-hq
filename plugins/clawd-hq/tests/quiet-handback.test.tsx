@@ -22,9 +22,29 @@ test('a hired specialist\'s hand-back (its final report, stamped peer) is a hand
   expect(isHandback(handback({ from: { name: 'researcher-vacuum' } }), staff)).toBe(true)
 })
 
-test('a hired specialist\'s hand-back is hidden whatever its report says: Clawd reads every report, as with a finished notice', () => {
+test('a hired specialist\'s hand-back is hidden when its report mentions no trouble, even if it asks something: Clawd reads every report', () => {
   expect(isHandback(handback({ text: `${FRAME}\n  Should I also check the warranty?` }), staff)).toBe(true)
-  expect(isHandback(handback({ text: `${FRAME}\n  The store page was blocked and the mop fails the brief.` }), staff)).toBe(true)
+  expect(isHandback(handback({ text: `${FRAME}\n  All 12 tests passed. Migration applied.` }), staff)).toBe(true)
+})
+
+test('a hired specialist\'s hand-back is shown in full when its report mentions a failure or a block', () => {
+  const troubled = [
+    'The migration failed on the users table.',
+    'The store page was blocked and the mop fails the brief.',
+    'Build error: missing module.',
+    'I could not reach the database.',
+    'Tests were not run.',
+    'Two checks were skipped.',
+    'The request timed out.',
+  ]
+  for (const line of troubled) expect(isHandback(handback({ text: `${FRAME}\n  ${line}` }), staff)).toBe(false)
+  // The same words in the full view are drawn anyway, and trouble does not make a stranger's row ours to hide.
+  expect(isHandback(handback({ text: `${FRAME}\n  The migration failed.`, isExpanded: true }), staff)).toBe(false)
+})
+
+test('a report that says nothing failed is shown too: a few extra reports are better than one hidden failure', () => {
+  expect(isHandback(handback({ text: `${FRAME}\n  Ran the suite: no tests failed.` }), staff)).toBe(false)
+  expect(isHandback(handback({ text: `${FRAME}\n  0 failures.` }), staff)).toBe(false)
 })
 
 test('a hand-back stays shown in the full view, without the hand-back line, or when its sender is not on the staff', () => {

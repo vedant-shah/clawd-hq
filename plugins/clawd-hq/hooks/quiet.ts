@@ -70,12 +70,16 @@ const isHiredName = (name: string, staff: Employee[], agents: readonly ListedAge
   staff.some(one => one.name !== undefined && same(one.name, name)) ||
   agents.some(a => a.name !== undefined && same(a.name, name) && staff.some(one => one.id === a.id))
 
+/** Reports say trouble in more ways than a short message: the same words, and a few more (could not, not run, skipped, timed out). */
+const REPORT_TROUBLE = new RegExp(`${TROUBLE.source}|\\b(?:could(?: not|n'?t)|not run|skipped|timed out|exception|broken)\\b`, 'i')
+
 /**
  * A specialist's final report handed back to Clawd: stamped `peer`, opening with the engine's hand-back line, from one the office hired.
- * Like a finished notice of the office's own, its words are not checked: Clawd reads every report and says what matters in it.
+ * Clawd reads every report and says what matters in it, so a clean one can go; one with a trouble word in it (even "no tests failed")
+ * is shown in full, so a failure never reaches the person only through Clawd's retelling.
  */
 const isStaffHandback = (row: ChatRow, staff: Employee[], agents: readonly ListedAgent[]): boolean =>
-  row.originKind === 'peer' && row.from !== undefined && hasHandbackLine(row.text) && isHiredName(row.from.name, staff, agents)
+  row.originKind === 'peer' && row.from !== undefined && hasHandbackLine(row.text) && !REPORT_TROUBLE.test(row.text) && isHiredName(row.from.name, staff, agents)
 
 /**
  * A finished shell's notice quotes its command (`Background command "…" completed (exit code 0)`): a `?` in the command is not a

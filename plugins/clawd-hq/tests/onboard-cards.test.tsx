@@ -80,6 +80,8 @@ test('with no team names the after-card still says setup ran and how to run it a
   expect(card.lines[0]).toMatch(/Set up this project/)
   expect(card.lines).toContain(ALWAYS_ON_LINE)
   expect(card.lines[card.lines.length - 1]).toBe(DONE_TAIL)
+  // The built-in agents are named once, not in the first line and again in the always-on line.
+  expect(card.lines.join(' ').match(/built-in agents/g)).toHaveLength(1)
 })
 
 test('a note on the after-card is kept for the draw', () => {

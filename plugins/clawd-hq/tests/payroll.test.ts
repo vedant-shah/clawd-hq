@@ -136,6 +136,31 @@ test('a first review that fails on a read is not lost: the next look files it', 
   expect(box.payroll.laidOff).toEqual([STALE])
 })
 
+test('with Automatic setup off, the first review does not lay anyone off', async () => {
+  resetPayroll()
+  const types = [...Array.from({ length: 15 }, (_, i) => `ecc:helper-${i}`), STALE, MINE]
+  const { io, box } = fakeIo({ laidOff: [], isReviewed: false, stacks: [] }, types)
+  await reviewPayroll(io, false)
+  expect(box.payroll.isReviewed).toBe(false)
+  expect(box.payroll.laidOff).toEqual([])
+})
+
+test('the first review leaves a notice naming who was laid off, and none when nobody was', async () => {
+  resetPayroll()
+  const types = [...Array.from({ length: 15 }, (_, i) => `ecc:helper-${i}`), STALE, MINE]
+  let fx: Fx = {}
+  const { io } = fakeIo({ laidOff: [], isReviewed: false, stacks: [] }, types, { setFx: async fn => { fx = fn(fx) } })
+  await reviewPayroll(io)
+  expect(fx.layoffNotice).toEqual({ types: [STALE] })
+
+  resetPayroll()
+  fx = {}
+  const clean = Array.from({ length: 15 }, (_, i) => `ecc:helper-${i}`)
+  const second = fakeIo({ laidOff: [], isReviewed: false, stacks: [] }, clean, { setFx: async fn => { fx = fn(fx) } })
+  await reviewPayroll(second.io)
+  expect(fx.layoffNotice).toBeUndefined()
+})
+
 test('the routine check reads the folder\'s hires once for the hires it has already found to be its own', async () => {
   resetPayroll()
   let reads = 0

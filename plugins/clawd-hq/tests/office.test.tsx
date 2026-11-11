@@ -720,6 +720,29 @@ test('the payroll is trimmed by itself: no card, no pop-up, and a search finds t
   }
 })
 
+test('the automatic trim leaves a card on the Office tab that names who was set aside and can be dismissed', async ($, on) => {
+  await untilReview($, on)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+    expect(await ui.find({ type: 'Text', text: /7 helpers were set aside/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /go-reviewer/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Hire/ })).toBeDefined()
+    await ui.unmount()
+  }
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  await ui.press({ key: 'layoff-dismiss' })
+  expect(await ui.find({ type: 'Text', text: /helpers were set aside/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('with Automatic setup off, nobody is laid off by the trim and no card appears', { options: { autoSetup: false } }, async ($, on) => {
+  await untilReview($, on)
+  expect(await teamSize($)).toBe(15)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /helpers were set aside/ })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('laying one type off by hand still works, and rehiring from a search brings it back', async ($, on) => {
   await untilReview($, on)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })

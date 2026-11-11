@@ -43,7 +43,7 @@ async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions
     if (isDrawn) void followed.then(async () => { if (!(await readOnboard($))) await checkOnboard(await onboardIo($, opts)) }).catch(() => undefined)
   }
   if (frames % 25 === 0) {
-    if (!isSetupBusy(await savedOf({ cwd: ses.cwd, get: async key => (await $.store.get(key)) as never }), opts.isAutoOn)) await checkPayroll(payrollIo($), text => void $.ui.toast(text))
+    if (!isSetupBusy(await savedOf({ cwd: ses.cwd, get: async key => (await $.store.get(key)) as never }), opts.isAutoOn)) await checkPayroll(payrollIo($), text => void $.ui.toast(text), opts.isAutoOn)
     // The model takes its time: the frames go on meanwhile, and a recap that fails is simply not shown.
     void maybeRecap(recapIo($)).catch(() => undefined)
   }

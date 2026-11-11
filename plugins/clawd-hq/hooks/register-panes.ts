@@ -62,6 +62,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     setFind: (tab, text) => setFx($, f => ({ ...f, finds: { ...f.finds, [tab]: text } })),
     hideArtifact: url => hideArtifact(artifactIo($), ses.cwd, url),
     layOff: type => setLaidOff(payrollIo($), type, true),
+    layoffDismiss: () => setFx($, f => ({ ...f, layoffNotice: undefined })),
     hire: type => setLaidOff(payrollIo($), type, false),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
     coffeeBreak: isTerminal => takeCoffeeBreak(coffeeIo($), isTerminal).catch((err: unknown) => $.ui.toast(`Couldn't compact the chat: ${reasonOf(err)}.`)),

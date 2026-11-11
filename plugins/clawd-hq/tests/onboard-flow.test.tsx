@@ -405,10 +405,10 @@ test('the payroll review waits while setup is still looking for its team', async
   expect(h.saved.get(`payroll:${CWD}`)).toBeUndefined()
 })
 
-test('with Automatic setup off and no setup saved, the payroll review is not held back', { options: { autoSetup: false } }, async ($, on) => {
+test('with Automatic setup off and no setup saved, the automatic trim is not made', { options: { autoSetup: false } }, async ($, on) => {
   const h = onboardHost(on)
   await $.session.start(START)
   for (const agent of MANY) await $.agent.offer({ agent, description: 'Go work.' } as never)
   await frames(h, 60)
-  expect((h.saved.get(`payroll:${CWD}`) as { isReviewed: boolean } | undefined)?.isReviewed).toBe(true)
+  expect((h.saved.get(`payroll:${CWD}`) as { isReviewed: boolean } | undefined)?.isReviewed).not.toBe(true)
 })

@@ -13,6 +13,7 @@ import { overlay } from './pixels'
 import { floorSlots } from './pair-up'
 import { pairDesk } from './panel-pair'
 import { knowSection } from './panel-know'
+import { layoffSection } from './panel-layoffs'
 import { oldSection } from './panel-old'
 import { ruleSection } from './panel-rules'
 import { contractorSection } from './panel-contractor'
@@ -201,6 +202,7 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
       {ruleSection(kit, data, actions)}
       {contractorSection(kit, data, actions)}
       {oldSection(kit, data, actions)}
+      {layoffSection(kit, data, actions)}
       {onboardSection(kit, data.onboard, { choose: actions.choose })}
       {floor(ctx)}
       {leftSection(kit, data, actions)}

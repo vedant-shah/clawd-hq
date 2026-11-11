@@ -95,16 +95,17 @@ async function applyCover(io: PayrollIo) {
   if (next) await savePayroll(io, next)
 }
 
-export async function reviewPayroll(io: PayrollIo) {
-  await reviewTeam(io)
+/** `isAutoOn`: the Automatic setup setting. Off, the first review (the trim at 15 types) is not made. */
+export async function reviewPayroll(io: PayrollIo, isAutoOn = true) {
+  await reviewTeam(io, isAutoOn)
   await applyCover(io)
 }
 
-async function reviewTeam(io: PayrollIo) {
+async function reviewTeam(io: PayrollIo, isAutoOn: boolean) {
   const first = await io.get()
   if (first.isReviewed && first.kept === undefined) return settleTeam(io, first)
   if (first.isReviewed) return setAsideStale(io, first)
-  if (isFiled) return
+  if (isFiled || !isAutoOn) return
   const types = await io.types()
   if (types.length < 15) return
   const plan = await planOf(io, types)
@@ -115,6 +116,9 @@ async function reviewTeam(io: PayrollIo) {
   // No question is asked: the types this project has no use for are laid off at once. A search in the People tab still finds them to rehire.
   const laidOff = [...new Set([...now.laidOff, ...plan.laidOff, ...types.filter(isStale)])]
   await savePayroll(io, { laidOff, isReviewed: true, stacks: plan.stacks, kept: types.filter(t => !laidOff.includes(t)) })
+  // The person is told, on a card that stays until dismissed (hooks/panel-layoffs.tsx): who was laid off, and that a search in People brings them back.
+  const newly = laidOff.filter(t => !now.laidOff.includes(t))
+  if (newly.length > 0) await io.setFx(f => ({ ...f, layoffNotice: { types: newly } }))
   isFiled = true // only once it is filed: a read that failed above is tried again on the next look
 }
 
@@ -122,9 +126,9 @@ async function reviewTeam(io: PayrollIo) {
  * The routine look, as the frame clock makes it. A failure is not thrown into the frame: it is told once a session, in plain words
  * through `tell`, and the next look tries again.
  */
-export async function checkPayroll(io: PayrollIo, tell: (text: string) => void): Promise<void> {
+export async function checkPayroll(io: PayrollIo, tell: (text: string) => void, isAutoOn = true): Promise<void> {
   try {
-    await reviewPayroll(io)
+    await reviewPayroll(io, isAutoOn)
   } catch {
     if (isFailureTold) return
     isFailureTold = true

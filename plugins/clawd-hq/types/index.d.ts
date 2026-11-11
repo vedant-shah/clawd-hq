@@ -170,6 +170,8 @@ export type Fx = {
   demo?: { step: number; total: number; caption: string }
   /** The payroll review waiting in the People tab: how many agent types this project has no use for, and why. */
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
+  /** Helpers the automatic trim (hooks/payroll.ts) just laid off, named on a card on the Office tab until the person dismisses it. */
+  layoffNotice?: { types: string[] }
   /** The usage footer's three rows are open above its button; shared by every pane. */
   isUsageOpen?: boolean
   /** The Settings tab shows the list of finished work instead of the configs and Clawd's instructions. */

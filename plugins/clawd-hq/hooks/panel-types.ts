@@ -45,6 +45,8 @@ export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleAction
   /** The Hide button on an artifact row: that page leaves this project's desk (not claude.ai) until it is published or opened again. */
   hideArtifact: (url: string) => unknown
   layOff: (type: string) => unknown
+  /** The Dismiss button on the card that names who the automatic trim laid off. */
+  layoffDismiss: () => unknown
   hire: (type: string) => unknown
   /** Opens the usage footer's rows, or closes them. */
   toggleUsage: () => unknown

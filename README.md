@@ -54,7 +54,7 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 - **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort. When nothing installed fits, he says so and recommends the `find-skills` skill to search the public skill registry. If you say yes, he installs it for you, and any skill it finds. Nothing is downloaded without your yes.
 - **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus. Skills are attached only when they add knowledge, not process: at most two, and none for a one-file edit or a job on the smallest model.
 - **Pair-ups.** Some jobs need more than one kind of specialist. They work on it together, check each other, and come back with one conclusion.
-- **Lay off unused helpers.** Helpers outside the team are laid off on their own, which keeps Clawd's choices short. Search brings any back.
+- **Lay off unused helpers.** Helpers outside the team are laid off on their own, which keeps Clawd's choices short. A card on the Office tab names who was laid off, and search brings any back. This needs Automatic setup on.
 - **Edit Clawd.** Change his rules or voice in plain words, from Settings. A short set of core rules is locked in code, so no edit can remove them. One click on Reset goes back to the built-in text.
 
 ### 3. Checks, and keeps you oriented

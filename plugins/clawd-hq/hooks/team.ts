@@ -1,10 +1,11 @@
 // Onboarding, piece 4: the team pick. The scout (a Sonnet agent that looks around the project, see scout-spec.ts) picks first;
 // one Opus call over the same candidate list when the scout gives nothing usable; the rule pick when neither does. Whatever
-// picked, the core seats left empty are filled by the four helpers Clawd HQ ships (core-four.ts). The answers are untrusted
+// picked, the core seats left empty are filled by the four helpers Clawd HQ ships (core-four.ts); a folder with no files gets those
+// four as a standard team without project reference, and no scout is started. The answers are untrusted
 // data: every name must be on the list, the seat limits hold, and the receipt on the card is the scout's reason only when it
 // rests on a file the scout opened; otherwise it comes from facts (team-rules.ts), never from a model's own words.
 // No `$`: the scout and the model call come in through the onboarding io.
-import { withCoreFour } from './core-four'
+import { NO_PROJECT, standardTeam, withCoreFour } from './core-four'
 import type { CompleteRequest, Helper, OnboardIo, PastUse, Pick as SeatPick, ProjectFacts, ScoutResult, Seat, Team, TeamBy } from './onboard-types'
 import { SEATS, SEAT_LIMITS, TEAM_LIMIT } from './onboard-types'
 import { scoutPicks } from './scout-pick'
@@ -106,8 +107,22 @@ async function askOpus(io: TeamIo, prompt: string, cands: readonly Candidate[], 
   return raw ? usable(teamFrom(raw, cands, facts, 'opus')) : undefined
 }
 
-/** The starting team: the scout first, one Opus call if the scout gives nothing usable, the rules if neither does; the core seats still empty get the shipped four. */
+/**
+ * Whether there is no project to look at: no folder named, or none of its files found (empty, missing or unreadable).
+ * DECIDED: "no files" rather than "no code": a folder of notes or documents is still a project the scout can read.
+ */
+export const isNoProject = (folder: string, facts: ProjectFacts): boolean => folder.trim() === '' || Object.keys(facts.fileTypes).length === 0
+
+/** The standard team for a folder with nothing in it: no scout is started (it would have nothing to read), and the note says why. */
+async function noProjectTeam(io: TeamIo): Promise<Team> {
+  const note = `The project folder is empty or missing, so the scout was not started: ${NO_PROJECT}.`
+  await io.set(SCOUT_NOTE_KEY, { folder: io.cwd, note }).catch(() => undefined) // a note that cannot be kept never stops setup
+  return standardTeam()
+}
+
+/** The starting team: the standard team when there is no project; else the scout first, one Opus call if the scout gives nothing usable, the rules if neither does; the core seats still empty get the shipped four. */
 export async function pickTeam(io: TeamIo, facts: ProjectFacts, use: PastUse, helpers: readonly Helper[], role: string | undefined): Promise<Team> {
+  if (isNoProject(io.cwd, facts)) return noProjectTeam(io)
   const cands = candidateList(helpers, use)
   if (cands.length === 0) return withCoreFour(teamFrom([], cands, facts, 'rules'))
   const team = (await askScout(io, cands, facts, use, role))

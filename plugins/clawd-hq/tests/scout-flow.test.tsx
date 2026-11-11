@@ -183,6 +183,20 @@ test('in auto mode Clawd is told, unseen, to hire the scout; his hire is judged 
   expect(await $.agent.spawn(CLAWD_HIRE as never)).toMatchObject({ deny: expect.stringMatching(/starts its scout itself/) })
 })
 
+test('in auto mode a new session start while Clawd is asked keeps the brief in the scout\'s definition, so his hire still gets the candidate list', async ($, on) => {
+  const h = onboardHost(on)
+  h.scout.mode = 'classifier'
+  await open($, h)
+  await settle(h, 300)
+  const brief = h.scout.spawned[0]!.prompt
+  await $.session.start(START) // registers the scout again; the open ask must not lose its brief
+  await settle(h, 300)
+  expect(h.scout.registered.at(-1)).toEqual(scoutSpecWith(brief))
+  expect((h.scout.registered.at(-1) as { prompt?: string } | undefined)?.prompt).toContain('ecc:code-reviewer · agent')
+  await h.clock.advance(600_000) // the ask runs out, so no open ask is left for the next test
+  await settle(h, 300)
+})
+
 test('in auto mode, with no hire from Clawd within ten minutes, Opus picks and the note says why', async ($, on) => {
   const h = onboardHost(on)
   h.scout.mode = 'classifier'

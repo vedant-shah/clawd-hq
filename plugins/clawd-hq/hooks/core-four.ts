@@ -1,6 +1,6 @@
 // The four helpers Clawd HQ ships itself. Their definitions are plain files in agents/ (core-<name>.md), which the engine
 // finds on its own and lists as `clawd-hq:core-<name>`; this file says which seat each one fills, and fills the core seats
-// a team pick leaves empty with them. No `$` here.
+// a team pick leaves empty with them. They are also the standard team for a folder with nothing in it. No `$` here.
 import { SEATS } from './onboard-types'
 import type { Pick as SeatPick, Seat, Team } from './onboard-types'
 
@@ -18,6 +18,16 @@ export const CORE_FOUR: readonly CoreHelper[] = [
 ]
 
 const asPick = (h: CoreHelper): SeatPick => ({ seat: h.seat, name: h.type, kind: 'agent', receipt: `Clawd HQ's own ${h.label} · nothing installed fits` })
+
+/** The words on every pick of the standard team: it rests on no project. */
+export const NO_PROJECT = 'standard team without project reference'
+
+const asStandard = (h: CoreHelper): SeatPick => ({ seat: h.seat, name: h.type, kind: 'agent', receipt: `Clawd HQ's own ${h.label} · ${NO_PROJECT}` })
+
+/** The four shipped helpers as the whole team, each marked as resting on no project; the Specialist seat stays empty. */
+export const standardTeam = (): Team => ({
+  picks: CORE_FOUR.map(asStandard), empty: SEATS.filter(seat => !CORE_FOUR.some(h => h.seat === seat)), by: 'default',
+})
 
 /** The team with every core seat that has no pick given its shipped helper, in the card's seat order. The Specialist seat is never filled. */
 export function withCoreFour(team: Team): Team {

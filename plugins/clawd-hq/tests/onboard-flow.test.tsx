@@ -167,8 +167,10 @@ test('thin evidence: no role is asked; the team is picked for the best guess, an
   const tab = await office($, 'terminal')
   expect(tab.labels).toEqual(['Dismiss'])
   expect(tab.joined).not.toMatch(/Which fits best/)
-  // A thin guess picks the team but is not written down as who the person is: not in the setup record, not in the profile.
-  expect(opusCalls(h)).toHaveLength(1)
+  // An emptied folder gets the standard team: no scout is started and Opus is not asked.
+  expect(opusCalls(h)).toHaveLength(0)
+  expect((h.saved.get(`team:${CWD}`) as { by: string }).by).toBe('default')
+  // A thin guess is not written down as who the person is: not in the setup record, not in the profile.
   expect(saveOf(h)?.step).toBe('done')
   expect(saveOf(h)?.role).toBeUndefined()
   expect((h.saved.get('profile') as { role?: string } | undefined)?.role).toBeUndefined()

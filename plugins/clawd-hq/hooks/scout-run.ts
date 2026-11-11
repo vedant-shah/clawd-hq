@@ -10,7 +10,7 @@ import { looksSecret } from './scout-pick'
 import { SCOUT_SPEC, SCOUT_TYPE } from './scout-spec'
 
 // The hand-off to Clawd, for the register-*.ts files to reach through this module's one import line.
-export { askClawd, handScoutSpawn, scoutHandoff } from './scout-handoff'
+export { askClawd, handScoutSpawn, scoutHandoff, scoutPromptNow } from './scout-handoff'
 
 /** How often the scout's transcript is looked at. */
 export const POLL_MS = 2_000

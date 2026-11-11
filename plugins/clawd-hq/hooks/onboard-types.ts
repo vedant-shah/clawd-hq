@@ -73,8 +73,8 @@ export const TEAM_LIMIT = 8
  */
 export type Pick = { readonly seat: Seat; readonly name: string; readonly kind: 'agent' | 'skill'; readonly receipt: string }
 
-/** Who chose the team: the scout first, then one Opus call, then the rules. */
-export type TeamBy = 'scout' | 'opus' | 'rules'
+/** Who chose the team: the scout first, then one Opus call, then the rules; `default` is the standard team for a folder with no files. */
+export type TeamBy = 'scout' | 'opus' | 'rules' | 'default'
 /** The starting team, kept at `team:<folder>` with the skill hires made from it. */
 export type Team = { readonly picks: readonly Pick[]; readonly empty: readonly Seat[]; readonly by: TeamBy }
 

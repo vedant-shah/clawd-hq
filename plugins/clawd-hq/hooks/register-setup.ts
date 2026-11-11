@@ -35,7 +35,7 @@ import { loadTokens } from './run-io'
 
 /**
  * Registers the setup scout, its definition written out in the call so the plugin directory can read its limits: SCOUT_SPEC's
- * prompt at session start, or with the brief in it for Clawd's hire. tests/scout-flow.test.tsx holds it equal to SCOUT_SPEC.
+ * prompt at session start (with the brief while an ask to Clawd is open), or with the brief in it for Clawd's hire. tests/scout-flow.test.tsx holds it equal to SCOUT_SPEC.
  */
 export function registerScout($: EngineInterface, prompt: string) {
   return $.agent.register({

@@ -3,7 +3,7 @@
 // makes with the Agent tool is judged like any other: never a way around the person's permission mode. The scout's brief goes into
 // its own definition (scout-spec.ts), so his call stays short and is judged exactly as he wrote it; no hook rewrites it.
 // Plain state, no `$`: the timer comes in as a closure. One ask at a time, so the two ways to start a scout never both run.
-import { SCOUT_TYPE, scoutSpecWith } from './scout-spec'
+import { SCOUT_SPEC, SCOUT_TYPE, scoutSpecWith } from './scout-spec'
 
 type Timer = { readonly cancel: () => void }
 type After = (ms: number, fn: () => void) => Timer
@@ -23,9 +23,11 @@ const NOTE = `Clawd HQ setup asks one thing of you this turn, before the person'
 const REFUSED = 'Clawd HQ starts its scout itself; no setup is waiting for one now.'
 
 export type ScoutHandoff = {
-  /** Asks Clawd for the hire: his scout's id once he makes it, or `undefined` when `ms` pass first or an ask is already open. */
-  readonly ask: (ms: number, after: After) => Promise<string | undefined>
+  /** Asks Clawd for the hire: his scout's id once he makes it, or `undefined` when `ms` pass first or an ask is already open. `brief` is the one in the scout's definition for this ask. */
+  readonly ask: (ms: number, after: After, brief?: string) => Promise<string | undefined>
   readonly isOpen: () => boolean
+  /** The open ask's brief; `undefined` when no ask is open or it was opened without one. */
+  readonly brief: () => string | undefined
   /** The note for Clawd's next turn while an ask is open. */
   readonly note: () => string | undefined
   /** A scout Clawd started: taken when an ask is open, which it closes; `false` when none is. */
@@ -35,7 +37,7 @@ export type ScoutHandoff = {
 }
 
 export function createScoutHandoff(): ScoutHandoff {
-  let waiting: { readonly done: (id: string | undefined) => void; readonly timer: Timer } | undefined
+  let waiting: { readonly done: (id: string | undefined) => void; readonly timer: Timer; readonly brief?: string } | undefined
   const close = (id: string | undefined) => {
     const was = waiting
     waiting = undefined
@@ -43,14 +45,15 @@ export function createScoutHandoff(): ScoutHandoff {
     was?.done(id)
   }
   return {
-    ask: (ms, after) => {
+    ask: (ms, after, brief) => {
       if (waiting !== undefined) return Promise.resolve(undefined)
       return new Promise(done => {
         const timer = after(ms, () => close(undefined))
-        waiting = { done, timer }
+        waiting = { done, timer, ...(brief === undefined ? {} : { brief }) }
       })
     },
     isOpen: () => waiting !== undefined,
+    brief: () => waiting?.brief,
     note: () => (waiting === undefined ? undefined : NOTE),
     take: id => {
       if (waiting === undefined) return false
@@ -70,7 +73,16 @@ export type AskIo = { readonly register: (spec: ReturnType<typeof scoutSpecWith>
 /** Puts the brief into the scout's definition, then asks Clawd for the hire; `undefined` when that cannot be set up or he makes none in time. */
 export async function askClawd(io: AskIo, brief: string, handoff: ScoutHandoff = scoutHandoff): Promise<string | undefined> {
   const isReady = await io.register(scoutSpecWith(brief)).then(() => true, () => false)
-  return isReady ? handoff.ask(CLAWD_WAIT_MS, io.after) : undefined
+  return isReady ? handoff.ask(CLAWD_WAIT_MS, io.after, brief) : undefined
+}
+
+/**
+ * The scout's definition prompt as it must be registered now: with the open ask's brief, else the bare one. A session start registers
+ * the scout again; with the bare prompt there, Clawd's hire (its prompt is one short line) would reach a scout with no candidate list.
+ */
+export function scoutPromptNow(handoff: ScoutHandoff = scoutHandoff): string {
+  const brief = handoff.brief()
+  return brief === undefined ? SCOUT_SPEC.prompt : scoutSpecWith(brief).prompt
 }
 
 /**

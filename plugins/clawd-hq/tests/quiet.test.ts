@@ -58,8 +58,8 @@ test('the offer of a lasting rule is dimmed like the other bookkeeping calls, an
   expect(rowLook(call({ tool: 'mcp__other__offer_rule' }), staff)).toBe('show')
 })
 
-test('the helper search and a contractor hire are dimmed like the other bookkeeping calls, and shown when they errored', () => {
-  for (const tool of ['mcp__clawd-hq__find_helpers', 'mcp__clawd-hq__hire_contractor']) {
+test('the helper search, a contractor hire and the pause before a question are dimmed like the other bookkeeping calls, and shown when they errored', () => {
+  for (const tool of ['mcp__clawd-hq__find_helpers', 'mcp__clawd-hq__hire_contractor', 'mcp__clawd-hq__before_question']) {
     expect(rowLook(call({ tool, input: { job: 'design the settings page' } }), staff)).toBe('dim')
     expect(rowLook(call({ tool, isErrored: true }), staff)).toBe('show')
   }

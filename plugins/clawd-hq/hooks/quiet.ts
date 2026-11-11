@@ -112,7 +112,7 @@ export function isHandback(row: ChatRow, staff: Employee[], agents: readonly Lis
 
 // ---- Small tool rows: the office's own bookkeeping calls are hidden or dimmed, never an error or a question ----
 const STEP_TOOL = 'mcp__clawd-hq__step'
-const DIMMED_OWN_TOOLS: ReadonlySet<string> = new Set(['mcp__clawd-hq__offer_rule', 'mcp__clawd-hq__find_helpers', 'mcp__clawd-hq__hire_contractor'])
+const DIMMED_OWN_TOOLS: ReadonlySet<string> = new Set(['mcp__clawd-hq__offer_rule', 'mcp__clawd-hq__find_helpers', 'mcp__clawd-hq__hire_contractor', 'mcp__clawd-hq__before_question'])
 const TOOL_SEARCH = 'ToolSearch'
 const SEND_MESSAGE = 'SendMessage'
 const TASK_LIST_TOOLS: ReadonlySet<string> = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'])

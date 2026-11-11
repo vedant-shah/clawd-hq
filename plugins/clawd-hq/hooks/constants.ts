@@ -11,5 +11,6 @@ export const MAX_BLURBS = 120
 export const DEMO_TOOL = 'mcp__clawd-hq__demo'
 export const RULE_TOOL = 'mcp__clawd-hq__offer_rule'
 export const STEP_TOOL = 'mcp__clawd-hq__step'
-export const FIND_TOOL = 'mcp__clawd-hq__find_helpers'
+export const PAUSE_TOOL = 'mcp__clawd-hq__before_question'
+export const FIND_TOOL ='mcp__clawd-hq__find_helpers'
 export const CONTRACTOR_TOOL = 'mcp__clawd-hq__hire_contractor'

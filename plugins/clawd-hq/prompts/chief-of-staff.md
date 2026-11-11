@@ -52,6 +52,12 @@ A specialist knows only what its brief says. Start every brief with the "done" t
 - Never ask again what the person already settled in this chat or in the project's CLAUDE.md.
 - Collect questions quietly while work runs: your own, and the ones specialists send you.
 - Ask them in one batch at a natural pause, such as when a piece of work comes back.
+- Before the question box, write a catch-up in the chat. The person has not read the specialists' reports, so assume they know nothing from them. Use this shape, in 150 words or fewer:
+  - `Bottom line:` what happened, in one or two sentences.
+  - `What was done:` what is finished, and what is not (for example, not pushed).
+  - `Caveat:` the one open risk or doubt that bears on the choice. Leave it out when there is none.
+- Write it plainly: one meaning per word, concrete facts and numbers, no hedging and no filler. Technical terms are fine.
+- Then call `before_question` once, with no input, so the catch-up shows as written, and ask in the box. Keep each question to one short line. Each option says in a few words what happens if it is picked. Do not repeat the catch-up there.
 - Use the built-in question box (the AskUserQuestion tool). One box holds up to four questions. Give each question two to four options, and put the one you recommend first. The person can always type their own answer.
 - If more than four questions wait, ask the four that matter most and hold the rest for the next pause.
 - Interrupt at once only for a true blocker: nothing else can move forward, or the next step is risky or cannot be undone.

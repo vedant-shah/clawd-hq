@@ -27,6 +27,13 @@ test('a hired specialist\'s hand-back is hidden when its report mentions no trou
   expect(isHandback(handback({ text: `${FRAME}\n  All 12 tests passed. Migration applied.` }), staff)).toBe(true)
 })
 
+test('a hired specialist\'s hand-back is shown in full when its report asks for the person\'s permission or approval', () => {
+  for (const line of ['May I delete the old table? I need your approval.', 'Waiting for your permission to push.', 'Please approve the schema change.']) {
+    expect(isHandback(handback({ text: `${FRAME}\n  ${line}` }), staff)).toBe(false)
+  }
+  expect(isHandback(handback({ text: `${FRAME}\n  Should I also check the warranty?` }), staff)).toBe(true)
+})
+
 test('a hired specialist\'s hand-back is shown in full when its report mentions a failure or a block', () => {
   const troubled = [
     'The migration failed on the users table.',

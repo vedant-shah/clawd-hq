@@ -23,8 +23,11 @@ export type ChatRow = {
 }
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+/** A request for the person's permission or approval: never filler, wherever it appears. */
+const PERMISSION = /\b(permission|approv)/i
+
 /** A message that asks for something is never filler: a question, or a request for permission, approval or shutdown. */
-const ASKS = /\?|\b(permission|approv|shut ?down)/i
+const ASKS = new RegExp(`\\?|${PERMISSION.source}|\\bshut ?down`, 'i')
 
 /** A message that reports a failure or a block is never filler either. */
 const TROUBLE = /\b(fail\w*|error\w*|blocked|unable|cannot|can'?t|crash\w*|stuck)\b/i
@@ -76,10 +79,11 @@ const REPORT_TROUBLE = new RegExp(`${TROUBLE.source}|\\b(?:could(?: not|n'?t)|no
 /**
  * A specialist's final report handed back to Clawd: stamped `peer`, opening with the engine's hand-back line, from one the office hired.
  * Clawd reads every report and says what matters in it, so a clean one can go; one with a trouble word in it (even "no tests failed")
- * is shown in full, so a failure never reaches the person only through Clawd's retelling.
+ * is shown in full, so a failure never reaches the person only through Clawd's retelling. A plain question stays hidden: Clawd
+ * relays it. A request for permission or approval is shown, because only the person can grant it.
  */
 const isStaffHandback = (row: ChatRow, staff: Employee[], agents: readonly ListedAgent[]): boolean =>
-  row.originKind === 'peer' && row.from !== undefined && hasHandbackLine(row.text) && !REPORT_TROUBLE.test(row.text) && isHiredName(row.from.name, staff, agents)
+  row.originKind === 'peer' && row.from !== undefined && hasHandbackLine(row.text) && !REPORT_TROUBLE.test(row.text) && !PERMISSION.test(row.text) && isHiredName(row.from.name, staff, agents)
 
 /**
  * A finished shell's notice quotes its command (`Background command "…" completed (exit code 0)`): a `?` in the command is not a

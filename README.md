@@ -43,7 +43,7 @@ Clawd HQ isn't a new agent runtime. It packages Claude Code's native agents into
 - **Delegates by default.** Clawd hands every job of more than two or three steps to a specialist in the background. Jobs that don't depend on each other run side by side. Ask him anything while three specialists work.
 - **Specialists don't stall.** They never stop mid-run for a question. They make their best call, finish the job, and list their assumptions and questions at the end for Clawd.
 - **Steer a running specialist.** Uses Claude Code's own agent messaging: Clawd can message any running specialist, and it picks the message up at its next step. Change or add to a brief without restarting the job.
-- **One report.** Questions come to you in one box (up to four) at a pause. Quiet chat hides "finished" notices. Failures and questions always show.
+- **One report.** Questions come to you in one box (up to four) at a pause. Quiet chat hides "finished" notices. Failures and requests for your permission or approval always show. A specialist's question goes to Clawd, who asks you.
 - **Plain words.** Clawd talks in plain, short sentences, borrowing a few rules from ASD-STE100 (Simplified Technical English).
 
 Free to talk is the aim, not a promise. Short direct jobs (a single command, a line or two) Clawd does himself, and then you wait.
@@ -218,7 +218,7 @@ Specialists use your plan like any Claude work. Clawd picks the smallest model f
 <details>
 <summary>Will it hide something I need?</summary>
 
-No. Failures, stopped jobs, errors, questions and permission requests always show. Press `ctrl+o` for the full view.
+No. Failures, stopped jobs, errors and requests for your permission or approval always show. A question from a specialist goes to Clawd, who asks you. Press `ctrl+o` for the full view.
 
 </details>
 

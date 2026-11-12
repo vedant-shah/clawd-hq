@@ -51,7 +51,7 @@ function clawdCard({ kit, data, cw }: Ctx) {
   const [like, drawn] = kit.isTerminal ? [still.compact, moving.compact] : [still.full, moving.full]
   return (
     <Box borderStyle="round" borderDimColor paddingX={1} flexDirection={isStacked ? 'column' : 'row'} gap={2} alignItems={isStacked ? 'flex-start' : 'center'}>
-      <Box flexShrink={0}>{sprite('clawd', drawn, { scale: 4, like, alt: lookAlt(look) })}</Box>
+      <Box flexShrink={0}>{sprite('clawd', drawn, { scale: 3, like, alt: lookAlt(look) })}</Box>
       <Box key="clawd-lines" flexDirection="column" flexShrink={1} flexGrow={1} gap={kit.isTerminal ? 0 : 1}>
         {/* His name on the top row, with his status to its right; on a narrow pane the status wraps under the name, never cut. */}
         <Box key="clawd-head" flexDirection="row" flexWrap="wrap" justifyContent="space-between" columnGap={1}>
@@ -139,8 +139,9 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
   const plan = data.options.isOn ? data.plan : null
   const ctx: Ctx = { kit, data: { ...data, plan }, actions, cw }
   const layout = plan === null ? undefined : planLayout(plan, data.staff, foldsOf(data.fx))
+  // With a goal in hand the desktop's sections are the board's 16 pixels apart: the host's "md" step. The terminal, and the tab with no goal, keep a cell.
   return (
-    <kit.Box flexDirection="column" gap={1}>
+    <kit.Box flexDirection="column" gap={kit.isTerminal || layout === undefined ? 1 : 'md'}>
       {clawdCard(ctx)}
       {needsYou(ctx)}
       {layout !== undefined && planSection(ctx, layout)}

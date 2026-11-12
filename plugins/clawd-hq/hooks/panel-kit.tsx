@@ -2,9 +2,9 @@
 // register-panes.ts resolves them (`$` never leaves the register-*.ts files) and hands them over as PanelTools.
 import type { Elements } from 'claude-code'
 import { BAR_H, WIDTH, barGlyphs, barSvg } from './meters'
-import type { BarSize } from './meters'
+import type { BarLook, BarSize } from './meters'
 import { ACCENT } from './office'
-import { GLYPH, MARK_COLOR, markSvg } from './plan-marks'
+import { GLYPH, MARK_COLOR, MARK_HEIGHT, MARK_WIDTH, markSvg } from './plan-marks'
 import type { MarkKind } from './plan-marks'
 import { fade, rasterCells, svgOf, trim, trimLike } from './pixels'
 import type { Px } from './pixels'
@@ -45,8 +45,8 @@ export function kitOf(tools: PanelTools) {
   }
 
   /** A thin gauge bar, `wide` for the footer or `small` for a specialist's progress: a rounded image where there is an Svg, line glyphs on the terminal. */
-  const bar = (percent: number, alt: string, size: BarSize = 'wide', color: string = ACCENT) => {
-    if (Svg) return <Svg source={barSvg(percent, size, color)} alt={alt} width={WIDTH[size]} height={BAR_H} />
+  const bar = (percent: number, alt: string, size: BarSize = 'wide', color: string = ACCENT, look: BarLook = {}) => {
+    if (Svg) return <Svg source={barSvg(percent, size, color, look)} alt={alt} width={look.width ?? WIDTH[size]} height={BAR_H} />
     const { on, off } = barGlyphs(percent, size)
     return <Text>{on !== '' && <Text color={color}>{on}</Text>}<Text dimColor>{off}</Text></Text>
   }
@@ -56,7 +56,7 @@ export function kitOf(tools: PanelTools) {
 
   /** A plan mark: a small image where there is an Svg (a tick, a dot, a cross, a ring), its glyph on the terminal. Each has its own shape and, where it has one, colour. */
   const mark = (kind: MarkKind, alt: string, key?: string) => {
-    if (Svg) return <Svg key={key} source={markSvg(kind)} alt={alt} width={14} height={14} />
+    if (Svg) return <Svg key={key} source={markSvg(kind)} alt={alt} width={MARK_WIDTH} height={MARK_HEIGHT} />
     return <Text key={key} color={MARK_COLOR[kind]} dimColor={MARK_COLOR[kind] === undefined}>{GLYPH[kind]}</Text>
   }
 
@@ -66,7 +66,7 @@ export function kitOf(tools: PanelTools) {
   /** A short side line under a section: dim. It wraps. */
   const aside = (text: string, key?: string) => <Text key={key} dimColor wrap="wrap">{text}</Text>
 
-  return { Box, Text, Button, Link, Markdown, Input, sprite, bar, mark, heading, aside, isTerminal: Raster !== undefined }
+  return { Box, Text, Button, Link, Markdown, Input, Svg, sprite, bar, mark, heading, aside, isTerminal: Raster !== undefined }
 }
 
 export type Kit = ReturnType<typeof kitOf>

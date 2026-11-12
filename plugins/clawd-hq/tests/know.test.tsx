@@ -375,16 +375,18 @@ const office$ = ($: Engine, surface: Surface) => $.ui.mount({ plugin: 'clawd-hq'
 const texts = async (ui: Awaited<ReturnType<typeof office$>>) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
 const reply = (n: number, extra = '\nexplain: **Tests did not pass**\nThe last run had 3 failures.') => () => answered(`learn: Note ${n} matters.\ntag: Heads up${extra}`)
 
-test('a note has its own section under a YOU SHOULD KNOW heading, between Clawd\'s card and the floor, with its tag in amber and who did the work dim', async ($, on) => {
+test('a note is its own card under Needs you, between Clawd\'s card and the floor, its tag in amber as its only label and who did the work dim', async ($, on) => {
   await withNotes($, on, [() => answered(NOTE)])
   for (const surface of SURFACES) {
     const ui = await office$($, surface)
     const all = await texts(ui)
-    const [heading, tag, who, line] = [all.indexOf('YOU SHOULD KNOW'), all.indexOf('HEADS UP'), all.indexOf('· Tester'), all.indexOf('The Tester says all tests pass, but the last test run failed.')]
+    const [heading, tag, who, line] = [all.findIndex(t => /^NEEDS YOU · \d+$/.test(t)), all.indexOf('HEADS UP'), all.indexOf('· Tester'), all.indexOf('The Tester says all tests pass, but the last test run failed.')]
     expect(heading).toBeGreaterThan(all.findIndex(t => /Chief of Staff/.test(t)))
     // Nothing of the note is on Clawd's card: his words and status come before the heading.
     expect(all.findIndex(t => /All clear|Free|Working/.test(t))).toBeLessThan(heading)
+    // The card's tag follows Needs you directly: no heading of its own over it.
     expect([tag, who, line]).toEqual([heading + 1, heading + 2, heading + 3])
+    expect(all).not.toContain('YOU SHOULD KNOW')
     expect((await ui.find({ type: 'Text', text: /^HEADS UP$/ }))?.props.color).toBe(AMBER)
     expect((await ui.find({ type: 'Text', text: /^· Tester$/ }))?.props.dimColor).toBe(true)
     expect(all.findIndex(t => /THE FLOOR|AT WORK/.test(t))).toBeGreaterThan(line)
@@ -410,7 +412,7 @@ test('Learn more opens the title and explanation with Got it; Got it takes the n
   expect(all.indexOf('The tests did not pass')).toBeGreaterThan(all.indexOf('HEADS UP'))
   expect((await ui.find({ type: 'Text', text: /^The last run ended/ }))?.props.dimColor).toBe(true)
   await ui.press({ key: 'know-got-it' })
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
   expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 0, skipLeft: 0 })
   await ui.unmount()
 })
@@ -419,7 +421,7 @@ test('Dismiss takes the note off without saving it as known', async ($, on) => {
   const { saved } = await withNotes($, on, [reply(1)])
   const ui = await office$($, 'desktop')
   await ui.press({ key: 'know-dismiss' })
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
   expect(saved.get('know:knew:/repo')).toBeUndefined()
   await ui.unmount()
 })
@@ -433,7 +435,7 @@ test('Ask Clawd fills the prompt box with the line and the longer version, sends
     text: 'Clawd raised this: "The Tester says all tests pass, but the last test run failed.". The last run ended with 3 failures. Ask for a new run. Let\'s discuss: is this a real concern here, and what should we do about it?',
     mode: 'append',
   }])
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
   expect(saved.get('know:knew:/repo')).toBeUndefined()
   expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 0, skipLeft: 0 })
   await ui.unmount()
@@ -461,14 +463,28 @@ test('a note with no explanation has no Learn more', async ($, on) => {
   }
 })
 
-test('the card shows one note under a plain heading, with no count of notes waiting', async ($, on) => {
+test('the card shows one note, labelled once by its tag, with no count of notes waiting', async ($, on) => {
   await withNotes($, on, [reply(1)])
   for (const surface of SURFACES) {
     const ui = await office$($, surface)
     const all = await texts(ui)
-    expect(all.filter(t => /YOU SHOULD KNOW/.test(t))).toEqual(['YOU SHOULD KNOW'])
+    expect(all.filter(t => /YOU SHOULD KNOW|HEADS UP/.test(t))).toEqual(['HEADS UP'])
     expect(all.filter(t => /^Note \d matters\.$/.test(t))).toEqual(['Note 1 matters.'])
     expect(all.some(t => /waiting/.test(t))).toBe(false)
+    await ui.unmount()
+  }
+})
+
+test('under Needs you a card\'s label is never repeated by a heading directly above it, on either surface', async ($, on) => {
+  await withNotes($, on, [() => answered('learn: The Builder changed the login page.\ntag: You should know')])
+  for (const surface of SURFACES) {
+    const ui = await office$($, surface)
+    const all = await texts(ui)
+    expect(all.filter(t => t === 'YOU SHOULD KNOW'), surface).toEqual(['YOU SHOULD KNOW'])
+    // A label in capitals is never the same words as the text just above it.
+    const repeated = all.filter((t, i) => i > 0 && /^[A-Z][A-Z ?]+$/.test(t) && all[i - 1]!.startsWith(t))
+    expect(repeated, surface).toEqual([])
+    expect(all[all.indexOf('YOU SHOULD KNOW') - 1], surface).toMatch(/^NEEDS YOU · \d+$/)
     await ui.unmount()
   }
 })
@@ -576,7 +592,7 @@ test('the person\'s second prompt after a note takes it off; a /clear empties th
   await ui.unmount()
   await $.prompt.submit({ text: 'and another' } as never)
   ui = await office$($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
   await ui.unmount()
   await hire($)
   rows.set('a2', run('Job 2'))
@@ -587,7 +603,7 @@ test('the person\'s second prompt after a note takes it off; a /clear empties th
   await ui.unmount()
   await $.session.end(CLEAR)
   ui = await office$($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
   await ui.unmount()
 })
 

@@ -5,6 +5,7 @@ import { poseOf } from './clawd-says'
 import { givenName, hash } from './office'
 import { deskWords, tagged, titled, workLine } from './panel-model'
 import { overlay } from './pixels'
+import { BOARD } from './plan-marks'
 import { stepCount } from './steps'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -16,16 +17,30 @@ export type Ctx = { kit: Kit; data: PanelData; actions: PanelActions; cw: number
 const BEATS = 11
 
 /** What a card may take besides the specialist: a border colour, a button (or any item) at its right, and lines under its words. */
-export type DeskExtras = { borderColor?: string; right?: JSX.Element | null; below?: JSX.Element | null }
+export type DeskExtras = {
+  borderColor?: string; right?: JSX.Element | null; below?: JSX.Element | null; scale?: number
+  /** Lines to draw in place of what it said and its stats (a failed card's reason in red, with the stats dim under it). */
+  words?: JSX.Element[] | null
+  /** The card as the design board draws it: a 120 pixel bar on its own track, drawn only once a step is done. */
+  isBoard?: boolean
+}
+
+/** CSS pixels per picture pixel on the floor's cards, and (the design board's) on the plan's: 23 dots across are 46 pixels there. */
+export const FLOOR_SCALE = 3
+export const PLAN_SCALE = 2
 
 /** How far along a specialist says it is: a small bar and "Step 2 of 5", drawn only once it has reported a plan; never a guess before. */
-function progress(kit: Kit, one: Employee) {
+function progress(kit: Kit, one: Employee, isBoard = false) {
   if (one.stepTotal === undefined) return null
+  // On the design board a bar is not drawn until a step is done; the floor's cards keep drawing it from the first report.
+  if (isBoard && (one.stepDone ?? 0) === 0) return null
   const { Box, Text, bar } = kit
   const [done, total] = [one.stepDone ?? 0, one.stepTotal]
+  const alt = `${done} of ${total} steps done`
+  // The board's bar is 120 pixels on its own track; the floor's keeps its size.
   return (
     <Box key={`steps-${one.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
-      {bar((done / total) * 100, `${done} of ${total} steps done`, 'small')}
+      {isBoard ? bar((done / total) * 100, alt, 'small', undefined, { width: BOARD.barWidth, track: BOARD.barTrack }) : bar((done / total) * 100, alt, 'small')}
       <Text dimColor wrap="wrap">{stepCount(done, total)}</Text>
     </Box>
   )
@@ -44,13 +59,14 @@ export function deskRow(one: Employee, { kit, data }: Ctx, extras: DeskExtras = 
   const [draw, pose] = [kit.isTerminal ? tinyIcon : assemble, poseOf(data.tick, hash(one.id) % BEATS, true)]
   // Its room is the still picture's; where there is height to spare, the lifted one's too, so what it holds is never cut.
   const like = kit.isTerminal ? draw(look) : overlay(draw(look), draw(look, { isLifted: true }))
-  const picture = sprite(`desk-${one.id}`, draw(look, pose), { scale: 3, like, alt: `${titled(one, data)}` })
+  const picture = sprite(`desk-${one.id}`, draw(look, pose), { scale: extras.scale ?? FLOOR_SCALE, like, alt: `${titled(one, data)}` })
+  const isBoard = extras.isBoard === true && !kit.isTerminal
   return (
     <Box key={`desk-${one.id}`} borderStyle="round" borderDimColor={extras.borderColor === undefined} borderColor={extras.borderColor} paddingX={1} flexDirection="row" gap={2} alignItems="center">
       <Box flexShrink={0}>{picture}</Box>
       <Box flexDirection="column" flexShrink={1} flexGrow={1}>
         <Text wrap="wrap"><Text bold>{titled(one, data)}</Text>{tag !== undefined && <Text dimColor>{tag}</Text>}<Text dimColor>{` ${one.description || one.type}`}</Text></Text>
-        {said !== undefined
+        {extras.words ?? (said !== undefined
           ? [
             <Text key={`said-${one.id}`} italic wrap="wrap">{said}</Text>,
             // The specialist has said what it does, so the tool is not repeated: only the model, time and tokens, muted.
@@ -59,8 +75,8 @@ export function deskRow(one: Employee, { kit, data }: Ctx, extras: DeskExtras = 
           : (
             // Nothing said yet: the step it is on stands in, labelled and muted.
             <Text wrap="wrap"><Text dimColor>Now: </Text><Text dimColor>{sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
-          )}
-        {progress(kit, one)}
+          ))}
+        {progress(kit, one, isBoard)}
         {extras.below}
       </Box>
       {extras.right}

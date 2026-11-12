@@ -11,8 +11,8 @@ export function knowSection(kit: Kit, data: PanelData, actions: PanelActions) {
   if (!note) return null
   const isOpen = data.know.isOpen && note.explain !== undefined
   return (
+    // No heading of its own: it sits under Needs you, and its tag is its label (a heading above it said the same words twice).
     <Box key="know" flexDirection="column">
-      <Text bold dimColor>YOU SHOULD KNOW</Text>
       <Box borderStyle="round" borderDimColor paddingX={1} flexDirection="column" gap={kit.isTerminal ? 0 : 1}>
         <Box key="know-who" flexDirection="row" flexWrap="wrap" columnGap={1}>
           <Text bold color={note.tag === 'Heads up' ? AMBER : ACCENT}>{note.tag.toUpperCase()}</Text>

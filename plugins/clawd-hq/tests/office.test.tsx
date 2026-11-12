@@ -70,9 +70,9 @@ test('avatars are SVGs on the desktop, in the avatars own colors', async ($, on)
   const svgs = (await ui.findAll({ type: 'Svg' })).filter(svg => svg.props.height !== 4)
   expect(svgs.length).toBe(2)
   const [clawd, desk] = svgs
-  // Clawd is 23 by 20 sprite pixels at 4px (his crown adds 4 rows): 92 by 80.
-  expect([clawd!.props.width, clawd!.props.height]).toEqual([92, 80])
-  expect(moments(pose => clawdAvatar(pose).full, g => svgOf(g, 4))).toContain(clawd!.props.source)
+  // Clawd is 23 by 20 sprite pixels at 3px, as on the design board (his crown adds 4 rows): 69 by 60.
+  expect([clawd!.props.width, clawd!.props.height]).toEqual([69, 60])
+  expect(moments(pose => clawdAvatar(pose).full, g => svgOf(g, 3))).toContain(clawd!.props.source)
   // The reviewer is drawn from the code-reviewer's parts (a teal cardigan), not another's.
   expect(moments(pose => assemble(avatarFor('ecc:code-reviewer'), pose), g => svgOf(g, 3), true)).toContain(desk!.props.source)
   expect(String(desk!.props.source)).toContain('#2FA8A0')

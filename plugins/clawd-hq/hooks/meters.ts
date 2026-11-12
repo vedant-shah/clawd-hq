@@ -29,12 +29,15 @@ export function barGlyphs(percent: number, size: BarSize = 'wide'): { on: string
   return { on: '━'.repeat(filled), off: '─'.repeat(total - filled) }
 }
 
+/** A bar drawn other than the usual way: a width in pixels and a track colour of its own (the plan's cards, as the design board has them). */
+export type BarLook = { width?: number; track?: string }
+
 /** The image bar: a dim rounded track with an accent fill that is never narrower than its own height. */
-export function barSvg(percent: number, size: BarSize = 'wide', color: string = ACCENT): string {
-  const [p, width] = [clampPercent(percent), WIDTH[size]]
+export function barSvg(percent: number, size: BarSize = 'wide', color: string = ACCENT, look: BarLook = {}): string {
+  const [p, width, track] = [clampPercent(percent), look.width ?? WIDTH[size], look.track ?? TRACK]
   const fill = p === 0 ? 0 : Math.max(BAR_H, Math.round((width * p) / 100))
   const rect = (w: number, color: string) => `<rect width="${w}" height="${BAR_H}" rx="${BAR_H / 2}" fill="${color}"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${BAR_H}" width="${width}" height="${BAR_H}">${rect(width, TRACK)}${fill > 0 ? rect(fill, color) : ''}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${BAR_H}" width="${width}" height="${BAR_H}">${rect(width, track)}${fill > 0 ? rect(fill, color) : ''}</svg>`
 }
 
 /** The limit windows as the gauge keeps them: only the fields it reads. */

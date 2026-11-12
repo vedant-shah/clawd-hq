@@ -30,7 +30,7 @@ const drawnAt = (look: 'asleep' | 'coffee') => {
   const still = clawdAvatar()
   const steps = [0, 1, 2, 3].map(step => clawdAvatar({ look, step }))
   return {
-    svgs: steps.map(one => svgOf(trimLike(one.full, still.full), 4)),
+    svgs: steps.map(one => svgOf(trimLike(one.full, still.full), 3)),
     cells: steps.map(one => rasterCells(trimLike(one.compact, still.compact))),
   }
 }
@@ -47,9 +47,9 @@ test('free and recently active he holds his logbook; past the nap time he is asl
   expect(asleep.alt).toBe(`${NAME}, asleep at his desk`)
   expect(drawnAt('asleep').svgs).toContain(asleep.source)
   expect(drawnAt('asleep').cells).toContain(asleep.cells)
-  // The size of the picture does not change: 23 by 20 dots at 4 pixels (his crown adds 4 rows).
+  // The size of the picture does not change: 23 by 20 dots at 3 pixels (his crown adds 4 rows).
   expect(asleep.size).toEqual(awake.size)
-  expect(asleep.size).toEqual([92, 80])
+  expect(asleep.size).toEqual([69, 60])
 })
 
 test('a new turn wakes him at once', { timeoutMs: 15_000 }, async ($, on) => {
@@ -120,7 +120,7 @@ test('after the press he drinks while it compacts, and for two minutes after it 
   expect(coffee.alt).toBe(`${NAME}, drinking coffee`)
   expect(drawnAt('coffee').svgs).toContain(coffee.source)
   expect(drawnAt('coffee').cells).toContain(coffee.cells)
-  expect(coffee.size).toEqual([92, 80])
+  expect(coffee.size).toEqual([69, 60])
   expect(await isOffered($)).toBe(false)
   release()
   await pressing

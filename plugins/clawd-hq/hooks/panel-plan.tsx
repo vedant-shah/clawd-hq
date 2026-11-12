@@ -10,7 +10,7 @@ export function planSection(ctx: Ctx, layout: PlanLayout) {
   const { Box } = ctx.kit
   return ctx.kit.isTerminal
     ? <Box key="plan" flexDirection="column">{planRows(ctx, layout)}</Box>
-    : <Box key="plan" flexDirection="column" gap={1}>{planItems(ctx, layout)}</Box>
+    : <Box key="plan" flexDirection="column" gap="sm">{planItems(ctx, layout)}</Box>
 }
 
 /** The agents at work that no step of the goal has: with a heading, and each as the surface draws an agent. None, no section. */
@@ -19,9 +19,9 @@ export function alsoAtWork(ctx: Ctx, layout: PlanLayout) {
   if (layout.outsiders.length === 0) return null
   const slots = floorSlots(layout.outsiders)
   return (
-    <Box key="also-at-work" flexDirection="column">
+    <Box key="also-at-work" flexDirection="column" gap={ctx.kit.isTerminal ? undefined : 'sm'}>
       <Text bold dimColor>{`ALSO AT WORK · ${layout.outsiders.length}`}</Text>
-      {ctx.kit.isTerminal ? <Box key="also-rows" flexDirection="column">{outsiderRows(ctx, slots)}</Box> : <Box key="floor-rows" flexDirection="column" gap={1}>{outsiderCards(ctx, slots)}</Box>}
+      {ctx.kit.isTerminal ? <Box key="also-rows" flexDirection="column">{outsiderRows(ctx, slots)}</Box> : <Box key="floor-rows" flexDirection="column" gap="sm">{outsiderCards(ctx, slots)}</Box>}
     </Box>
   )
 }

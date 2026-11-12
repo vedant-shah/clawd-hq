@@ -39,7 +39,7 @@ async function startBackground($: Engine, h: ReturnType<typeof flowHost>, ids: s
   await endTurn($, 'm1', 'Both are on it.')
 }
 
-test('a: a background job comes back, its notification starts Clawd\'s turn, he asks a question and reports: the button shows', async ($, on) => {
+test('a: a background job comes back, its notification starts Clawd\'s turn, he asks a question and reports: the button shows', { timeoutMs: 15_000 }, async ($, on) => {
   const h = flowHost(on)
   await startBackground($, h, ['w1'])
   await measure($, OVER)

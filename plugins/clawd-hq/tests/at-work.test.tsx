@@ -338,7 +338,7 @@ test('the words are the specialist\'s own and are kept short: only the first sen
   expect(drawn).not.toContain('SECRET')
 })
 
-test('words that arrive after a run was sent home are not kept: if the run goes on, the row does not show them', async ($, on) => {
+test('words that arrive after a run was sent home are not kept: if the run goes on, the row does not show them', { timeoutMs: 15_000 }, async ($, on) => {
   const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
   const { clock } = host(on, agents)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))

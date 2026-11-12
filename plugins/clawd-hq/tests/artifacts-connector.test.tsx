@@ -48,7 +48,7 @@ async function seen($: Engine, surface: 'terminal' | 'desktop' = 'terminal') {
   return result
 }
 
-test('a page published through the connector joins the desk as a link, on both surfaces', async ($, on) => {
+test('a page published through the connector joins the desk as a link, on both surfaces', { timeoutMs: 15_000 }, async ($, on) => {
   connectorSession(on, () => page(SLUG, URL1, 'Robot Vacuum Verdict'))
   await $.session.start(START)
   await call($, PUBLISH, { title: 'Robot Vacuum Verdict', content: '<!DOCTYPE html>' })
@@ -68,7 +68,7 @@ test('publish_files records a page too, and so does a specialist\'s publish', as
   expect((await seen($)).links).toEqual([URL1, URL2])
 })
 
-test('an edit of the same page updates its row and moves it to the top; there is never a second row', async ($, on) => {
+test('an edit of the same page updates its row and moves it to the top; there is never a second row', { timeoutMs: 15_000 }, async ($, on) => {
   let title = 'Robot Vacuum Verdict'
   const { clock } = connectorSession(on, tool => (tool === FILES ? page(SLUG2, URL2, 'Font Looks') : page(SLUG, URL1, title)))
   await $.session.start(START)

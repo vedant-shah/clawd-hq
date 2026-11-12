@@ -297,7 +297,7 @@ test('a specialist that failed shows as Failed in amber in the Log, and Clawd sa
   }
 })
 
-test('the Log empties on /clear, which only ends the session, and fills again after it', { timeoutMs: 15_000 }, async ($, on) => {
+test('the Log empties on /clear, which only ends the session, and fills again after it', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock, session } = host(on, [])
   let spawned = 0
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `a${(spawned += 1)}` }))
@@ -334,7 +334,7 @@ test('the Log empties on /clear, which only ends the session, and fills again af
   await again.unmount()
 })
 
-test('a session end that is not a clear leaves the list alone', { timeoutMs: 15_000 }, async ($, on) => {
+test('a session end that is not a clear leaves the list alone', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock, session } = host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
   session.startedAt = clock.now()

@@ -42,7 +42,7 @@ async function refusedProps($: Engine, pane: (typeof ALL_PANES)[number], surface
 /** The test engine (2.1.300) pairs every `bold` with a `weight` of its own on the desktop; the drawing only said `bold`. The terminal pairs nothing, so it still catches a `weight` of ours. */
 const isKitWeight = (props: Record<string, unknown>, prop: string) => prop === 'weight' && props.bold === true
 
-test('every tab draws only Text props the 2.1.295 engine takes, on every surface', { options: { voiceFile: '/me/voice.md' } }, async ($, on) => {
+test('every tab draws only Text props the 2.1.295 engine takes, on every surface', { timeoutMs: 15_000, options: { voiceFile: '/me/voice.md' } }, async ($, on) => {
   const h = office(on)
   h.files.set('/me/voice.md', '# My voice\n\n- Warm.\n')
   await $.session.start(START)

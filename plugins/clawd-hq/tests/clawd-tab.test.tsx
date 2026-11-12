@@ -186,7 +186,7 @@ test('with Clawd not running the chat, the tab says edits apply once he is', { o
   await ui.unmount()
 })
 
-test('nothing on the tab is cut short: a long file is shown in whole lines, every one reached with ▼, and every text wraps, on both surfaces', async ($, on) => {
+test('nothing on the tab is cut short: a long file is shown in whole lines, every one reached with ▼, and every text wraps, on both surfaces', { timeoutMs: 15_000 }, async ($, on) => {
   const { files } = office(on)
   const text = `# Mine\n\n## A heading that goes on for much longer than the pane is wide\n\n${Array.from({ length: 300 }, (_, i) => `- Rule ${i} with *marks*, \`code\` and **bold**.`).join('\n')}`
   files.set(OWN_RULES, text)

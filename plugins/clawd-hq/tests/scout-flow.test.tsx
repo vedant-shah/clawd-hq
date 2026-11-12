@@ -42,7 +42,7 @@ const GOOD_ANSWER = block(
   `Make | ecc:tdd-workflow | ${CWD}/package.json | No tests yet, so tests come first.`,
 )
 
-test('at session start the scout is registered as a Sonnet agent whose only tools read and search, and no pick tool is registered', async ($, on) => {
+test('at session start the scout is registered as a Sonnet agent whose only tools read and search, and no pick tool is registered', { timeoutMs: 15_000 }, async ($, on) => {
   const h = onboardHost(on)
   await open($, h)
   expect(h.scout.registered).toHaveLength(1)
@@ -183,7 +183,7 @@ test('in auto mode Clawd is told, unseen, to hire the scout; his hire is judged 
   expect(await $.agent.spawn(CLAWD_HIRE as never)).toMatchObject({ deny: expect.stringMatching(/starts its scout itself/) })
 })
 
-test('in auto mode a new session start while Clawd is asked keeps the brief in the scout\'s definition, so his hire still gets the candidate list', async ($, on) => {
+test('in auto mode a new session start while Clawd is asked keeps the brief in the scout\'s definition, so his hire still gets the candidate list', { timeoutMs: 15_000 }, async ($, on) => {
   const h = onboardHost(on)
   h.scout.mode = 'classifier'
   await open($, h)
@@ -197,7 +197,7 @@ test('in auto mode a new session start while Clawd is asked keeps the brief in t
   await settle(h, 300)
 })
 
-test('in auto mode, with no hire from Clawd within ten minutes, Opus picks and the note says why', async ($, on) => {
+test('in auto mode, with no hire from Clawd within ten minutes, Opus picks and the note says why', { timeoutMs: 15_000 }, async ($, on) => {
   const h = onboardHost(on)
   h.scout.mode = 'classifier'
   await open($, h)

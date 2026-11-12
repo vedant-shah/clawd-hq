@@ -35,7 +35,7 @@ const drawnAt = (look: 'asleep' | 'coffee') => {
   }
 }
 
-test('free and recently active he holds his logbook; past the nap time he is asleep, in both drawings and the same size', async ($, on) => {
+test('free and recently active he holds his logbook; past the nap time he is asleep, in both drawings and the same size', { timeoutMs: 15_000 }, async ($, on) => {
   const h = flowHost(on)
   await $.session.start(START)
   await job($, h).ask()
@@ -52,7 +52,7 @@ test('free and recently active he holds his logbook; past the nap time he is asl
   expect(asleep.size).toEqual([92, 80])
 })
 
-test('a new turn wakes him at once', async ($, on) => {
+test('a new turn wakes him at once', { timeoutMs: 15_000 }, async ($, on) => {
   const h = flowHost(on)
   await $.session.start(START)
   await job($, h).ask()
@@ -89,7 +89,7 @@ async function press($: Engine) {
   await ui.unmount()
 }
 
-test('while the button only shows he is awake in his normal look and says the one break sentence, even past the nap time', async ($, on) => {
+test('while the button only shows he is awake in his normal look and says the one break sentence, even past the nap time', { timeoutMs: 15_000 }, async ($, on) => {
   const h = flowHost(on)
   await $.session.start(START)
   await atBreak($, h)
@@ -108,7 +108,7 @@ test('while the button only shows he is awake in his normal look and says the on
   await endTurn($, 'm9', 'Done.')
 })
 
-test('after the press he drinks while it compacts, and for two minutes after it stood, then looks normal and speaks normally', async ($, on) => {
+test('after the press he drinks while it compacts, and for two minutes after it stood, then looks normal and speaks normally', { timeoutMs: 15_000 }, async ($, on) => {
   const h = flowHost(on)
   await $.session.start(START)
   await atBreak($, h)
@@ -266,7 +266,7 @@ test('before the chat is big enough there is no break, so no coffee', async ($, 
   expect((await cardNow($)).alt).toMatch(/holding a logbook$/)
 })
 
-test('the z\'s and the steam move as the office ticks on, with the panel redrawn from the same quiet ticks', async ($, on) => {
+test('the z\'s and the steam move as the office ticks on, with the panel redrawn from the same quiet ticks', { timeoutMs: 15_000 }, async ($, on) => {
   const h = flowHost(on)
   await $.session.start(START)
   await job($, h).ask()

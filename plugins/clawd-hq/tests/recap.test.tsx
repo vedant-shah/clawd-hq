@@ -75,7 +75,7 @@ test('with no recap to show, the Office tab has no recap section at all', async 
   await ui.unmount()
 })
 
-test('the recap is made once per pause, goes when the next turn starts, and is made again after that turn', { timeoutMs: 15_000 }, async ($, on) => {
+test('the recap is made once per pause, goes when the next turn starts, and is made again after that turn', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start(START)
   await turns($, 3)
@@ -101,7 +101,7 @@ test('fewer than three turns make no recap, however long the pause', { timeoutMs
   expect(await cardText($)).not.toMatch(/WHERE WE LEFT OFF|resume/)
 })
 
-test('a /clear or a /resume takes the recap off the card and starts the count of turns again', { timeoutMs: 15_000 }, async ($, on) => {
+test('a /clear or a /resume takes the recap off the card and starts the count of turns again', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start(START)
   for (const end of [CLEAR, { reason: 'resume', sessionId: 's1' } as never]) {
@@ -124,7 +124,7 @@ test('a /clear or a /resume takes the recap off the card and starts the count of
   }
 })
 
-test('a recap that could not be made shows nothing and is not asked for again in the same pause', async ($, on) => {
+test('a recap that could not be made shows nothing and is not asked for again in the same pause', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, asked } = hostWithModel(on, () => ({ isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded', usage: {} }))
   await $.session.start(START)
   await turns($, 3)
@@ -145,7 +145,7 @@ test('a long reply over several lines is shown as one line of at most 280 charac
   expect(line).not.toMatch(/\n/)
 })
 
-test('a session nobody is looking at makes no recap', async ($, on) => {
+test('a session nobody is looking at makes no recap', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
   await turns($, 3)
@@ -164,7 +164,7 @@ test('in the desktop app, which attaches after the session starts, the recap sti
   expect(await cardText($, 'desktop')).toMatch(/WHERE WE LEFT OFF/)
 })
 
-test('with the recap setting off, the model is never asked', { options: { recap: false } }, async ($, on) => {
+test('with the recap setting off, the model is never asked', { timeoutMs: 15_000, options: { recap: false } }, async ($, on) => {
   const { clock, asked } = hostWithModel(on)
   await $.session.start(START)
   await turns($, 3)

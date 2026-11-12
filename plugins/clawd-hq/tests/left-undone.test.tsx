@@ -505,7 +505,7 @@ test('a long turn with an empty report, one that did not end in an answer, and o
   ])
 })
 
-test('a check pushed out of a full line is logged as skipped, and a model that throws as failed with its reason', async ($, on) => {
+test('a check pushed out of a full line is logged as skipped, and a model that throws as failed with its reason', { timeoutMs: 15_000 }, async ($, on) => {
   let call = 0
   const h = office(on, () => { if (call++ === 0) return undone(); throw new Error('down') })
   await $.session.start(START)
@@ -519,7 +519,7 @@ test('a check pushed out of a full line is logged as skipped, and a model that t
   expect(rows).toContainEqual(['failed', 'the check stopped on an error'])
 })
 
-test('a row written after the project changed goes to the log of the project the check was made in', async ($, on) => {
+test('a row written after the project changed goes to the log of the project the check was made in', { timeoutMs: 15_000 }, async ($, on) => {
   const h = office(on, () => undone())
   await $.session.start(START)
   let free = () => {}

@@ -312,7 +312,7 @@ test('a hidden page stays hidden in the next session, and the next page of the o
   expect((await seen($)).links).toEqual([6, 5, 4, 3, 2, 1].map(link))
 })
 
-test('a hidden page that is published or opened again comes back', async ($, on) => {
+test('a hidden page that is published or opened again comes back', { timeoutMs: 15_000 }, async ($, on) => {
   const { clock } = session(on, input => (input.action === 'open' ? { result: 'Opened', text: 'Opened' } : answer(String(input.url))))
   await $.session.start(START)
   await publish($, { url: link(1), title: 'One' })

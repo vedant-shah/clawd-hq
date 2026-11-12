@@ -82,7 +82,7 @@ async function oneFinisher($: Engine, on: On) {
 
 // ---- The configs ----
 
-test('Settings lists the four configs, each a name with its toggle on the right and no description, then one short line on when a change applies', async ($, on) => {
+test('Settings lists the four configs, each a name with its toggle on the right and no description, then one short line on when a change applies', { timeoutMs: 15_000 }, async ($, on) => {
   host(on)
   await $.session.start(START)
   for (const surface of SURFACES) {

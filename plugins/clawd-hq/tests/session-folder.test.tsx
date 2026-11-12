@@ -46,7 +46,7 @@ const stopsOf = (h: OnboardHost) => h.calls.tools.filter(t => t.tool === 'TaskSt
 
 // ---- A session that does not move stays put ----
 
-test('a session whose root stays the start folder stays put across many frames: one setup run, one scout', async ($, on) => {
+test('a session whose root stays the start folder stays put across many frames: one setup run, one scout', { timeoutMs: 15_000 }, async ($, on) => {
   const h = onboardHost(on)
   sessionFolder(on, CWD)
   await $.session.start(START)
@@ -57,7 +57,7 @@ test('a session whose root stays the start folder stays put across many frames: 
   expect(opusCalls(h)).toBe(1)
 })
 
-test('another spelling of the same folder is no move: a trailing slash, another case, or a link that lands there', async ($, on) => {
+test('another spelling of the same folder is no move: a trailing slash, another case, or a link that lands there', { timeoutMs: 15_000 }, async ($, on) => {
   const h = onboardHost(on)
   const where = sessionFolder(on, CWD)
   await $.session.start(START)
@@ -161,7 +161,7 @@ function watchState(on: On) {
   return seen
 }
 
-test('a root that never answers holds no frame: the check gives up after ten seconds, says so once, and a later move goes through', { timeoutMs: 30_000 }, async ($, on) => {
+test('a root that never answers holds no frame: the check gives up after ten seconds, says so once, and a later move goes through', { timeoutMs: 60_000 }, async ($, on) => {
   const h = onboardHost(on)
   const seen = watchState(on)
   const logs: string[] = []

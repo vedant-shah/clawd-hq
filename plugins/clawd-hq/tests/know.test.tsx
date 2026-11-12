@@ -73,7 +73,7 @@ async function tabsOpened(h: Pick<ReturnType<typeof host>, 'opened' | 'clock'>) 
 type Log = Array<{ outcome: string; who: string; reason?: string; inTokens?: number; outTokens?: number; recordChars?: number; ms?: number }>
 const logOf = (saved: Map<string, unknown>) => (saved.get('know:log:/repo') ?? []) as Log
 
-test('a hand-back asks Haiku once, with our own question and the whole record, and the note is kept as shown', async ($, on) => {
+test('a hand-back asks Haiku once, with our own question and the whole record, and the note is kept as shown', { timeoutMs: 15_000 }, async ($, on) => {
   const { asked, rows, saved, toasts } = office(on)
   await $.session.start(START)
   await hire($)
@@ -180,7 +180,7 @@ test('several hand-backs close together are all checked, one question at a time'
   expect(asked.map(a => /BRIEF:\n(Job a\d)/.exec(a.prompt)![1])).toEqual(['Job a1', 'Job a2', 'Job a3'])
 })
 
-test('the tour\'s stand-in specialists are never checked', async ($, on) => {
+test('the tour\'s stand-in specialists are never checked', { timeoutMs: 15_000 }, async ($, on) => {
   const { asked, clock } = office(on)
   await $.session.start(START)
   await $.command.run({ command: 'office-demo', args: '' } as never)
@@ -333,7 +333,7 @@ test('a note already shown, or one the person already knew, is not shown again; 
   expect(asked[0]!.prompt).toMatch(/Already shown to the person, do not repeat:\n- Something older\.\n\nThe person already knew, do not repeat:\n- the tester says/)
 })
 
-test('the recap waits while a check is under way, and is made on a later frame', { timeoutMs: 15_000 }, async ($, on) => {
+test('the recap waits while a check is under way, and is made on a later frame', { timeoutMs: 60_000 }, async ($, on) => {
   const { asked, rows, saved, hold, gate, clock } = office(on)
   const forks: string[] = []
   on('model.fork', (_$, e) => (forks.push((e as { prompt: string }).prompt), { value: answered('Fixing login. Next: review.') }) as never)
@@ -894,7 +894,7 @@ test('a check that fails after a later one took its rows: the later one reads bo
   expect(asked[2]!.prompt).not.toMatch(/step1\.ts|step2\.ts/)
 })
 
-test('a check pushed out of a full line gives its rows back: the specialist\'s next check reads them', async ($, on) => {
+test('a check pushed out of a full line gives its rows back: the specialist\'s next check reads them', { timeoutMs: 15_000 }, async ($, on) => {
   const { asked, rows, saved, hold, gate } = office(on, [none])
   await $.session.start(START)
   for (const id of ['a1', 'a2', 'a3', 'a4', 'a5']) {

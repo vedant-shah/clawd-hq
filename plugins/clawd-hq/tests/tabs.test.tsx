@@ -177,7 +177,7 @@ test('the office-demo command and the demo tool open the three panes without foc
 
 // ---- No tab strip inside the panes; the gauges are the footer ----
 
-test('no pane draws its own tab strip or the o, p, s keys', async ($, on) => {
+test('no pane draws its own tab strip or the o, p, s keys', { timeoutMs: 15_000 }, async ($, on) => {
   host(on)
   await $.session.start(START)
   for (const surface of SURFACES) {

@@ -31,8 +31,6 @@ export type TourIo = {
   finish: (n: string, words?: Pick<Employee, 'report' | 'choices'>) => Promise<unknown>
   /** Every stand-in goes home. */
   clearFloor: () => Promise<unknown>
-  goQuiet: () => Promise<unknown>
-  recap: (text: string) => Promise<unknown>
 }
 
 const SONNET = 'claude-sonnet-5-5'
@@ -127,11 +125,6 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
     }],
     ['Quiet chat hides the noise: finished notices and filler. Results, failures and questions always show.', async () => {
       await io.show('settings')
-    }],
-    ['Back from a break? Where we left off shows where things stand, and the next step.', async () => {
-      await io.show('office')
-      await io.goQuiet()
-      await io.recap('Adding the export button to the scores page. Next: ask the reviewer to check the empty case.')
     }],
     ['People lists the team: what each helper does, and the tokens it has used.', async () => {
       await io.show('people')

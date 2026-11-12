@@ -2,11 +2,10 @@
 // The office's own actions come in as `io`, so `$` and the state stay in the register-*.ts files. Nothing real is spawned, saved or announced.
 import type { Boss, Employee, Fx } from '../types'
 import { sentenceOf } from './activity'
-import { NAP_MS } from './clawd-says'
 import { tourSteps } from './demo-script'
 import type { Cast } from './demo-script'
 import { hash, labelOf } from './office'
-import { freshHire, quietBoss } from './office-state'
+import { freshHire } from './office-state'
 import type { PaneView } from './panes'
 import { DEMO } from './panel-model'
 import { endRun, finishedBoss, withTool } from './staff-model'
@@ -83,8 +82,6 @@ export async function startDemo(io: DemoIo) {
     think: n => io.editStaff(id(n), one => ({ ...one, mood: 'thinking' })),
     finish: (n, words) => finish(io, id(n), words),
     clearFloor: io.dropStandIns,
-    goQuiet: async () => { const now = await io.now(); await io.setBoss(b => quietBoss(b, now, NAP_MS)) },
-    recap: text => io.setBoss(b => ({ ...b, recap: text })),
   })
 
   const total = steps.length

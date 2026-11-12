@@ -167,7 +167,7 @@ export type CoffeeIo = {
   after: (ms: number, fn: () => void) => unknown
   /** Still a break right now: the button may have been drawn before Clawd began a turn. */
   isBreak: () => Promise<boolean>
-  /** One short question to the model on the cached chat (a fork, as the recap asks). */
+  /** One short question to the model on the cached chat (a fork). */
   ask: (prompt: string) => Promise<{ isAnswered: true; text: string } | { isAnswered: false }>
   /** The engine's compact call. A resolved `skip` is a hook's veto. On an older engine it throws that it is not a function (see `isMissingCall`). */
   compact: (args: { instructions: string }) => Promise<{ skip?: string }>

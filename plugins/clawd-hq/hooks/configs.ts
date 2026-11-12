@@ -3,7 +3,7 @@
 import type { BriefingOptions } from './instructions'
 import { savedKey, savedNow, useSaved } from './toggle-store'
 
-export type ConfigField = 'chiefOfStaff' | 'quietChat' | 'recap' | 'youShouldKnow' | 'leftUndone' | 'autoSetup'
+export type ConfigField = 'chiefOfStaff' | 'quietChat' | 'youShouldKnow' | 'leftUndone' | 'autoSetup'
 
 /** A config as its row shows it: the name only (what each does is in the README). */
 export type ConfigToggle = {
@@ -15,7 +15,6 @@ export type ConfigToggle = {
 export const TOGGLES: readonly ConfigToggle[] = [
   { field: 'chiefOfStaff', title: 'Clawd runs the chat', isOn: o => o.isOn },
   { field: 'quietChat', title: 'Quiet chat', isOn: o => o.isQuiet },
-  { field: 'recap', title: 'Recap', isOn: o => o.isRecapOn },
   { field: 'youShouldKnow', title: 'You should know', isOn: o => o.isKnowOn },
   { field: 'leftUndone', title: 'Left undone check', isOn: o => o.isLeftOn },
   { field: 'autoSetup', title: 'Automatic setup', isOn: o => o.isAutoOn },

@@ -217,7 +217,7 @@ test('the demo caption stays at the top of every pane, above everything else', a
   await clock.advance(100)
   for (const pane of ALL_PANES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...pane })
-    expect(await ui.find({ type: 'Text', text: /🎬 1\/20/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /🎬 1\/19/ })).toBeDefined()
     const rows = elementsOf((await ui.drawn()) as unknown as Tree)
     expect(rows[0]?.props.borderColor).toBe('yellow')
     expect(rows[rows.length - 1]?.props.key).toBe('gauges')
@@ -271,13 +271,13 @@ test('the tour brings Settings forward, on the finished list, for the finishers,
   await log.unmount()
 
   // Leaving for People puts Settings back on its switches, so the finished list is not left open after the tour.
-  await clock.advance(4 * 4_500)
+  await clock.advance(3 * 4_500)
   expect(raised().pop()).toBe('clawd-hq-people')
   const after = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...paneProps('clawd-hq-settings', 'Settings') })
   expect(await after.find({ key: 'settings-log' })).toBeDefined()
   await after.unmount()
   const people = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...paneProps('clawd-hq-people', 'People') })
-  expect(await people.find({ type: 'Text', text: /^🎬 19\/20 · People lists the team/ })).toBeDefined()
+  expect(await people.find({ type: 'Text', text: /^🎬 18\/19 · People lists the team/ })).toBeDefined()
   await people.unmount()
 
   await clock.advance(4_500)
@@ -290,7 +290,7 @@ test('the tour says an answer in the question box settles the job at hand, and n
   await clock.advance(15 * 4_500 + 100)
   await clock.advance(100)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...paneProps('clawd-hq', 'Office') })
-  const caption = await ui.find({ type: 'Text', text: /^🎬 16\/20 · Questions wait and come in one box/ })
+  const caption = await ui.find({ type: 'Text', text: /^🎬 16\/19 · Questions wait and come in one box/ })
   expect(String(caption?.text)).toContain('Your answer settles the job at hand only.')
   expect(String(caption?.text)).not.toMatch(/saved as decisions/)
   await ui.unmount()
@@ -323,7 +323,7 @@ test('with the host refusing every open and every listing, /office, /office-demo
   await expect($.command.run({ command: 'office', args: '' } as never)).resolves.toMatchObject({ text: expect.stringContaining('Office') })
   await expect($.command.run({ command: 'office-demo', args: '' } as never)).resolves.toMatchObject({ text: expect.stringContaining('tour') })
   await expect($.tool.call({ tool: 'mcp__clawd-hq__demo' } as never)).resolves.toBeDefined()
-  // The tour's own steps raise panes: all twenty run, and the demo state is cleaned up at the end.
+  // The tour's own steps raise panes: all nineteen run, and the demo state is cleaned up at the end.
   await clock.advance(20 * 4_500 + 2_000)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
   expect(await ui.find({ type: 'Text', text: /🎬/ })).toBeUndefined()

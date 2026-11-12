@@ -31,7 +31,7 @@ function office(on: Parameters<typeof host>[0], files: Record<string, string> = 
   on('tool.call', () => ({ result: 'ok' }) as never)
   // The settings the Settings tab shows, so a test can press a switch.
   const row = (key: string) => ({ key, label: key, kind: 'boolean', value: true, provider: { plugin: 'clawd-hq@inline', tier: 'user' }, isLocked: false })
-  on('config.list', () => ({ value: ['chiefOfStaff', 'quietChat', 'recap', 'youShouldKnow'].map(f => row(`clawd-hq.${f}`)) }) as never)
+  on('config.list', () => ({ value: ['chiefOfStaff', 'quietChat', 'youShouldKnow'].map(f => row(`clawd-hq.${f}`)) }) as never)
   on('config.set', (_$, e) => ({ value: (e as { value: unknown }).value }) as never)
   return { ...h, prompts }
 }

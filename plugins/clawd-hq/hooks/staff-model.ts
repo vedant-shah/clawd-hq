@@ -1,6 +1,7 @@
 // How a specialist's run starts, spends and ends, as pure functions over one employee.
 import type { AgentStatus } from 'claude-code'
 import type { Boss, EndedBy, Employee, Mood } from '../types'
+import { looksSecret, looksUnsafe, plainText } from './know'
 import { ago } from './office'
 import { DEMO, isActive } from './panel-model'
 import { withProgress, withWords } from './steps'
@@ -11,6 +12,29 @@ export type StepUsage = {
   output_tokens: number
   cache_read_input_tokens: number
   cache_creation_input_tokens: number
+}
+
+const REASON_CHARS = 300
+/** What a run that ended without a report says when it left no words. */
+const NO_WORDS: Record<string, string> = { aborted: 'It was interrupted.', refusal: 'The model refused to go on.', error: 'An error ended its turn.' }
+
+/** The last `max` characters, starting at a word: a failure is told at the end of a report, not at its head. */
+function tailOf(text: string, max: number): string {
+  const chars = Array.from(text)
+  if (chars.length <= max) return text
+  const cut = chars.slice(-max).join('')
+  const space = cut.indexOf(' ')
+  return space >= 0 && space < max / 2 ? cut.slice(space + 1) : cut
+}
+
+/**
+ * Why a run failed, from how its turn ended and the last words it left: the end of those words, cleaned to one line, or a plain sentence for
+ * the way it ended. Untrusted text: words that look like a secret, a link or a command are not shown, and the plain sentence stands instead.
+ */
+export function failureReason(how: string, answer: string): string {
+  const said = tailOf(plainText(answer).replace(/\s+/g, ' ').trim(), REASON_CHARS)
+  const plain = NO_WORDS[how] ?? 'It did not say why.'
+  return said === '' || looksSecret(said) || looksUnsafe(said) ? plain : said
 }
 
 /** The books hold this many specialists; the longest-gone finishers leave first. The Log lists up to 40, so keep more. */
@@ -48,10 +72,10 @@ export const touch = (one: Employee, now: number): Employee => ({ ...one, lastSe
 export function restart(one: Employee, now: number, tick: number): Employee {
   if (isActive(one)) return one
   if (one.endedBy === 'engine' || one.endedBy === 'stale') {
-    return { ...one, mood: 'working', endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: now }
+    return { ...one, mood: 'working', reason: undefined, endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: now }
   }
   return {
-    ...one, mood: 'working', activity: undefined, said: undefined, report: undefined, ...NO_PROGRESS, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0, counted: undefined,
+    ...one, mood: 'working', activity: undefined, said: undefined, report: undefined, reason: undefined, ...NO_PROGRESS, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0, counted: undefined,
     startedAt: now, endedAt: undefined, doneTick: undefined, endedBy: undefined, joinedTick: tick, lastSeen: now,
   }
 }
@@ -59,7 +83,7 @@ export function restart(one: Employee, now: number, tick: number): Employee {
 /** Ends the run. Lost contact is no cheer and no win, so it leaves no tick for the cheering. */
 export function endRun(one: Employee, mood: Mood, how: EndedBy, now: number, tick: number): Employee {
   const cheer = mood === 'lost' ? {} : { doneTick: tick }
-  return { ...one, ...cheer, mood, activity: undefined, said: undefined, ...NO_PROGRESS, endedAt: now, endedBy: how }
+  return { ...one, ...cheer, mood, activity: undefined, said: undefined, reason: undefined, ...NO_PROGRESS, endedAt: now, endedBy: how }
 }
 
 /** Clawd's card after a run ended with a win or a failure: proud or sorry for a while, with who it was and the new count. A stop on purpose changes nothing. */

@@ -41,7 +41,7 @@ export type LeftIo = {
   byOf: (agentId: string) => Promise<string>
 }
 
-export type LeftActions = { leftDo: (id: string) => unknown; leftClear: () => unknown }
+export type LeftActions = { leftDo: (id: string) => unknown; leftDismiss: (id: string) => unknown; leftClear: () => unknown }
 
 /** What adding to the list needs of `LeftIo`. */
 type ListIo = Pick<LeftIo, 'folder' | 'now' | 'change' | 'save'>
@@ -85,13 +85,14 @@ export async function leftAddItems(io: ListIo, texts: readonly string[], by: str
   }
 }
 
-/** The buttons: Do it now puts the item's sentence in the prompt box (and keeps the item); Clear empties the list. */
+/** The buttons: Do it now puts the item's sentence in the prompt box (and keeps the item); Dismiss takes that one item away; Clear empties the list. */
 export function leftActions(io: LeftIo): LeftActions {
   return {
     leftDo: async id => {
       const item = (await io.change(list => list)).find(one => one.id === id)
       if (item) await io.fillPrompt(promptOf(item))
     },
+    leftDismiss: id => commit(io, io.folder(), list => list.filter(one => one.id !== id)),
     leftClear: () => commit(io, io.folder(), () => []),
   }
 }

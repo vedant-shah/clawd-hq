@@ -61,7 +61,6 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 
 - **You should know.** Our own check on finished work: Haiku reads the specialist's full record against its report, and speaks up only when something matters. It backs off if you ignore it. It stands in for Claude Code's built-in You should know while it's on, so you aren't told twice. Every card has **Ask Clawd**.
 - **Left undone.** Lists work that was put off, like TODOs and skipped tests. "Do it now" puts it in your prompt box.
-- **Recap.** Back from a break? Clawd's card shows where you were and the next step. It asks one short question on the chat Claude Code has already cached.
 - **Coffee break.** Compacts a long chat at a calm moment, never mid-build.
 - **Lasting rules, on your say-so.** When you state a rule for later work ("always", "from now on"), Clawd offers it on a card. One press adds that exact line to the project's CLAUDE.md, which every specialist already reads. An answer in the question box settles only the job at hand.
 - **Artifact Desk.** Every page Claude publishes on claude.ai, one click away.
@@ -166,7 +165,6 @@ All on by default. Flip them in the Settings tab.
 | Clawd runs the chat | Claude behaves as usual. You keep the panel. |
 | Quiet chat | The chat shows every row. |
 | Automatic setup | Setup runs only when you type `/office-setup`. |
-| Recap on Clawd's card | No recap is made. |
 | You should know | Finished work isn't checked. Claude Code's own note works as usual. |
 | Left undone check | The model check is skipped. Code markers are still read. |
 | Your own voice file | A path to a text file that changes Clawd's tone. Empty by default. |
@@ -187,7 +185,6 @@ Most of it runs on your machine. Model calls use your plan.
 | Setup picks a team | Sonnet, read-only | Files in this project it opens (Read and Glob only, no content search; it is told to skip secret-named files and stay in the folder), plus your helpers' names and use counts. About $0.15 per project on API billing ($0.13 to $0.18 across 11 real projects). |
 | Setup fallback | Opus, once | A project summary, the README, your instruction files, helper names and counts |
 | Setup writes your workflow | Haiku | Your instruction files |
-| Recap | The session's model | One short question on the cached chat |
 | You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
 | Left undone check | Haiku | Your request and Clawd's final report |
 | Coffee break | The session's model | One short question on the cached chat |

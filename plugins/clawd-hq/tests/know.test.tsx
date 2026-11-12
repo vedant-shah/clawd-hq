@@ -333,28 +333,6 @@ test('a note already shown, or one the person already knew, is not shown again; 
   expect(asked[0]!.prompt).toMatch(/Already shown to the person, do not repeat:\n- Something older\.\n\nThe person already knew, do not repeat:\n- the tester says/)
 })
 
-test('the recap waits while a check is under way, and is made on a later frame', { timeoutMs: 60_000 }, async ($, on) => {
-  const { asked, rows, saved, hold, gate, clock } = office(on)
-  const forks: string[] = []
-  on('model.fork', (_$, e) => (forks.push((e as { prompt: string }).prompt), { value: answered('Fixing login. Next: review.') }) as never)
-  await $.session.start(START)
-  for (let i = 1; i <= 3; i += 1) {
-    await $.turn.start({ text: `Ask ${i}`, turnId: `m${i}` } as never)
-    await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: `m${i}`, isAborted: false } as never)
-  }
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  hold()
-  await handBack($, 'a1')
-  await until($, () => asked.length > 0)
-  for (let left = 4 * 60_000; left > 0; left -= 10_000) await clock.advance(10_000)
-  expect(forks).toEqual([])
-  gate.release()
-  await until($, () => logOf(saved).length > 0)
-  for (let left = 30_000; left > 0; left -= 10_000) await clock.advance(10_000)
-  expect(forks).toHaveLength(1)
-})
-
 test('a note passed over by two prompts leaves; after two such notes the next check is skipped and logged', async ($, on) => {
   const notes = [1, 2, 3].map(n => () => answered(`learn: Note number ${n} matters.\ntag: Heads up`))
   const { asked, rows, saved } = office(on, notes)

@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { activeStepIds, clearNew, goalKey, parseCall, planText, stateFrom, statusOf, tickDue, touchedBy, withReopened } from '../hooks/plan-live'
+import { activeStepIds, blockingFailures, clearNew, goalKey, parseCall, planText, stateFrom, statusOf, tickDue, touchedBy, withReopened } from '../hooks/plan-live'
 import { parsePlanLine } from '../hooks/pair-up'
 import { rowLook } from '../hooks/quiet'
 import type { PlanView } from '../hooks/plan'
@@ -46,6 +46,47 @@ test('a run of another goal never counts for this goal\'s step with the same id'
   expect(statusOf(two!, [emp({ id: 'old', planKey: 'export:5', mood: 'failed', endedAt: 9 })], KEY)).toBe('next')
   expect([...activeStepIds([earlier], KEY)]).toEqual([])
   expect(goalKey({ slug: 'export', startedAt: 10 })).toBe(KEY)
+})
+
+// ---- One rule for the failed card, the status and the tick ----
+
+test('a failure that overlapped a later success still blocks: the card shows, the step needs attention, and nothing is ticked', () => {
+  const [, two] = state().steps
+  const a = emp({ id: 'a', mood: 'failed', startedAt: 0, endedAt: 10 })
+  const b = emp({ id: 'b', mood: 'done', startedAt: 5, endedAt: 20 })
+  expect(blockingFailures(two!, [a, b]).map(one => one.id)).toEqual(['a'])
+  expect(statusOf(two!, [a, b], KEY)).toBe('attention')
+  expect(tickDue(state(), [a, b], b)).toBe(false)
+})
+
+test('a failure that ended before a later success began is covered: no card, the step is next, and the success ticks it', () => {
+  const [, two] = state().steps
+  const a = emp({ id: 'a', mood: 'failed', startedAt: 0, endedAt: 10 })
+  const b = emp({ id: 'b', mood: 'done', startedAt: 11, endedAt: 20 })
+  expect(blockingFailures(two!, [a, b])).toEqual([])
+  expect(statusOf(two!, [a, b], KEY)).toBe('next')
+  expect(tickDue(state(), [a, b], b)).toBe(true)
+})
+
+test('a failure that began before the last reopening is forgotten, by the card, the status and the tick alike; one after it blocks', () => {
+  const reopened = withReopened(state(), 's2', 50)
+  const [, two] = reopened.steps
+  const old = emp({ id: 'old', mood: 'failed', startedAt: 0, endedAt: 10 })
+  const run = emp({ id: 'run', mood: 'done', startedAt: 40, endedAt: 70 })
+  expect(blockingFailures(two!, [old, run])).toEqual([])
+  expect(statusOf(two!, [old], KEY)).toBe('next')
+  expect(tickDue(reopened, [old, run], run)).toBe(true)
+  const fresh = emp({ id: 'fresh', mood: 'failed', startedAt: 60, endedAt: 80 })
+  expect(blockingFailures(two!, [old, fresh]).map(one => one.id)).toEqual(['fresh'])
+  expect(statusOf(two!, [old, fresh], KEY)).toBe('attention')
+  expect(tickDue(reopened, [old, fresh, run], run)).toBe(false)
+})
+
+test('the blocking failures are newest first, and lost contact blocks like a failure', () => {
+  const [, two] = state().steps
+  const [x, y] = [emp({ id: 'x', mood: 'failed', startedAt: 0, endedAt: 10 }), emp({ id: 'y', mood: 'lost', startedAt: 1, endedAt: 30 })]
+  expect(blockingFailures(two!, [x, y]).map(one => one.id)).toEqual(['y', 'x'])
+  expect(blockingFailures(two!, [emp({ mood: 'stopped', endedAt: 5 }), emp({ id: 'w' })])).toEqual([])
 })
 
 // ---- Whether a run ticks its step ----
@@ -164,8 +205,8 @@ test('a call is read from the input: each op with its fields, ids in lower case,
   expect(parseCall({ op: 'finish', outcome: 'maybe' })).toMatchObject({ error: expect.stringContaining('outcome') })
 })
 
-test('an op the tool does not have is refused, and the office\'s own decide op cannot be asked for', () => {
-  for (const op of ['explode', 'decide', 'park', '', undefined, 5]) expect(parseCall({ op, id: 's1', choices: ['x'] })).toMatchObject({ error: expect.stringContaining('The op must be one of') })
+test('an op the tool does not have is refused, and the office\'s own decide and forget ops cannot be asked for', () => {
+  for (const op of ['explode', 'decide', 'forget', 'park', '', undefined, 5]) expect(parseCall({ op, id: 's1', choices: ['x'] })).toMatchObject({ error: expect.stringContaining('The op must be one of') })
 })
 
 // ---- The PLAN line ----

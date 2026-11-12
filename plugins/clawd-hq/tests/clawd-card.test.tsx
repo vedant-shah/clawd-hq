@@ -14,7 +14,7 @@ async function request($: Engine, clock: ReturnType<typeof host>['clock']) {
   await clock.settle()
 }
 
-test("Clawd's card: name and status, the model, his words in a box, then a dim hint for /office-council, and no button", async ($, on) => {
+test("Clawd's card: name and status, the model, his words in a box, and no button and no hint", async ($, on) => {
   const { clock } = host(on)
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' } as never
@@ -27,14 +27,12 @@ test("Clawd's card: name and status, the model, his words in a box, then a dim h
     const [lines] = walk(root, t => t.props.key === 'clawd-lines')
     // (An amber line about lost rules may sit under the model line; it is not part of the layout.)
     const rows = elementsOf(lines!).filter(r => r.props.key !== 'clawd-rules-lost' && r.props.color === undefined)
-    // Top to bottom: the head row, the model line, the quip in its bordered box, the hint, and nothing else.
-    expect(rows.map(r => r.type)).toEqual(['Box', 'Text', 'Box', 'Text'])
+    // Top to bottom: the head row, the model line, the quip in its bordered box, and nothing else (no hint for the council command).
+    expect(rows.map(r => r.type)).toEqual(['Box', 'Text', 'Box'])
     expect(rows[0]!.props.key).toBe('clawd-head')
     expect(rows[1]!.children?.join('')).toBe('Opus 5.5 · High')
     expect(rows[2]!.props.borderStyle).toBe('round')
     expect(walk(rows[2]!, t => t.type === 'Text')[0]!.props.italic).toBe(true)
-    expect(rows[3]!.props.dimColor).toBe(true)
-    expect(rows[3]!.children?.join('')).toBe('Type /office-council <question> to hold a council.')
     expect(walk(root, t => t.type === 'Button' && t.props.key === 'clawd-council')).toHaveLength(0)
     await ui.unmount()
   }

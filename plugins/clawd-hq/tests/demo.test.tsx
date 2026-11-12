@@ -5,7 +5,7 @@ import { tourSteps } from '../hooks/demo-script'
 import type { TourIo } from '../hooks/demo-script'
 import { PANE, PEOPLE, SETTINGS, host, paneProps } from './host'
 
-const COUNT = 20
+const COUNT = 19
 
 // ---- The script: what each step says and does, with a recording stand-in for the office ----
 
@@ -15,7 +15,7 @@ function recorder() {
   const log = (name: string) => async (...args: unknown[]) => { calls.push(`${name} ${args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`.trim()) }
   const io: TourIo = {
     show: log('show'), showLog: log('showLog'), setBusy: log('setBusy'), say: log('say'), hire: log('hire'), work: log('work'),
-    report: log('report'), think: log('think'), finish: log('finish'), clearFloor: log('clearFloor'), goQuiet: log('goQuiet'), recap: log('recap'),
+    report: log('report'), think: log('think'), finish: log('finish'), clearFloor: log('clearFloor'),
   }
   return { io, calls }
 }
@@ -32,7 +32,7 @@ async function stepsOf() {
   return { captions: steps.map(([caption]) => caption), ran }
 }
 
-test('the tour has twenty steps of about four and a half seconds: about ninety seconds', async () => {
+test('the tour has nineteen steps of about four and a half seconds: a little under ninety seconds', async () => {
   const { captions } = await stepsOf()
   expect(captions).toHaveLength(COUNT)
   expect(captions.length * STEP_MS).toBeGreaterThanOrEqual(85_000)
@@ -51,7 +51,7 @@ test('every caption is plain and short: one idea, under twenty-five words, no ja
 test('the captions tell the features in story order', async () => {
   const { captions } = await stepsOf()
   const at = (word: RegExp) => captions.findIndex(c => word.test(c))
-  const order = [/gold crown/, /Simplified Technical English/, /five best/, /smallest model/, /bar/, /new instruction/, /bar fills again/, /contractor/, /leaves/, /pair-up/, /critique/, /council/, /never read each other/, /dissent/, /one card each/, /one box/, /Quiet chat/, /Where we left off/, /People/, /back to normal/i]
+  const order = [/gold crown/, /Simplified Technical English/, /five best/, /smallest model/, /bar/, /new instruction/, /bar fills again/, /contractor/, /leaves/, /pair-up/, /critique/, /council/, /never read each other/, /dissent/, /one card each/, /one box/, /Quiet chat/, /People/, /back to normal/i]
   const found = order.map(at)
   expect(found.every(i => i >= 0)).toBe(true)
   expect(found).toEqual([...found].sort((a, b) => a - b))
@@ -79,9 +79,8 @@ test('each step does what its caption says', async () => {
   expect(step(15)).toMatch(/showLog true[\s\S]*show settings/)
   expect(step(16)).toMatch(/clearFloor/)
   expect(step(17)).toMatch(/showLog false[\s\S]*show settings|show settings/)
-  expect(step(18)).toMatch(/goQuiet[\s\S]*recap/)
-  expect(step(19)).toMatch(/show people/)
-  expect(step(20)).toMatch(/show office/)
+  expect(step(18)).toMatch(/show people/)
+  expect(step(19)).toMatch(/show office/)
 })
 
 // ---- The real panel: each feature's card appears in its step, drawn by the product's own code ----
@@ -242,20 +241,10 @@ test('quiet mode: the Settings tab shows its Quiet chat switch, on its own page 
   await r.ui.unmount()
 })
 
-test('the recap has its own section on Clawd\'s card: where we left off, and the next step', async ($, on) => {
-  const t = await tour(on)
-  await $.command.run({ command: 'office-demo', args: '' } as never)
-  await t.to(18)
-  const r = await t.read($, PANE)
-  expect(r.texts).toContain('WHERE WE LEFT OFF')
-  expect(r.texts).toContain('Next:')
-  await r.ui.unmount()
-})
-
 test('People shows the stand-in team with short descriptions and token totals, not the real team', async ($, on) => {
   const t = await tour(on)
   await $.command.run({ command: 'office-demo', args: '' } as never)
-  await t.to(19)
+  await t.to(18)
   const r = await t.read($, PEOPLE)
   expect(r.texts).toContain('TEAM · 5')
   expect(r.texts.filter(x => /^\d+(\.\d)?[KM] tokens$/.test(x)).length).toBeGreaterThanOrEqual(4)
@@ -266,7 +255,7 @@ test('People shows the stand-in team with short descriptions and token totals, n
 test('People on the tour shows each stand-in\'s token line, though this project has used no tokens', async ($, on) => {
   const t = await tour(on)
   await $.command.run({ command: 'office-demo', args: '' } as never)
-  await t.to(19)
+  await t.to(18)
   const r = await t.read($, PEOPLE)
   expect(r.texts.filter(x => / tokens$/.test(x)).sort()).toEqual(['177K tokens', '268K tokens', '412K tokens', '530K tokens', '96K tokens'])
   await r.ui.unmount()
@@ -289,7 +278,7 @@ test('nothing real is spawned, saved or announced, and every card has the captio
   expect(JSON.stringify([...t.saved.entries()])).toBe(before)
 })
 
-test('afterwards the office is as it was found: no stand-ins, no caption, no recap, Clawd as he was, the real team back in People', async ($, on) => {
+test('afterwards the office is as it was found: no stand-ins, no caption, Clawd as he was, the real team back in People', async ($, on) => {
   const t = await tour(on)
   await $.command.run({ command: 'office-demo', args: '' } as never)
   await t.to(COUNT)
@@ -304,7 +293,6 @@ test('afterwards the office is as it was found: no stand-ins, no caption, no rec
   }
   const office = await t.read($, PANE)
   expect(office.texts).toContain('No one at a desk yet.')
-  expect(office.texts).not.toContain('WHERE WE LEFT OFF')
   expect(office.texts.some(x => /recommend/i.test(x))).toBe(false)
   await office.ui.unmount()
 

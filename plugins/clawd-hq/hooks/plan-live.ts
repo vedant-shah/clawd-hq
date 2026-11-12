@@ -23,31 +23,41 @@ export function activeStepIds(staff: readonly Employee[], key: string): Set<stri
   return new Set(staff.filter(one => one.stepId !== undefined && one.planKey === key && isActive(one)).map(one => one.stepId!))
 }
 
-/** Worked out each time from the books: now while a linked run is at work; needs attention when the latest linked run failed or was lost. */
+/**
+ * The failures that still hold a step back, newest first. ONE rule for the failed card, the step's status and the tick. A run that failed or
+ * lost contact is no longer held against the step when (a) it ended before a later run that ended well began (a rerun covers it; a run
+ * that overlapped the success does not), or (b) it began before the step was last reopened. Every other failure blocks.
+ */
+export function blockingFailures(step: PlanStep, runs: readonly Employee[]): Employee[] {
+  const since = step.reopenedAt ?? 0
+  return runs
+    .filter(one => one.mood === 'failed' || one.mood === 'lost')
+    .filter(one => one.startedAt >= since && !runs.some(later => later.mood === 'done' && later.startedAt > (one.endedAt ?? one.startedAt)))
+    .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+}
+
+/** Worked out each time from the books: now while a linked run is at work; needs attention when nobody is on it and a failure still blocks it. */
 export function statusOf(step: PlanStep, staff: readonly Employee[], key: string): StepStatus {
   if (step.isDone) return 'done'
   const runs = runsOn(staff, key, step.id)
   if (runs.some(isActive)) return 'now'
-  const latest = runs.reduce<Employee | undefined>((best, one) => (best === undefined || one.startedAt >= best.startedAt ? one : best), undefined)
-  return latest !== undefined && (latest.mood === 'failed' || latest.mood === 'lost') ? 'attention' : 'next'
+  return blockingFailures(step, runs).length > 0 ? 'attention' : 'next'
 }
 
 /**
- * Whether the run that just handed back ticks its step: it ended well, the step is open, no other run linked to it is at work, and no
- * run on it that started since it was last reopened failed or lost contact. DECIDED (the owner): a rerun that succeeds ticks the step,
- * so a failure counts only when it ended after this run started; an earlier one is already rerun. A run that ended before the step was
- * reopened ticks nothing. Only this goal's runs count.
+ * Whether the run that just handed back ticks its step: it ended well, the step is open, no other run linked to it is at work, and no failure
+ * still blocks it (`blockingFailures`). DECIDED (the owner): a rerun that succeeds ticks the step, so a failure that ended before this run
+ * began no longer blocks; one that overlapped it does. A run that ended before the step was reopened ticks nothing. Only this goal's runs count.
  * Known limit: members of a pair-up hired seconds apart on one step can tick it when the first hands back, before the second starts.
  */
 export function tickDue(state: PlanState, staff: readonly Employee[], run: Employee): boolean {
   const step = state.steps.find(one => one.id === run.stepId)
   const key = goalKey(state)
   if (step === undefined || step.isDone || run.mood !== 'done' || run.planKey !== key) return false
-  const since = step.reopenedAt ?? 0
-  if ((run.endedAt ?? 0) < since) return false
-  const linked = runsOn(staff, key, step.id).filter(one => one.id !== run.id)
-  if (linked.some(isActive)) return false
-  return !linked.some(one => one.startedAt >= since && (one.mood === 'failed' || one.mood === 'lost') && (one.endedAt ?? 0) >= run.startedAt)
+  if ((run.endedAt ?? 0) < (step.reopenedAt ?? 0)) return false
+  const runs = runsOn(staff, key, step.id)
+  if (runs.some(one => one.id !== run.id && isActive(one))) return false
+  return blockingFailures(step, runs).length === 0
 }
 
 /** The plan state for a file's view: each step keeps its mark and its reopening from before; steps new to the state, and `touched` ones, are marked new. */

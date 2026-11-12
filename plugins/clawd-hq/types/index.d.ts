@@ -49,6 +49,8 @@ export type Employee = {
   pair?: { goal: string; at: number; /** Set for a council voice (a `COUNCIL: <question>` first line): `goal` is the question, and the group is a council, not a pair-up. */ isCouncil?: true }
   /** A council voice's first report line, kept once its run ends well (hooks/council.ts); gone when it is sent back to work. */
   report?: string
+  /** Why the run failed, in the words of its last report (hooks/plan-view.ts shows it on the Office tab); none for a run that did not fail. */
+  reason?: string
   /** The key choices it reported in its hand-backs (its DECIDED lines), oldest first, at most five (hooks/staff-model.ts). Kept for the session only, with the record. */
   choices?: string[]
   /** The id of the plan step this run was hired for (a `PLAN: s2` first line in its brief, hooks/plan-run.ts). None for a run outside the plan. */
@@ -152,8 +154,6 @@ export type Boss = {
   lastTitle: string
   quip?: { text: string; until: number }
   doneAt?: number
-  /** One line on where things stand, made after a few quiet minutes; gone when the next turn starts. */
-  recap?: string
   /** Clawd's turn count when a specialist last handed work back since the person's latest message; none until then (hooks/checkpoint.ts). */
   handedBackAt?: number
   /** A piece of work has closed: a hand-back was reported in a finished turn of Clawd's with no question left open. Lasts until the person's next message. */
@@ -199,6 +199,8 @@ export type Fx = {
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
   /** Helpers the automatic trim (hooks/payroll.ts) just laid off, named on a card on the Office tab until the person dismisses it. */
   layoffNotice?: { types: string[] }
+  /** The plan's open folds (hooks/plan-view.ts `FOLD`): done steps, more steps, later items, an agent's details, a step's more agents. Closed unless named. */
+  folds?: string[]
   /** The usage footer's three rows are open above its button; shared by every pane. */
   isUsageOpen?: boolean
   /** The Settings tab shows the list of finished work instead of the configs and Clawd's instructions. */

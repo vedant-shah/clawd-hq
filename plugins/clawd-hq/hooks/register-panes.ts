@@ -23,9 +23,13 @@ import { artifactIo } from './register-artifacts'
 import { knowIo } from './register-know'
 import { leftIo } from './register-left'
 import { oldIo, payrollIo, ruleIo, showLog } from './register-io'
+import { dismissLater } from './plan-run'
+import { goalKey } from './plan-live'
+import { laterPrompt, withFold } from './plan-view'
+import { planRunIo } from './register-plan'
 import { clawdIo } from './register-rules'
 import { contractorIo, onboardIo, setupCard } from './register-setup'
-import { getBoss, getFx, getPayroll, readArtifacts, readBlurbs, readClawdBrief, readContractorOffers, readGauge, readLeftUndone, readProjectTokens, readRoster, readRuleOffers, readStaff, readTick, ses, setFx } from './register-state'
+import { getBoss, getFx, getPayroll, readArtifacts, readBlurbs, readClawdBrief, readContractorOffers, readGauge, readLeftUndone, readPlan, readProjectTokens, readRoster, readRuleOffers, readStaff, readTick, ses, setFx } from './register-state'
 import { ruleActions } from './rule-io'
 import { scrolled } from './scroll-window'
 import { BRIEF0, reasonOf } from './state'
@@ -37,7 +41,7 @@ async function panelData($: EngineInterface, options: BriefingOptions): Promise<
     staff: await readStaff($), boss: await getBoss($), fx: await getFx($), tick: await readTick($), blurbs: await readBlurbs($),
     roster: await readRoster($), projectTokens: await readProjectTokens($), payroll: await getPayroll($),
     artifacts: await readArtifacts($), leftUndone: await readLeftUndone($), ruleOffers: await readRuleOffers($), contractorOffers: await readContractorOffers($), gauge: await readGauge($), now: await $.clock.now(), know: await knowIo($).card(),
-    brief: { ...BRIEF0, ...(await readClawdBrief($)) }, options, onboard: await setupCard($),
+    brief: { ...BRIEF0, ...(await readClawdBrief($)) }, options, onboard: await setupCard($), plan: await readPlan($),
   })
 }
 
@@ -65,6 +69,10 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     layoffDismiss: () => setFx($, f => ({ ...f, layoffNotice: undefined })),
     hire: type => setLaidOff(payrollIo($), type, false),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
+    toggleFold: key => setFx($, f => ({ ...f, folds: withFold(f.folds, key) })),
+    agentAsk: prompt => knowIo($).fillPrompt(prompt),
+    planLaterDo: async (goal, id) => { const plan = await readPlan($); const one = plan !== null && goalKey(plan) === goal ? plan.later.find(item => item.id === id) : undefined; if (one) await knowIo($).fillPrompt(laterPrompt(one.text)) },
+    planLaterDismiss: (goal, id) => dismissLater(planRunIo($, opts), goal, id),
     coffeeBreak: isTerminal => takeCoffeeBreak(coffeeIo($), isTerminal).catch((err: unknown) => $.ui.toast(`Couldn't compact the chat: ${reasonOf(err)}.`)),
     showLog: isOpen => showLog($, isOpen),
     setConfig: (field, value) => setConfig($, field, value),

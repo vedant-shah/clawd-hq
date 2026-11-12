@@ -2,6 +2,7 @@
 // Each takes a file and gives back a new file, or the one plain sentence why not. Nothing is changed in place and nothing is written:
 // plan-io.ts reads the file fresh, applies one operation and writes. No tool, panel or hook uses this yet.
 import { fit } from './desk'
+import { plainText } from './know'
 import { MAX_ID, closeRow, decidedOf, laterAt, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, withIds, withMark } from './plan-file'
 import type { Item, PlanFile, Row } from './plan-file'
 
@@ -18,10 +19,16 @@ const MARKS = /<!--|-->/g
 
 const strip = (text: string): string => (/<!--|-->/.test(text) ? strip(text.replace(MARKS, '')) : text)
 
-/** Text from a model as one clean line: spaces folded, cut to size, and with no comment marks, so it can never pass as an id of its own. Not text: nothing. */
+/**
+ * Text from a model as one clean line: control characters, marks that reorder text and hidden marks gone (`plainText`), spaces folded, cut to
+ * size, and with no comment marks, so it can never pass as an id of its own. Not text: nothing.
+ */
 export function cleanText(raw: unknown): string {
-  return typeof raw === 'string' ? fit(strip(raw), TEXT_CHARS) : ''
+  return typeof raw === 'string' ? fit(strip(plainText(raw)), TEXT_CHARS) : ''
 }
+
+/** Text read from the file, which anyone may have edited: the same clean-up as `cleanText`, but not cut. */
+const tidy = (text: string) => plainText(text).replace(/\s+/g, ' ').trim()
 
 /**
  * The file name for a goal: its title in lower case with every run of other characters turned to one dash, at most 40 characters,
@@ -48,9 +55,9 @@ export type PlanView = {
 export function viewOf(file: PlanFile): PlanView {
   const { title, steps, later } = sectionsOf(withIds(file))
   return {
-    title,
-    steps: steps.map(s => ({ id: s.id!, text: s.text, isDone: s.isDone, choices: decidedOf(s).map(d => d.text) })),
-    later: later.map(l => ({ id: l.id!, text: l.text })),
+    title: tidy(title),
+    steps: steps.map(s => ({ id: s.id!, text: tidy(s.text), isDone: s.isDone, choices: decidedOf(s).map(d => tidy(d.text)) })),
+    later: later.map(l => ({ id: l.id!, text: tidy(l.text) })),
   }
 }
 
@@ -84,6 +91,8 @@ export type PlanOp =
   | { op: 'later'; text: string }
   /** The office's own, never from the tool: a finished run's choices go under its step, and with `tick` the step is ticked. */
   | { op: 'decide'; id: string; choices: string[]; tick?: boolean }
+  /** The office's own, from the Dismiss button on a Later item: that item leaves the file (a note indented under it stays). */
+  | { op: 'forget'; id: string }
 
 export type OpResult = { ok: true; file: PlanFile } | Refused
 const accept = (file: PlanFile): OpResult => ({ ok: true, file })
@@ -212,6 +221,14 @@ function decide(file: PlanFile, op: { id: string; choices: string[]; tick?: bool
   return accept({ ...file, rows: file.rows.map((row, i) => (i === at ? next : row)) })
 }
 
+/** A Later item taken out of the file; the notes a person indented under it stay where they were. */
+function forget(file: PlanFile, id: string): OpResult {
+  const head = laterAt(file)
+  const at = head === -1 ? -1 : file.rows.findIndex((row, i) => i > head && row.kind === 'item' && row.id === id)
+  if (at === -1) return refuse(`There is no Later item ${fit(String(id), 20)}.`)
+  return accept({ ...file, rows: file.rows.flatMap((row, i) => (i === at ? notesOf(itemAt(file, at)) : [row])) })
+}
+
 /** Where a Later item goes: below the last one, or under the heading, or under a new heading at the end of the file. */
 function laterSlot(file: PlanFile, item: Item): PlanFile {
   const head = laterAt(file)
@@ -244,6 +261,7 @@ function dispatch(f: PlanFile, op: PlanOp, active: ReadonlySet<string>): OpResul
     case 'reopen': return tick(f, op.id, false)
     case 'later': return later(f, op.text)
     case 'decide': return decide(f, op)
+    case 'forget': return forget(f, op.id)
     default: return refuse(`There is no operation called ${fit(String((op as { op?: unknown }).op), 20)}.`)
   }
 }

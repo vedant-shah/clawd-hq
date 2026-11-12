@@ -22,7 +22,6 @@ Most of it runs on your machine. Model calls go through Claude Code's own model 
 | Setup picks a team | Sonnet scout | The project folder path, a quick scan (README head, instruction files, dependencies, outline, file types), your helpers' names, descriptions and use counts, and the project files it opens |
 | Setup fallback | Opus, once, only if the scout gives nothing usable | The same quick scan, and your helpers' names, descriptions and use counts |
 | Setup writes your workflow | Haiku | Your instruction files |
-| Recap | The session's model | One short question on the cached chat |
 | You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
 | Left undone check | Haiku | Your request and Clawd's final report |
 | Coffee break | The session's model | One short question on the cached chat |

@@ -18,7 +18,6 @@ import { clearNewMarks, settleRun } from './plan-run'
 import { planRunIo } from './register-plan'
 import { DEMO } from './panel-model'
 import { noteThreshold } from './usage'
-import { noteRecapTurn } from './recap'
 import { coffeeDebugIo } from './register-coffee'
 import { gaugeIo, paneIo, runIo, showStatus } from './register-io'
 import { knowIo } from './register-know'
@@ -26,6 +25,7 @@ import { leftIo } from './register-left'
 import { homeOf, refreshTab, rulesRide } from './register-rules'
 import { getFx, readBlurbs, readStaff, ses, setBoss, setFx, updateStaff } from './register-state'
 import { clockOut } from './run-io'
+import { failureReason } from './staff-model'
 import { scoutHandoff } from './scout-run'
 import { edit } from './state'
 
@@ -46,12 +46,10 @@ export function registerTurns(on: On, brief: BriefingOptions) {
   on('turn.start', async ($, e, next) => {
     // Since 2.1.299 specialists' turns start here too: all of this is about Clawd's own, in the main chat.
     if (e.agentId !== undefined) return next(e)
-    // Work goes on, so a recap of the pause before it is out of date.
-    noteRecapTurn()
     knowTurnStart(e.text ?? '')
     leftTurnStart()
     ses.isEditTurn = editPartOf(e.text ?? '') !== undefined
-    await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, recap: undefined, activity: e.text ? READING_BRIEF : 'Back at it' }))
+    await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, activity: e.text ? READING_BRIEF : 'Back at it' }))
     const effects = await getFx($) // a turn after a compaction's own ends the coffee break button's wait for a fresh reading
     if (withTurnStarted(effects, e.text ?? '') !== effects) await setFx($, f => withTurnStarted(f, e.text ?? ''))
     return next(e)
@@ -71,6 +69,8 @@ export function registerTurns(on: On, brief: BriefingOptions) {
         void leftAnswer(leftIo($), e, by)
       }
       await clockOut(runIo($), e.agentId, e.reason === 'answer' ? 'done' : 'failed')
+      // Why it failed, in its own last words, for the Office tab's Details on that agent.
+      if (e.reason !== 'answer' && asker) await updateStaff($, l => edit(l, asker.id, one => (one.mood === 'failed' ? { ...one, reason: failureReason(e.reason, e.answer ?? '') } : one)))
       // The one place a plan step is ticked: a linked run's real hand-back. Its choices go under the step now; a stop signal or the engine's list ticks nothing.
       if (e.reason === 'answer') await settleRun(planRunIo($, brief), e.agentId)
       await showStatus($)

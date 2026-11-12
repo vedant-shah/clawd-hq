@@ -196,6 +196,27 @@ export async function settleRun(io: PlanRunIo, runId: string): Promise<void> {
   }
 }
 
+/**
+ * Dismiss on a Later item of the plan: that one item leaves the plan file and the state. `goal` is the key of the goal the press was drawn for:
+ * a press from a tab drawn before the goal changed is refused with a debug record, so it cannot take the next goal's item. Never throws.
+ */
+export async function dismissLater(io: PlanRunIo, goal: string, id: string): Promise<void> {
+  try {
+    const state = io.isOn() ? await io.get() : null
+    if (state === null) return
+    if (goalKey(state) !== goal) {
+      await note(io, `a Dismiss was pressed for another goal (${fit(goal, 40)}), so it was refused`)
+      return
+    }
+    const done = await changeGoal(io.files, io.root(), state.slug, { op: 'forget', id }, new Set<string>(), async plan => {
+      await io.set(prev => (prev !== null && prev.slug === state.slug ? stateFrom(plan, state.slug, prev.startedAt, prev, []) : prev))
+    })
+    if (!done.ok) await note(io, `a Later item could not be dismissed: ${done.reason}`)
+  } catch (err) {
+    await note(io, `a Later item could not be dismissed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 /** The person sent a message: the "new" marks on the plan go. Nothing is written when none is set. */
 export async function clearNewMarks(io: PlanRunIo): Promise<void> {
   try {

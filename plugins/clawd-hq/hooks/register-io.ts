@@ -15,7 +15,6 @@ import type { Team } from './onboard-types'
 import { withJobs } from './office-state'
 import type { OldIo } from './old-decisions'
 import type { PayrollIo } from './payroll'
-import type { RecapIo } from './recap'
 import type { RuleIo } from './rule-io'
 import type { GaugeIo } from './usage'
 import type { CouncilIo } from './council'
@@ -115,17 +114,6 @@ export function stepIo($: EngineInterface): StepIo {
   return {
     isAtWork: async id => { const one = await specialistOf(runIo($), id); return one !== undefined && isActive(one) },
     record: async (id, report) => { const now = await $.clock.now(); await updateStaff($, l => edit(l, id, one => withReport(one, report, now))) },
-  }
-}
-
-// ---- The recap (hooks/recap.ts): one line on where things stand, after a few quiet minutes ----
-
-export function recapIo($: EngineInterface): RecapIo {
-  return {
-    now: () => $.clock.now(), boss: () => getBoss($), setBoss: fn => setBoss($, fn),
-    isTouring: async () => (await getFx($)).demo !== undefined,
-    isShown: async () => ((await $.session.surfaces().catch(() => [])).length > 0),
-    ask: prompt => $.model.fork({ prompt }),
   }
 }
 

@@ -14,10 +14,9 @@ import { checkOld } from './old-decisions'
 import { checkOnboard, isSetupBusy, savedOf, startOnboard } from './onboard'
 import { askOnAttach, openAtStart } from './panes'
 import { checkPayroll, resetPayroll } from './payroll'
-import { maybeRecap, resetRecap, setRecapOn } from './recap'
 import { forgetCoffee } from './register-coffee'
 import { artifactIo } from './register-artifacts'
-import { enroll, gaugeIo, oldIo, paneIo, payrollIo, recapIo, runIo, showStatus } from './register-io'
+import { enroll, gaugeIo, oldIo, paneIo, payrollIo, runIo, showStatus } from './register-io'
 import { knowIo } from './register-know'
 import { loadPlan } from './plan-run'
 import { planRunIo } from './register-plan'
@@ -46,8 +45,6 @@ async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions
   }
   if (frames % 25 === 0) {
     if (!isSetupBusy(await savedOf({ cwd: ses.cwd, get: async key => (await $.store.get(key)) as never }), opts.isAutoOn)) await checkPayroll(payrollIo($), text => void $.ui.toast(text), opts.isAutoOn)
-    // The model takes its time: the frames go on meanwhile, and a recap that fails is simply not shown.
-    void maybeRecap(recapIo($)).catch(() => undefined)
   }
   // A quiet office only needs a frame now and then, for blinking and snoring; nothing is written in between.
   if (!isLively(list, f, b, t0) && frames % 3 !== 0) return
@@ -70,13 +67,10 @@ export function registerSession(on: On, brief: BriefingOptions) {
     ses.isArtifactsWarned = false
     ses.artifactPrefix = undefined
     forgetQuiet()
-    // The setting only: whether anything is drawn is read at each frame's ask, since the desktop app attaches after this.
-    setRecapOn(() => brief.isRecapOn)
     // Each step stands on its own: one that fails stops none after it (the Settings tab still fills), and the person is told which.
     const failed = await runEach([
       ['saved switches', async () => useSaved(await loadSaved(key => $.store.get(key)))],
       ['instructions road', async () => { const v = await $.store.get(BYPASS_KEY); ses.wasBypassed = typeof v === 'boolean' ? v : undefined }],
-      ['recap', () => resetRecap(recapIo($))],
       ['check on finished work', () => startKnow(knowIo($), ses.cwd)],
       // A review made for an earlier session is not this one's: it is made again within a few seconds if it still stands.
       ['payroll review', async () => { if ((await getFx($)).layoffs) await setFx($, f => ({ ...f, layoffs: undefined })) }],
@@ -147,8 +141,8 @@ export function registerSession(on: On, brief: BriefingOptions) {
       const now = await $.clock.now()
       await updateGauge($, g => ({ ...g, startedAt: now, contextPercent: undefined, contextTokens: undefined }))
     }
-    // Another conversation takes over this process without a session.start: its recap and its turns are its own.
-    if (e.reason === 'clear' || e.reason === 'resume') { ses.reach = withNewConversation(ses.reach); forgetQuiet(); await resetRecap(recapIo($)); await forgetCoffee($) }
+    // Another conversation takes over this process without a session.start: its turns are its own.
+    if (e.reason === 'clear' || e.reason === 'resume') { ses.reach = withNewConversation(ses.reach); forgetQuiet(); await forgetCoffee($) }
     await forgetKnow(knowIo($))
     return next(e)
   })

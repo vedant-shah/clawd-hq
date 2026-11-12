@@ -401,3 +401,31 @@ test('withSavedIds gives the same file when every step has an id, and the number
   expect(viewOf(hand).steps.map(s => s.id)).toEqual(['s5', 's4'])
   expect(serialisePlanFile(withSavedIds(hand))).toBe('# G\n- [ ] By hand  <!-- s5 -->\n- [ ] A  <!-- s4 -->\n<!-- next: s6 l1 -->\n')
 })
+
+// ---- A Later item taken out ----
+
+test('forget takes a Later item out of the file, and nothing else; a note indented under it stays', () => {
+  expect(text(run(BASE, { op: 'forget', id: 'l1' }))).toBe('# G\n\n- [ ] A  <!-- s1 -->\n  - Decided: use one file\n- [x] B  <!-- s2 -->\n- [ ] C  <!-- s3 -->\n\n## Later\n\n')
+  const two = `${BASE}- [ ] M  <!-- l2 -->\n  a note of mine\n`
+  expect(text(run(two, { op: 'forget', id: 'l2' }))).toBe(`${BASE}  a note of mine\n`)
+})
+
+test('forget is refused for a step, an id that is not there, or a file with no Later list; nothing changes', () => {
+  expect(run(BASE, { op: 'forget', id: 's1' })).toEqual({ reason: 'There is no Later item s1.' })
+  expect(run(BASE, { op: 'forget', id: 'l9' })).toEqual({ reason: 'There is no Later item l9.' })
+  expect(run('# G\n- [ ] A  <!-- s1 -->\n', { op: 'forget', id: 'l1' })).toEqual({ reason: 'There is no Later item l1.' })
+})
+
+// ---- Text that carries control characters ----
+
+test('control characters, marks that reorder text and hidden marks never reach a step: not in what is written, and not in the view of a file edited by hand', () => {
+  const dirty = 'Ship\u202e it\u0007 \u200bnow\u0085 \u2066ok\u2069 \ufeff'
+  expect(cleanText(dirty)).toBe('Ship it now ok')
+  expect(text(run(BASE, { op: 'add', text: dirty })).includes('Ship it now ok  <!-- s4 -->')).toBe(true)
+  const hand = parsePlanFile(`# Go\u202e Home\n- [ ] Bad\u0007 step\u200f  <!-- s1 -->\n  - Decided: a\u009f choice\u202a\n\n## Later\n- [ ] Put\ufeff off  <!-- l1 -->\n`)!
+  expect(viewOf(hand)).toEqual({
+    title: 'Go Home',
+    steps: [{ id: 's1', text: 'Bad step', isDone: false, choices: ['a choice'] }],
+    later: [{ id: 'l1', text: 'Put off' }],
+  })
+})

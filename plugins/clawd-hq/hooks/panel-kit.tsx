@@ -4,6 +4,8 @@ import type { Elements } from 'claude-code'
 import { BAR_H, WIDTH, barGlyphs, barSvg } from './meters'
 import type { BarSize } from './meters'
 import { ACCENT } from './office'
+import { GLYPH, MARK_COLOR, markSvg } from './plan-marks'
+import type { MarkKind } from './plan-marks'
 import { fade, rasterCells, svgOf, trim, trimLike } from './pixels'
 import type { Px } from './pixels'
 
@@ -52,13 +54,19 @@ export function kitOf(tools: PanelTools) {
   // Only Text props every engine in use takes: the desktop app can bundle an older one (2.1.295) than the terminal's,
   // and it refuses a whole drawing over one prop it does not know, such as `weight`, `size` or `tabular`.
 
+  /** A plan mark: a small image where there is an Svg (a tick, a dot, a cross, a ring), its glyph on the terminal. Each has its own shape and, where it has one, colour. */
+  const mark = (kind: MarkKind, alt: string, key?: string) => {
+    if (Svg) return <Svg key={key} source={markSvg(kind)} alt={alt} width={14} height={14} />
+    return <Text key={key} color={MARK_COLOR[kind]} dimColor={MARK_COLOR[kind] === undefined}>{GLYPH[kind]}</Text>
+  }
+
   /** A section heading in capitals, as the Office tab's "AT WORK · N" reads: bold and dim. */
   const heading = (text: string, key?: string) => <Text key={key} bold dimColor>{text}</Text>
 
   /** A short side line under a section: dim. It wraps. */
   const aside = (text: string, key?: string) => <Text key={key} dimColor wrap="wrap">{text}</Text>
 
-  return { Box, Text, Button, Link, Markdown, Input, sprite, bar, heading, aside, isTerminal: Raster !== undefined }
+  return { Box, Text, Button, Link, Markdown, Input, sprite, bar, mark, heading, aside, isTerminal: Raster !== undefined }
 }
 
 export type Kit = ReturnType<typeof kitOf>

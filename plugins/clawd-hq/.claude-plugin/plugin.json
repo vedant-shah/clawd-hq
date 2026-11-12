@@ -30,13 +30,6 @@
       "required": false,
       "default": ""
     },
-    "recap": {
-      "type": "boolean",
-      "title": "Recap on Clawd's card",
-      "description": "On (default): after at least three turns and three quiet minutes, Clawd's card shows one line on where things stand, the way Claude Code's own session recap does. It asks the model one short question about the session, which uses a little of your plan. Off: no recap is made.",
-      "required": false,
-      "default": true
-    },
     "quietChat": {
       "type": "boolean",
       "title": "Quiet chat",

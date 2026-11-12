@@ -1,15 +1,12 @@
-// The Office tab: Clawd's card and who is at work. Finished work is listed in the Settings tab.
-import { clawdAvatar, assemble, avatarFor, tinyIcon } from './avatars'
+// The Office tab: Clawd's card, what waits on the person, the goal's plan with who is at work on it, and who else is at work. Finished work is listed in the Settings tab.
+import { clawdAvatar } from './avatars'
 import { artifactsShown, since } from './artifacts'
 import { clawdMood, poseOf, quipOf } from './clawd-says'
 import { lookAlt, lookOf, stepOf } from './clawd-look'
 import { COFFEE_OFFER_LINE, isDrinking, isOffering } from './coffee-break'
-import { AMBER, GREEN, RED, givenName, hash } from './office'
-import { atWork, deskWords, modelLabel, recentFailures, statusOf, tagged, titled, workLine } from './panel-model'
+import { AMBER, GREEN, RED } from './office'
+import { atWork, modelLabel, recentFailures, statusOf, titled } from './panel-model'
 import { effortLabel } from './usage'
-import { stepCount } from './steps'
-import { splitRecap } from './recap'
-import { overlay } from './pixels'
 import { floorSlots } from './pair-up'
 import { pairDesk } from './panel-pair'
 import { knowSection } from './panel-know'
@@ -17,22 +14,22 @@ import { layoffSection } from './panel-layoffs'
 import { oldSection } from './panel-old'
 import { ruleSection } from './panel-rules'
 import { contractorSection } from './panel-contractor'
-import { leftSection } from './panel-left'
 import { onboardSection } from './panel-onboard'
 import { LOST_LINE } from './rules-reach'
+import { deskRow } from './panel-desk'
+import type { Ctx } from './panel-desk'
+import { laterFold } from './panel-later'
+import { alsoAtWork, planSection } from './panel-plan'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
-import type { Employee } from '../types'
+import { foldsOf, planLayout } from './plan-view'
+import type { PlanLayout } from './plan-view'
 
 // A failure stays on Clawd's status line this long.
 const SICK_MS = 10 * 60_000
 const BORDER = '#454542'
-/** How many different beats the pictures at work are spread over. */
-const BEATS = 11
 /** The colour of the dot before the status line: green when Clawd is free, amber while a turn of his runs, red on a failure. */
 const TONE = { clear: GREEN, busy: AMBER, alert: RED } as const
-
-type Ctx = { kit: Kit; data: PanelData; actions: PanelActions; cw: number }
 
 function clawdCard({ kit, data, cw }: Ctx) {
   const { Box, Text, sprite } = kit
@@ -71,86 +68,15 @@ function clawdCard({ kit, data, cw }: Ctx) {
         <Box borderStyle="round" borderDimColor paddingX={1} flexShrink={1}>
           <Text italic wrap="wrap">{said}</Text>
         </Box>
-        {/* How to hold a council: the /office-council command (hooks/council.ts) takes the question. */}
-        <Text key="clawd-hint" dimColor wrap="wrap">Type /office-council &lt;question&gt; to hold a council.</Text>
       </Box>
     </Box>
   )
 }
 
-/** After a few quiet minutes: where things stand, in its own section under the card, until the next turn starts. None, no section. */
-function recapSection({ kit, data }: Ctx) {
-  const { Box, Text } = kit
-  const { boss } = data
-  if (boss.isBusy || boss.recap === undefined) return null
-  return (
-    <Box key="recap" flexDirection="column">
-      <Text bold dimColor>WHERE WE LEFT OFF</Text>
-      {recapParts(kit, boss.recap)}
-    </Box>
-  )
-}
-
-/** The recap's lines: what we are on, then the next step on its own line with "Next:" in bold; one line when there is no next step. */
-function recapParts(kit: Kit, recap: string) {
-  const { Text } = kit
-  const { head, next } = splitRecap(recap)
-  return [
-    head !== '' && <Text key="head" wrap="wrap">{head}</Text>,
-    next !== undefined && <Text key="next" wrap="wrap"><Text bold>Next:</Text>{` ${next}`}</Text>,
-  ]
-}
-
-/** How far along a specialist says it is: a small bar and "Step 2 of 5", drawn only once it has reported a plan; never a guess before. */
-function progress(kit: Kit, one: Employee) {
-  if (one.stepTotal === undefined) return null
-  const { Box, Text, bar } = kit
-  const [done, total] = [one.stepDone ?? 0, one.stepTotal]
-  return (
-    <Box key={`steps-${one.id}`} flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center">
-      {bar((done / total) * 100, `${done} of ${total} steps done`, 'small')}
-      <Text dimColor wrap="wrap">{stepCount(done, total)}</Text>
-    </Box>
-  )
-}
-
-/** One specialist at work, as wide as the pane: the picture, then its name and task, what it just said (in italics) with only its model, time and tokens under it, or, until it has said anything, the step it is on. Every line wraps. */
-function deskRow(one: Employee, { kit, data }: Ctx) {
-  const { Box, Text, sprite } = kit
-  const line = workLine(one, data.now)
-  // A step note stands in for the words before it; a leading "Step N of M" is left to the count beside the bar.
-  const { said, sentence } = deskWords(one, line)
-  // The terminal cannot scale a picture, so a row there gets the tiny 8 by 8 one and its words get the room.
-  const look = avatarFor(givenName(one) ?? one.type)
-  const tag = tagged(one, data)
-  // At work it blinks now and then and moves what it holds, on a beat of its own.
-  const [draw, pose] = [kit.isTerminal ? tinyIcon : assemble, poseOf(data.tick, hash(one.id) % BEATS, true)]
-  // Its room is the still picture's; where there is height to spare, the lifted one's too, so what it holds is never cut.
-  const like = kit.isTerminal ? draw(look) : overlay(draw(look), draw(look, { isLifted: true }))
-  const picture = sprite(`desk-${one.id}`, draw(look, pose), { scale: 3, like, alt: `${titled(one, data)}` })
-  return (
-    <Box key={`desk-${one.id}`} borderStyle="round" borderDimColor paddingX={1} flexDirection="row" gap={2} alignItems="center">
-      <Box flexShrink={0}>{picture}</Box>
-      <Box flexDirection="column" flexShrink={1} flexGrow={1}>
-        <Text wrap="wrap"><Text bold>{titled(one, data)}</Text>{tag !== undefined && <Text dimColor>{tag}</Text>}<Text dimColor>{` ${one.description || one.type}`}</Text></Text>
-        {said !== undefined
-          ? [
-            <Text key={`said-${one.id}`} italic wrap="wrap">{said}</Text>,
-            // The specialist has said what it does, so the tool is not repeated: only the model, time and tokens, muted.
-            <Text key={`stats-${one.id}`} dimColor wrap="wrap">{line.stats.replace(/^· /, '')}</Text>,
-          ]
-          : (
-            // Nothing said yet: the step it is on stands in, labelled and muted.
-            <Text wrap="wrap"><Text dimColor>Now: </Text><Text dimColor>{sentence}</Text><Text dimColor>{` ${line.stats}`}</Text></Text>
-          )}
-        {progress(kit, one)}
-      </Box>
-    </Box>
-  )
-}
-
-function floor(ctx: Ctx) {
+/** Who is at work. With a goal in hand only those under no step of it, headed "Also at work"; otherwise everyone, as the floor has always been. */
+function floor(ctx: Ctx, layout: PlanLayout | undefined) {
   const { Box, Text } = ctx.kit
+  if (layout !== undefined) return alsoAtWork(ctx, layout)
   const working = atWork(ctx.data.staff)
   if (working.length === 0) {
     return (
@@ -167,6 +93,22 @@ function floor(ctx: Ctx) {
     <Box flexDirection="column">
       <Text bold dimColor>{`AT WORK · ${working.length}`}</Text>
       <Box key="floor-rows" flexDirection="column" gap={1}>{floorSlots(ctx.data.staff).map(slot => (slot.kind === 'pair' ? pairDesk(ctx.kit, ctx.data, slot.group) : deskRow(slot.one, ctx)))}</Box>
+    </Box>
+  )
+}
+
+/** What waits on the person, under one amber heading: the check on finished work, offers of a rule or of staff, the old decisions file, the layoff notice and the setup step. None, no section. */
+function needsYou({ kit, data, actions }: Ctx) {
+  const { Box, Text } = kit
+  const cards = [
+    knowSection(kit, data, actions), ruleSection(kit, data, actions), contractorSection(kit, data, actions), oldSection(kit, data, actions),
+    layoffSection(kit, data, actions), onboardSection(kit, data.onboard, { choose: actions.choose }),
+  ].filter(card => card !== null && card !== undefined)
+  if (cards.length === 0) return null
+  return (
+    <Box key="needs-you" flexDirection="column" gap={1}>
+      <Text bold color={AMBER}>{`NEEDS YOU · ${cards.length}`}</Text>
+      {cards}
     </Box>
   )
 }
@@ -193,19 +135,17 @@ function artifactDesk({ kit, data, actions }: Ctx) {
 }
 
 export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: number) {
-  const ctx: Ctx = { kit, data, actions, cw }
+  // Clawd off means no plan at all: none is drawn, and none of its Later items, even if one was loaded before he was switched off.
+  const plan = data.options.isOn ? data.plan : null
+  const ctx: Ctx = { kit, data: { ...data, plan }, actions, cw }
+  const layout = plan === null ? undefined : planLayout(plan, data.staff, foldsOf(data.fx))
   return (
     <kit.Box flexDirection="column" gap={1}>
       {clawdCard(ctx)}
-      {recapSection(ctx)}
-      {knowSection(kit, data, actions)}
-      {ruleSection(kit, data, actions)}
-      {contractorSection(kit, data, actions)}
-      {oldSection(kit, data, actions)}
-      {layoffSection(kit, data, actions)}
-      {onboardSection(kit, data.onboard, { choose: actions.choose })}
-      {floor(ctx)}
-      {leftSection(kit, data, actions)}
+      {needsYou(ctx)}
+      {layout !== undefined && planSection(ctx, layout)}
+      {floor(ctx, layout)}
+      {layout === undefined && laterFold(ctx, { indent: 0, isAlone: true })}
       {artifactDesk(ctx)}
     </kit.Box>
   )

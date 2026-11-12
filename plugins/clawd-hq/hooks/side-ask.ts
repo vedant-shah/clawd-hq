@@ -1,5 +1,5 @@
-// One background question to the model at a time, for the whole plugin: the check on finished work waits its turn in a
-// short line, and the recap, which can always be made later, is skipped while anything runs or waits.
+// One background question to the model at a time, for the whole plugin: the check on finished work and the Left undone
+// check wait their turn in one short line.
 /** How many questions may wait; one more pushes out the oldest waiting. */
 export const SIDE_WAITING = 3
 

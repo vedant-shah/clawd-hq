@@ -56,7 +56,16 @@ async function todo($: Engine, h: Office, text: string, file = '/repo/src/a.ts',
   await settle(h)
 }
 
+/** Opens the Later fold if it is closed: its items are drawn only while it is open. The state is kept for the session, so a second call leaves it open. */
+async function openLater($: Engine, surface: 'terminal' | 'desktop' = 'terminal') {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+  const toggle = await ui.find({ key: 'later-toggle' })
+  if (toggle?.props.label === 'show') await ui.press({ key: 'later-toggle' })
+  await ui.unmount()
+}
+
 async function seen($: Engine, surface: 'terminal' | 'desktop' = 'terminal', pane = PANE) {
+  if (pane === PANE) await openLater($, surface)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...pane })
   const words = (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
   const buttons = (await ui.findAll({ type: 'Button' })).map(b => String(b.text))
@@ -64,6 +73,7 @@ async function seen($: Engine, surface: 'terminal' | 'desktop' = 'terminal', pan
   return { words, buttons, text: words.join('\n') }
 }
 async function press($: Engine, text: string, surface: 'terminal' | 'desktop' = 'terminal') {
+  await openLater($, surface)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
   const one = await ui.find({ type: 'Button', text })
   if (!one?.key) throw new Error(`no ${text} button`)
@@ -71,7 +81,7 @@ async function press($: Engine, text: string, surface: 'terminal' | 'desktop' = 
   await ui.unmount()
 }
 const stored = (h: Office, folder = '/repo') => (h.saved.get(`leftUndone:${folder}`) ?? []) as Array<{ text: string; source: string; file?: string; line?: number }>
-const none = async ($: Engine) => expect((await seen($)).text).not.toMatch(/LEFT UNDONE/)
+const none = async ($: Engine) => expect((await seen($)).text).not.toMatch(/LATER/)
 
 // ---- An empty list is the normal state ----
 
@@ -79,7 +89,7 @@ test('with nothing left undone the section is not drawn at all, not even its hea
   const h = office(on)
   await $.session.start(START)
   await clawdTurn($, h, { tools: 6, answer: 'All done. Nothing was skipped.' })
-  for (const surface of SURFACES) expect((await seen($, surface)).text).not.toMatch(/LEFT UNDONE|Do it now|Clear/)
+  for (const surface of SURFACES) expect((await seen($, surface)).text).not.toMatch(/LATER|Do it now|Clear/)
 })
 
 // ---- No phrase matching in answers ----
@@ -109,7 +119,7 @@ test('the six items that were all false are never listed: as answers, as notes i
     await $.tool.call({ tool: 'Edit', file_path: '/repo/README.md', old_string: 'x', new_string: `- ${text}` } as never)
   }
   await settle(h)
-  for (const pane of [PANE, PEOPLE]) expect((await seen($, 'terminal', pane)).text).not.toMatch(/LEFT UNDONE/)
+  for (const pane of [PANE, PEOPLE]) expect((await seen($, 'terminal', pane)).text).not.toMatch(/LATER/)
   expect(stored(h)).toEqual([])
 })
 
@@ -121,7 +131,7 @@ test('a TODO comment added to a code file is listed with the file and line, the 
   await todo($, h, 'handle empty list')
   for (const surface of SURFACES) {
     const { words } = await seen($, surface)
-    expect(words).toContain('LEFT UNDONE · 1')
+    expect(words).toContain('LATER · 1')
     expect(words).toContain('TODO: handle empty list')
     expect(words).toContain('File · src/a.ts:2 · Clawd')
   }
@@ -137,14 +147,14 @@ test('FIXME, XXX, a skipped test and a not-implemented throw in code files are l
   await $.tool.call({ tool: 'Write', file_path: '/repo/lib/x.py', content: 'def f():\n    raise NotImplementedError\n' } as never)
   await $.tool.call({ tool: 'MultiEdit', file_path: '/repo/m.go', edits: [{ old_string: 'a', new_string: 'a // FIXME: one' }, { old_string: 'b', new_string: 'b // XXX: two' }] } as never)
   await settle(h)
-  // Four items are kept; the panel draws the newest three.
+  // Four items are kept; the open fold draws all four.
   const kept = stored(h)
   expect(kept.map(i => i.text).sort()).toEqual(["FIXME: one", "XXX: two", "it.skip('b', f)", 'raise NotImplementedError'].sort())
   expect(kept.find(i => i.text === "it.skip('b', f)")).toEqual(expect.objectContaining({ file: 'tests/a.test.ts', line: 3 }))
   expect(kept.find(i => i.text === 'raise NotImplementedError')).toEqual(expect.objectContaining({ file: 'lib/x.py', line: 2 }))
   const { words } = await seen($)
-  expect(words).toContain('LEFT UNDONE · 4')
-  expect(words).toContain('1 more')
+  expect(words).toContain('LATER · 4')
+  expect(words.filter(w => /^File · /.test(w))).toHaveLength(4)
   expect(words).not.toContain('TODO: already there')
 })
 
@@ -210,7 +220,7 @@ test('after a turn with five tool calls, Haiku sets the request against the repo
   expect(h.asked[0]!.prompt).toContain('Add login, tests and docs')
   expect(h.asked[0]!.prompt).toContain('Added the login.')
   const { words } = await seen($)
-  expect(words).toContain('LEFT UNDONE · 1')
+  expect(words).toContain('LATER · 1')
   expect(words).toContain('Add the tests')
   expect(words).not.toContain('Write the docs')
   expect(words).toContain('Second check · Clawd')
@@ -294,14 +304,15 @@ test('newest first, a repeat is one item, and only the newest 10 are kept', asyn
   expect(LEFT_KEEP).toBe(10)
 })
 
-test('the panel draws the newest 3 and says how many more there are; the heading counts all', async ($, on) => {
+test('the open fold draws every kept item, newest first; the heading counts all', async ($, on) => {
   const h = office(on)
   await $.session.start(START)
   for (let n = 0; n < 5; n += 1) await todo($, h, `job number ${n} about thing${n}x`, `/repo/src/c${n}.ts`)
   const { words, buttons } = await seen($)
-  expect(words).toContain('LEFT UNDONE · 5')
-  expect(buttons.filter(b => b === 'Do it now').length).toBe(3)
-  expect(words).toContain('2 more')
+  expect(words).toContain('LATER · 5')
+  expect(buttons.filter(b => b === 'Do it now').length).toBe(5)
+  expect(buttons.filter(b => b === 'Dismiss').length).toBe(5)
+  expect(words).not.toContain('2 more')
   expect(words.filter(w => /^TODO: job number/.test(w))[0]).toContain('number 4 ')
 })
 
@@ -314,9 +325,9 @@ test('the section is on the Office tab only, below the specialists and above the
   await todo($, h, 'add docs')
   const { text } = await seen($)
   expect(text.indexOf('AT WORK')).toBeGreaterThan(-1)
-  expect(text.indexOf('LEFT UNDONE')).toBeGreaterThan(text.indexOf('AT WORK'))
-  expect(text.indexOf('ARTIFACTS')).toBeGreaterThan(text.indexOf('LEFT UNDONE'))
-  expect((await seen($, 'terminal', PEOPLE)).text).not.toMatch(/LEFT UNDONE/)
+  expect(text.indexOf('LATER')).toBeGreaterThan(text.indexOf('AT WORK'))
+  expect(text.indexOf('ARTIFACTS')).toBeGreaterThan(text.indexOf('LATER'))
+  expect((await seen($, 'terminal', PEOPLE)).text).not.toMatch(/LATER/)
 })
 
 test('Do it now fills the prompt box with the exact sentence, naming the file and line, never sends, and keeps the item', async ($, on) => {
@@ -345,7 +356,7 @@ test('Clear empties the list, the store and the section, and shows no toast', as
   await $.session.start(START)
   await todo($, h, 'one thing here')
   await todo($, h, 'another matter entirely', '/repo/src/b.ts')
-  expect((await seen($)).words).toContain('LEFT UNDONE · 2')
+  expect((await seen($)).words).toContain('LATER · 2')
   await press($, 'Clear')
   await settle(h)
   await none($)
@@ -373,7 +384,7 @@ test('the list belongs to the project folder and comes back with the next sessio
   await $.session.start(OTHER)
   await none($)
   await $.session.start(START)
-  expect((await seen($)).words).toContain('LEFT UNDONE · 1')
+  expect((await seen($)).words).toContain('LATER · 1')
 })
 
 test('on the first load after this change the user\'s old list is cleaned: answer items, README and docs items, full local paths go; real code items stay', async ($, on) => {
@@ -389,7 +400,7 @@ test('on the first load after this change the user\'s old list is cleaned: answe
   ])
   await $.session.start(START)
   const { words, text } = await seen($)
-  expect(words).toContain('LEFT UNDONE · 1')
+  expect(words).toContain('LATER · 1')
   expect(words).toContain('TODO: kept')
   expect(text).not.toMatch(/do that later|README|70%|\/Users|Items are merged/)
   // Only the cleaned list is ever written back.
@@ -409,7 +420,7 @@ test('a save that fails keeps the item for the session and says nothing', async 
   await $.session.start(START)
   h.kv.isWriteFailing = true
   await todo($, h, 'handle empty list')
-  expect((await seen($)).words).toContain('LEFT UNDONE · 1')
+  expect((await seen($)).words).toContain('LATER · 1')
   expect(h.toasts).toEqual([])
 })
 

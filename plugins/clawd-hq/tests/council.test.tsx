@@ -132,16 +132,15 @@ test('a voice that failed shows no report line, and the card says Failed', async
   await log.unmount()
 })
 
-// ---- Clawd's card: no button, a hint for the command ----
+// ---- Clawd's card: no button, and no hint (the command is in the README and the command list) ----
 
-test('Clawd\'s card has no council button; a dim line under his words says to type /office-council <question>', async ($, on) => {
+test('Clawd\'s card has no council button and no line about /office-council', async ($, on) => {
   office(on)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     expect(await ui.find({ key: 'clawd-council' })).toBeUndefined()
     expect((await ui.findAll({ type: 'Button' })).map(b => b.props.label)).not.toContain('Hold a council')
-    const hint = await ui.find({ type: 'Text', text: 'Type /office-council <question> to hold a council.' })
-    expect(hint?.props.dimColor).toBe(true)
+    expect(await ui.find({ type: 'Text', text: /office-council/ })).toBeUndefined()
     await ui.unmount()
   }
 })

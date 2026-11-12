@@ -45,8 +45,8 @@ const allTexts = (node: Tree): Tree[] =>
   node.type === 'Text' ? [node] : (node.children ?? []).flatMap(c => (typeof c === 'object' && c !== null ? allTexts(c as Tree) : []))
 
 const WHERE = 'Changes apply right away.'
-const TITLES = ['Clawd runs the chat', 'Quiet chat', 'Recap', 'You should know', 'Left undone check', 'Automatic setup']
-const FIELDS = ['chiefOfStaff', 'quietChat', 'recap', 'youShouldKnow', 'leftUndone', 'autoSetup']
+const TITLES = ['Clawd runs the chat', 'Quiet chat', 'You should know', 'Left undone check', 'Automatic setup']
+const FIELDS = ['chiefOfStaff', 'quietChat', 'youShouldKnow', 'leftUndone', 'autoSetup']
 /** The old one-line descriptions: the README has them now, the tab does not. */
 const LINES = [
   'Clawd hands work to specialists and reports in plain words.',
@@ -117,7 +117,7 @@ test('the configs view draws no weight prop, and its headings are bold and dim, 
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
     const texts = allTexts(holding((await ui.drawn()) as unknown as Tree, 'CONFIGS', 'ALWAYS'))
-    expect(texts.some(t => textIn(t) === 'Recap')).toBe(true)
+    expect(texts.some(t => textIn(t) === 'Quiet chat')).toBe(true)
     expect(texts.some(t => /Sonnet/.test(textIn(t)))).toBe(false)
     // On the desktop the test engine pairs every bold with a weight of its own; one of ours would come without a bold.
     expect(texts.filter(t => t.props.weight !== undefined && t.props.bold !== true)).toEqual([])
@@ -130,7 +130,7 @@ test('the configs view draws no weight prop, and its headings are bold and dim, 
   }
 })
 
-test('a config that is off reads Off on its toggle', { options: { chiefOfStaff: false, quietChat: false, recap: false, youShouldKnow: false, leftUndone: false, autoSetup: false } }, async ($, on) => {
+test('a config that is off reads Off on its toggle', { options: { chiefOfStaff: false, quietChat: false, youShouldKnow: false, leftUndone: false, autoSetup: false } }, async ($, on) => {
   host(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
@@ -140,11 +140,11 @@ test('a config that is off reads Off on its toggle', { options: { chiefOfStaff: 
   }
 })
 
-test('each config reads on its own', { options: { recap: false } }, async ($, on) => {
+test('each config reads on its own', { options: { quietChat: false } }, async ($, on) => {
   host(on)
   await $.session.start(START)
   const ui = await mount($)
-  expect(await Promise.all(FIELDS.map(f => labelOf(ui, f)))).toEqual(['● On', '● On', '○ Off', '● On', '● On', '● On'])
+  expect(await Promise.all(FIELDS.map(f => labelOf(ui, f)))).toEqual(['● On', '○ Off', '● On', '● On', '● On'])
   await ui.unmount()
 })
 
@@ -161,11 +161,11 @@ test('a voice file that is set gets a read-only row with its path and no descrip
   }
 })
 
-test('pressing a toggle flips that config to the other value in the plugin\'s own store, and makes no settings call', { options: { recap: false } }, async ($, on) => {
+test('pressing a toggle flips that config to the other value in the plugin\'s own store, and makes no settings call', { options: { leftUndone: false } }, async ($, on) => {
   const { saved } = host(on)
   const asked = configs(on)
   await $.session.start(START)
-  const first: Record<string, boolean> = { chiefOfStaff: false, quietChat: false, recap: true, youShouldKnow: false, leftUndone: false, autoSetup: false }
+  const first: Record<string, boolean> = { chiefOfStaff: false, quietChat: false, youShouldKnow: false, leftUndone: true, autoSetup: false }
   for (const [i, surface] of SURFACES.entries()) {
     const ui = await mount($, surface)
     for (const field of FIELDS) await ui.press({ key: `config-${field}` })
@@ -180,13 +180,13 @@ test('pressing a toggle flips that config to the other value in the plugin\'s ow
 test('a lock counts only on the row this plugin owns for that field, whatever the key looks like', async ($, on) => {
   const { saved } = host(on)
   // Another plugin's row carries the guessed key, locked; ours has a key no guess would make, owned as the loader keys the plugin.
-  const rows = [{ key: 'clawd-hq.recap', owner: 'other', isLocked: true }, { key: 'inline:7f.quietChat', owner: 'clawd-hq@vedant-shah', isLocked: true }, { key: 'inline:7f.recap', owner: 'clawd-hq@vedant-shah' }]
+  const rows = [{ key: 'clawd-hq.leftUndone', owner: 'other', isLocked: true }, { key: 'inline:7f.quietChat', owner: 'clawd-hq@vedant-shah', isLocked: true }, { key: 'inline:7f.leftUndone', owner: 'clawd-hq@vedant-shah' }]
   configs(on, rows)
   await $.session.start(START)
   const ui = await mount($)
-  await ui.press({ key: 'config-recap' })
-  expect(saved.get('toggle:recap')).toBe(false)
-  expect(await shows(ui, /^Could not change Recap/)).toBe(false)
+  await ui.press({ key: 'config-leftUndone' })
+  expect(saved.get('toggle:leftUndone')).toBe(false)
+  expect(await shows(ui, /^Could not change Left undone check/)).toBe(false)
   await ui.press({ key: 'config-quietChat' })
   expect(saved.has('toggle:quietChat')).toBe(false)
   expect(await shows(ui, 'Could not change Quiet chat: your organization manages this setting.')).toBe(true)
@@ -195,26 +195,26 @@ test('a lock counts only on the row this plugin owns for that field, whatever th
 
 test('with no row of this plugin for the field no settings row is set, yet the switch flips, kept in the plugin\'s store, with no note', async ($, on) => {
   const { saved } = host(on)
-  const asked = configs(on, [{ key: 'clawd-hq.recap', owner: 'other' }, { key: 'theme', owner: 'engine' }])
+  const asked = configs(on, [{ key: 'clawd-hq.leftUndone', owner: 'other' }, { key: 'theme', owner: 'engine' }])
   await $.session.start(START)
   for (const [i, surface] of SURFACES.entries()) {
     const ui = await mount($, surface)
-    await ui.press({ key: 'config-recap' })
+    await ui.press({ key: 'config-leftUndone' })
     expect(asked).toEqual([])
-    expect(saved.get('toggle:recap')).toBe(i === 1)
+    expect(saved.get('toggle:leftUndone')).toBe(i === 1)
     expect(await shows(ui, /^Could not change|isn't listed here|not saved|could not be saved/)).toBe(false)
-    expect(await labelOf(ui, 'recap')).toBe(i === 0 ? '○ Off' : '● On')
+    expect(await labelOf(ui, 'leftUndone')).toBe(i === 0 ? '○ Off' : '● On')
     await ui.unmount()
   }
 })
 
 test('each press keeps the keys of the settings rows (never their values) in the store, for a look at their real shape', async ($, on) => {
   const { saved } = host(on)
-  configs(on, [{ key: 'inline:7f.recap', owner: 'clawd-hq' }, { key: 'other.recap', owner: 'other' }, { key: 'theme', owner: 'engine' }])
+  configs(on, [{ key: 'inline:7f.leftUndone', owner: 'clawd-hq' }, { key: 'other.leftUndone', owner: 'other' }, { key: 'theme', owner: 'engine' }])
   await $.session.start(START)
   const ui = await mount($)
-  await ui.press({ key: 'config-recap' })
-  expect(saved.get('debug:config-rows')).toEqual({ plugin: 'clawd-hq', keys: ['inline:7f.recap'], others: ['other: other.recap'] })
+  await ui.press({ key: 'config-leftUndone' })
+  expect(saved.get('debug:config-rows')).toEqual({ plugin: 'clawd-hq', keys: ['inline:7f.leftUndone'], others: ['other: other.leftUndone'] })
   await ui.unmount()
 })
 
@@ -223,10 +223,10 @@ test('where the settings list a row for the field, a press is still kept in the 
   const asked = configs(on)
   await $.session.start(START)
   const ui = await mount($)
-  await ui.press({ key: 'config-recap' })
+  await ui.press({ key: 'config-leftUndone' })
   expect(await shows(ui, /^Could not change|this session only/)).toBe(false)
-  expect(saved.get('toggle:recap')).toBe(false)
-  expect(await labelOf(ui, 'recap')).toBe('○ Off')
+  expect(saved.get('toggle:leftUndone')).toBe(false)
+  expect(await labelOf(ui, 'leftUndone')).toBe('○ Off')
   expect(asked).toEqual([])
   await ui.unmount()
 })
@@ -238,11 +238,11 @@ test('a change the store does not take holds for this session only, and the tab 
   kv.isWriteFailing = true
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
-    expect(await labelOf(ui, 'recap')).toBe('● On')
-    await ui.press({ key: 'config-recap' })
-    expect(await shows(ui, 'Recap is changed for this session only: it could not be saved.')).toBe(true)
-    expect(await labelOf(ui, 'recap')).toBe('○ Off')
-    await ui.press({ key: 'config-recap' })
+    expect(await labelOf(ui, 'leftUndone')).toBe('● On')
+    await ui.press({ key: 'config-leftUndone' })
+    expect(await shows(ui, 'Left undone check is changed for this session only: it could not be saved.')).toBe(true)
+    expect(await labelOf(ui, 'leftUndone')).toBe('○ Off')
+    await ui.press({ key: 'config-leftUndone' })
     await ui.unmount()
   }
 })
@@ -257,7 +257,7 @@ test('while Clawd is busy with a turn the configs cannot be changed: dimmed valu
     const ui = await mount($, surface)
     expect((await buttons(ui)).filter(k => k.startsWith('config-'))).toEqual([])
     const values = await ui.findAll({ type: 'Text', text: /^● On$/ })
-    expect(values).toHaveLength(6)
+    expect(values).toHaveLength(5)
     expect(values.every(t => t.props.dimColor === true)).toBe(true)
     expect(await shows(ui, 'You can change these when Clawd is free.')).toBe(true)
     // The busy line stands in for the one on when a change applies.
@@ -269,8 +269,8 @@ test('while Clawd is busy with a turn the configs cannot be changed: dimmed valu
   await $.turn.start({ text: 'Brief', turnId: 'r1', agentId: 'a1' } as never)
   const ui = await mount($)
   expect(await shows(ui, 'You can change these when Clawd is free.')).toBe(false)
-  await ui.press({ key: 'config-recap' })
-  expect(saved.get('toggle:recap')).toBe(false)
+  await ui.press({ key: 'config-leftUndone' })
+  expect(saved.get('toggle:leftUndone')).toBe(false)
   await ui.unmount()
 })
 
@@ -386,8 +386,8 @@ test('below the switches and the link come Clawd\'s instructions, his voice note
     const order = inOrder((await ui.drawn()) as unknown as Tree)
     const at = (text: string) => order.indexOf(text)
     expect(at('CONFIGS')).toBeGreaterThanOrEqual(0)
-    expect(at('CONFIGS')).toBeLessThan(at('Recap'))
-    expect(at('Recap')).toBeLessThan(at(WHERE))
+    expect(at('CONFIGS')).toBeLessThan(at('Quiet chat'))
+    expect(at('Quiet chat')).toBeLessThan(at(WHERE))
     expect(at(WHERE)).toBeLessThan(at('button:settings-log'))
     expect(at('button:settings-log')).toBeLessThan(at('INSTRUCTIONS'))
     expect(at('INSTRUCTIONS')).toBeLessThan(at('VOICE NOTES'))

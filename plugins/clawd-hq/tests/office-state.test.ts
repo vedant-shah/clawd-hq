@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { freshHire, isLively, quietBoss, settle, turnEndBoss, withBlurb, withJobs, withLaidOff } from '../hooks/office-state'
+import { freshHire, isLively, settle, turnEndBoss, withBlurb, withJobs, withLaidOff } from '../hooks/office-state'
 import { BOSS0 } from '../hooks/state'
 import type { Employee } from '../types'
 
@@ -37,11 +37,6 @@ test('a main-chat turn that ends frees Clawd, notes when, and says how it went',
   expect(turnEndBoss(busy, 'answer', 900)).toEqual({ ...busy, isBusy: false, idleSince: 900, doneAt: 900, activity: 'All done, boss.' })
   expect(turnEndBoss(busy, 'aborted', 900).activity).toBe('Hmm, that turn stopped early.')
   expect(busy.isBusy).toBe(true)
-})
-
-test('the tour goes quiet: not busy, no pride, no oops, no quip, and asleep already', () => {
-  const b = { ...BOSS0, isBusy: true, proudUntil: 9, oopsUntil: 9, quip: { text: 'x', until: 9 } }
-  expect(quietBoss(b, 1_000_000, 60_000)).toEqual({ ...b, isBusy: false, proudUntil: 0, oopsUntil: 0, quip: undefined, idleSince: 1_000_000 - 60_000 - 1 })
 })
 
 // ---- The books ----

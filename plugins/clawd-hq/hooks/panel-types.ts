@@ -1,5 +1,5 @@
 // What the side panel is handed to draw, and the things it may ask for; register-panes.ts fills both.
-import type { Artifact, Badge, Boss, ClawdBrief, ContractorOffer, Employee, Fx, Gauge, KnowState, LeftItem, Payroll, RuleOffer } from '../types'
+import type { Artifact, Badge, Boss, ClawdBrief, ContractorOffer, Employee, Fx, Gauge, KnowState, LeftItem, Payroll, PlanState, RuleOffer } from '../types'
 import type { ClawdActions } from './clawd-edit'
 import type { ConfigField } from './configs'
 import type { ContractorActions } from './contractor'
@@ -36,6 +36,8 @@ export type PanelData = {
   brief: ClawdBrief
   /** The plugin's on/off configs and voice file path as this load of the plugin got them. */
   options: BriefingOptions
+  /** The goal in hand (hooks/plan-run.ts keeps it); none when there is none. The tab draws it only while Clawd runs the chat. */
+  plan: PlanState | null
   /** The setup step drawn under Clawd's card; none, or a finished one, draws nothing. */
   onboard?: OnboardCard
 }
@@ -48,6 +50,14 @@ export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleAction
   /** The Dismiss button on the card that names who the automatic trim laid off. */
   layoffDismiss: () => unknown
   hire: (type: string) => unknown
+  /** A fold of the plan opens or closes (hooks/plan-view.ts `FOLD`): panel state only. */
+  toggleFold: (key: string) => unknown
+  /** Retry or Ask Clawd on a failed agent: the prompt box is filled with the text, never sent. */
+  agentAsk: (prompt: string) => unknown
+  /** Do it now on a Later item of the plan: the prompt box is filled, never sent. */
+  planLaterDo: (goal: string, id: string) => unknown
+  /** Dismiss on a Later item of the plan: that one item leaves the plan file. `goal` is the key of the goal it was drawn for; another goal's press is refused. */
+  planLaterDismiss: (goal: string, id: string) => unknown
   /** Opens the usage footer's rows, or closes them. */
   toggleUsage: () => unknown
   /** The coffee break button pressed: the chat is compacted now (or, where the engine cannot, `/compact` is put in the prompt box). */

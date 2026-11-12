@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { DENY_OFF, DENY_SPECIALIST, PLAN_DEBUG_KEY, clearNewMarks, linkStep, loadPlan, planTool, settleRun, withPlanNote } from '../hooks/plan-run'
+import { DENY_OFF, DENY_SPECIALIST, PLAN_DEBUG_KEY, clearNewMarks, dismissLater, linkStep, loadPlan, planTool, settleRun, withPlanNote } from '../hooks/plan-run'
 import type { GoalEnd, PlanRunIo } from '../hooks/plan-run'
 import { goalKey, stateFrom, withReopened } from '../hooks/plan-live'
 import type { Employee, PlanState } from '../types'
@@ -416,4 +416,48 @@ test('ending a goal with nothing put off says so', async () => {
   const { io } = office({ [FILE]: BASE })
   await loadPlan(io)
   expect(result(await call(io, { op: 'finish', outcome: 'done' }))).toContain('There were no put-off items to move.')
+})
+
+// ---- Dismiss on a Later item ----
+
+test('dismissing a Later item takes it out of the file and the state; the rest of the plan is as it was', async () => {
+  const { io, d, mine } = office({ [FILE]: LATER })
+  await loadPlan(io)
+  expect(mine.state?.later.map(l => l.id)).toEqual(['l1', 'l2'])
+  await dismissLater(io, goalKey(mine.state!), 'l1')
+  expect(mine.state?.later.map(l => l.id)).toEqual(['l2'])
+  expect(d.held.get(FILE)).not.toContain('Put off')
+  expect(d.held.get(FILE)).toContain('- [ ] Find the bug')
+})
+
+test('dismissing does nothing with Clawd off or no goal, and a Later item that is not there is a debug record, not a crash', async () => {
+  const off = office({ [FILE]: LATER }, false)
+  await dismissLater(off.io, KEY, 'l1')
+  expect(off.d.calls).toEqual([])
+  const none = office()
+  await dismissLater(none.io, KEY, 'l1')
+  expect(none.d.calls).toEqual([])
+  const { io, d, mine: mine2 } = office({ [FILE]: LATER })
+  await loadPlan(io)
+  await dismissLater(io, goalKey(mine2.state!), 'l9')
+  expect(d.notes.some(n => n.includes('no Later item l9'))).toBe(true)
+})
+
+test('a Dismiss pressed for another goal is refused with a debug record, and the next goal\'s item stays', async () => {
+  const { io, d, mine } = office({ [FILE]: LATER })
+  await loadPlan(io)
+  const stale = goalKey(mine.state!)
+  mine.state = { ...mine.state!, startedAt: mine.state!.startedAt + 1_000 }
+  await dismissLater(io, stale, 'l1')
+  expect(d.writes).toHaveLength(0)
+  expect(d.held.get(FILE)).toContain('Put off')
+  expect(mine.state?.later.map(l => l.id)).toEqual(['l1', 'l2'])
+  expect(d.notes.some(n => n.includes('another goal'))).toBe(true)
+})
+
+test('the office\'s own ops cannot be asked for through the tool: not forget, not decide', async () => {
+  const { io, d } = office({ [FILE]: LATER })
+  await loadPlan(io)
+  for (const op of ['forget', 'decide']) expect(await call(io, { op, id: 'l1', choices: ['x'] })).toMatchObject({ deny: expect.stringContaining('The op must be one of') })
+  expect(d.writes).toHaveLength(0)
 })

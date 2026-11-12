@@ -23,10 +23,6 @@ export const turnEndBoss = (b: Boss, reason: string, now: number): Boss => ({
   activity: reason === 'answer' ? 'All done, boss.' : 'Hmm, that turn stopped early.',
 })
 
-/** Clawd's card at the tour's quiet step: nothing on, idle long enough (`napMs`) to doze already. */
-export const quietBoss = (b: Boss, now: number, napMs: number): Boss =>
-  ({ ...b, isBusy: false, proudUntil: 0, oopsUntil: 0, quip: undefined, idleSince: now - napMs - 1 })
-
 /** A specialist just hired, arriving now (`now`, tick `t`), its name and task cut to size, and the project folder it was hired in when known. */
 export function freshHire(a: { id: string; type: string; description: string; name?: string; folder?: string }, now: number, t: number): Employee {
   const named = a.name ? { name: fit(a.name, NAME_CHARS) } : {}

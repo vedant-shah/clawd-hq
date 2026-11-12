@@ -17,11 +17,12 @@ const STATUSES: AgentStatus[] = ['pending', 'running', 'waiting', 'idle', 'compl
 test('a specialist resumed after a real stop starts a new run: fresh clock, no end, no old tool count, tokens or peak', () => {
   const ended = emp({
     mood: 'done', startedAt: 10, endedAt: 500, doneTick: 3, tools: 12, tokens: 80_000, outTokens: 900, peakInput: 79_000, context: 70_000,
-    activity: 'Reading a.ts', endedBy: 'signal', lastSeen: 480,
+    activity: 'Reading a.ts', endedBy: 'signal', lastSeen: 480, inTokens: 5_000, cachedTokens: 70_000, cacheWriteTokens: 4_000, skills: ['ecc:tdd'],
   })
   const again = restart(ended, 9_000, 40)
   expect(again).toEqual({
     id: 'a1', type: 'ecc:tdd-guide', description: 'Build', mood: 'working', tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    inTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, skills: undefined, // history.jsonl's true sums and skills start over with the run
     startedAt: 9_000, endedAt: undefined, doneTick: undefined, joinedTick: 40, lastSeen: 9_000, endedBy: undefined, activity: undefined,
   })
   // The old value was not touched.
@@ -32,6 +33,7 @@ test('a failed specialist is restarted the same way, whole', () => {
   const failed = emp({ mood: 'failed', startedAt: 5, endedAt: 50, doneTick: 2, tools: 4, tokens: 900, endedBy: 'signal', activity: 'Reading b.ts' })
   expect(restart(failed, 100, 7)).toEqual({
     id: 'a1', type: 'ecc:tdd-guide', description: 'Build', mood: 'working', tools: 0, tokens: 0, outTokens: 0, peakInput: 0, context: 0,
+    inTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, skills: undefined, // history.jsonl's true sums and skills start over with the run
     startedAt: 100, endedAt: undefined, doneTick: undefined, joinedTick: 7, lastSeen: 100, endedBy: undefined, activity: undefined,
   })
 })

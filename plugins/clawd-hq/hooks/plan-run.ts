@@ -10,7 +10,7 @@ import type { PlanIo } from './plan-io'
 import type { PlanOp, PlanView } from './plan'
 
 /** How a goal ended, as the history record will want it (Phase 4 writes the `goal_end` record from this). */
-export type GoalEnd = { slug: string; title: string; outcome: 'done' | 'stopped'; startedAt: number; endedAt: number; steps: PlanStep[] }
+export type GoalEnd = { slug: string; title: string; summary?: string; outcome: 'done' | 'stopped'; startedAt: number; endedAt: number; steps: PlanStep[] }
 
 /** What the plan may do, each one a `$` call made in register-plan.ts. */
 export type PlanRunIo = {
@@ -26,8 +26,12 @@ export type PlanRunIo = {
   staff: () => Promise<Employee[]>
   /** Keeps the Later items of a goal that ended on the project's list (hooks/left-io.ts). */
   keepLater: (texts: string[]) => Promise<void>
-  /** SEAM (Phase 4): the `goal_end` record in history.jsonl is written here. Called once, before the Later items are kept and the file is emptied; a throw is recorded and does not stop the finish. */
+  /** The `goal_start` record of history.jsonl, once a new plan is saved; a throw is recorded and does not undo the start. */
+  goalStarted: (start: { slug: string; title: string; summary?: string; steps: number }) => Promise<void>
+  /** The `goal_end` record of the history. Called once, after the finish went through (the Later items kept, the file emptied), outside the plan files' write queue; a throw is recorded. */
   goalEnded: (end: GoalEnd) => Promise<void>
+  /** When a goal began by its `goal_start` record in the history: for a plan from before the file kept its own `started` line. */
+  goalStartedAt: (slug: string) => Promise<number | undefined>
 }
 
 /** Where the lines of swallowed failures are kept in the plugin's store (the newest few only, never a word of the chat). */
@@ -66,7 +70,11 @@ export async function loadPlan(io: PlanRunIo): Promise<void> {
       await io.set(() => null)
       return
     }
-    const hold = (view: PlanView) => io.set(prev => stateFrom(view, newest.slug, newest.mtimeMs, prev, []))
+    // When the goal began: its file's `started` line; a plan from before the line, its goal_start record, else (a guess, noted) the file's time.
+    const began = newest.plan.startedAt ?? (await io.goalStartedAt(newest.slug).catch(() => undefined))
+    if (began === undefined) await note(io, `the plan ${newest.slug} has no start time: its file's time is used, a guess`)
+    const startedAt = began ?? newest.mtimeMs
+    const hold = (view: PlanView) => io.set(prev => stateFrom(view, newest.slug, startedAt, prev, []))
     const saved = await saveIds(io.files, io.root(), newest.slug, hold)
     if (!saved.ok) await hold(newest.plan)
   } catch (err) {
@@ -79,10 +87,15 @@ const deny = (reason: string): Answer => ({ deny: reason })
 async function start(io: PlanRunIo, call: { goal: unknown; steps: readonly unknown[]; summary?: unknown }): Promise<Answer> {
   const root = io.root()
   const hasCurrent = async () => (await io.get()) !== null || (await loadGoals(io.files, root)).length > 0
-  const made = await startGoal(io.files, root, { ...call, hasCurrent })
-  if (!made.ok) return deny(made.reason)
   const at = await io.now()
+  const made = await startGoal(io.files, root, { ...call, startedAt: at, hasCurrent })
+  if (!made.ok) return deny(made.reason)
   const next = await io.set(prev => stateFrom(made.plan, made.slug, at, null, touchedBy(prev, made.plan, { op: 'start' })))
+  try {
+    await io.goalStarted({ slug: made.slug, title: made.plan.title, ...(made.plan.summary === undefined ? {} : { summary: made.plan.summary }), steps: made.plan.steps.length })
+  } catch (err) {
+    await note(io, `the start of the goal could not be recorded: ${err instanceof Error ? err.message : String(err)}`)
+  }
   return { result: next === null ? '' : planText(next, await io.staff()) }
 }
 
@@ -112,16 +125,17 @@ async function operate(io: PlanRunIo, state: PlanState, call: Extract<PlanCall, 
 async function finish(io: PlanRunIo, state: PlanState, outcome: 'done' | 'stopped'): Promise<Answer> {
   let kept = 0
   const ended = await finishGoal(io.files, io.root(), state.slug, async later => {
-    try {
-      await io.goalEnded({ slug: state.slug, title: state.title, outcome, startedAt: state.startedAt, endedAt: await io.now(), steps: state.steps })
-    } catch (err) {
-      await note(io, `the end of the goal could not be recorded: ${err instanceof Error ? err.message : String(err)}`)
-    }
     // Every put-off item is kept or the goal is not ended: a failure here is refused (and the file left as it is), never let go.
     await io.keepLater(later)
     kept = later.length
   }, () => io.set(() => null))
   if (!ended.ok) return refused(io, ended.reason)
+  // The goal_end record only once the finish went through, outside the plan files' queue: a failed finish and its retry end the goal once.
+  try {
+    await io.goalEnded({ slug: state.slug, title: state.title, ...(state.summary === undefined ? {} : { summary: state.summary }), outcome, startedAt: state.startedAt, endedAt: await io.now(), steps: state.steps })
+  } catch (err) {
+    await note(io, `the end of the goal could not be recorded: ${err instanceof Error ? err.message : String(err)}`)
+  }
   const moved = kept === 0 ? 'There were no put-off items to move.' : `${kept} put-off ${kept === 1 ? 'item was' : 'items were'} moved to the project's Later list.`
   return { result: `The goal "${fit(state.title, 120)}" is over (${outcome}). ${moved} There is no goal in hand now.` }
 }

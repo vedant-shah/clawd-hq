@@ -8,6 +8,7 @@
 //     - Decided: <choice>                 under a step
 //   ## Later                              the put-off list, same line format, ids `l1`, `l2`, ...
 //   <!-- next: s7 l3 -->                  the next id to give out in each list, so a deleted step's number is not used again
+//   <!-- started: 1794370000000 -->       when the goal began (epoch ms), written at start; a plan from before it has none
 //
 // A step owns the indented lines straight under it (its `Decided:` lines and any note a person indented there): they move with it.
 // Any other line (notes, blank lines, a step the parser does not know) is a row of its own, kept where it is.
@@ -29,6 +30,8 @@ export type Row =
   | { kind: 'other'; text: string; eol: string }
   /** The `next` line: the number the next step (`s`) and the next Later item (`l`) get. Only the first such line in a file counts. */
   | { kind: 'next'; s: number; l: number; text: string; eol: string }
+  /** When the goal began, written once at its start. Only the first such line in a file counts. */
+  | { kind: 'started'; at: number; text: string; eol: string }
   | Item
 
 /** `rows[0]` is always the title. `eol` is the line break the file uses (the first one in it), for the lines that are added. */
@@ -40,6 +43,7 @@ const SUMMARY = /^> *(\S.*?)[ \t]*$/
 const DECIDED = /^ {2}- Decided:[ \t]*(\S.*?)[ \t]*$/
 const INDENTED = /^[ \t]+\S/
 const NEXT = /^<!-- next: s(\d{1,6}) l(\d{1,6}) -->$/
+const STARTED = /^<!-- started: (\d{1,15}) -->$/
 /** The largest number an id may have: the id pattern reads six digits. */
 export const MAX_ID = 999_999
 const itemLine = (prefix: 's' | 'l') => new RegExp(`^- \\[([ xX])\\] +(\\S.*?)(?: +<!-- *(${prefix}\\d{1,6}) *-->)?[ \\t]*$`)
@@ -77,6 +81,8 @@ function readLine(at: Reading, line: { text: string; eol: string }): Reading {
   }
   const mark = NEXT.exec(text)
   if (mark && !at.rows.some(row => row.kind === 'next')) return { ...at, rows: [...at.rows, { kind: 'next', s: Number(mark[1]), l: Number(mark[2]), text, eol }] }
+  const began = STARTED.exec(text)
+  if (began && !at.rows.some(row => row.kind === 'started')) return { ...at, rows: [...at.rows, { kind: 'started', at: Number(began[1]), text, eol }] }
   return { ...at, rows: [...at.rows, { kind: 'other', text, eol }] }
 }
 
@@ -105,6 +111,12 @@ export function serialisePlanFile(file: PlanFile): string {
 export function summaryOf(file: PlanFile): string | undefined {
   const row = file.rows[1]
   return row?.kind === 'summary' ? row.summary : undefined
+}
+
+/** When the goal began, as its `started` line says; none for a plan from before the line. */
+export function startedOf(file: PlanFile): number | undefined {
+  const row = file.rows.find((r): r is Extract<Row, { kind: 'started' }> => r.kind === 'started')
+  return row?.at
 }
 
 /** The position of the `## Later` heading, or -1. */

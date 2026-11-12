@@ -3,7 +3,7 @@
 // plan-io.ts reads the file fresh, applies one operation and writes. No tool, panel or hook uses this yet.
 import { fit } from './desk'
 import { plainText } from './know'
-import { MAX_ID, closeRow, decidedOf, laterAt, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, summaryOf, withIds, withMark } from './plan-file'
+import { MAX_ID, closeRow, decidedOf, laterAt, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, startedOf, summaryOf, withIds, withMark } from './plan-file'
 import type { Item, PlanFile, Row } from './plan-file'
 
 export const MAX_STEPS = 40
@@ -45,6 +45,8 @@ export type PlanView = {
   title: string
   /** The goal in one sentence, when the plan has one. */
   summary?: string
+  /** When the goal began, from its `started` line; none for a plan from before the line. */
+  startedAt?: number
   steps: Array<{ id: string; text: string; isDone: boolean; choices: string[] }>
   later: Array<{ id: string; text: string }>
 }
@@ -57,9 +59,11 @@ export type PlanView = {
 export function viewOf(file: PlanFile): PlanView {
   const { title, steps, later } = sectionsOf(withIds(file))
   const summary = tidy(summaryOf(file) ?? '')
+  const startedAt = startedOf(file)
   return {
     title: tidy(title),
     ...(summary === '' ? {} : { summary }),
+    ...(startedAt === undefined ? {} : { startedAt }),
     steps: steps.map(s => ({ id: s.id!, text: tidy(s.text), isDone: s.isDone, choices: decidedOf(s).map(d => tidy(d.text)) })),
     later: later.map(l => ({ id: l.id!, text: tidy(l.text) })),
   }
@@ -74,7 +78,7 @@ export type StartResult = { ok: true; slug: string; file: PlanFile } | Refused
  * A new plan. One goal only: refused while one is current. `taken` is the slugs of the plan files already there.
  * Steps that are empty after cleaning are left out.
  */
-export function startPlan(input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; hasCurrent: boolean; taken: readonly string[] }): StartResult {
+export function startPlan(input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; startedAt?: number; hasCurrent: boolean; taken: readonly string[] }): StartResult {
   if (input.hasCurrent) return refuse('Cannot start: finish the current goal first (done or stopped).')
   const title = cleanText(input.goal)
   if (title === '') return refuse('A goal needs a title.')
@@ -82,7 +86,9 @@ export function startPlan(input: { goal: unknown; steps: readonly unknown[]; sum
   if (steps.length === 0) return refuse('A plan needs at least one step.')
   if (steps.length > MAX_STEPS) return refuse(`A plan holds at most ${MAX_STEPS} steps.`)
   const summary = cleanText(input.summary)
-  const file = parsePlanFile(`# ${title}\n${summary === '' ? '' : `> ${summary}\n`}\n${steps.map(text => `- [ ] ${text}`).join('\n')}\n`)
+  // The goal's start goes in the file beside the `next` line, so it is the same in every session that loads the plan.
+  const began = input.startedAt === undefined ? '' : `<!-- started: ${Math.round(input.startedAt)} -->\n`
+  const file = parsePlanFile(`# ${title}\n${summary === '' ? '' : `> ${summary}\n`}\n${steps.map(text => `- [ ] ${text}`).join('\n')}\n${began}`)
   return file === undefined ? refuse('That title cannot be used.') : { ok: true, slug: slugOf(title, input.taken), file: withMark(withIds(file), { s: 1, l: 1 }) }
 }
 

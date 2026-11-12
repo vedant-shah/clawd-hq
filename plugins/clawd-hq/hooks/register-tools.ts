@@ -10,6 +10,7 @@ import { knowToolUsed } from './know-check'
 import { leftToolUsed } from './left-io'
 import { ownToolAnswer } from './own-tools'
 import { runIo } from './register-io'
+import { timedTool } from './register-history'
 import { ownToolIo } from './register-setup'
 import { readStaff, ses, setBoss, updateStaff } from './register-state'
 import { hireListed, signOfLife } from './run-io'
@@ -20,7 +21,8 @@ import { isCountedTool } from './usage-count'
 import { recordUse } from './use-tally'
 
 export function registerTools(on: On, brief: BriefingOptions) {
-  on('tool.call', async ($, e, next) => {
+  // Every call is timed for history.jsonl around all the handling below (a plugin has one tool.call hook): who, which tool, when, whether it went well.
+  on('tool.call', ($, e, next) => timedTool($, e as { tool: unknown; agentId?: string; skill?: unknown }, async () => {
     const tool = String(e.tool)
     const input = e as unknown as Record<string, unknown>
     const id = e.agentId
@@ -45,7 +47,7 @@ export function registerTools(on: On, brief: BriefingOptions) {
     else await signOfLife(runIo($), id)
     await updateStaff($, l => edit(l, id, one => withTool(one, sentenceOf(tool, input))))
     try { return await next(e) } finally { await updateStaff($, l => edit(l, id, one => (one.mood === 'working' ? { ...one, mood: 'thinking' } : one))) }
-  }).catch((_$, e, next) => {
+  })).catch((_$, e, next) => {
     return !next.called && guardOnCrash(ses.isEditTurn, String(e.tool), e as unknown as Record<string, unknown>) === 'deny' ? { deny: SHIPPED_DENY } as never : next(e)
   })
 }

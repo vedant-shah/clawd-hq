@@ -24,6 +24,7 @@ import { knowIo } from './register-know'
 import { leftIo } from './register-left'
 import { homeOf, refreshTab, rulesRide } from './register-rules'
 import { getFx, readBlurbs, readStaff, ses, setBoss, setFx, updateStaff } from './register-state'
+import { flushHistory } from './register-history'
 import { clockOut } from './run-io'
 import { failureReason } from './staff-model'
 import { scoutHandoff } from './scout-run'
@@ -68,7 +69,7 @@ export function registerTurns(on: On, brief: BriefingOptions) {
         if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
         void leftAnswer(leftIo($), e, by)
       }
-      await clockOut(runIo($), e.agentId, e.reason === 'answer' ? 'done' : 'failed')
+      await clockOut(runIo($), e.agentId, e.reason === 'answer' ? 'done' : 'failed', 'signal', e.answer ?? '')
       // Why it failed, in its own last words, for the Office tab's Details on that agent.
       if (e.reason !== 'answer' && asker) await updateStaff($, l => edit(l, asker.id, one => (one.mood === 'failed' ? { ...one, reason: failureReason(e.reason, e.answer ?? '') } : one)))
       // The one place a plan step is ticked: a linked run's real hand-back. Its choices go under the step now; a stop signal or the engine's list ticks nothing.
@@ -78,6 +79,7 @@ export function registerTurns(on: On, brief: BriefingOptions) {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)
       void leftOwnTurn(leftIo($), e, brief.isLeftOn)
       ses.isEditTurn = false
+      void flushHistory($) // Clawd's turn is over: what history.jsonl holds waiting goes now
       await askAgain(paneIo($))
       const now = await $.clock.now()
       await setBoss($, b => withTurnEnd(turnEndBoss(b, e.reason, now), e))

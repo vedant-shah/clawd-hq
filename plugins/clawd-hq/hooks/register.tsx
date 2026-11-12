@@ -14,12 +14,14 @@ import { registerPanes } from './register-panes'
 import { registerQuiet } from './register-quiet'
 import { registerRules } from './register-rules'
 import { registerSession } from './register-session'
+import { forgetHistory } from './register-history'
 import { registerTools } from './register-tools'
 import { registerTurns } from './register-turns'
 import { liveOptions } from './toggle-store'
 
 export const register: Register = (on, options) => {
   const brief = liveOptions(optionsOf(options)) // each switch read when used: a saved press first (hooks/toggle-store.ts)
+  forgetHistory() // a new load keeps a history of its own (hooks/register-history.ts)
 
   registerRules(on, brief)
   registerSession(on, brief)

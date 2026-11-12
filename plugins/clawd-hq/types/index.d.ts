@@ -34,6 +34,12 @@ export type Employee = {
   outTokens?: number
   /** The largest request input of this run; the input half of `tokens`, so a compaction cannot lower it. */
   peakInput?: number
+  /** The true sums the host reports per request (history.jsonl's run record): uncached input, input the cache served, and input written to it. */
+  inTokens?: number
+  cachedTokens?: number
+  cacheWriteTokens?: number
+  /** The skills this run loaded with the Skill tool, by name, each once (history.jsonl). */
+  skills?: string[]
   /** How much of this run's `tokens` was already added to its type's total, so an end heard twice, or a run that goes on after a guessed end, counts once. A new run starts again. */
   counted?: number
   /** The project folder this run was hired (or resumed) in: its tokens count there, even if the session moves before it ends. None on books from before it was kept. */

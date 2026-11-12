@@ -101,7 +101,7 @@ async function takenSlugs(io: PlanIo, dir: string): Promise<string[]> {
  * so two starts at the same moment cannot both pass it (give it the live state; it may read the folder). Nothing is written when the
  * folder cannot be listed, since the name could clash with a plan already there.
  */
-export function startGoal(io: PlanIo, root: string, input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; hasCurrent: () => boolean | Promise<boolean> }): Promise<PlanSaved> {
+export function startGoal(io: PlanIo, root: string, input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; startedAt?: number; hasCurrent: () => boolean | Promise<boolean> }): Promise<PlanSaved> {
   return inLine(async (): Promise<PlanSaved> => {
     let doing = 'start the plan'
     try {

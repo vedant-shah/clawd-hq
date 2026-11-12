@@ -22,6 +22,7 @@ import { loadPlan } from './plan-run'
 import { planRunIo } from './register-plan'
 import { refreshTab } from './register-rules'
 import { folderIo, onboardIo, registerScout } from './register-setup'
+import { flushHistory } from './register-history'
 import { forgetQuiet, getBoss, getFx, readOnboard, readStaff, readTick, ses, setFx, updateArtifacts, updateGauge, updateLeftUndone, updatePayroll, updateStaff, updateTick } from './register-state'
 import { reconcile, loadTokens } from './run-io'
 import { BYPASS_KEY, REACH0, withNewConversation } from './rules-reach'
@@ -144,6 +145,8 @@ export function registerSession(on: On, brief: BriefingOptions) {
     // Another conversation takes over this process without a session.start: its turns are its own.
     if (e.reason === 'clear' || e.reason === 'resume') { ses.reach = withNewConversation(ses.reach); forgetQuiet(); await forgetCoffee($) }
     await forgetKnow(knowIo($))
+    // Nothing waiting for history.jsonl is lost at a normal end: it is written before the session goes.
+    await flushHistory($, true)
     return next(e)
   })
 }

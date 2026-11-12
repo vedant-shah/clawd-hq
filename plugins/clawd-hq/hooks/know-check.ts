@@ -39,6 +39,8 @@ export type KnowIo = {
   /** Puts text after what is in the person's prompt box; never sends it. */
   fillPrompt: (text: string) => Promise<unknown>
   setCard: (fn: (s: KnowState) => KnowState) => Promise<unknown>
+  /** A note was shown about a specialist's run (`agentId`), or Clawd's own turn (none): the history's `note` record, its tag only. */
+  noted?: (agentId: string | undefined, tag: string) => Promise<void>
 }
 
 /** What a hand-back carries that the check reads: a specialist's (`agentId`), or a turn of Clawd's own (`turnText`, its request). */
@@ -233,7 +235,7 @@ async function runCheck(io: KnowIo, h: Handback, who: string, asked: number, tak
     const { rows, earlier, rerun, isResumed, leftOut, asked: said } = job
     const record = buildRecord({ who, isClawd: h.agentId === undefined, ended: h.reason, rows, earlier, rerun, brief, isResumed, leftOut, report: h.answer, prompts: said, durationMs: h.durationMs, tokens })
     if (record.chars > 2 * CAP_CHARS) return await addLog(io, { at, who, outcome: 'skipped', recordChars: record.chars, reason: 'the record was too long' })
-    const entry = await askModel(io, record, who, at, asked)
+    const entry = await askModel(io, record, who, at, asked, h.agentId)
     if (isUnread(entry)) giveBack(h.agentId, job.from)
     await addLog(io, entry)
   } catch {
@@ -243,7 +245,7 @@ async function runCheck(io: KnowIo, h: Handback, who: string, asked: number, tak
 }
 
 /** Asks the checker and acts on its reply; the log entry that says how it went. */
-async function askModel(io: KnowIo, record: { text: string; chars: number }, who: string, at: number, asked: number): Promise<KnowLogEntry> {
+async function askModel(io: KnowIo, record: { text: string; chars: number }, who: string, at: number, asked: number, agentId?: string): Promise<KnowLogEntry> {
   const { shown, knew } = await loadLists(io)
   const ask = checkAsk(record.text, shown, knew)
   const reply = await io.complete({ model: MODEL, system: ask.system, prompt: ask.prompt, maxTokens: MAX_TOKENS, timeoutMs: TIMEOUT_MS })
@@ -256,15 +258,16 @@ async function askModel(io: KnowIo, record: { text: string; chars: number }, who
   const now = await loadLists(io)
   if (isRepeat(parsed.line, now.shown, now.knew)) return { ...base, outcome: 'repeat' }
   const { kind: _, ...said } = parsed
-  return { ...base, ...(await showNote(io, { ...said, id: `k${(notes += 1)}`, who, at })) }
+  return { ...base, ...(await showNote(io, { ...said, id: `k${(notes += 1)}`, who, at }, agentId)) }
 }
 
 /** The note takes Clawd's card and joins the shown list, unless one is held (checked once more, as the reply was paid for). */
-async function showNote(io: KnowIo, note: KnowNote): Promise<{ outcome: string; reason?: string }> {
+async function showNote(io: KnowIo, note: KnowNote, agentId?: string): Promise<{ outcome: string; reason?: string }> {
   const held = await whyHeld(io)
   if (held) return { outcome: 'skipped', reason: held }
   isNoteSent = true
   await io.setCard(s => withNote(s, note))
+  await io.noted?.(agentId, note.tag).catch(() => undefined)
   await change(io, 'shown', shown => keepLast(shown, note.line, SHOWN_KEEP))
   return { outcome: 'shown' }
 }

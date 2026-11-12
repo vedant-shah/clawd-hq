@@ -19,6 +19,7 @@ import type { RuleIo } from './rule-io'
 import type { GaugeIo } from './usage'
 import type { CouncilIo } from './council'
 import type { RunIo } from './run-io'
+import { logRun } from './register-history'
 import { specialistOf } from './run-io'
 import { hire, withReport } from './staff-model'
 import { edit, inLine } from './state'
@@ -51,6 +52,7 @@ export function runIo($: EngineInterface): RunIo {
     now: () => $.clock.now(), tick: () => readTick($), staff: () => readStaff($), changeStaff: fn => updateStaff($, fn),
     blurbs: () => readBlurbs($), enroll: (type, jobs, tokens) => enroll($, type, jobs, tokens), setBoss: fn => setBoss($, fn),
     toast: text => void $.ui.toast(text), agents: () => $.agent.list(), folder: () => ses.cwd, get: key => $.store.get(key), set: (key, value) => $.store.set(key, value), showTokens: m => updateProjectTokens($, () => m),
+    ended: (one, answer) => logRun($, one, answer),
   }
 }
 

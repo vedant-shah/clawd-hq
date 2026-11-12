@@ -7,6 +7,7 @@ import type { BriefingOptions } from './instructions'
 import type { PlanIo } from './plan-io'
 import { PLAN_DEBUG_KEY, withPlanNote } from './plan-run'
 import type { PlanRunIo } from './plan-run'
+import { goalStartedAt, logGoalEnd, logGoalStart } from './register-history'
 import { readPlan, readStaff, ses, updateLeftUndone, updatePlan } from './register-state'
 
 /** The plan files' calls. `stat` resolves where a path really lands, so a link out of the plans folder is refused. */
@@ -25,6 +26,6 @@ export function planRunIo($: EngineInterface, opts: Pick<BriefingOptions, 'isOn'
     isOn: () => opts.isOn, root: () => ses.cwd, files: planFiles($), now: () => $.clock.now(),
     get: () => readPlan($), set: fn => updatePlan($, fn), staff: () => readStaff($),
     keepLater: texts => leftAddItems({ folder: () => ses.cwd, now: () => $.clock.now(), change: fn => updateLeftUndone($, fn), save: (folder, list) => $.store.set(`leftUndone:${folder}`, list) }, texts, 'Clawd'),
-    goalEnded: async () => undefined, // SEAM for Phase 4: the goal_end record of history.jsonl is written here.
+    goalStarted: start => logGoalStart($, start), goalEnded: end => logGoalEnd($, end), goalStartedAt: slug => goalStartedAt($, slug), // the history's goal records (hooks/register-history.ts)
   }
 }

@@ -30,6 +30,8 @@ export type RunIo = TokensIo & {
   readonly setBoss: (fn: (b: Boss) => Boss) => Promise<void>
   readonly toast: (text: string) => void
   readonly agents: () => Promise<readonly ListedAgent[]>
+  /** A run has really ended (once per end): history.jsonl's run record. `answer` is its last message where the end came with one. */
+  readonly ended?: (one: Employee, answer?: string) => Promise<void>
 }
 
 /** Puts a specialist on the books. One already there keeps its progress and takes the new facts; a new one is counted as a hire and Clawd waves. */
@@ -53,18 +55,22 @@ export const hireListed = (io: RunIo, a: { id: string; type: string; description
  * Ends one specialist's run. The check sits inside the write, so two signals for one stop (turn.complete,
  * SubagentStop, the reconcile) end it once; a guess from the engine or the clock also checks it is still quiet.
  */
-export async function clockOut(io: RunIo, id: string, mood: Mood, how: EndedBy = 'signal') {
+export async function clockOut(io: RunIo, id: string, mood: Mood, how: EndedBy = 'signal', answer?: string) {
   const [now, t] = [await io.now(), await io.tick()]
   let ended: Employee | undefined
+  let after: Employee | undefined
   await io.changeStaff(l => {
-    ended = undefined
+    [ended, after] = [undefined, undefined]
     return edit(l, id, one => {
       if (!isActive(one) || (how !== 'signal' && quietFor(one, now) <= QUIET_MS)) return one
       ended = one
-      return { ...endRun(one, mood, how, now, t), counted: one.tokens ?? 0 }
+      after = { ...endRun(one, mood, how, now, t), counted: one.tokens ?? 0 }
+      return after
     })
   })
   const e = ended as Employee | undefined
+  // The run's record in history.jsonl, once per real end; a stand-in has none. A history that fails never holds the end back.
+  if (after !== undefined && !id.startsWith(DEMO)) await io.ended?.(after, answer).catch(() => undefined)
   // What this run used joins its type's total, less what an earlier end of the same run already added. A stand-in adds none.
   const added = e ? (e.tokens ?? 0) - (e.counted ?? 0) : 0
   if (e && added > 0 && !id.startsWith(DEMO)) {

@@ -21,6 +21,8 @@ function office(files: Record<string, string> = {}, isOn = true) {
     set: async fn => { for (let i = mine.setDelays.shift() ?? 0; i > 0; i -= 1) await Promise.resolve(); mine.state = fn(mine.state); return mine.state },
     staff: async () => mine.staff,
     keepLater: async texts => { if (mine.keepFails) throw new Error('the list refused'); mine.later.push(texts) },
+    goalStarted: async () => undefined,
+    goalStartedAt: async () => undefined,
     goalEnded: async end => { if (mine.seamFails) throw new Error('the record refused'); mine.ended.push(end) },
   }
   return { io, d, mine }
@@ -193,17 +195,20 @@ test('a load that fails is a debug record, not a crash, and holds none', async (
 
 // ---- Linking a run to a step ----
 
+/** The debug lines about linking: a plan from before its `started` line also says, once, that its start was guessed. */
+const linkNotes = (d: { notes: string[] }) => d.notes.filter(n => !/no start time/.test(n))
+
 test('a PLAN line that names a step of the plan links to the goal; one that does not is booked off-plan with a debug record', async () => {
   const { io, d } = office({ [FILE]: BASE })
   await loadPlan(io)
   expect(await linkStep(io, 's2')).toBe(KEY)
-  expect(d.notes).toHaveLength(0)
+  expect(linkNotes(d)).toHaveLength(0)
   expect(await linkStep(io, 's9')).toBeUndefined()
-  expect(d.notes).toHaveLength(1)
-  expect(d.notes[0]).toContain('s9')
+  expect(linkNotes(d)).toHaveLength(1)
+  expect(linkNotes(d)[0]).toContain('s9')
   const empty = office()
   expect(await linkStep(empty.io, 's1')).toBeUndefined()
-  expect(empty.d.notes[0]).toContain('there is none')
+  expect(linkNotes(empty.d)[0]).toContain('there is none')
 })
 
 test('with Clawd off nothing is linked and nothing is recorded, also when it was turned off after the plan was loaded', async () => {
@@ -212,7 +217,7 @@ test('with Clawd off nothing is linked and nothing is recorded, also when it was
   mine.isOn = false
   expect(await linkStep(io, 's2')).toBeUndefined()
   expect(await linkStep(io, 's9')).toBeUndefined()
-  expect(d.notes).toHaveLength(0)
+  expect(linkNotes(d)).toHaveLength(0)
 })
 
 test('a plan that cannot be read to link a run leaves a debug record, and the run is off-plan', async () => {
@@ -220,8 +225,8 @@ test('a plan that cannot be read to link a run leaves a debug record, and the ru
   await loadPlan(io)
   mine.getFails = true
   expect(await linkStep(io, 's2')).toBeUndefined()
-  expect(d.notes).toHaveLength(1)
-  expect(d.notes[0]).toContain('the state is shut')
+  expect(linkNotes(d)).toHaveLength(1)
+  expect(linkNotes(d)[0]).toContain('the state is shut')
 })
 
 // ---- Ticking ----

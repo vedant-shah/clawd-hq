@@ -18,6 +18,7 @@ import { planRunIo } from './register-plan'
 import { judgeReach } from './register-rules'
 import { efforts, readBlurbs, readRoster, readStaff, readTick, ses, setBoss, updateBlurbs, updateStaff } from './register-state'
 import { resumedEffort } from './resume-effort'
+import { logRequest } from './register-history'
 import { clockOut, newHire, signOfLife } from './run-io'
 import { withRequest } from './rules-reach'
 import { handScoutSpawn, scoutHandoff, spawnTypeOf } from './scout-run'
@@ -42,7 +43,8 @@ async function rejoin<R extends { agentId?: string }>($: EngineInterface, r: R, 
 export function registerAgents(on: On, brief: BriefingOptions) {
   // The agent's own stop signal, beside turn.complete: whichever comes first ends the run, the second finds it ended.
   on('classic.SubagentStop', async ($, e, next) => {
-    await clockOut(runIo($), e.agent_id, 'done')
+    // Its last message comes with the signal: the run's record counts its choices and questions from it when the signal comes first.
+    await clockOut(runIo($), e.agent_id, 'done', 'signal', typeof e.last_assistant_message === 'string' ? e.last_assistant_message : undefined)
     return next(e)
   })
 
@@ -113,6 +115,8 @@ export function registerAgents(on: On, brief: BriefingOptions) {
     // The request's system prompt was composed on the way: whether the rules reached it is known now.
     if (!e.agentId && brief.isOn) await judgeReach($).catch(() => undefined) // a store that refuses only means it is learnt again next session
     const [u, said] = [result.usage, narrationOf(result.answer ?? '')]
+    // Its record in history.jsonl, Clawd's or an agent's, where the host reported usage (never waited on for long: it only joins the batch).
+    await logRequest($, { agentId: e.agentId, model: e.model, effort: effort ?? e.effort }, u).catch(() => undefined)
     if (!e.agentId || (!u && !said)) return result
     const now = await $.clock.now()
     await updateStaff($, l => edit(l, e.agentId!, one => {

@@ -6,6 +6,7 @@ import { isWatching } from './know-check'
 import type { KnowIo } from './know-check'
 import { KNOW0, QUIET_FORK, isBuiltinKnow } from './know'
 import type { BriefingOptions } from './instructions'
+import { logNote } from './register-history'
 import { readKnow, updateKnow } from './register-state'
 
 export function knowIo($: EngineInterface): KnowIo {
@@ -20,6 +21,7 @@ export function knowIo($: EngineInterface): KnowIo {
     card: async (): Promise<KnowState> => ({ ...KNOW0, ...(await readKnow($)) }),
     setCard: fn => updateKnow($, s => fn({ ...KNOW0, ...s })),
     fillPrompt: text => $.prompt.fill({ text, mode: 'append' }),
+    noted: (agentId, tag) => logNote($, agentId, tag),
   }
 }
 

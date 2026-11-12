@@ -61,6 +61,8 @@ export type StepBlock = {
 
 export type PlanLayout = {
   title: string
+  /** The goal in one sentence, drawn dim under the title; absent when the plan has none. */
+  summary?: string
   done: number
   total: number
   /** The finished steps, in the plan's order. */
@@ -108,7 +110,7 @@ export function planLayout(state: PlanState, staff: readonly Employee[], folds: 
   const placed = new Set(open.map(step => step.id))
   const doneSteps = state.steps.filter(step => step.isDone)
   return {
-    title: state.title, done: state.steps.length - open.length, total: state.steps.length,
+    title: state.title, ...(state.summary === undefined ? {} : { summary: state.summary }), done: state.steps.length - open.length, total: state.steps.length,
     doneSteps, lastDone: doneSteps[doneSteps.length - 1], earlierDone: doneSteps.slice(0, -1), steps,
     extraSteps: Math.max(0, (nextSeen[nextSeen.length - 1] ?? 0) - SHOWN_STEPS), isStepsOpen,
     outsiders: staff.filter(one => isActive(one) && !(one.planKey === key && one.stepId !== undefined && placed.has(one.stepId))),

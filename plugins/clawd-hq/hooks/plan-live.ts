@@ -68,7 +68,7 @@ export function stateFrom(view: PlanView, slug: string, startedAt: number, prev:
     const isNew = (before === undefined && old !== undefined) || touched.includes(step.id) || before?.isNew === true
     return { ...step, ...(isNew ? { isNew: true } : {}), ...(before?.reopenedAt === undefined ? {} : { reopenedAt: before.reopenedAt }) }
   })
-  return { slug, title: view.title, steps, later: view.later, startedAt: prev !== null && prev.slug === slug ? prev.startedAt : startedAt }
+  return { slug, title: view.title, ...(view.summary === undefined ? {} : { summary: view.summary }), steps, later: view.later, startedAt: prev !== null && prev.slug === slug ? prev.startedAt : startedAt }
 }
 
 /** The steps an operation added or changed, for the "new" mark: a start marks them all; done, reopen and move mark the one they changed. */
@@ -101,7 +101,7 @@ const WORD: Record<StepStatus, string> = { done: 'done', now: 'now', attention: 
 const WIDTH = 9
 
 /**
- * The plan as Clawd is answered with it after every call: the title and the count, then one line per step with its id and where it
+ * The plan as Clawd is answered with it after every call: the title and the count, the summary (when there is one), then one line per step with its id and where it
  * stands, so he can name a step in his next brief, then the Later items. DECIDED: ticked steps are listed too, so `reopen` has an id to use.
  */
 export function planText(state: PlanState, staff: readonly Employee[]): string {
@@ -109,14 +109,15 @@ export function planText(state: PlanState, staff: readonly Employee[]): string {
   const done = state.steps.filter(step => step.isDone).length
   const steps = state.steps.map(step => `${step.id} ${WORD[statusOf(step, staff, key)].padEnd(WIDTH)} ${fit(step.text, 120)}`)
   const later = state.later.map(item => `${item.id} ${'later'.padEnd(WIDTH)} ${fit(item.text, 120)}`)
-  return [`Plan: ${fit(state.title, 120)} (${done} of ${state.steps.length} done)`, ...steps, ...later].join('\n')
+  const summary = state.summary === undefined ? [] : [`Summary: ${fit(state.summary, 120)}`]
+  return [`Plan: ${fit(state.title, 120)} (${done} of ${state.steps.length} done)`, ...summary, ...steps, ...later].join('\n')
 }
 
 // ---- The tool's input ----
 
 /** One call of the `plan` tool, read: starting or finishing a goal, or one operation on the plan in hand. */
 export type PlanCall =
-  | { kind: 'start'; goal: unknown; steps: readonly unknown[] }
+  | { kind: 'start'; goal: unknown; steps: readonly unknown[]; summary?: unknown }
   | { kind: 'finish'; outcome: 'done' | 'stopped' }
   | { kind: 'op'; op: PlanOp }
 
@@ -131,13 +132,14 @@ export function parseCall(input: Record<string, unknown>): { call: PlanCall } | 
   const needsId = { error: 'Give the id of the step, such as s2.' }
   const after = idOf(input.after) === '' ? {} : { after: idOf(input.after) }
   switch (op) {
-    case 'start': return { call: { kind: 'start', goal: input.goal, steps: list(input.steps) } }
+    case 'start': return { call: { kind: 'start', goal: input.goal, steps: list(input.steps), ...(input.summary === undefined ? {} : { summary: input.summary }) } }
     case 'finish': return input.outcome === 'done' || input.outcome === 'stopped' ? { call: { kind: 'finish', outcome: input.outcome } } : { error: 'Say how the goal ended: outcome "done" or "stopped".' }
     case 'add': return { call: { kind: 'op', op: { op: 'add', text: text(input.text), ...after } } }
     case 'later': return { call: { kind: 'op', op: { op: 'later', text: text(input.text) } } }
+    case 'summary': return { call: { kind: 'op', op: { op: 'summary', text: text(input.text) } } }
     case 'drop': case 'done': case 'reopen': return id === '' ? needsId : { call: { kind: 'op', op: { op, id } } }
     case 'move': return id === '' ? needsId : { call: { kind: 'op', op: { op: 'move', id, ...after } } }
     case 'split': return id === '' ? needsId : { call: { kind: 'op', op: { op: 'split', id, steps: list(input.steps) } } }
-    default: return { error: 'The op must be one of: start, add, drop, move, split, done, reopen, later, finish.' }
+    default: return { error: 'The op must be one of: start, add, drop, move, split, done, reopen, later, summary, finish.' }
   }
 }

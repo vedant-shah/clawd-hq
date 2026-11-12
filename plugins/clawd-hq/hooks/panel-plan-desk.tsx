@@ -158,7 +158,7 @@ function moreStepsFold(ctx: Ctx, layout: PlanLayout): Make {
 
 /**
  * The plan, as the board has it: "PLAN" and the goal on one line with "3 of 6 done" at the right (the host cannot space the letters or size
- * them smaller: bold and dim stand for the heading), then the timeline, the "sm" step under it. The Later line is the last step's last line, as the
+ * them smaller: bold and dim stand for the heading), the summary dim under it when there is one, then the timeline, the "sm" step under it. The Later line is the last step's last line, as the
  * board's "2 later" is; with no step at all, it stands under the heading.
  */
 export function planItems(ctx: Ctx, layout: PlanLayout): Item[] {
@@ -173,6 +173,8 @@ export function planItems(ctx: Ctx, layout: PlanLayout): Item[] {
   const items = timeline.map((make, i) => (i === timeline.length - 1 ? make(true, later) : make(false, [])))
   return [
     withRight(ctx, 'plan-head', <Text key="t" wrap="wrap"><Text bold dimColor>PLAN</Text>{'  '}<Text bold>{layout.title}</Text></Text>, <Text key="c" dimColor>{`${layout.done} of ${layout.total} done`}</Text>),
+    // The goal in one sentence, dim under the title and wrapping; the plan's "sm" gap sets it off from the title and the list.
+    ...(layout.summary === undefined ? [] : [<Text key="plan-summary" dimColor wrap="wrap">{layout.summary}</Text>]),
     ...(items.length > 0 ? [<Box key="plan-timeline" flexDirection="column">{items}</Box>] : later),
   ]
 }

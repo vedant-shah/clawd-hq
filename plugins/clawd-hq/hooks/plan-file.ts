@@ -3,6 +3,7 @@
 // is done to the rows and plan-io.ts for the file calls.
 //
 //   # <goal title>                        line 1; without it the file is not a plan
+//   > <summary>                           optional, line 2 only: the goal in one sentence
 //   - [ ] <text>  <!-- s1 -->             a step (or `- [x]`); the id is `s` and a number, never reused
 //     - Decided: <choice>                 under a step
 //   ## Later                              the put-off list, same line format, ids `l1`, `l2`, ...
@@ -22,6 +23,8 @@ export type Item = { kind: 'item'; id?: string; text: string; isDone: boolean; s
 
 export type Row =
   | { kind: 'title'; title: string; text: string; eol: string }
+  /** The goal in one sentence: a `> ` line, and only the one straight under the title. */
+  | { kind: 'summary'; summary: string; text: string; eol: string }
   | { kind: 'later'; text: string; eol: string }
   | { kind: 'other'; text: string; eol: string }
   /** The `next` line: the number the next step (`s`) and the next Later item (`l`) get. Only the first such line in a file counts. */
@@ -33,6 +36,7 @@ export type PlanFile = { eol: string; rows: Row[] }
 
 const TITLE = /^\uFEFF?# +(\S.*?)[ \t]*$/
 const LATER = /^## Later[ \t]*$/
+const SUMMARY = /^> *(\S.*?)[ \t]*$/
 const DECIDED = /^ {2}- Decided:[ \t]*(\S.*?)[ \t]*$/
 const INDENTED = /^[ \t]+\S/
 const NEXT = /^<!-- next: s(\d{1,6}) l(\d{1,6}) -->$/
@@ -56,6 +60,8 @@ type Reading = { rows: Row[]; isLater: boolean; ids: ReadonlySet<string> }
 function readLine(at: Reading, line: { text: string; eol: string }): Reading {
   const { text, eol } = line
   const last = at.rows[at.rows.length - 1]
+  const summary = at.rows.length === 1 ? SUMMARY.exec(text) : null
+  if (summary) return { ...at, rows: [...at.rows, { kind: 'summary', summary: summary[1]!, text, eol }] }
   if (!at.isLater && LATER.test(text)) return { ...at, rows: [...at.rows, { kind: 'later', text, eol }], isLater: true }
   const item = (at.isLater ? LATER_LINE : STEP_LINE).exec(text)
   if (item) {
@@ -93,6 +99,12 @@ export function serialisePlanFile(file: PlanFile): string {
     if (row.kind !== 'item') return row.text + row.eol
     return itemText(row) + row.eol + row.sub.map(sub => (sub.src ?? `  - Decided: ${sub.text}`) + sub.eol).join('')
   }).join('')
+}
+
+/** The goal in one sentence, as written under the title; none when the file has no summary line. */
+export function summaryOf(file: PlanFile): string | undefined {
+  const row = file.rows[1]
+  return row?.kind === 'summary' ? row.summary : undefined
 }
 
 /** The position of the `## Later` heading, or -1. */

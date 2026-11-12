@@ -77,6 +77,8 @@ export type PlanState = {
   /** The plan file's name, without `.md`. */
   slug: string
   title: string
+  /** The goal in one sentence, from the `> ` line under the title; absent when the plan has none. */
+  summary?: string
   steps: PlanStep[]
   later: Array<{ id: string; text: string }>
   startedAt: number

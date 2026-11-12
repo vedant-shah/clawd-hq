@@ -212,6 +212,7 @@ export function planRows(ctx: Ctx, layout: PlanLayout): Row[] {
     segs: [{ text: 'PLAN', style: 'bold' }, { text: '  ' }, { text: cellText(layout.title), style: 'bold' }],
     right: <kit.Text key="plan-count" dimColor>{`${layout.done} of ${layout.total} done`}</kit.Text>, size: `${layout.done} of ${layout.total} done`.length,
   })
+  const summary = layout.summary === undefined ? [] : [summaryRow(ctx, layout.summary)]
   const isDoneOpen = foldsOf(data.fx).has(FOLD.done(goalOf(data)))
   const earlier = layout.earlierDone
   // The steps done before the last one fold into one line; the last one is a done row of its own, on the rail.
@@ -223,7 +224,14 @@ export function planRows(ctx: Ctx, layout: PlanLayout): Row[] {
   const moreSteps = layout.extraSteps > 0 ? [foldRow(ctx, 'more-steps', 'dim', layout.isStepsOpen ? 'fewer steps' : `${layout.extraSteps} more ${layout.extraSteps === 1 ? 'step' : 'steps'}`, layout.isStepsOpen ? 'hide' : 'show', FOLD.steps(goalOf(data)))] : []
   const groups = [...done, ...steps, ...moreSteps]
   const body = groups.flatMap((group, i) => [...(i > 0 ? [railRow(ctx, i <= done.length ? 'done' : 'dim', `plan-sp${i}`)] : []), ...group])
-  return [...head, <kit.Text key="plan-gap">{' '}</kit.Text>, ...body, ...laterFold(ctx, { indent: SIDE })]
+  return [...head, ...summary, <kit.Text key="plan-gap">{' '}</kit.Text>, ...body, ...laterFold(ctx, { indent: SIDE })]
+}
+
+/** The goal in one sentence: one dim row under the title, cut with "…" where it does not fit; above the rail, so it carries none. */
+function summaryRow(ctx: Ctx, text: string): Row {
+  const whole = wrapSegs([{ text: cellText(text), style: 'dim' }], ctx.cw)
+  const segs = whole.length <= 1 ? whole[0] ?? [] : [...wrapSegs([{ text: cellText(text), style: 'dim' }], ctx.cw - 1)[0]!, { text: '…', style: 'dim' } as Seg]
+  return line(ctx.kit, 'plan-summary', [], segs)
 }
 
 /** The last finished step: its tick on the rail, its words in green with who did it, how long and its tokens at the right, its choices under it. */

@@ -76,7 +76,7 @@ export async function loadPlan(io: PlanRunIo): Promise<void> {
 
 const deny = (reason: string): Answer => ({ deny: reason })
 
-async function start(io: PlanRunIo, call: { goal: unknown; steps: readonly unknown[] }): Promise<Answer> {
+async function start(io: PlanRunIo, call: { goal: unknown; steps: readonly unknown[]; summary?: unknown }): Promise<Answer> {
   const root = io.root()
   const hasCurrent = async () => (await io.get()) !== null || (await loadGoals(io.files, root)).length > 0
   const made = await startGoal(io.files, root, { ...call, hasCurrent })

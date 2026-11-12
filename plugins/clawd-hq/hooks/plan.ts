@@ -1,9 +1,9 @@
-// The plan's operations (pure): start a plan, and add, drop, move, split, done, reopen and later on one that is read (hooks/plan-file.ts).
+// The plan's operations (pure): start a plan, and add, drop, move, split, done, reopen, later and summary on one that is read (hooks/plan-file.ts).
 // Each takes a file and gives back a new file, or the one plain sentence why not. Nothing is changed in place and nothing is written:
 // plan-io.ts reads the file fresh, applies one operation and writes. No tool, panel or hook uses this yet.
 import { fit } from './desk'
 import { plainText } from './know'
-import { MAX_ID, closeRow, decidedOf, laterAt, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, withIds, withMark } from './plan-file'
+import { MAX_ID, closeRow, decidedOf, laterAt, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, summaryOf, withIds, withMark } from './plan-file'
 import type { Item, PlanFile, Row } from './plan-file'
 
 export const MAX_STEPS = 40
@@ -43,6 +43,8 @@ export function slugOf(title: string, taken: readonly string[]): string {
 /** What a plan is to the rest of the plugin: the live state (Phase 2) is built from this. */
 export type PlanView = {
   title: string
+  /** The goal in one sentence, when the plan has one. */
+  summary?: string
   steps: Array<{ id: string; text: string; isDone: boolean; choices: string[] }>
   later: Array<{ id: string; text: string }>
 }
@@ -54,8 +56,10 @@ export type PlanView = {
  */
 export function viewOf(file: PlanFile): PlanView {
   const { title, steps, later } = sectionsOf(withIds(file))
+  const summary = tidy(summaryOf(file) ?? '')
   return {
     title: tidy(title),
+    ...(summary === '' ? {} : { summary }),
     steps: steps.map(s => ({ id: s.id!, text: tidy(s.text), isDone: s.isDone, choices: decidedOf(s).map(d => tidy(d.text)) })),
     later: later.map(l => ({ id: l.id!, text: tidy(l.text) })),
   }
@@ -70,14 +74,15 @@ export type StartResult = { ok: true; slug: string; file: PlanFile } | Refused
  * A new plan. One goal only: refused while one is current. `taken` is the slugs of the plan files already there.
  * Steps that are empty after cleaning are left out.
  */
-export function startPlan(input: { goal: unknown; steps: readonly unknown[]; hasCurrent: boolean; taken: readonly string[] }): StartResult {
+export function startPlan(input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; hasCurrent: boolean; taken: readonly string[] }): StartResult {
   if (input.hasCurrent) return refuse('Cannot start: finish the current goal first (done or stopped).')
   const title = cleanText(input.goal)
   if (title === '') return refuse('A goal needs a title.')
   const steps = (Array.isArray(input.steps) ? input.steps : []).map(cleanText).filter(text => text !== '')
   if (steps.length === 0) return refuse('A plan needs at least one step.')
   if (steps.length > MAX_STEPS) return refuse(`A plan holds at most ${MAX_STEPS} steps.`)
-  const file = parsePlanFile(`# ${title}\n\n${steps.map(text => `- [ ] ${text}`).join('\n')}\n`)
+  const summary = cleanText(input.summary)
+  const file = parsePlanFile(`# ${title}\n${summary === '' ? '' : `> ${summary}\n`}\n${steps.map(text => `- [ ] ${text}`).join('\n')}\n`)
   return file === undefined ? refuse('That title cannot be used.') : { ok: true, slug: slugOf(title, input.taken), file: withMark(withIds(file), { s: 1, l: 1 }) }
 }
 
@@ -89,6 +94,8 @@ export type PlanOp =
   | { op: 'done'; id: string }
   | { op: 'reopen'; id: string }
   | { op: 'later'; text: string }
+  /** The goal in one sentence, under the title: set or replaced; empty text clears it. */
+  | { op: 'summary'; text: string }
   /** The office's own, never from the tool: a finished run's choices go under its step, and with `tick` the step is ticked. */
   | { op: 'decide'; id: string; choices: string[]; tick?: boolean }
   /** The office's own, from the Dismiss button on a Later item: that item leaves the file (a note indented under it stays). */
@@ -132,13 +139,23 @@ function changed(item: Item, patch: Partial<Item>): Item {
 
 // ---- The operations ----
 
-/** Where a first step goes in a plan with none: below the title and a blank line, and set off from what follows. */
+/** Where a first step goes in a plan with none: below the title (and its summary) and a blank line, and set off from what follows. */
 function firstStep(file: PlanFile, item: Item): PlanFile {
-  const second = file.rows[1]
-  const at = isBlank(second) ? 2 : 1
+  const head = file.rows[1]?.kind === 'summary' ? 2 : 1
+  const at = isBlank(file.rows[head]) ? head + 1 : head
   const next = file.rows[at]
   const gap = next !== undefined && !isBlank(next) ? [blank(file)] : []
-  return insertRows(file, at, [...(at === 1 ? [blank(file)] : []), item, ...gap])
+  return insertRows(file, at, [...(at === head ? [blank(file)] : []), item, ...gap])
+}
+
+/** The summary line straight under the title: set, replaced, or (empty text) taken out. */
+function setSummary(file: PlanFile, raw: string): OpResult {
+  const summary = cleanText(raw)
+  const has = file.rows[1]?.kind === 'summary'
+  const rest = file.rows.slice(has ? 2 : 1)
+  if (summary === '') return accept({ ...file, rows: [file.rows[0]!, ...rest] })
+  const row: Row = { kind: 'summary', summary, text: `> ${summary}`, eol: has ? file.rows[1]!.eol : rest.length === 0 ? '' : file.eol }
+  return accept({ ...file, rows: [closeRow(file.rows[0]!, file.eol), row, ...rest] })
 }
 
 function add(file: PlanFile, op: { text: string; after?: string }): OpResult {
@@ -260,6 +277,7 @@ function dispatch(f: PlanFile, op: PlanOp, active: ReadonlySet<string>): OpResul
     case 'done': return tick(f, op.id, true)
     case 'reopen': return tick(f, op.id, false)
     case 'later': return later(f, op.text)
+    case 'summary': return setSummary(f, op.text)
     case 'decide': return decide(f, op)
     case 'forget': return forget(f, op.id)
     default: return refuse(`There is no operation called ${fit(String((op as { op?: unknown }).op), 20)}.`)

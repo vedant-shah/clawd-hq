@@ -11,7 +11,7 @@ import type { Slot } from './pair-up'
 import { goalKey } from './plan-live'
 import { BOARD, MARK_WIDTH, RAIL_COLOR, RAIL_REACH, railSvg } from './plan-marks'
 import type { MarkKind } from './plan-marks'
-import { FOLD, askPrompt, doneInfo, failureLine, foldsOf, goalOf, retryPrompt, stoppedAt } from './plan-view'
+import { FOLD, SUMMARY_LABEL, askPrompt, doneInfo, failureLine, foldsOf, goalOf, retryPrompt, stoppedAt } from './plan-view'
 import type { PlanLayout, StepBlock } from './plan-view'
 
 type Item = JSX.Element
@@ -173,8 +173,8 @@ export function planItems(ctx: Ctx, layout: PlanLayout): Item[] {
   const items = timeline.map((make, i) => (i === timeline.length - 1 ? make(true, later) : make(false, [])))
   return [
     withRight(ctx, 'plan-head', <Text key="t" wrap="wrap"><Text bold dimColor>PLAN</Text>{'  '}<Text bold>{layout.title}</Text></Text>, <Text key="c" dimColor>{`${layout.done} of ${layout.total} done`}</Text>),
-    // The goal in one sentence, dim under the title and wrapping; the plan's "sm" gap sets it off from the title and the list.
-    ...(layout.summary === undefined ? [] : [<Text key="plan-summary" dimColor wrap="wrap">{layout.summary}</Text>]),
+    // The goal in one sentence, labelled as a card's "Now:" is, dim under the title and wrapping; the plan's "sm" gap sets it off from the title and the list.
+    ...(layout.summary === undefined ? [] : [<Text key="plan-summary" dimColor wrap="wrap">{`${SUMMARY_LABEL}${layout.summary}`}</Text>]),
     ...(items.length > 0 ? [<Box key="plan-timeline" flexDirection="column">{items}</Box>] : later),
   ]
 }

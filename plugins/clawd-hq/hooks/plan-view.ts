@@ -119,6 +119,9 @@ export function planLayout(state: PlanState, staff: readonly Employee[], folds: 
 
 // ---- The words ----
 
+/** The label before the plan's summary on both surfaces, as a card's "Now: " is. Drawn only: the file and the tool carry the sentence alone. */
+export const SUMMARY_LABEL = 'Summary: '
+
 /** "Sonnet 5.5 · 2m · 41K": model, how long it has worked, tokens; what is not known is left out. The effort level is left off. */
 export function statsLine(one: Employee, now: number): string {
   const end = isActive(one) ? now : one.endedAt ?? now

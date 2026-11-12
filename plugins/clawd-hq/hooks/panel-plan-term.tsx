@@ -10,7 +10,7 @@ import type { Ctx } from './panel-desk'
 import { laterFold } from './panel-later'
 import { MUTED_GREEN } from './plan-marks'
 import type { MarkKind } from './plan-marks'
-import { FOLD, agentWords, askPrompt, doneInfo, failureLine, foldsOf, goalOf, retryPrompt, statsLine, stoppedAt } from './plan-view'
+import { FOLD, SUMMARY_LABEL, agentWords, askPrompt, doneInfo, failureLine, foldsOf, goalOf, retryPrompt, statsLine, stoppedAt } from './plan-view'
 import type { PlanLayout, StepBlock } from './plan-view'
 import { goalKey } from './plan-live'
 import { cellText, widthOf, wrapSegs } from './wrap-to'
@@ -227,10 +227,11 @@ export function planRows(ctx: Ctx, layout: PlanLayout): Row[] {
   return [...head, ...summary, <kit.Text key="plan-gap">{' '}</kit.Text>, ...body, ...laterFold(ctx, { indent: SIDE })]
 }
 
-/** The goal in one sentence: one dim row under the title, cut with "…" where it does not fit; above the rail, so it carries none. */
+/** The goal in one sentence after its label: one dim row under the title, the label counted, cut with "…" where it does not fit; above the rail, so it carries none. */
 function summaryRow(ctx: Ctx, text: string): Row {
-  const whole = wrapSegs([{ text: cellText(text), style: 'dim' }], ctx.cw)
-  const segs = whole.length <= 1 ? whole[0] ?? [] : [...wrapSegs([{ text: cellText(text), style: 'dim' }], ctx.cw - 1)[0]!, { text: '…', style: 'dim' } as Seg]
+  const parts: Seg[] = [{ text: SUMMARY_LABEL, style: 'dim' }, { text: cellText(text), style: 'dim' }]
+  const whole = wrapSegs(parts, ctx.cw)
+  const segs = whole.length <= 1 ? whole[0] ?? [] : [...wrapSegs(parts, ctx.cw - 1)[0]!, { text: '…', style: 'dim' } as Seg]
   return line(ctx.kit, 'plan-summary', [], segs)
 }
 

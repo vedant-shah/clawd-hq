@@ -4,8 +4,8 @@ import { START, SURFACES, host, paneProps } from './host'
 import { cellWidth } from '../hooks/wrap-to'
 import { planFs } from './plan-disk'
 
-// The summary through the plan tool, and as each surface draws it: dim under the title, wrapped on the desktop, one row cut with "…" on the
-// terminal; no summary, no row.
+// The summary through the plan tool, and as each surface draws it: "Summary: " and the sentence, dim under the title, wrapped on the desktop,
+// one row cut with "…" on the terminal (the label counts toward the row); no summary, no row. The label is drawn only: not in the file or the tool.
 
 const PLAN = 'mcp__clawd-hq__plan'
 const LONG = 'Teachers can download every score of every class as one CSV file that opens cleanly in Excel and in Google Sheets.'
@@ -45,20 +45,21 @@ test('the summary op sets, replaces and clears it, and the answer follows', asyn
   expect((await call($, { op: 'summary', text: '' })).result!.split('\n')[1]).toMatch(/^s1 /)
 })
 
-test('on the desktop the summary is dim under the title row, wrapping, "sm" from the list', async ($, on) => {
+test('on the desktop the summary is "Summary: " and the sentence, dim under the title row, wrapping, "sm" from the list', async ($, on) => {
   await office($, on)
   await start($, LONG)
   const v = await drawn($, 'desktop', 40)
-  expect(v.nodes.find(t => String(t.text) === LONG)?.props).toMatchObject({ dimColor: true, wrap: 'wrap' })
-  expect(v.texts.indexOf(LONG)).toBeGreaterThan(v.texts.findIndex(t => t.includes('0 of 2 done')))
-  expect(v.texts.indexOf(LONG)).toBeLessThan(v.texts.indexOf('Find it'))
+  const shown = `Summary: ${LONG}`
+  expect(v.nodes.find(t => String(t.text) === shown)?.props).toMatchObject({ dimColor: true, wrap: 'wrap' })
+  expect(v.texts.indexOf(shown)).toBeGreaterThan(v.texts.findIndex(t => t.includes('0 of 2 done')))
+  expect(v.texts.indexOf(shown)).toBeLessThan(v.texts.indexOf('Find it'))
 })
 
-test('on the terminal at 40 columns the summary is one dim row, cut with "…", under the title and above the rail', async ($, on) => {
+test('on the terminal at 40 columns the summary is one dim row, "Summary: " and the sentence cut with "…", under the title and above the rail', async ($, on) => {
   await office($, on)
   await start($, LONG)
   const v = await drawn($, 'terminal', 40)
-  const at = v.rows.findIndex(r => r.startsWith('Teachers can'))
+  const at = v.rows.findIndex(r => r.startsWith('Summary: Teachers can'))
   expect(at).toBeGreaterThan(v.rows.findIndex(r => r.startsWith('PLAN')))
   expect(v.rows[at]!.endsWith('…')).toBe(true)
   expect(cellWidth(v.rows[at]!)).toBeLessThanOrEqual(40)
@@ -69,10 +70,20 @@ test('on the terminal at 40 columns the summary is one dim row, cut with "…", 
   for (const row of v.rows.slice(first, last + 1)) expect(row.startsWith('│') || /^[✓●○✗]/.test(row), row).toBe(true)
 })
 
-test('a short summary on the terminal is shown whole, with no "…"', async ($, on) => {
+test('a summary that fits 40 columns with its label is shown whole on the terminal, with no "…"', async ($, on) => {
   await office($, on)
-  await start($, 'Scores as CSV.')
-  expect((await drawn($, 'terminal', 40)).rows).toContain('Scores as CSV.')
+  const fits = 'Teachers get all scores as CSV.' // 9 cells of label and 31 of text: exactly 40
+  await start($, fits)
+  const row = (await drawn($, 'terminal', 40)).rows.find(r => r.startsWith('Summary: '))
+  expect(row).toBe(`Summary: ${fits}`)
+  expect(cellWidth(row!)).toBe(40)
+})
+
+test('the label is drawn only: the file and the tool\'s answer carry the sentence as before', async ($, on) => {
+  const h = await office($, on)
+  const answer = await start($, 'Scores as CSV.')
+  expect(answer.result!.split('\n')[1]).toBe('Summary: Scores as CSV.')
+  expect([...h.files.values()].find(one => one.startsWith('# Export'))!.split('\n')[1]).toBe('> Scores as CSV.')
 })
 
 test('no summary, no extra row, on either surface', async ($, on) => {

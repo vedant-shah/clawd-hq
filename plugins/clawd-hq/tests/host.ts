@@ -51,7 +51,9 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   const disk = { isWriteFailing: false, isReadFailing: false, isExistsFailing: false }
   on('fs.exists', (_$, e) => {
     if (disk.isExistsFailing) throw new Error('the check itself failed')
-    return { value: files.has((e as { path: string }).path) } as never
+    // A folder exists when a file lies in it, as on a real disk.
+    const path = (e as { path: string }).path
+    return { value: files.has(path) || [...files.keys()].some(one => one.startsWith(`${path}/`)) } as never
   })
   /** The paths the plugin asked to read, in order. */
   const reads: string[] = []

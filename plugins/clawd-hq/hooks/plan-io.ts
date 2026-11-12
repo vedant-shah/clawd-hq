@@ -6,9 +6,10 @@
 // close it. Two goals in two sessions use two files for that reason.
 // A failure comes back as its reason, never thrown, and leaves a debug record. Only plain files inside the project's own plans folder
 // are read or written: a link, or a folder that leads elsewhere, is refused. The register-*.ts files will hand in `PlanIo` (Phase 2).
-import { applyOp, startPlan, viewOf } from './plan'
+import { applyOp, startPlan, viewOf, withSavedIds } from './plan'
 import type { PlanOp, PlanView } from './plan'
-import { parsePlanFile, serialisePlanFile } from './plan-file'
+import { parsePlanFile, sectionsOf, serialisePlanFile } from './plan-file'
+import type { PlanFile } from './plan-file'
 import { inLine, reasonOf } from './state'
 
 /**
@@ -20,14 +21,25 @@ export type PlanIo = {
   exists: (path: string) => Promise<boolean>
   read: (path: string) => Promise<string>
   write: (path: string, text: string) => Promise<void>
-  list: (path: string) => Promise<ReadonlyArray<{ name: string; kind: string; isLink?: boolean }>>
+  list: (path: string) => Promise<ReadonlyArray<{ name: string; kind: string; isLink?: boolean; size?: number }>>
   stat: (path: string) => Promise<{ kind: string; mtimeMs: number; isLink: boolean; realPath?: string }>
   debug: (note: string) => Promise<unknown>
 }
 
 export type PlanSaved = { ok: true; slug: string; plan: PlanView } | { ok: false; reason: string }
+
+/** The ids of the steps a specialist is working on: given now, or asked for when the change's turn in the queue comes. */
+export type Active = ReadonlySet<string> | (() => ReadonlySet<string> | Promise<ReadonlySet<string>>)
+
+/** An operation, or one worked out when its turn in the queue comes, from the session as it is then. */
+export type AsOp = PlanOp | (() => PlanOp | Promise<PlanOp>)
+
+/** Called inside the queue, right after a change was written (or found to need none), so what the session holds is set in the order the files were. */
+export type OnSaved<T> = (saved: T) => Promise<unknown> | unknown
 type Refused = { ok: false; reason: string }
 
+/** The answer for a plan file that is not there (or is empty: a goal that ended). */
+export const GONE = 'That plan file is gone.'
 const NO_FOLDER = 'there is no project folder to keep a plan in.'
 const OUTSIDE = 'The plans folder does not lie inside the project (it is a link to somewhere else), so it was left alone.'
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -75,10 +87,13 @@ async function plainFile(io: PlanIo, dir: string, path: string, name: string): P
   return isPlain ? { mtimeMs: s.mtimeMs } : undefined
 }
 
-/** The slugs of the plan files there are, in lower case; none when the folder is not there yet. */
+/**
+ * The slugs of the plan files there are, in lower case; none when the folder is not there yet. DECIDED: the host has no call to delete a
+ * file, so a goal that ends leaves its file empty (`finishGoal`), and an empty file counts as no plan: its name is free again.
+ */
 async function takenSlugs(io: PlanIo, dir: string): Promise<string[]> {
   if (!(await io.exists(dir))) return []
-  return (await io.list(dir)).filter(one => one.name.endsWith('.md')).map(one => one.name.slice(0, -3).toLowerCase())
+  return (await io.list(dir)).filter(one => one.name.endsWith('.md') && one.size !== 0).map(one => one.name.slice(0, -3).toLowerCase())
 }
 
 /**
@@ -101,7 +116,7 @@ export function startGoal(io: PlanIo, root: string, input: { goal: unknown; step
       if (!made.ok) return made
       const path = fileOf(root, made.slug)
       doing = 'write the plan file'
-      if (await io.exists(path)) return { ok: false, reason: 'A plan file with that name is already there.' }
+      if ((await io.exists(path)) && (await io.read(path)).trim() !== '') return { ok: false, reason: 'A plan file with that name is already there.' }
       await io.write(path, serialisePlanFile(made.file))
       return { ok: true, slug: made.slug, plan: viewOf(made.file) }
     } catch (err) {
@@ -110,36 +125,81 @@ export function startGoal(io: PlanIo, root: string, input: { goal: unknown; step
   })
 }
 
+/** A plan file read for a change: where it is, what it said, and its rows. */
+type Read = { ok: true; path: string; before: string; file: PlanFile } | Refused
+
 /**
- * One operation on a plan file, made on the file as it is now. `active` is the ids of the steps a specialist is working on. A file that
- * cannot be read, is not a plan, or is not a plain file in the plans folder is left exactly as it is; so is one whose operation is
- * refused or changes nothing.
+ * Reads the plan file of a slug, once the plans folder and the file are known to be the project's own. An empty file is a goal that ended.
+ * A refusal comes back as a value; a call that fails throws, for the caller's own try.
  */
-export function changeGoal(io: PlanIo, root: string, slug: string, op: PlanOp, active: ReadonlySet<string>): Promise<PlanSaved> {
-  return inLine(async (): Promise<PlanSaved> => {
-    if (root === '') return { ok: false, reason: `Cannot change the plan: ${NO_FOLDER}` }
-    if (!SLUG.test(slug)) return { ok: false, reason: 'That is not the name of a plan file.' }
-    const path = fileOf(root, slug)
-    let doing = 'change the plan'
+async function readPlan(io: PlanIo, root: string, slug: string): Promise<Read> {
+  const place = await placeOf(io, root)
+  if (!place.ok) return place
+  const path = fileOf(root, slug)
+  if (!(await io.exists(path))) return { ok: false, reason: GONE }
+  if (!(await plainFile(io, place.dir, path, `${slug}.md`))) return { ok: false, reason: 'That is not a plain file in the plans folder, so it was left alone.' }
+  const before = await io.read(path)
+  if (before.trim() === '') return { ok: false, reason: GONE }
+  const file = parsePlanFile(before)
+  return file === undefined ? { ok: false, reason: 'That file is not a plan (its first line is not "# title"), so it was left alone.' } : { ok: true, path, before, file }
+}
+
+/** Checks a name and a folder, then runs the work in the queue; whatever throws is an answer and a debug record. */
+function inPlan<T extends { ok: boolean }>(io: PlanIo, root: string, slug: string, work: (read: Extract<Read, { ok: true }>) => Promise<T | Refused>): Promise<T | Refused> {
+  return inLine(async () => {
+    if (root === '') return { ok: false, reason: `Cannot change the plan: ${NO_FOLDER}` } as Refused
+    if (!SLUG.test(slug)) return { ok: false, reason: 'That is not the name of a plan file.' } as Refused
+    let doing = 'read the plan file'
     try {
-      doing = 'look in the plans folder'
-      const place = await placeOf(io, root)
-      if (!place.ok) return place
-      doing = 'read the plan file'
-      if (!(await io.exists(path))) return { ok: false, reason: 'That plan file is gone.' }
-      if (!(await plainFile(io, place.dir, path, `${slug}.md`))) return { ok: false, reason: 'That is not a plain file in the plans folder, so it was left alone.' }
-      const before = await io.read(path)
-      const file = parsePlanFile(before)
-      if (file === undefined) return { ok: false, reason: 'That file is not a plan (its first line is not "# title"), so it was left alone.' }
-      const done = applyOp(file, op, active)
-      if (!done.ok) return done
-      const text = serialisePlanFile(done.file)
-      doing = 'write the plan file'
-      if (text !== before) await io.write(path, text)
-      return { ok: true, slug, plan: viewOf(done.file) }
+      const read = await readPlan(io, root, slug)
+      if (!read.ok) return read
+      doing = 'change the plan file'
+      return await work(read)
     } catch (err) {
       return failed(io, doing, err)
     }
+  })
+}
+
+/**
+ * One operation on a plan file, made on the file as it is now. `op` and `active` (the ids of the steps a specialist is working on) may be functions, asked when this change's turn comes. `onSaved` is given the plan inside the queue, so the session's copy is set in the order of the
+ * writes. A file that cannot be read, is not a plan, or is not a plain file in the plans folder is left exactly as it is; so is one
+ * whose operation is refused or changes nothing.
+ */
+export function changeGoal(io: PlanIo, root: string, slug: string, op: AsOp, active: Active, onSaved?: OnSaved<PlanView>): Promise<PlanSaved> {
+  return inPlan<PlanSaved>(io, root, slug, async ({ path, before, file }) => {
+    const done = applyOp(file, typeof op === 'function' ? await op() : op, typeof active === 'function' ? await active() : active)
+    if (!done.ok) return done
+    const text = serialisePlanFile(done.file)
+    if (text !== before) await io.write(path, text)
+    const plan = viewOf(done.file)
+    await onSaved?.(plan)
+    return { ok: true, slug, plan }
+  })
+}
+
+/** Writes the ids that steps added by hand lack, so the numbers shown for them are real. Nothing is written when none lacked one. */
+export function saveIds(io: PlanIo, root: string, slug: string, onSaved?: OnSaved<PlanView>): Promise<PlanSaved> {
+  return inPlan<PlanSaved>(io, root, slug, async ({ path, file }) => {
+    const next = withSavedIds(file)
+    if (next !== file) await io.write(path, serialisePlanFile(next))
+    const plan = viewOf(next)
+    await onSaved?.(plan)
+    return { ok: true, slug, plan }
+  })
+}
+
+/**
+ * Ends a goal's file. `beforeEnd` is given the texts of the Later items not ticked, to be kept somewhere else first; if it throws, the
+ * file is left as it is and nothing is lost. `onSaved` runs inside the queue once the file is empty. DECIDED: the host has no call to
+ * delete a file (its `fs` has read, write, list, exists and stat only), so the file is written empty, and an empty plan file counts as no plan.
+ */
+export function finishGoal(io: PlanIo, root: string, slug: string, beforeEnd: (later: string[]) => Promise<void>, onSaved?: OnSaved<void>): Promise<{ ok: true; slug: string } | Refused> {
+  return inPlan<{ ok: true; slug: string }>(io, root, slug, async ({ path, file }) => {
+    await beforeEnd(sectionsOf(file).later.filter(item => !item.isDone).map(item => item.text))
+    await io.write(path, '')
+    await onSaved?.()
+    return { ok: true, slug }
   })
 }
 

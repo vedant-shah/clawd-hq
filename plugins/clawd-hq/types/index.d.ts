@@ -51,6 +51,33 @@ export type Employee = {
   report?: string
   /** The key choices it reported in its hand-backs (its DECIDED lines), oldest first, at most five (hooks/staff-model.ts). Kept for the session only, with the record. */
   choices?: string[]
+  /** The id of the plan step this run was hired for (a `PLAN: s2` first line in its brief, hooks/plan-run.ts). None for a run outside the plan. */
+  stepId?: string
+  /** The goal that step belongs to (`<slug>:<the goal's start time>`, hooks/plan-live.ts `goalKey`): a run only counts for the goal it was hired in, so an earlier goal's s2 is never this goal's. */
+  planKey?: string
+}
+
+/** One row of the plan (hooks/plan-live.ts): its words and ticks come from the plan file; whether it is now, needs attention or next is worked out from the runs, never kept. */
+export type PlanStep = {
+  id: string
+  text: string
+  isDone: boolean
+  /** The choices under the step in the file (`Decided:` lines). */
+  choices: string[]
+  /** Added or changed since the person last sent a message; cleared by their next one. */
+  isNew?: boolean
+  /** When the step was last reopened: runs that started before it no longer count against ticking the step. */
+  reopenedAt?: number
+}
+
+/** The goal in hand, as the session holds it: the plan file's content, loaded at session start and after each change. There is one goal only. */
+export type PlanState = {
+  /** The plan file's name, without `.md`. */
+  slug: string
+  title: string
+  steps: PlanStep[]
+  later: Array<{ id: string; text: string }>
+  startedAt: number
 }
 
 /** A page on claude.ai that Claude published or opened with the Artifact tool (or published with the claude-artifacts connector) in this project, newest first. */
@@ -71,7 +98,7 @@ export type LeftItem = {
   /** Untrusted text, one line. */
   text: string
   /** Where it was found: an unfinished-work line written into a code file, or the second model check. */
-  source: 'file' | 'check'
+  source: 'file' | 'check' | 'plan'
   /** Who left it: Clawd, or the specialist's name. */
   by: string
   at: number
@@ -270,6 +297,8 @@ declare module 'claude-code' {
        * reads it as one); null until the frames look for it this session.
        */
       onboard: { step: string; lines: readonly string[]; buttons: readonly unknown[] } | null
+      /** The goal in hand (hooks/plan-live.ts); null when there is none, or when Clawd is off and none was loaded. */
+      plan: PlanState | null
     }
   }
 }

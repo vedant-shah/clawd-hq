@@ -24,6 +24,25 @@ export function parsePairUp(prompt: string): { goal?: string; isCouncil?: true; 
   return { goal, ...(m[1]!.toUpperCase() === 'COUNCIL' ? { isCouncil: true as const } : {}), prompt: prompt.slice(m[0].length) }
 }
 
+const PLAN_LINE = /^\s*PLAN:[ \t]*(\S+)([^\r\n]*)(\r?\n|$)/i
+const STEP_ID = /^s\d{1,6}$/i
+
+/**
+ * The `PLAN: <step id>` line Clawd starts a brief with to say which step of the plan the hire is for, and the brief without it. Only a
+ * line at the very start counts (after the effort line, and before or after the pair-up line: the caller tries both places). It is a
+ * plan line only when its first word is `s` and one to six digits, in any case and without a closing mark (`S2.` is `s2`); any other
+ * `Plan: ...` line, such as "Plan: update the docs", is the brief's own words and is left exactly as it is. Words after the id on the
+ * line are kept as the first line of the brief. The caller checks the id against the plan.
+ */
+export function parsePlanLine(prompt: string): { stepId?: string; prompt: string } {
+  const m = prompt.match(PLAN_LINE)
+  const id = m ? m[1]!.replace(/[.,;:!]+$/, '') : ''
+  if (!m || !STEP_ID.test(id)) return { prompt }
+  const rest = m[2]!.trim()
+  const remainder = prompt.slice(m[0].length)
+  return { stepId: id.toLowerCase(), prompt: rest === '' ? remainder : `${rest}${m[3]}${remainder}` }
+}
+
 /** Two or more specialists hired together for one goal, in the order they were hired. `isCouncil` marks a council: voices on one question, drawn as one card with its own picture. */
 export type PairGroup = { goal: string; members: Employee[]; isCouncil?: true }
 

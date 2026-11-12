@@ -4,7 +4,7 @@ import type { ModelCompleteResult } from 'claude-code'
 import type { LeftItem } from '../types'
 import { fit } from './desk'
 import { CHECK_MAX_TOKENS, CHECK_MODEL, CHECK_TIMEOUT_MS, checkAsk, leftStart as resetCheck, parseUndone, takeCheck } from './left-check'
-import { cleanLeft, promptOf, withLeft } from './left-list'
+import { LEFT_PLAN_KEEP, cleanLeft, promptOf, withLeft } from './left-list'
 import type { FreshItem } from './left-list'
 import { logCheck } from './left-log'
 import { isProjectCode, linesWritten } from './left-scan'
@@ -43,8 +43,11 @@ export type LeftIo = {
 
 export type LeftActions = { leftDo: (id: string) => unknown; leftClear: () => unknown }
 
+/** What adding to the list needs of `LeftIo`. */
+type ListIo = Pick<LeftIo, 'folder' | 'now' | 'change' | 'save'>
+
 /** One change to the list, made on the list as it stands when its turn comes and saved under the folder. A project that changed meanwhile is not written to; a save that fails is let go (the list stays for the session, and nothing is shown). */
-function commit(io: LeftIo, folder: string, fn: (list: LeftItem[]) => LeftItem[]) {
+function commit(io: ListIo, folder: string, fn: (list: LeftItem[]) => LeftItem[]) {
   return inLine(async () => {
     if (io.folder() !== folder) return
     const next = await io.change(fn)
@@ -52,10 +55,34 @@ function commit(io: LeftIo, folder: string, fn: (list: LeftItem[]) => LeftItem[]
   })
 }
 
-async function add(io: LeftIo, folder: string, fresh: readonly FreshItem[]) {
+async function add(io: ListIo, folder: string, fresh: readonly FreshItem[]) {
   if (fresh.length === 0) return
   const at = await io.now()
   await commit(io, folder, list => withLeft(list, fresh, at))
+}
+
+/**
+ * A goal ended with items put off: they join this project's list, every one of them (see `LEFT_PLAN_KEEP`: none is merged or cut). Unlike
+ * the other sources, a failure is not let go: it throws, with the list put back as it was, so the caller can refuse to end the goal
+ * and nothing is lost. Not queued: the plan's own queue is already holding the caller.
+ */
+export async function leftAddItems(io: ListIo, texts: readonly string[], by: string): Promise<void> {
+  if (texts.length === 0) return
+  const folder = io.folder()
+  if (folder === '') throw new Error('there is no project folder to keep the Later list in')
+  const [at, held] = [await io.now(), await io.change(list => list)]
+  const have = held.filter(one => one.source === 'plan').length
+  if (have + texts.length > LEFT_PLAN_KEEP) throw new Error(`the project's Later list already holds ${have} put-off items from earlier goals and keeps ${LEFT_PLAN_KEEP} at most; clear some first`)
+  const fresh = texts.map((text): FreshItem => ({ text, source: 'plan', by }))
+  let before = held
+  const next = await io.change(list => { before = list; return withLeft(list, fresh, at) })
+  try {
+    if (io.folder() !== folder) throw new Error('the session moved to another folder')
+    await io.save(folder, next)
+  } catch (err) {
+    await io.change(() => before)
+    throw err
+  }
 }
 
 /** The buttons: Do it now puts the item's sentence in the prompt box (and keeps the item); Clear empties the list. */

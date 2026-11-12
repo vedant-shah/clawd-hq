@@ -97,3 +97,30 @@ export const OFFER_RULE_SPEC: ToolSpec = {
     required: ['rule'],
   },
 }
+
+export const PLAN_SPEC: ToolSpec = {
+  name: 'plan',
+  // In the prompt's own list: Clawd calls it whenever the goal changes, so he should not have to search for it first.
+  isDeferred: false,
+  description:
+    'For Clawd, in the main chat: keep the plan for the one goal in hand, a short ordered list of steps the person would recognise, saved in the project. ' +
+    'Use it when the person asks for something that takes several steps. One goal at a time: op "start" is refused until the goal in hand is over. ' +
+    'Ops: start (goal, steps), add (text, and after to place it), drop (id), move (id, and after; no after means first), split (id, steps), ' +
+    'done (id: you did that step yourself), reopen (id), later (text: put off for another day), finish (outcome "done" or "stopped": the goal is over). ' +
+    'Every call answers with the plan and the id of each step (s1, s2, ...). Hire a specialist for a step by starting its brief with the line PLAN: <id>, after the PAIR-UP: line if there is one. ' +
+    'A step is ticked by itself when its specialist finishes well and nothing else is working on it, and it is never ticked when a specialist on it failed: then it is yours to rerun, drop, or tick with done. ' +
+    'The goal is never ended by itself: call finish when the person is satisfied. A step with a specialist at work cannot be dropped or split. A specialist cannot use this tool.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      op: { type: 'string', enum: ['start', 'add', 'drop', 'move', 'split', 'done', 'reopen', 'later', 'finish'], description: 'What to do.' },
+      goal: { type: 'string', description: 'For start: the goal in a few words, e.g. “Export scores as CSV”.' },
+      steps: { type: 'array', items: { type: 'string' }, description: 'For start: the steps in order (1 to 40). For split: the two or more steps that replace one. Each at most 120 characters.' },
+      id: { type: 'string', description: 'For drop, move, split, done and reopen: the step\'s id, as the last answer gave it, e.g. “s2”.' },
+      after: { type: 'string', description: 'For add and move: the id of the step to go after. Left out, add goes last and move goes first.' },
+      text: { type: 'string', description: 'For add and later: the words of the step or the put-off item, at most 120 characters.' },
+      outcome: { type: 'string', enum: ['done', 'stopped'], description: 'For finish: how the goal ended.' },
+    },
+    required: ['op'],
+  },
+}

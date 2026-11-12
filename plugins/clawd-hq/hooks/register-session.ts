@@ -19,6 +19,8 @@ import { forgetCoffee } from './register-coffee'
 import { artifactIo } from './register-artifacts'
 import { enroll, gaugeIo, oldIo, paneIo, payrollIo, recapIo, runIo, showStatus } from './register-io'
 import { knowIo } from './register-know'
+import { loadPlan } from './plan-run'
+import { planRunIo } from './register-plan'
 import { refreshTab } from './register-rules'
 import { folderIo, onboardIo, registerScout } from './register-setup'
 import { forgetQuiet, getBoss, getFx, readOnboard, readStaff, readTick, ses, setFx, updateArtifacts, updateGauge, updateLeftUndone, updatePayroll, updateStaff, updateTick } from './register-state'
@@ -27,7 +29,7 @@ import { BYPASS_KEY, REACH0, withNewConversation } from './rules-reach'
 import { scoutPromptNow } from './scout-run'
 import { followFolder, startFolderWatch } from './session-folder'
 import { PAYROLL0, runEach, startNote } from './state'
-import { BEFORE_QUESTION_SPEC, DEMO_SPEC,FIND_HELPERS_SPEC, HIRE_CONTRACTOR_SPEC, OFFER_RULE_SPEC, STEP_SPEC } from './tool-specs'
+import { BEFORE_QUESTION_SPEC, DEMO_SPEC,FIND_HELPERS_SPEC, HIRE_CONTRACTOR_SPEC, OFFER_RULE_SPEC, PLAN_SPEC, STEP_SPEC } from './tool-specs'
 import { loadSaved, useSaved } from './toggle-store'
 import { startGauge } from './usage'
 
@@ -88,12 +90,14 @@ export function registerSession(on: On, brief: BriefingOptions) {
       ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${ses.cwd}`)); await updateArtifacts($, () => pages) }],
       ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${ses.cwd}`)); await updateLeftUndone($, () => items) }],
       ['project tokens', () => loadTokens(runIo($))], // this folder's totals only: a new project shows none
+      ['plan', () => loadPlan(planRunIo($, brief))], // the newest plan file of this folder is the goal in hand; with Clawd off, none is loaded
       ['offer rule tool', () => $.tool.register(OFFER_RULE_SPEC)],
       ['old decisions card', () => checkOld(oldIo($))],
       ['step tool', () => $.tool.register(STEP_SPEC)],
       ['find helpers tool', () => $.tool.register(FIND_HELPERS_SPEC)],
       ['contractor tool', () => $.tool.register(HIRE_CONTRACTOR_SPEC)],
       ['pause tool', () => $.tool.register(BEFORE_QUESTION_SPEC)],
+      ['plan tool', () => $.tool.register(PLAN_SPEC)],
       ['setup scout', () => registerScout($, scoutPromptNow())], // an ask to Clawd still open keeps its brief
       ['setup', async () => startOnboard(await onboardIo($, brief))], // looked for again on the frames
       ['skill hires', async () => rehire(await onboardIo($, brief))], // the engine forgets registered agents each session

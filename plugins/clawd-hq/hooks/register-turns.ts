@@ -14,6 +14,8 @@ import { leftAnswer, leftAsked, leftOwnTurn, leftTurnStart } from './left-io'
 import { labelOf } from './office'
 import { turnEndBoss } from './office-state'
 import { askAgain } from './panes'
+import { clearNewMarks, settleRun } from './plan-run'
+import { planRunIo } from './register-plan'
 import { DEMO } from './panel-model'
 import { noteThreshold } from './usage'
 import { noteRecapTurn } from './recap'
@@ -32,6 +34,7 @@ export function registerTurns(on: On, brief: BriefingOptions) {
   // An edit request from the Settings tab carries a note of its own: the file to edit, and what must not be touched.
   on('prompt.submit', async ($, e, next) => {
     leftAsked(e)
+    if (isPersonMessage(e)) await clearNewMarks(planRunIo($, brief)) // the plan's "new" marks were for the message before this one
     if (isPersonMessage(e)) await setBoss($, b => withPersonSpoke(b, e.origin?.kind)) // what closed before it is behind us: the coffee break button waits for the next checkpoint
     else if (isNotification(e)) await setBoss($, b => withNotice(b, e.turnId !== undefined)) // a job's notification starts or joins a turn: which one reports a hand-back
     if (brief.isKnowOn) await knowPrompt(knowIo($), e as { text: string })
@@ -68,6 +71,8 @@ export function registerTurns(on: On, brief: BriefingOptions) {
         void leftAnswer(leftIo($), e, by)
       }
       await clockOut(runIo($), e.agentId, e.reason === 'answer' ? 'done' : 'failed')
+      // The one place a plan step is ticked: a linked run's real hand-back. Its choices go under the step now; a stop signal or the engine's list ticks nothing.
+      if (e.reason === 'answer') await settleRun(planRunIo($, brief), e.agentId)
       await showStatus($)
     } else {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)

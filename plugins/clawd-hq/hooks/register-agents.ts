@@ -10,9 +10,11 @@ import type { BriefingOptions } from './instructions'
 import { keepBrief } from './know-check'
 import { freshHire, withBlurb } from './office-state'
 import { isActive } from './panel-model'
-import { parsePairUp } from './pair-up'
+import { parsePairUp, parsePlanLine } from './pair-up'
+import { linkStep } from './plan-run'
 import { holdBack } from './payroll'
 import { enrollNow, gaugeIo, payrollIo, runIo, showStatus } from './register-io'
+import { planRunIo } from './register-plan'
 import { judgeReach } from './register-rules'
 import { efforts, readBlurbs, readRoster, readStaff, readTick, ses, setBoss, updateBlurbs, updateStaff } from './register-state'
 import { resumedEffort } from './resume-effort'
@@ -75,7 +77,11 @@ export function registerAgents(on: On, brief: BriefingOptions) {
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     // A pair-up member's `PAIR-UP: <goal>` line (hooks/pair-up.ts) comes off the same way, right after it.
     const { effort, prompt: unEffort } = parseEffort(e.prompt)
-    const { goal, isCouncil, prompt } = parsePairUp(unEffort)
+    // The `PLAN: <step id>` line (hooks/plan-run.ts) comes off the same way, before the pair-up line or after it.
+    const planFirst = parsePlanLine(unEffort)
+    const { goal, isCouncil, prompt: unPair } = parsePairUp(planFirst.prompt)
+    const planLast = planFirst.stepId === undefined ? parsePlanLine(unPair) : { stepId: undefined, prompt: unPair }
+    const [prompt, planId] = [planLast.prompt, planFirst.stepId ?? planLast.stepId]
     await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
     if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
@@ -86,7 +92,9 @@ export function registerAgents(on: On, brief: BriefingOptions) {
       if (effort) efforts.set(r.agentId, effort)
       await newHire(runIo($), r.agentId, e.subagentType, e.description, e.name)
       const pair = goal !== undefined && !e.workflow ? { goal, at: await $.clock.now(), ...(isCouncil ? { isCouncil } : {}) } : undefined // a workflow keeps its script's prompt, so its line was never taken off
-      await updateStaff($, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), ...(pair ? { pair } : {}), model: one.model || r.model })))
+      // A step the plan does not have books the run off-plan, with a debug record; the hire is never refused. A workflow's agent is never linked.
+      const planKey = planId !== undefined && !e.workflow ? await linkStep(planRunIo($, brief), planId) : undefined
+      await updateStaff($, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), ...(pair ? { pair } : {}), ...(planKey !== undefined ? { stepId: planId, planKey } : {}), model: one.model || r.model })))
       await showStatus($)
     }
     return r

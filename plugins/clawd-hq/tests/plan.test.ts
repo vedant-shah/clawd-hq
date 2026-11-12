@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { MAX_ID, parsePlanFile, sectionsOf, serialisePlanFile } from '../hooks/plan-file'
 import { HAND_EDITED } from './plan-fixtures'
-import { MAX_LATER, MAX_STEPS, TEXT_CHARS, applyOp, cleanText, slugOf, startPlan, viewOf } from '../hooks/plan'
+import { MAX_CHOICES, MAX_LATER, MAX_STEPS, TEXT_CHARS, applyOp, cleanText, slugOf, startPlan, viewOf, withSavedIds } from '../hooks/plan'
 import type { PlanOp } from '../hooks/plan'
 
 // The plan's operations (pure): what each one does to the file's text, and each reason it refuses. A refusal changes nothing.
@@ -357,4 +357,47 @@ test('every operation on a hand-edited file keeps every line that is not a step,
     expect(indentedNotes(out), JSON.stringify(op)).toEqual(indentedNotes(HAND_EDITED))
     expect(serialisePlanFile(parsePlanFile(out)!)).toBe(out)
   }
+})
+
+// ---- The choices a finished run reported ----
+
+test('decide puts the choices under the step, after the ones it has, and ticks it when asked', () => {
+  expect(text(run(BASE, { op: 'decide', id: 's1', choices: ['use two files'] }))).toBe(BASE.replace('  - Decided: use one file\n', '  - Decided: use one file\n  - Decided: use two files\n'))
+  expect(text(run(BASE, { op: 'decide', id: 's3', choices: ['keep it flat'], tick: true }))).toBe(BASE.replace('- [ ] C  <!-- s3 -->\n', '- [x] C  <!-- s3 -->\n  - Decided: keep it flat\n'))
+  expect(text(run(BASE, { op: 'decide', id: 's3', choices: [], tick: true }))).toBe(BASE.replace('- [ ] C', '- [x] C'))
+})
+
+test('decide keeps the step\'s own line as written when it only adds choices, and puts them before the person\'s notes only when there are no choices yet', () => {
+  const edited = '# G\n-  [ ]  odd\n- [ ] Odd   spacing  <!-- s1 -->\n  my note\n'
+  expect(text(run(edited, { op: 'decide', id: 's1', choices: ['x'] }))).toBe('# G\n-  [ ]  odd\n- [ ] Odd   spacing  <!-- s1 -->\n  - Decided: x\n  my note\n')
+})
+
+test('decide adds no choice twice (any case or spacing), keeps at most five, and writes nothing when nothing is new', () => {
+  const has = text(run(BASE, { op: 'decide', id: 's1', choices: ['USE  one file', 'use one file', 'a new one', 'A NEW  one'] }))
+  expect(has.match(/Decided:/g)).toHaveLength(2)
+  const many = text(run(BASE, { op: 'decide', id: 's1', choices: ['b', 'c', 'd', 'e', 'f', 'g'] }))
+  expect(many.match(/Decided:/g)).toHaveLength(MAX_CHOICES)
+  expect(many).not.toContain('Decided: f')
+  expect(text(run(BASE, { op: 'decide', id: 's1', choices: ['use one file'] }))).toBe(BASE)
+  const full = text(run(BASE, { op: 'decide', id: 's1', choices: ['b', 'c', 'd', 'e'] }))
+  expect(text(run(full, { op: 'decide', id: 's1', choices: ['z'] }))).toBe(full)
+})
+
+test('decide is refused for a step that is not there, and cleans each choice like any text', () => {
+  expect(run(BASE, { op: 'decide', id: 's9', choices: ['x'] })).toEqual({ reason: 'There is no step s9.' })
+  expect(text(run(BASE, { op: 'decide', id: 's3', choices: ['a\n## Later <!-- s9 -->'] }))).toContain('  - Decided: a ## Later s9\n')
+})
+
+test('decide closes a last line with no line break before putting a choice after it', () => {
+  expect(text(run('# G\n- [ ] A  <!-- s1 -->', { op: 'decide', id: 's1', choices: ['x'], tick: true }))).toBe('# G\n- [x] A  <!-- s1 -->\n  - Decided: x\n')
+})
+
+// ---- Ids made real ----
+
+test('withSavedIds gives the same file when every step has an id, and the numbers viewOf showed when some had none', () => {
+  const whole = parsePlanFile(BASE)!
+  expect(withSavedIds(whole)).toBe(whole)
+  const hand = parsePlanFile('# G\n- [ ] By hand\n- [ ] A  <!-- s4 -->\n')!
+  expect(viewOf(hand).steps.map(s => s.id)).toEqual(['s5', 's4'])
+  expect(serialisePlanFile(withSavedIds(hand))).toBe('# G\n- [ ] By hand  <!-- s5 -->\n- [ ] A  <!-- s4 -->\n<!-- next: s6 l1 -->\n')
 })

@@ -6,7 +6,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Atom, EngineInterface } from 'claude-code'
 
-import type { Artifact, Badge, Boss, ContractorOffer, Employee, Fx, LeftItem, Payroll, RuleOffer } from '../types'
+import type { Artifact, Badge, Boss, ContractorOffer, Employee, Fx, LeftItem, Payroll, PlanState, RuleOffer } from '../types'
 import type { Effort } from './desk'
 import type { Briefing } from './instructions'
 import { KNOW0 } from './know'
@@ -32,6 +32,7 @@ const contractorOffers = atom({ plugin: 'clawd-hq', key: 'contractorOffers' } as
 const know = atom({ plugin: 'clawd-hq', key: 'know' } as const, KNOW0)
 const clawdBrief = atom({ plugin: 'clawd-hq', key: 'brief' } as const, BRIEF0)
 const onboard = atom({ plugin: 'clawd-hq', key: 'onboard' } as const, null as OnboardCard | null)
+const plan = atom({ plugin: 'clawd-hq', key: 'plan' } as const, null as PlanState | null)
 
 /** The change a write applies to what an atom holds. */
 type Change<A> = A extends Atom<infer T> ? (value: T) => T : never
@@ -63,6 +64,8 @@ export function readClawdBrief($: EngineInterface) { return read($, clawdBrief) 
 export function updateClawdBrief($: EngineInterface, fn: Change<typeof clawdBrief>) { return update($, clawdBrief, fn) }
 export function readOnboard($: EngineInterface) { return read($, onboard) }
 export function updateOnboard($: EngineInterface, fn: Change<typeof onboard>) { return update($, onboard, fn) }
+export function readPlan($: EngineInterface) { return read($, plan) }
+export function updatePlan($: EngineInterface, fn: Change<typeof plan>) { return update($, plan, fn) }
 
 // Values written by an older version of the mod lack the newer fields: fill them in.
 export async function getBoss($: EngineInterface): Promise<Boss> { return { ...BOSS0, ...(await read($, boss)) } }

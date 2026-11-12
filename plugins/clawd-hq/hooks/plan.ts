@@ -7,6 +7,8 @@ import type { Item, PlanFile, Row } from './plan-file'
 
 export const MAX_STEPS = 40
 export const MAX_LATER = 20
+/** The most choices a step keeps in its file. */
+export const MAX_CHOICES = 5
 /** DECIDED: step text, Later text and the title are each cut at a word to 120 characters. */
 export const TEXT_CHARS = 120
 /** DECIDED: 40 characters are the title's share of a slug; the `-2` of a clash comes after them. */
@@ -80,6 +82,8 @@ export type PlanOp =
   | { op: 'done'; id: string }
   | { op: 'reopen'; id: string }
   | { op: 'later'; text: string }
+  /** The office's own, never from the tool: a finished run's choices go under its step, and with `tick` the step is ticked. */
+  | { op: 'decide'; id: string; choices: string[]; tick?: boolean }
 
 export type OpResult = { ok: true; file: PlanFile } | Refused
 const accept = (file: PlanFile): OpResult => ({ ok: true, file })
@@ -188,6 +192,26 @@ function tick(file: PlanFile, id: string, isDone: boolean): OpResult {
   return accept(item.isDone === isDone ? file : { ...file, rows: file.rows.map((row, i) => (i === at ? changed(item, { isDone }) : row)) })
 }
 
+const sameChoice = (a: string, b: string) => a.toLowerCase().replace(/\s+/g, ' ').trim() === b.toLowerCase().replace(/\s+/g, ' ').trim()
+
+/** The choices a step keeps: those it has and the new ones, nothing twice (any case or spacing), at most five in all. The step's own line stays as written unless it is ticked. */
+function decide(file: PlanFile, op: { id: string; choices: string[]; tick?: boolean }): OpResult {
+  const at = stepAt(file, op.id)
+  if (at === undefined) return unknown(op.id)
+  const item = itemAt(file, at)
+  const have = decidedOf(item).map(d => d.text)
+  const room = Math.max(0, MAX_CHOICES - have.length)
+  const added = (Array.isArray(op.choices) ? op.choices : []).map(cleanText).filter(text => text !== '')
+    .reduce<string[]>((list, text) => (list.some(one => sameChoice(one, text)) || have.some(one => sameChoice(one, text)) ? list : [...list, text]), []).slice(0, room)
+  const isTick = op.tick === true && !item.isDone
+  if (added.length === 0 && !isTick) return accept(file)
+  const closed = added.length > 0 ? (closeRow(item, file.eol) as Item) : item
+  const after = closed.sub.map(sub => sub.isDecision).lastIndexOf(true) + 1
+  const sub = [...closed.sub.slice(0, after), ...added.map(text => ({ isDecision: true, text, eol: file.eol })), ...closed.sub.slice(after)]
+  const next = isTick ? changed(closed, { sub, isDone: true }) : { ...closed, sub }
+  return accept({ ...file, rows: file.rows.map((row, i) => (i === at ? next : row)) })
+}
+
 /** Where a Later item goes: below the last one, or under the heading, or under a new heading at the end of the file. */
 function laterSlot(file: PlanFile, item: Item): PlanFile {
   const head = laterAt(file)
@@ -219,6 +243,7 @@ function dispatch(f: PlanFile, op: PlanOp, active: ReadonlySet<string>): OpResul
     case 'done': return tick(f, op.id, true)
     case 'reopen': return tick(f, op.id, false)
     case 'later': return later(f, op.text)
+    case 'decide': return decide(f, op)
     default: return refuse(`There is no operation called ${fit(String((op as { op?: unknown }).op), 20)}.`)
   }
 }
@@ -238,4 +263,10 @@ export function applyOp(file: PlanFile, op: PlanOp, active: ReadonlySet<string>)
   if (hasHugeId(done.file)) return refuse(`The plan has used up its step numbers (the last is ${MAX_ID}).`)
   if (serialisePlanFile(done.file) === serialisePlanFile(f)) return accept(file)
   return accept(withMark(done.file, nextIds(f)))
+}
+
+/** The file with the ids a step added by hand lacks made real, the numbers `viewOf` showed for them; the very same file when none lacked one. For the loader, which saves them before it shows or links any. */
+export function withSavedIds(file: PlanFile): PlanFile {
+  const ided = withIds(file)
+  return ided === file ? file : withMark(ided, nextIds(ided))
 }

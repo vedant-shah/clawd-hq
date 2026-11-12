@@ -17,10 +17,12 @@ import type { OnboardCard, OnboardIo } from './onboard-types'
 import { checkOld } from './old-decisions'
 import type { OwnToolIo } from './own-tools'
 import { openPanes } from './panes'
+import { loadPlan, planTool } from './plan-run'
 import { resetFolderPayroll, savePayroll } from './payroll'
 import { artifactIo } from './register-artifacts'
 import { demoIo, oldIo, paneIo, payrollIo, ruleIo, runIo, stepIo } from './register-io'
 import { knowIo } from './register-know'
+import { planRunIo } from './register-plan'
 import { homeOf } from './register-rules'
 import { getFx, getPayroll, readBlurbs, readOnboard, readRoster, ses, setFx, updateArtifacts, updateContractorOffers, updateLeftUndone, updateOnboard, updatePayroll } from './register-state'
 import { offerRule } from './rule-io'
@@ -85,12 +87,13 @@ export async function contractorIo($: EngineInterface, opts: BriefingOptions): P
   return { ...(await onboardIo($, opts)), change: fn => updateContractorOffers($, fn), toast: text => void $.ui.toast(text) }
 }
 
-/** The office's own tools (hooks/own-tools.ts): the tour, the offer of a lasting rule, the step report, and the search of everything installed. */
+/** The office's own tools (hooks/own-tools.ts): the tour, the offer of a lasting rule, the step report, the search of everything installed, and the plan. */
 export function ownToolIo($: EngineInterface, opts: BriefingOptions): OwnToolIo {
   return {
     tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
     offerRule: (id, input) => offerRule(ruleIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
     find: async (id, input) => findHelpers(await onboardIo($, opts), id, input), contractor: async (id, input) => hireContractor(await contractorIo($, opts), id, input),
+    plan: (id, input) => planTool(planRunIo($, opts), id, input),
   }
 }
 
@@ -114,6 +117,7 @@ export function folderIo($: EngineInterface, opts: BriefingOptions): FolderIo {
         ['artifacts', async () => { const pages = cleanArtifacts(await $.store.get(`artifacts:${ses.cwd}`)); await updateArtifacts($, () => pages) }],
         ['left undone', async () => { const items = leftStart(await $.store.get(`leftUndone:${ses.cwd}`)); await updateLeftUndone($, () => items) }],
         ['project tokens', () => loadTokens(runIo($))],
+        ['plan', () => loadPlan(planRunIo($, opts))],
         ['old decisions card', () => checkOld(oldIo($))],
         ['skill hires', async () => rehire(await onboardIo($, opts))],
       ])

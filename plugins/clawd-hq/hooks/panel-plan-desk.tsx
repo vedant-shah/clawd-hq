@@ -1,7 +1,7 @@
 // The plan on the desktop: a timeline down the left (a mark for each step and a thin line joining them, coloured as on the terminal) and, beside it,
 // the step with its agents as the same cards the floor draws (`deskRow`). A failed agent's card comes first, with a red border and a Details
 // button at its right. The line and the colours are the design board's (design/DesktopBusy.dc.html and Main.dc.html); the spacing is the host's named steps.
-import type { Employee } from '../types'
+import type { Employee, PlanStep } from '../types'
 import { titled, workLine } from './panel-model'
 import { laterFold } from './panel-later'
 import { PLAN_SCALE, deskRow } from './panel-desk'
@@ -62,17 +62,23 @@ function withRight(ctx: Ctx, key: string, left: Item, right: Item | null): Item 
 
 const toggle = (ctx: Ctx, key: string, label: string, fold: string) => <ctx.kit.Button key={key} plain dimColor label={label} onPress={() => ctx.actions.toggleFold(fold)} />
 
-/** An open done fold's step, beside the done line's rail: its own tick, its words, who did it with how long and its tokens, and its choices dim under it. */
-function doneRow(ctx: Ctx, step: PlanLayout['doneSteps'][number]): Item {
-  const { Box, Text } = ctx.kit
+/** A done step's words: its text in the board's green, who did it with how long and its tokens at the right, and its choices dim under it. */
+function doneWords(ctx: Ctx, step: PlanStep): Item[] {
+  const { Text } = ctx.kit
   const info = doneInfo(step, ctx.data.staff, goalKey(ctx.data.plan!), one => titled(one, ctx.data))
+  return [
+    withRight(ctx, `done-${step.id}-line`, <Text key="t" color={BOARD.doneWords} wrap="wrap">{step.text}</Text>, info === '' ? null : <Text key="i" dimColor wrap="wrap">{info}</Text>),
+    ...step.choices.map((choice, i) => <Text key={`done-${step.id}-c${i}`} dimColor wrap="wrap">{`Decided: ${choice}`}</Text>),
+  ]
+}
+
+/** An open done fold's step, beside the done line's rail: its own tick, then its words. */
+function doneRow(ctx: Ctx, step: PlanStep): Item {
+  const { Box } = ctx.kit
   return (
     <Box key={`done-${step.id}`} flexDirection="row" columnGap="sm">
       {ctx.kit.mark('done', 'done', `done-${step.id}-mark`)}
-      <Box key={`done-${step.id}-words`} flexDirection="column" flexGrow={1} flexShrink={1}>
-        {withRight(ctx, `done-${step.id}-line`, <Text key="t" color={BOARD.doneWords} wrap="wrap">{step.text}</Text>, info === '' ? null : <Text key="i" dimColor wrap="wrap">{info}</Text>)}
-        {step.choices.map((choice, i) => <Text key={`done-${step.id}-c${i}`} dimColor wrap="wrap">{`Decided: ${choice}`}</Text>)}
-      </Box>
+      <Box key={`done-${step.id}-words`} flexDirection="column" flexGrow={1} flexShrink={1}>{doneWords(ctx, step)}</Box>
     </Box>
   )
 }
@@ -131,14 +137,17 @@ function stepItem(ctx: Ctx, block: StepBlock, isLast: boolean, tail: Child[]): I
 
 type Make = (isLast: boolean, tail: Child[]) => Item
 
-/** The done fold's step: "3 steps done" in the board's green with its show button, and, opened, each done step under it, beside its line. */
-function doneFold(ctx: Ctx, layout: PlanLayout): Make {
+/** The done fold's step: "3 steps done" in the board's green with its show button, and, opened, each step before the last done one under it, beside its line. */
+function doneFold(ctx: Ctx, earlier: readonly PlanStep[]): Make {
   const { Text } = ctx.kit
   const isOpen = foldsOf(ctx.data.fx).has(FOLD.done(goalOf(ctx.data)))
-  const count = layout.doneSteps.length
+  const count = earlier.length
   const head = withRight(ctx, 'done-fold-line', <Text key="t" color={BOARD.doneWords} wrap="wrap">{`${count} ${count === 1 ? 'step' : 'steps'} done`}</Text>, toggle(ctx, 'done-fold-btn', isOpen ? 'hide' : 'show', FOLD.done(goalOf(ctx.data))))
-  return (isLast, tail) => item(ctx, 'done-fold', 'done', isLast, [head, ...(isOpen ? layout.doneSteps.map(step => doneRow(ctx, step)) : []), ...tail])
+  return (isLast, tail) => item(ctx, 'done-fold', 'done', isLast, [head, ...(isOpen ? earlier.map(step => doneRow(ctx, step)) : []), ...tail])
 }
+
+/** The last finished step, never folded: its tick on the rail and its words, like a step of the timeline. */
+const lastDoneItem = (ctx: Ctx, step: PlanStep): Make => (isLast, tail) => item(ctx, `done-${step.id}`, 'done', isLast, [...doneWords(ctx, step), ...tail])
 
 /** The fold of the steps past the first few: no mark of its own, always last. */
 function moreStepsFold(ctx: Ctx, layout: PlanLayout): Make {
@@ -155,7 +164,8 @@ function moreStepsFold(ctx: Ctx, layout: PlanLayout): Make {
 export function planItems(ctx: Ctx, layout: PlanLayout): Item[] {
   const { Box, Text } = ctx.kit
   const timeline: Make[] = [
-    ...(layout.doneSteps.length > 0 ? [doneFold(ctx, layout)] : []),
+    ...(layout.earlierDone.length > 0 ? [doneFold(ctx, layout.earlierDone)] : []),
+    ...(layout.lastDone !== undefined ? [lastDoneItem(ctx, layout.lastDone)] : []),
     ...layout.steps.map((block): Make => (isLast, tail) => stepItem(ctx, block, isLast, tail)),
     ...(layout.extraSteps > 0 ? [moreStepsFold(ctx, layout)] : []),
   ]

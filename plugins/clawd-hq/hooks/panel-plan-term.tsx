@@ -1,7 +1,7 @@
 // The plan on the terminal: a simple list with a rail down its left, no agent pictures and no card borders. The rail is a `│` this code puts in
 // column 0 of every row, so every line is wrapped here (hooks/wrap-to.ts): a row the host wrapped would carry none. Marks: ✓ done, ● now,
 // ○ next, ✗ failed. Agents are three lines: mark, name and task; what it is doing; the bar with its count, model, time and tokens.
-import type { Employee } from '../types'
+import type { Employee, PlanStep } from '../types'
 import { AMBER, RED } from './office'
 import { tagged, titled } from './panel-model'
 import { pairLine, pairTitle } from './pair-up'
@@ -162,12 +162,12 @@ function foldRow(ctx: Ctx, key: string, tone: Tone | undefined, words: string, l
   return rows(kit, key, { first: lead, rest: lead, width: ctx.cw - SIDE, segs: [{ text: words, style: 'dim' }], right: button, size: label.length })
 }
 
-/** The open done fold: one line for each finished step, who did it, how long and how many tokens, with its choices under it. */
-function doneRows(ctx: Ctx, layout: PlanLayout): Row[] {
+/** The open done fold: one line for each finished step before the last, who did it, how long and how many tokens, with its choices under it. */
+function doneRows(ctx: Ctx, earlier: readonly PlanStep[]): Row[] {
   const { kit, data } = ctx
   const key = goalKey(data.plan!)
   const label = (one: Employee) => cellText(titled(one, data))
-  return layout.doneSteps.flatMap(step => {
+  return earlier.flatMap(step => {
     const info = doneInfo(step, data.staff, key, label)
     const lead = [railText(kit, 'done', '│  ', `done-${step.id}-rail`), kit.mark('done', 'done', `done-${step.id}-mark`), <kit.Text key={`done-${step.id}-gap`}>{' '}</kit.Text>]
     const rest = [railText(kit, 'done', '│    ', `done-${step.id}-rest`)]
@@ -213,14 +213,30 @@ export function planRows(ctx: Ctx, layout: PlanLayout): Row[] {
     right: <kit.Text key="plan-count" dimColor>{`${layout.done} of ${layout.total} done`}</kit.Text>, size: `${layout.done} of ${layout.total} done`.length,
   })
   const isDoneOpen = foldsOf(data.fx).has(FOLD.done(goalOf(data)))
-  const done = layout.doneSteps.length === 0 ? [] : [
-    [...foldRowMarked(ctx, 'done-fold', 'done', `${layout.doneSteps.length} ${layout.doneSteps.length === 1 ? 'step' : 'steps'} done`, isDoneOpen ? 'hide' : 'show', FOLD.done(goalOf(data))), ...(isDoneOpen ? [railRow(ctx, 'done', 'done-open-sp'), ...doneRows(ctx, layout)] : [])],
+  const earlier = layout.earlierDone
+  // The steps done before the last one fold into one line; the last one is a done row of its own, on the rail.
+  const done = [
+    ...(earlier.length === 0 ? [] : [[...foldRowMarked(ctx, 'done-fold', 'done', `${earlier.length} ${earlier.length === 1 ? 'step' : 'steps'} done`, isDoneOpen ? 'hide' : 'show', FOLD.done(goalOf(data))), ...(isDoneOpen ? [railRow(ctx, 'done', 'done-open-sp'), ...doneRows(ctx, earlier)] : [])]]),
+    ...(layout.lastDone === undefined ? [] : [lastDoneRows(ctx, layout.lastDone)]),
   ]
   const steps = layout.steps.map(block => stepRows(ctx, block))
   const moreSteps = layout.extraSteps > 0 ? [foldRow(ctx, 'more-steps', 'dim', layout.isStepsOpen ? 'fewer steps' : `${layout.extraSteps} more ${layout.extraSteps === 1 ? 'step' : 'steps'}`, layout.isStepsOpen ? 'hide' : 'show', FOLD.steps(goalOf(data)))] : []
   const groups = [...done, ...steps, ...moreSteps]
   const body = groups.flatMap((group, i) => [...(i > 0 ? [railRow(ctx, i <= done.length ? 'done' : 'dim', `plan-sp${i}`)] : []), ...group])
   return [...head, <kit.Text key="plan-gap">{' '}</kit.Text>, ...body, ...laterFold(ctx, { indent: SIDE })]
+}
+
+/** The last finished step: its tick on the rail, its words in green with who did it, how long and its tokens at the right, its choices under it. */
+function lastDoneRows(ctx: Ctx, step: PlanStep): Row[] {
+  const { kit, data } = ctx
+  const info = doneInfo(step, data.staff, goalKey(data.plan!), one => cellText(titled(one, data)))
+  const lead = [kit.mark('done', 'done', `done-${step.id}-mark`), <kit.Text key={`done-${step.id}-gap`}>{'  '}</kit.Text>]
+  const rest = [railText(kit, 'done', '│  ', `done-${step.id}-rest`)]
+  const infoNode = info === '' ? undefined : <kit.Text key={`done-${step.id}-info`} dimColor>{info}</kit.Text>
+  return [
+    ...rows(kit, `done-${step.id}`, { first: lead, rest, width: ctx.cw - SIDE, segs: [{ text: cellText(step.text), style: 'green' }], right: infoNode, size: info.length }),
+    ...step.choices.flatMap((choice, i) => rows(kit, `done-${step.id}-c${i}`, { first: rest, rest, width: ctx.cw - SIDE, segs: [{ text: cellText(`Decided: ${choice}`), style: 'dim' }] })),
+  ]
 }
 
 /** A fold line that begins with a mark: "✓  3 steps done" and its button. */

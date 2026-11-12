@@ -65,6 +65,10 @@ export type PlanLayout = {
   total: number
   /** The finished steps, in the plan's order. */
   doneSteps: PlanStep[]
+  /** The last finished step in the plan's order: drawn as a done row of its own, never folded. (A tick carries no time, so the order stands for "last".) */
+  lastDone?: PlanStep
+  /** The finished steps before it, folded into "N steps done". */
+  earlierDone: PlanStep[]
   /** The steps now, needing attention, or next that are drawn. */
   steps: StepBlock[]
   /** Next steps past the third: folded away, or shown when the fold is open. */
@@ -102,9 +106,10 @@ export function planLayout(state: PlanState, staff: readonly Employee[], folds: 
   // The first three next steps are drawn; the rest only when the fold is open. A step now or needing attention is always drawn.
   const steps = blocks.filter((block, i) => block.status !== 'next' || isStepsOpen || nextSeen[i]! <= SHOWN_STEPS)
   const placed = new Set(open.map(step => step.id))
+  const doneSteps = state.steps.filter(step => step.isDone)
   return {
     title: state.title, done: state.steps.length - open.length, total: state.steps.length,
-    doneSteps: state.steps.filter(step => step.isDone), steps,
+    doneSteps, lastDone: doneSteps[doneSteps.length - 1], earlierDone: doneSteps.slice(0, -1), steps,
     extraSteps: Math.max(0, (nextSeen[nextSeen.length - 1] ?? 0) - SHOWN_STEPS), isStepsOpen,
     outsiders: staff.filter(one => isActive(one) && !(one.planKey === key && one.stepId !== undefined && placed.has(one.stepId))),
   }

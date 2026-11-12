@@ -65,7 +65,7 @@ test('the line is drawn by the host\'s own sizing rules: each step but the last 
   office(on)
   await busy($)
   const root = await desktop($)
-  for (const [key, color] of [['done-fold', '#3f6a48'], ['step-s4', '#6a5a33'], ['step-s5', '#454542']] as const) {
+  for (const [key, color] of [['done-fold', '#3f6a48'], ['done-s3', '#3f6a48'], ['step-s4', '#6a5a33'], ['step-s5', '#454542']] as const) {
     const row = keyedIn(root, key)!
     // The step is placed relative, so the line is placed against it; it clips, so the line can never run past its foot; it never shrinks.
     expect(row.props, key).toMatchObject({ flexDirection: 'row', position: 'relative', overflow: 'hidden', flexShrink: 0 })
@@ -91,7 +91,7 @@ test('the line is drawn by the host\'s own sizing rules: each step but the last 
   expect(keyedIn(root, 'step-s6')).toBeDefined()
   expect(keyedIn(root, 'step-s6-rail')).toBeUndefined()
   expect(elementsOf(keyedIn(root, 'step-s6')!).map(c => c.props.key)).toEqual(['step-s6-mark-col', 'step-s6-body'])
-  expect(walk(root, t => String(t.props.key ?? '').endsWith('-rail'))).toHaveLength(3)
+  expect(walk(root, t => String(t.props.key ?? '').endsWith('-rail'))).toHaveLength(4)
 })
 
 test('the marks are 16 by 20 and the plan\'s pictures 2 pixels a dot; with no goal the floor\'s cards keep 3', async ($, on) => {
@@ -99,7 +99,7 @@ test('the marks are 16 by 20 and the plan\'s pictures 2 pixels a dot; with no go
   await busy($)
   const root = await desktop($)
   const marks = walk(root, t => t.type === 'Svg' && ['done', 'now', 'next'].includes(String(t.props.alt)))
-  expect(marks.map(m => m.props.alt)).toEqual(['done', 'now', 'next', 'next'])
+  expect(marks.map(m => m.props.alt)).toEqual(['done', 'done', 'now', 'next', 'next']) // the fold line's, the last done step's, then the steps'
   for (const mark of marks) expect([mark.props.width, mark.props.height], String(mark.props.alt)).toEqual([16, 20])
   const sprites = walk(root, t => t.type === 'Svg' && /^(Tester|Builder|Researcher|Generalist)/.test(String(t.props.alt)))
   expect(sprites).toHaveLength(3)
@@ -120,7 +120,7 @@ test('with no goal the floor\'s cards and the tab\'s spacing are as they were', 
 
 // ---- The open done fold ----
 
-test('opened, the done steps sit inside the done line\'s step, beside its line, each with a tick of its own', async ($, on) => {
+test('opened, the done steps before the last sit inside the done line\'s step, beside its line, each with a tick of its own; the last is its own step', async ($, on) => {
   office(on)
   await busy($)
   await pressOnDesktop($, 'done-fold-btn')
@@ -128,8 +128,9 @@ test('opened, the done steps sit inside the done line\'s step, beside its line, 
   const fold = keyedIn(root, 'done-fold')!
   expect(elementsOf(fold).some(c => c.props.key === 'done-fold-rail')).toBe(true)
   const body = keyedIn(fold, 'done-fold-body')!
-  expect(elementsOf(body).map(c => c.props.key)).toEqual(['done-fold-line', 'done-s1', 'done-s2', 'done-s3'])
-  for (const id of ['s1', 's2', 's3']) {
+  expect(elementsOf(body).map(c => c.props.key)).toEqual(['done-fold-line', 'done-s1', 'done-s2'])
+  expect(elementsOf(keyedIn(root, 'done-s3-body')!).map(c => c.props.key)).toEqual(['done-s3-line'])
+  for (const id of ['s1', 's2']) {
     const row = keyedIn(body, `done-${id}`)!
     expect(row.props.columnGap, id).toBe('sm')
     const [mark, words] = elementsOf(row)
@@ -173,7 +174,7 @@ test('spaced with the host\'s "sm" step (the board\'s 8 and 10): under the headi
   expect(walk(plan, t => t.type === 'Svg' && !['done', 'now', 'next', 'attention', 'plan line'].includes(String(t.props.alt)) && t.props.height !== 4 && !/^(Tester|Builder|Researcher|Generalist)/.test(String(t.props.alt)))).toEqual([])
   expect(plan.props.gap).toBe('sm')
   expect(elementsOf(plan).map(c => c.props.key)).toEqual(['plan-head', 'plan-timeline'])
-  for (const key of ['done-fold', 'step-s4', 'step-s5', 'step-s6']) {
+  for (const key of ['done-fold', 'done-s3', 'step-s4', 'step-s5', 'step-s6']) {
     const row = keyedIn(root, key)!
     expect(row.props.columnGap, key).toBe('sm')
     const [column, body] = [keyedIn(row, `${key}-mark-col`), keyedIn(row, `${key}-body`)]

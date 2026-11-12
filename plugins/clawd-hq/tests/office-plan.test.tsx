@@ -103,18 +103,18 @@ test('with no goal, specialists at work are on the floor as cards, headed "AT WO
 
 // ---- One agent on a step ----
 
-test('one agent on a step: the plan, the done steps folded, the step with its agent, the next steps and the later line', async ($, on) => {
+test('one agent on a step: the plan, the done steps before the last folded, the last done step, the step with its agent, the next steps and the later line', async ($, on) => {
   office(on)
   await $.session.start(START)
   await hire($, 'PLAN: s4\nTest the export.', 'tester')
   for (const surface of SURFACES) {
     const v = await view($, surface)
     for (const words of ['Export scores as CSV', '3 of 6 done', 'Tests for the export', 'Review', 'Update the README']) expect(v.text).toContain(words)
-    expect(v.text).toMatch(/3 steps done/)
+    expect(v.text).toMatch(/2 steps done/)
     expect(v.text).toContain('1 at work')
     expect(v.text).not.toContain('Find how exports work now')
     expect(v.text).not.toContain('ALSO AT WORK')
-    expect(ascending(order(v.text, 'PLAN', 'steps done', 'Tests for the export', 'Review', 'Update the README'))).toBe(true)
+    expect(ascending(order(v.text, 'PLAN', 'steps done', 'Add the export button', 'Tests for the export', 'Review', 'Update the README'))).toBe(true)
     expect(v.text).toMatch(/1 later/)
     if (surface === 'desktop') expect(v.keys).toContain('desk-p1') // the existing card
     else expect(v.keys.filter(k => k.startsWith('desk-'))).toEqual([]) // no card and no picture of an agent on the terminal
@@ -257,7 +257,7 @@ test('a pair-up on a step is one block under it, and counts as its members', asy
 
 // ---- The done fold ----
 
-test('the done steps are one line, "N steps done", that opens to a line for each with who did it, how long, the tokens and its choices', async ($, on) => {
+test('the done steps before the last are one line, "N steps done", that opens to a line for each with who did it, how long, the tokens and its choices', async ($, on) => {
   const h = office(on)
   await $.session.start(START)
   await hire($, 'PLAN: s4\nTest the export.', 'builder')
@@ -265,9 +265,12 @@ test('the done steps are one line, "N steps done", that opens to a line for each
   await stop($, 'p1', 'Added.')
   for (const surface of SURFACES) {
     const closed = await view($, surface)
-    expect(closed.text).toMatch(/4 steps done/)
+    expect(closed.text).toMatch(/3 steps done/)
     expect(labelOf(closed, 'done-fold-btn')).toBe('show')
     expect(closed.text).not.toContain('Plan the change')
+    // The last finished step stands outside the fold, with who did it.
+    expect(closed.text).toContain('Tests for the export')
+    expect(closed.text).toMatch(/Builder · \d+[sm]/)
     await press($, surface, 'done-fold-btn')
     const open = await view($, surface)
     expect(labelOf(open, 'done-fold-btn')).toBe('hide')
@@ -636,12 +639,12 @@ test('the folds are the goal\'s: one opened in a goal is closed in the next', as
   await $.session.start(START)
   const steps = ['Find it', 'Plan it', 'Build it', 'Review it']
   await $.tool.call({ tool: 'mcp__clawd-hq__plan', op: 'start', goal: 'Export scores', steps } as never)
-  await $.tool.call({ tool: 'mcp__clawd-hq__plan', op: 'done', id: 's1' } as never)
+  for (const id of ['s1', 's2']) await $.tool.call({ tool: 'mcp__clawd-hq__plan', op: 'done', id } as never)
   await press($, 'terminal', 'done-fold-btn')
   expect(labelOf(await view($, 'terminal'), 'done-fold-btn')).toBe('hide')
   await $.tool.call({ tool: 'mcp__clawd-hq__plan', op: 'finish', outcome: 'done' } as never)
   await h.clock.advance(60_000)
   await $.tool.call({ tool: 'mcp__clawd-hq__plan', op: 'start', goal: 'Export scores', steps } as never)
-  await $.tool.call({ tool: 'mcp__clawd-hq__plan', op: 'done', id: 's1' } as never)
+  for (const id of ['s1', 's2']) await $.tool.call({ tool: 'mcp__clawd-hq__plan', op: 'done', id } as never)
   for (const surface of SURFACES) expect(labelOf(await view($, surface), 'done-fold-btn')).toBe('show')
 })

@@ -37,6 +37,9 @@ test('the done steps fold, the first open step is now with its agents, the rest 
   const layout = planLayout(state(), workers(2), none)
   expect(layout).toMatchObject({ title: 'Export scores', done: 3, total: 6, extraSteps: 0, isStepsOpen: false })
   expect(layout.doneSteps.map(s => s.id)).toEqual(['s1', 's2', 's3'])
+  // The last finished step in plan order stands alone; only the ones before it are folded.
+  expect(layout.lastDone?.id).toBe('s3')
+  expect(layout.earlierDone.map(s => s.id)).toEqual(['s1', 's2'])
   expect(layout.steps.map(b => [b.step.id, b.status, b.atWork, b.shown.length, b.hidden])).toEqual([['s4', 'now', 2, 2, 0], ['s5', 'next', 0, 0, 0], ['s6', 'next', 0, 0, 0]])
 })
 

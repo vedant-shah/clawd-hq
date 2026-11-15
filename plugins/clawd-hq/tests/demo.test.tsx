@@ -279,8 +279,10 @@ test('a pair-up: the builder and the reviewer share one card, and a finished mem
 
   await t.to(13)
   r = await t.read($, PANE)
-  // With a plan in hand, "Also at work" lists those at work: the reviewer, still working, stands on its own card.
-  expect(r.keys).toContain('desk-demo-pairreview')
+  // With a plan in hand, "Also at work" keeps the pair-up whole while the reviewer works: one card, its title, the builder dimmed in it.
+  expect(r.keys).toContain('pair-demo-pairbuild')
+  expect(r.keys).not.toContain('desk-demo-pairreview')
+  expect(r.texts).toContain('Builder & Reviewer')
   await r.ui.unmount()
 })
 
@@ -298,10 +300,11 @@ test('a council: one Council card with its own picture, four voices, each with a
 
   await t.to(15)
   r = await t.read($, PANE)
-  // With a plan in hand, "Also at work" lists those still at work: the three that answered have left it.
-  expect(r.texts).toContain('ALSO AT WORK · 1') // the Critic, still reading, alone
-  expect(r.texts).toContain('Critic')
-  expect(r.texts).not.toContain('Skeptic')
+  // With a plan in hand, "Also at work" keeps the council whole while a voice works: one Council card with all four voices, counted by the one still reading.
+  expect(r.texts).toContain('ALSO AT WORK · 1') // the Critic, still reading
+  expect(r.keys).toContain('council-demo-skeptic')
+  expect(r.texts).toContain('Council')
+  for (const voice of ['Skeptic', 'Pragmatist', 'Critic', 'Architect']) expect(r.texts).toContain(voice)
   await r.ui.unmount()
 })
 

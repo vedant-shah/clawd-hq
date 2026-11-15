@@ -116,7 +116,35 @@ test('runs of another goal, or linked to nothing, are not under a step: they are
   const staff = [emp({ id: 'mine' }), emp({ id: 'old', planKey: 'export:5' }), emp({ id: 'free', stepId: undefined, planKey: undefined }), emp({ id: 'ondone', stepId: 's1' }), emp({ id: 'gone', mood: 'done' })]
   const layout = planLayout(state(), staff, none)
   expect(layout.steps[0]!.atWork).toBe(1)
-  expect(layout.outsiders.map(one => one.id)).toEqual(['old', 'free', 'ondone'])
+  expect(layout.outsiders.map(slot => (slot.kind === 'one' ? slot.one.id : 'pair'))).toEqual(['old', 'free', 'ondone'])
+  expect(layout.outsidersAtWork).toBe(3)
+})
+
+const pairOf = (id: string, over: Partial<Employee> = {}) => emp({ id, stepId: undefined, planKey: undefined, pair: { goal: 'Review it', at: 1_000 }, ...over })
+
+test('a pair-up under no step stays one block while a member is at work, and counts by the members at work', () => {
+  const staff = [pairOf('a', { mood: 'done', endedAt: 5_000 }), pairOf('b')]
+  const layout = planLayout(state(), staff, none)
+  expect(layout.outsiders).toHaveLength(1)
+  const [slot] = layout.outsiders
+  expect(slot!.kind).toBe('pair')
+  expect(slot!.kind === 'pair' ? slot!.group.members.map(m => m.id) : []).toEqual(['a', 'b'])
+  expect(layout.outsidersAtWork).toBe(1)
+})
+
+test('a council under no step keeps its voices while one is at work; with none at work it is gone', () => {
+  const voice = (id: string, over: Partial<Employee> = {}) => pairOf(id, { pair: { goal: 'Which way?', at: 1_000, isCouncil: true }, ...over })
+  const some = planLayout(state(), [voice('a', { mood: 'done' }), voice('b', { mood: 'done' }), voice('c', { mood: 'done' }), voice('d')], none)
+  expect(some.outsiders).toHaveLength(1)
+  expect(some.outsiders[0]!.kind === 'pair' ? some.outsiders[0]!.group : undefined).toMatchObject({ isCouncil: true })
+  expect(some.outsidersAtWork).toBe(1)
+  const none4 = planLayout(state(), [voice('a', { mood: 'done' }), voice('b', { mood: 'done' })], none)
+  expect(none4.outsiders).toEqual([])
+  expect(none4.outsidersAtWork).toBe(0)
+})
+
+test('a pair-up with every member finished is not drawn at all', () => {
+  expect(planLayout(state(), [pairOf('a', { mood: 'done' }), pairOf('b', { mood: 'failed' })], none).outsiders).toEqual([])
 })
 
 test('a pair-up on a step is one block, and counts as its members', () => {

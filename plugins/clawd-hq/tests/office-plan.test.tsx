@@ -255,6 +255,52 @@ test('a pair-up on a step is one block under it, and counts as its members', asy
   }
 })
 
+test('under Also at work a pair-up with one member finished is still one pair card with its title, counted by the member at work', async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  await hire($, 'PLAN: s4\nTest it.', 'tester')
+  await hire($, 'PAIR-UP: Check the README\nYou are the author.', 'author')
+  await hire($, 'PAIR-UP: Check the README\nYou are the critic.', 'critic')
+  await stop($, 'p2')
+  for (const surface of SURFACES) {
+    const v = await view($, surface)
+    expect(v.texts).toContain('ALSO AT WORK · 1')
+    expect(v.flat).toContain('Author & Critic')
+    expect(v.flat).toContain('Check the README')
+    if (surface === 'desktop') {
+      expect(v.keys).toContain('pair-p2')
+      expect(v.keys).not.toContain('desk-p3') // the critic is not a lone plain card
+    } else {
+      expect(v.rows.filter(r => r.includes('Author & Critic'))).toHaveLength(1)
+    }
+  }
+})
+
+test('under Also at work a council with some voices finished is still one Council card, counted by the voices at work; with none at work it is gone', async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  const voices = ['skeptic', 'pragmatist', 'critic', 'architect']
+  for (const voice of voices) await hire($, `COUNCIL: Which way?\nYou are the ${voice}.`, voice)
+  await stop($, 'p1')
+  await stop($, 'p2')
+  await stop($, 'p3')
+  for (const surface of SURFACES) {
+    const v = await view($, surface)
+    expect(v.texts).toContain('ALSO AT WORK · 1')
+    expect(v.flat).toContain('Council Which way?')
+    if (surface === 'desktop') {
+      expect(v.keys).toContain('council-p1')
+      for (const voice of ['Skeptic · Done', 'Pragmatist · Done', 'Critic · Done', 'Architect · Working']) expect(v.text).toContain(voice)
+    }
+  }
+  await stop($, 'p4')
+  for (const surface of SURFACES) {
+    const v = await view($, surface)
+    expect(v.text).not.toContain('ALSO AT WORK')
+    expect(v.text).not.toContain('Council')
+  }
+})
+
 // ---- The done fold ----
 
 test('the done steps before the last are one line, "N steps done", that opens to a line for each with who did it, how long, the tokens and its choices', async ($, on) => {

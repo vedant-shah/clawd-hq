@@ -76,13 +76,24 @@ export type PlanLayout = {
   /** Next steps past the third: folded away, or shown when the fold is open. */
   extraSteps: number
   isStepsOpen: boolean
-  /** At work and under no step of this goal: they are drawn as "Also at work". */
-  outsiders: Employee[]
+  /** The agents under no step of this goal, as the floor draws them under "Also at work": one block each, a pair-up or council kept whole while a member is at work. */
+  outsiders: Slot[]
+  /** How many of them are at work: a pair-up or council counts by its members at work. */
+  outsidersAtWork: number
 }
 
 const members = (slot: Slot) => (slot.kind === 'one' ? [slot.one] : slot.group.members)
 /** The specialists of a block that are at work; a pair-up with one member done still counts the other. */
 const working = (slot: Slot) => members(slot).filter(isActive).length
+
+/**
+ * The agents under no step of this goal. Pair-ups and councils are made from all of their runs and then kept while a member is still at work,
+ * as a step's are: one that finished does not break the group. A group with no member at work is not drawn.
+ */
+function outsidersOf(staff: readonly Employee[], key: string, placed: ReadonlySet<string>): Pick<PlanLayout, 'outsiders' | 'outsidersAtWork'> {
+  const outsiders = floorSlots(staff.filter(one => !(one.planKey === key && one.stepId !== undefined && placed.has(one.stepId))))
+  return { outsiders, outsidersAtWork: outsiders.reduce((n, slot) => n + working(slot), 0) }
+}
 
 export function planLayout(state: PlanState, staff: readonly Employee[], folds: ReadonlySet<string>): PlanLayout {
   const key = goalKey(state)
@@ -113,7 +124,7 @@ export function planLayout(state: PlanState, staff: readonly Employee[], folds: 
     title: state.title, ...(state.summary === undefined ? {} : { summary: state.summary }), done: state.steps.length - open.length, total: state.steps.length,
     doneSteps, lastDone: doneSteps[doneSteps.length - 1], earlierDone: doneSteps.slice(0, -1), steps,
     extraSteps: Math.max(0, (nextSeen[nextSeen.length - 1] ?? 0) - SHOWN_STEPS), isStepsOpen,
-    outsiders: staff.filter(one => isActive(one) && !(one.planKey === key && one.stepId !== undefined && placed.has(one.stepId))),
+    ...outsidersOf(staff, key, placed),
   }
 }
 

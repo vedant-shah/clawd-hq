@@ -3,7 +3,6 @@
 import type { Ctx } from './panel-desk'
 import { outsiderCards, planItems } from './panel-plan-desk'
 import { outsiderRows, planRows } from './panel-plan-term'
-import { floorSlots } from './pair-up'
 import type { PlanLayout } from './plan-view'
 
 export function planSection(ctx: Ctx, layout: PlanLayout) {
@@ -17,10 +16,10 @@ export function planSection(ctx: Ctx, layout: PlanLayout) {
 export function alsoAtWork(ctx: Ctx, layout: PlanLayout) {
   const { Box, Text } = ctx.kit
   if (layout.outsiders.length === 0) return null
-  const slots = floorSlots(layout.outsiders)
+  const slots = layout.outsiders
   return (
     <Box key="also-at-work" flexDirection="column" gap={ctx.kit.isTerminal ? undefined : 'sm'}>
-      <Text bold dimColor>{`ALSO AT WORK · ${layout.outsiders.length}`}</Text>
+      <Text bold dimColor>{`ALSO AT WORK · ${layout.outsidersAtWork}`}</Text>
       {ctx.kit.isTerminal ? <Box key="also-rows" flexDirection="column">{outsiderRows(ctx, slots)}</Box> : <Box key="floor-rows" flexDirection="column" gap="sm">{outsiderCards(ctx, slots)}</Box>}
     </Box>
   )

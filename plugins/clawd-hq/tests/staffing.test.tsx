@@ -20,6 +20,9 @@ test('the hiring tool tells Clawd that handing work over is the person\'s standi
   expect(HANDOVER_NOTE).toMatch(/without being asked each time/)
   expect(HANDOVER_NOTE).toMatch(/replaces any line above that says to start agents only when the user asks/)
   expect(HANDOVER_NOTE).toMatch(/in the background/)
+  // One limit, the same words as the rules file: one or two tool calls.
+  expect(HANDOVER_NOTE).toContain('one or two tool calls')
+  expect(HANDOVER_NOTE).not.toMatch(/two or three steps|one or two steps/)
 })
 
 test('the staffing note names concrete Haiku jobs and says read-only jobs start at Haiku', async () => {

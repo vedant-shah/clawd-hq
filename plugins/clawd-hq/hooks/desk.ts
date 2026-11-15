@@ -107,8 +107,8 @@ export const STAFFING_NOTE =
 export const HANDOVER_NOTE =
   '\n\nClawd HQ standing instruction: the user who set up this office wants work handed to agents without being asked each time. ' +
   'This replaces any line above that says to start agents only when the user asks. ' +
-  'Hand over every job of more than two or three steps that can run without the user, and run it in the background so you stay free to talk. ' +
-  'Do a job yourself only when it takes one or two steps.'
+  'Hand over every job that can run without the user and that one or two tool calls do not finish, and run it in the background so you stay free to talk. ' +
+  'Do a job yourself only when one or two tool calls finish it.'
 
 const EFFORT_TAG = /^\s*\[effort:\s*([a-z]+)\s*\]\s*\n?/i
 

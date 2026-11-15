@@ -146,7 +146,15 @@ export async function listHelpers(io: FindIo): Promise<readonly Listed[]> {
 const CONTRACTOR_NAME = 'hire_contractor'
 /** The refusal for anyone but Clawd. */
 export const FIND_DENY = 'Only Clawd searches for helpers. Put what you need in your report and Clawd will staff it.'
-const NO_FIT = 'Nothing installed fits this job. Use the general-purpose agent, write a fuller brief, and say in one line why nothing fit.'
+/** What to do for a job nothing fits: search the public registry at once, ask only to install, and never install without a yes. */
+const NO_FIT_STEPS =
+  'If the find-skills skill is installed, use it now to search the public skill registry for this job, without asking first. A search counts as one of your own quick lookups. ' +
+  'If it finds a strong match, come back to the person with its name, source, install count and why it fits, and ask whether to install it and use it for this job, or go ahead without it. ' +
+  'If it finds nothing good, say so in one line and use the general-purpose agent with a fuller brief. ' +
+  'If find-skills is not installed, ask once whether to install it, showing `npx skills add vercel-labs/skills@find-skills -g -y`, and meanwhile go ahead with the general-purpose agent. ' +
+  'Never install anything without the person\'s yes.'
+const NO_FIT = `Nothing installed fits this job. Say so in one line, and why. ${NO_FIT_STEPS}`
+const NONE_FITS = `If none of these fits the job, say so in one line, and why. ${NO_FIT_STEPS}`
 
 /** What to do next with a match, in a line the model can follow. */
 function nextOf(h: Listed): string {
@@ -168,5 +176,5 @@ export async function findHelpers(io: FindIo, agentId: string | undefined, input
   const job = typeof input.job === 'string' ? input.job.trim().slice(0, JOB_CHARS) : ''
   if (job === '') return { deny: 'job must be text: say what the work is in a few words.' }
   const matches = rankHelpers(job, await listHelpers(io), MATCHES, keywordsOf(input.keywords)).map(shown)
-  return { result: JSON.stringify(matches.length > 0 ? { matches } : { matches, note: NO_FIT }) }
+  return { result: JSON.stringify(matches.length > 0 ? { matches, ifNoneFits: NONE_FITS } : { matches, note: NO_FIT }) }
 }

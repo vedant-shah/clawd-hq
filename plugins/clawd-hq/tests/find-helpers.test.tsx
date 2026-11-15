@@ -141,6 +141,27 @@ test('at most five come back, and a job nothing fits says so and points to the g
   const none = JSON.parse((await find($, { job: 'knit a sweater' })).result ?? '{}') as { matches: Match[]; note: string }
   expect(none.matches).toEqual([])
   expect(none.note).toMatch(/general-purpose/)
+  // The rule for a job nothing fits lives here: search with find-skills at once, ask only to install, never install without a yes.
+  expect(none.note).toContain('Nothing installed fits this job. Say so in one line, and why.')
+  expect(none.note).toContain('If the find-skills skill is installed, use it now to search the public skill registry for this job, without asking first')
+  expect(none.note).toContain('A search counts as one of your own quick lookups.')
+  expect(none.note).toContain('its name, source, install count and why it fits')
+  expect(none.note).toContain('ask whether to install it and use it for this job, or go ahead without it')
+  expect(none.note).toContain('If it finds nothing good, say so in one line and use the general-purpose agent with a fuller brief.')
+  expect(none.note).toContain('If find-skills is not installed, ask once whether to install it, showing `npx skills add vercel-labs/skills@find-skills -g -y`, and meanwhile go ahead with the general-purpose agent.')
+  expect(none.note).toContain('Never install anything without the person\'s yes.')
+})
+
+test('a search that finds matches carries the same rule for the case that none of them fits', async ($, on) => {
+  await office(on)
+  await $.session.start(START)
+  await offerAgents($)
+  const some = JSON.parse((await find($, { job: 'review plan test code contract go' })).result ?? '{}') as { matches: Match[]; note?: string; ifNoneFits?: string }
+  expect(some.matches.length).toBeGreaterThan(0)
+  expect(some.note).toBeUndefined()
+  expect(some.ifNoneFits).toContain('If none of these fits the job, say so in one line, and why.')
+  expect(some.ifNoneFits).toContain('npx skills add vercel-labs/skills@find-skills -g -y')
+  expect(some.ifNoneFits).toContain('Never install anything without the person\'s yes.')
 })
 
 test('a specialist cannot search: its call is refused with where to put the need instead', async ($, on) => {

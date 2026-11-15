@@ -41,7 +41,7 @@ Clawd HQ isn't a new agent runtime. It packages Claude Code's native agents into
 
 ### 1. Stays free to talk
 
-- **Delegates by default.** Clawd hands every job of more than two or three steps to a specialist in the background. Jobs that don't depend on each other run side by side. Ask him anything while three specialists work.
+- **Delegates by default.** Clawd hands every job that one or two tool calls can't finish to a specialist in the background. Jobs that don't depend on each other run side by side. Ask him anything while three specialists work.
 - **Specialists don't stall.** They never stop mid-run for a question. They make their best call, finish the job, and list their assumptions and questions at the end for Clawd.
 - **Steer a running specialist.** Uses Claude Code's own agent messaging: Clawd can message any running specialist, and it picks the message up at its next step. Change or add to a brief without restarting the job.
 - **One report.** Questions come to you in one box (up to four) at a pause. Quiet chat hides "finished" notices. Failures and requests for your permission or approval always show. A specialist's question goes to Clawd, who asks you.
@@ -52,7 +52,7 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 ### 2. Right team, right size
 
 - **Uses what you already have.** Setup picks your team from the agents and skills you have installed, whether that's ECC or your own. You might have 200 installed, but a project realistically uses 5 to 10, and those are the team. Each brief names the installed skills that fit the job. Nothing new to download.
-- **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort. When nothing installed fits, he says so and recommends the `find-skills` skill to search the public skill registry. If you say yes, he installs it for you, and any skill it finds. Nothing is downloaded without your yes.
+- **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort. When nothing installed fits, he says so and, if the `find-skills` skill is installed, searches the public skill registry at once and comes back with the best match, asking whether to install it for this job or go ahead without it. If `find-skills` isn't installed, he asks once whether to install it. Nothing is installed without your yes.
 - **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus. Skills are attached only when they add knowledge, not process: at most two, and none for a one-file edit or a job on the smallest model.
 - **Pair-ups.** Some jobs need more than one kind of specialist. They work on it together, check each other, and come back with one conclusion.
 - **Lay off unused helpers.** Helpers outside the team are laid off on their own, which keeps Clawd's choices short. A card on the Office tab names who was laid off, and search brings any back. This needs Automatic setup on.
@@ -79,7 +79,7 @@ Claude Code already runs subagents in the background, with a model and effort pe
 | Questions | Come as they arise | Up to four in one box, at a pause |
 | Progress | Raw tool rows in the chat | Plain-words steps in a live office panel |
 
-- Clawd does one-step jobs himself. Anything bigger goes to a specialist.
+- Clawd does jobs that take one or two tool calls himself. Anything bigger goes to a specialist.
 - Lasting rules live in your CLAUDE.md, so you aren't asked twice.
 
 ## 🧭 How Clawd runs the work
@@ -94,7 +94,7 @@ Clawd HQ follows the "elephants and goldfish" idea from Google ([paper](https://
 
 <p align="center"><img src="docs/diagrams/flow-request.svg" alt="How a request flows: you talk to Clawd; he does one- or two-step jobs himself or hires a specialist sized to the job; work comes back to Clawd for checks; you get one plain report." width="560"></p>
 
-- You only talk to Clawd. He does one- or two-step jobs himself and hires for the rest.
+- You only talk to Clawd. He does jobs of one or two tool calls himself and hires for the rest.
 - Each hire gets a model and effort sized to the job, and a brief that names the skills that fit.
 - Work comes back to Clawd first. He checks it, a small model looks for gaps, and questions wait for one box.
 - You get one plain report. Quiet chat hides the noise in between.

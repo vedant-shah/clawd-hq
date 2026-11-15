@@ -71,6 +71,8 @@ test('a hire registers no new agent type (the engine would only know it next tur
   expect(answer.result).toContain('The name is required')
   // Right after the effort line (and a PAIR-UP: or COUNCIL: line), which the office reads only at the very start of a brief.
   expect(answer.result).toContain('right after the [effort: …] line, and after a PAIR-UP: or COUNCIL: line if there is one')
+  // A PLAN: line is read at the very start too, so the contractor's line comes after it.
+  expect(answer.result).toContain('and after a PLAN: line if there is one')
   expect(answer.result).toContain(LOAD_LINE)
 })
 

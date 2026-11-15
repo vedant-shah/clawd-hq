@@ -1,7 +1,7 @@
 // find_helpers, the tool: Clawd searches every installed agent and skill for a job and gets the top five with where each stands.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { FIND_TOOL, SKILLS_CLI_VERSION } from '../hooks/constants'
+import { FIND_TOOL, SKILLS_CLI_NODE, SKILLS_CLI_VERSION } from '../hooks/constants'
 import { SETTINGS, START } from './host'
 import { CWD, HOME, offerAgents, onboardHost } from './onboard-host'
 
@@ -144,86 +144,151 @@ test('at most five come back, and a job nothing fits says so and points to the g
   expect(none.note).toContain('Nothing installed fits this job. Say so in one line, and why.')
 })
 
-type Answer = { matches: Match[]; note?: string; ifNoneFits?: string }
-const answerTo = async ($: Engine, job: string) => JSON.parse((await find($, { job })).result ?? '{}') as Answer
+// ---- The public skill registry, searched over the web when nothing installed fits ----
+
+type Skill = { name: string; source: string; skillId: string; installs: number; page: string; status: string }
+type Answer = { matches: Match[]; registry?: Skill[]; note?: string; ifNoneFits?: string }
+const answerOf = async ($: Engine, input: Record<string, unknown>) => JSON.parse((await find($, input)).result ?? '{}') as Answer
+const answerTo = ($: Engine, job: string, keywords?: string[]) => answerOf($, { job, ...(keywords ? { keywords } : {}) })
 const NOTHING = 'knit a sweater'
 const SOME = 'review plan test code contract go'
-const SEARCH = `npx -y skills@${SKILLS_CLI_VERSION} find `
-const ADD = `npx -y skills@${SKILLS_CLI_VERSION} add <package>`
+const PLAIN = 'Nothing installed fits this job. Use the general-purpose agent, write a fuller brief, and say in one line why nothing fit.'
+const REGISTRY_JSON = JSON.stringify({
+  query: 'changelog',
+  skills: [
+    { id: 'elevenlabs/skills/update-skills-from-changelog', source: 'elevenlabs/skills', skillId: 'update-skills-from-changelog', name: 'update-skills-from-changelog', installs: 7211 },
+    { id: 'acme/tools/changelog-writer', source: 'acme/tools', skillId: 'changelog-writer', name: 'changelog-writer', installs: 480 },
+  ],
+})
 
-test('with the switch on, a job nothing fits is told to run the pinned search, then ask before any install', async ($, on) => {
-  await office(on)
+type Web = { ok?: boolean; text?: string; throws?: boolean }
+/** The host's network, as a test answers it: the office, with the registry page given back (the addresses asked for are in `calls.fetches`). */
+async function web(on: Parameters<typeof onboardHost>[0], reply: Web = { text: REGISTRY_JSON }) {
+  const h = await office(on)
+  h.calls.web = reply
+  return h.calls.fetches
+}
+
+test('with the switch on, a job nothing fits is searched on skills.sh over the web, and the answer lists what was found as not installed', async ($, on) => {
+  const urls = await web(on)
   await $.session.start(START)
-  const { note } = await answerTo($, NOTHING)
+  await offerAgents($)
+  const { matches, registry, note } = await answerTo($, NOTHING, ['changelog'])
+  expect(matches).toEqual([])
+  expect(urls).toEqual(['https://skills.sh/api/search?q=changelog'])
+  expect(registry).toEqual([
+    { name: 'update-skills-from-changelog', source: 'elevenlabs/skills', skillId: 'update-skills-from-changelog', installs: 7211, page: 'https://skills.sh/elevenlabs/skills/update-skills-from-changelog', status: 'not installed: from skills.sh' },
+    { name: 'changelog-writer', source: 'acme/tools', skillId: 'changelog-writer', installs: 480, page: 'https://skills.sh/acme/tools/changelog-writer', status: 'not installed: from skills.sh' },
+  ])
   expect(note).toContain('Nothing installed fits this job. Say so in one line, and why.')
-  expect(note).toContain(`run \`${SEARCH}<3 to 6 plain keywords for the job>\``)
-  expect(note).toContain('one of your own quick lookups')
-  expect(note).toContain('keep only letters, digits, spaces and hyphens')
   expect(note).toContain('its name, source, install count and why it fits')
-  expect(note).toContain(`showing the exact line \`${ADD}\``)
-  expect(note).toContain('or go ahead without it')
-  expect(note).toContain('If nothing good is found, say so in one line and use the general-purpose agent with a fuller brief.')
+  expect(note).toContain('ask whether to install it and use it for this job, or go ahead without it')
+  expect(note).toContain('If none is good, say so in one line and use the general-purpose agent with a fuller brief.')
   expect(note).toContain('Never install anything without the person\'s yes.')
 })
 
-test('the pinned version is one value: the same release in the search line and in the add line, never a floating one', async ($, on) => {
-  await office(on)
+test('the install line is pinned and comes with the Node check: no run below the release\'s own Node, the skill\'s page instead, and no other route', async ($, on) => {
+  await web(on)
   await $.session.start(START)
-  const { note } = await answerTo($, NOTHING)
+  const { note } = await answerTo($, NOTHING, ['changelog'])
   expect(SKILLS_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
-  expect(note!.match(/skills@\S+/g)).toEqual([`skills@${SKILLS_CLI_VERSION}`, `skills@${SKILLS_CLI_VERSION}`])
-  expect(note).not.toMatch(/skills@(latest|next)|npx skills /)
+  expect(SKILLS_CLI_NODE).toMatch(/^\d+\.\d+\.\d+$/)
+  expect(note).toContain('Only after the person says yes: first run `node -v`.')
+  expect(note).toContain(`If it is below ${SKILLS_CLI_NODE}, do not run the install: tell the person the install needs Node ${SKILLS_CLI_NODE} or newer, and give them the skill's \`page\``)
+  expect(note).toContain(`run \`npx -y skills@${SKILLS_CLI_VERSION} add <source>@<skillId>\``)
+  expect(note).toContain('There is no other way to install.')
+  expect(note!.match(/skills@\S+/g)).toEqual([`skills@${SKILLS_CLI_VERSION}`])
 })
 
-test('no answer asks anyone to install find-skills or names its install line', async ($, on) => {
-  await office(on)
+test('no answer runs a registry `find` through npx or asks anyone to install find-skills', async ($, on) => {
+  await web(on)
   await $.session.start(START)
   await offerAgents($)
-  for (const text of [...Object.values(await answerTo($, NOTHING)), ...Object.values(await answerTo($, SOME))]) {
-    if (typeof text === 'string') expect(text).not.toMatch(/find-skills|vercel-labs/)
-  }
+  const all = [await answerTo($, NOTHING, ['changelog']), await answerTo($, SOME), await answerOf($, { job: SOME, registry: true })]
+  for (const a of all) for (const text of [a.note, a.ifNoneFits]) expect(text ?? '').not.toMatch(/find-skills|vercel-labs|npx[^`]* find\b|npx skills /)
 })
 
-test('a search that finds matches carries the same search rule for the case that none of them fits', async ($, on) => {
-  await office(on)
+test('the keywords go into the address as plain words only, at most six', async ($, on) => {
+  const urls = await web(on)
+  await $.session.start(START)
+  await answerTo($, NOTHING, ['UI; rm -rf /', 'a "quote" & $(boom)', 'layout', 'CSS', 'visual', 'polish', 'extra', 'seventh'])
+  expect(urls).toEqual(['https://skills.sh/api/search?q=ui%20rm%20rf%20quote%20boom%20layout'])
+  await answerTo($, 'knit a sweater in wool for the winter')
+  expect(urls[1]).toBe('https://skills.sh/api/search?q=knit%20sweater%20wool%20winter')
+})
+
+const ODD: Array<[string, { ok?: boolean; text?: string; throws?: boolean }]> = [
+  ['a fetch that throws', { throws: true }], ['an error status', { ok: false, text: 'nope' }], ['a body that is not JSON', { text: '<html>oops</html>' }],
+  ['a skills list that is not a list', { text: '{"skills":"many"}' }], ['entries with nothing usable in them', { text: '{"skills":[{"x":1},{"source":"a b","skillId":"c"}]}' }], ['an empty body', { text: '' }],
+]
+for (const [what, reply] of ODD) {
+  test(`${what} gives the one-line fallback to the general-purpose agent, and no list`, async ($, on) => {
+    await web(on, reply)
+    await $.session.start(START)
+    const { registry, note } = await answerTo($, NOTHING, ['changelog'])
+    expect(registry).toBeUndefined()
+    expect(note).toBe('Nothing installed fits this job. Say so in one line, and why. The registry search did not work: say so in one line, and use the general-purpose agent with a fuller brief.')
+  })
+}
+
+test('a search that finds nothing says so in one line and sends Clawd to the general-purpose agent', async ($, on) => {
+  await web(on, { text: '{"query":"x","skills":[]}' })
+  await $.session.start(START)
+  const { registry, note } = await answerTo($, NOTHING, ['changelog'])
+  expect(registry).toBeUndefined()
+  expect(note).toContain('The registry search found nothing: say so in one line, and use the general-purpose agent with a fuller brief.')
+})
+
+test('with matches in hand nothing is fetched; none fitting is asked for again with `registry`, and then it is', async ($, on) => {
+  const urls = await web(on)
   await $.session.start(START)
   await offerAgents($)
   const some = await answerTo($, SOME)
   expect(some.matches.length).toBeGreaterThan(0)
   expect(some.note).toBeUndefined()
-  expect(some.ifNoneFits).toContain('If none of these fits the job, say so in one line, and why.')
-  expect(some.ifNoneFits).toContain(`run \`${SEARCH}`)
+  expect(some.ifNoneFits).toContain('call find_helpers again with the same job and keywords and `registry` set to true')
   expect(some.ifNoneFits).toContain('Never install anything without the person\'s yes.')
+  expect(urls).toEqual([])
+  const again = await answerOf($, { job: SOME, keywords: ['review', 'plan'], registry: true })
+  expect(urls).toEqual(['https://skills.sh/api/search?q=review%20plan'])
+  expect(again.matches.length).toBeGreaterThan(0)
+  expect(again.registry?.map(r => r.skillId)).toEqual(['update-skills-from-changelog', 'changelog-writer'])
+  expect(again.note).toContain('You judged that none of the matches fits.')
 })
 
-const PLAIN = 'Nothing installed fits this job. Use the general-purpose agent, write a fuller brief, and say in one line why nothing fit.'
-
-test('with the switch off in the settings, nothing is searched: the plain path to the general-purpose agent', { options: { skillSearch: false } }, async ($, on) => {
-  await office(on)
+test('with the switch off in the settings, nothing is fetched and no search is mentioned: the plain path to the general-purpose agent', { options: { skillSearch: false } }, async ($, on) => {
+  const urls = await web(on)
   await $.session.start(START)
   await offerAgents($)
-  expect((await answerTo($, NOTHING)).note).toBe(PLAIN)
-  const some = await answerTo($, SOME)
+  const none = await answerTo($, NOTHING, ['changelog'])
+  expect(none.note).toBe(PLAIN)
+  const some = await answerOf($, { job: SOME, registry: true })
   expect(some.ifNoneFits).toMatch(/general-purpose agent with a fuller brief/)
-  for (const text of [PLAIN, some.ifNoneFits ?? '']) expect(text).not.toMatch(/skills@|registry|npx|install it/)
+  for (const text of [none.note ?? '', some.ifNoneFits ?? '']) expect(text).not.toMatch(/skills\.sh|skills@|registry|npx|install it|node -v/)
+  expect(urls).toEqual([])
+  expect(some.registry).toBeUndefined()
 })
 
 test('a switch saved off in the store turns the search off', async ($, on) => {
-  onboardHost(on, { 'toggle:skillSearch': false })
+  const h = onboardHost(on, { 'toggle:skillSearch': false })
+  h.calls.web = { text: REGISTRY_JSON }
+  const urls = h.calls.fetches
   await $.session.start(START)
-  await offerAgents($)
-  expect((await answerTo($, NOTHING)).note).toBe(PLAIN)
+  expect((await answerTo($, NOTHING, ['changelog'])).note).toBe(PLAIN)
+  expect(urls).toEqual([])
 })
 
 test('a press of the Settings switch is followed at once, in both directions, with no reload', async ($, on) => {
-  await office(on)
+  const urls = await web(on)
   await $.session.start(START)
-  expect((await answerTo($, NOTHING)).note).toContain(SEARCH)
+  expect((await answerTo($, NOTHING, ['changelog'])).registry).toHaveLength(2)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...SETTINGS } as never)
   await ui.press({ key: 'config-skillSearch' })
-  expect((await answerTo($, NOTHING)).note).toBe(PLAIN)
+  expect((await answerTo($, NOTHING, ['changelog'])).note).toBe(PLAIN)
+  expect(urls).toHaveLength(1)
   await ui.press({ key: 'config-skillSearch' })
-  expect((await answerTo($, NOTHING)).note).toContain(SEARCH)
+  expect((await answerTo($, NOTHING, ['changelog'])).registry).toHaveLength(2)
+  expect(urls).toHaveLength(2)
   await ui.unmount()
 })
 

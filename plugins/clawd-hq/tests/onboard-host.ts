@@ -52,7 +52,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   for (const [path, text] of Object.entries(PROJECT)) h.files.set(path, text)
   h.session.loaded = LOADED
   const models = { opus: OPUS_TEAM as string | undefined, haiku: undefined as string | undefined, workflow: WORKFLOW_REPLY as string | undefined }
-  const calls = { models: [] as Array<{ model: string; prompt: string }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, contexts: [] as string[][], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
+  const calls = { models: [] as Array<{ model: string; prompt: string }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], web: undefined as { ok?: boolean; text?: string; throws?: boolean } | undefined, get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, contexts: [] as string[][], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
   const children = (dir: string) => {
     const prefix = `${dir.replace(/\/+$/, '')}/`
     const names = new Map<string, boolean>()
@@ -123,7 +123,13 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
     calls.contexts.push(((e as { context?: unknown[] }).context ?? []).map(String)) // what rode along with it, unseen in the chat
     return { text: (e as { text: string }).text } as never
   })
-  on('http.fetch', (_$, e) => (calls.fetches.push(String((e as { url: string }).url)), { value: { status: 500 } }) as never)
+  // The network: refused (500) unless a test sets `calls.web`, the page the registry search gets (or a fetch that throws).
+  on('http.fetch', (_$, e) => {
+    calls.fetches.push(String((e as { url: string }).url))
+    const r = calls.web
+    if (r?.throws) throw new Error('offline')
+    return { value: r === undefined ? { status: 500 } : { status: r.ok === false ? 500 : 200, ok: r.ok !== false, headers: {}, text: r.text ?? '' } } as never
+  })
   on('config.list', () => ({ value: [] }) as never)
   on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
   on('agent.spawn', (_$, e) => {

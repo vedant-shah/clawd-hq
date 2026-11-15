@@ -16,8 +16,11 @@ export const PLAN_TOOL = 'mcp__clawd-hq__plan'
 export const FIND_TOOL ='mcp__clawd-hq__find_helpers'
 export const CONTRACTOR_TOOL = 'mcp__clawd-hq__hire_contractor'
 /**
- * The one release of the `skills` command that Clawd's search of the public skill registry runs (`npx -y skills@<this> find ...`, and the
- * `add` line he shows). Pinned on purpose, never left floating: a floating `npx` would run whatever was published last. Bumped on purpose, by
- * hand, to the newest release at least 14 days old. Chosen on 15 Nov 2026: this release came out on 19 Oct, and the next ones on 2, 3, 10 and 11 Nov.
+ * The one release of the `skills` command that Clawd runs to install a skill from the public registry, and only after the person's yes
+ * (`npx -y skills@<this> add <source>@<skillId>`). Pinned on purpose, never left floating: a floating `npx` would run whatever was published
+ * last. Bumped on purpose, by hand, to the newest release at least 14 days old. Chosen on 15 Nov 2026: this release came out on 19 Oct, and
+ * the next ones on 2, 3, 10 and 11 Nov. The search does not use it: that is a web request (hooks/registry-search.ts).
  */
 export const SKILLS_CLI_VERSION = '1.7.4'
+/** What that release needs: its `engines.node` is `>=22.20.0` (`npm view skills@<version> engines`), and on older Node it crashes. Change it with the version. */
+export const SKILLS_CLI_NODE = '22.20.0'

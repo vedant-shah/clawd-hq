@@ -48,6 +48,7 @@ export const FIND_HELPERS_SPEC: ToolSpec = {
     'For Clawd, in the main chat: search every installed agent and skill for a job, before you hire anyone. Give the job and 5 to 8 keywords. ' +
     'It always returns the five best fits, with no cut-off, so judge the fit yourself. Each has a name, a kind (agent or skill), what it does, and a status: staff (on this project\'s team), ' +
     'laid off (parked for this project) or not on team (installed, not picked). A skill also has a use: knowledge (facts or taste a model may lack) or process (a way of working). ' +
+    'When nothing installed fits and the Settings switch is on, it also searches the public skill registry (skills.sh) and lists what it finds as not installed. ' +
     'A specialist cannot use it.',
   inputSchema: {
     type: 'object',
@@ -58,6 +59,7 @@ export const FIND_HELPERS_SPEC: ToolSpec = {
         items: { type: 'string' },
         description: '5 to 8 words for the same work: other ways to say it, synonyms, and the field\'s own words. For a design job: “UI, layout, CSS, visual, polish”. At most 12.',
       },
+      registry: { type: 'boolean', description: 'Set true only on a second call, when none of the matches fit: it also searches the public skill registry (skills.sh), if that is switched on. A job nothing installed fits is searched there without it.' },
     },
     required: ['job'],
   },

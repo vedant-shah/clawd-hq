@@ -92,7 +92,7 @@ export function ownToolIo($: EngineInterface, opts: BriefingOptions): OwnToolIo 
   return {
     tour: async () => { await openPanes(paneIo($), false); await startDemo(demoIo($)) },
     offerRule: (id, input) => offerRule(ruleIo($), id, input), step: (id, input) => reportStep(stepIo($), id, input),
-    find: async (id, input) => findHelpers(await onboardIo($, opts), id, input, opts.isSearchOn), contractor: async (id, input) => hireContractor(await contractorIo($, opts), id, input),
+    find: async (id, input) => findHelpers(await onboardIo($, opts), id, input, opts.isSearchOn ? async url => { const r = await $.http.fetch(url); return { ok: r.ok, text: r.text } } : undefined), contractor: async (id, input) => hireContractor(await contractorIo($, opts), id, input),
     plan: (id, input) => planTool(planRunIo($, opts), id, input),
   }
 }

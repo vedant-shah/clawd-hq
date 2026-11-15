@@ -43,6 +43,7 @@ Clawd HQ isn't a new agent runtime. It packages Claude Code's native agents into
 
 - **Delegates by default.** Clawd hands every job that one or two tool calls can't finish to a specialist in the background. Jobs that don't depend on each other run side by side. Ask him anything while three specialists work.
 - **Specialists don't stall.** They never stop mid-run for a question. They make their best call, finish the job, and list their assumptions and questions at the end for Clawd.
+- **Progress in plain words.** Each brief asks the specialist to start every update with a short sentence like "Step 2 of 4: checking the tests." The office turns that into a progress bar. A specialist can also report with a step tool, but it doesn't have to.
 - **Steer a running specialist.** Uses Claude Code's own agent messaging: Clawd can message any running specialist, and it picks the message up at its next step. Change or add to a brief without restarting the job.
 - **One report.** Questions come to you in one box (up to four) at a pause. Quiet chat hides "finished" notices. Failures and requests for your permission or approval always show. A specialist's question goes to Clawd, who asks you.
 - **Plain words.** Clawd talks in plain, short sentences, borrowing a few rules from ASD-STE100 (Simplified Technical English).
@@ -61,10 +62,11 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 ### 3. Checks, and keeps you oriented
 
 - **You should know.** Our own check on finished work: Haiku reads the specialist's full record against its report, and speaks up only when something matters. It backs off if you ignore it. It stands in for Claude Code's built-in You should know while it's on, so you aren't told twice. Every card has **Ask Clawd**.
-- **Left undone.** Lists work that was put off, like TODOs and skipped tests. "Do it now" puts it in your prompt box.
+- **The plan.** For a job of several steps, Clawd keeps a short, ordered plan for the one goal in hand. It has an optional one-sentence summary. A step ticks itself when its specialist finishes well, and stays open if the specialist failed. Ideas put off go on a "Later" list. A plan from the Planner becomes the plan, or waits as a draft while another goal is in hand. Clawd works on one goal at a time.
+- **Left undone.** Lists work that was put off, like TODOs and skipped tests. It sits in the Later fold of the Office tab, next to the plan's own put-off ideas. "Do it now" puts it in your prompt box.
 - **Coffee break.** Compacts a long chat at a calm moment, never mid-build.
 - **Lasting rules, on your say-so.** When you state a rule for later work ("always", "from now on"), Clawd offers it on a card. One press adds that exact line to the project's CLAUDE.md, which every specialist already reads. An answer in the question box settles only the job at hand.
-- **Artifact Desk.** Every page Claude publishes on claude.ai, one click away.
+- **Artifact Desk.** Every page Claude publishes on claude.ai, one click away, under Artifacts on the History tab.
 
 Every check can be turned off in Settings. Nothing is ever sent for you. Buttons fill your prompt box; the one exception is "Add to CLAUDE.md", which writes the line you see.
 
@@ -78,6 +80,7 @@ Claude Code already runs subagents in the background, with a model and effort pe
 | Choosing models | You or each agent file set them | Clawd sizes model and effort per job |
 | Questions | Come as they arise | Up to four in one box, at a pause |
 | Progress | Raw tool rows in the chat | Plain-words steps in a live office panel |
+| Several-step jobs | Held in the chat | A short plan saved in your project, ticked as work finishes |
 
 - Clawd does jobs that take one or two tool calls himself. Anything bigger goes to a specialist.
 - Lasting rules live in your CLAUDE.md, so you aren't asked twice.
@@ -92,7 +95,7 @@ Clawd HQ follows the "elephants and goldfish" idea from Google ([paper](https://
 
 **How a request flows**
 
-<p align="center"><img src="docs/diagrams/flow-request.svg" alt="How a request flows: you talk to Clawd; he does one- or two-step jobs himself or hires a specialist sized to the job; work comes back to Clawd for checks; you get one plain report." width="560"></p>
+<p align="center"><img src="docs/diagrams/flow-request.svg" alt="How a request flows: you talk to Clawd; he does jobs of one or two tool calls himself or hires a specialist sized to the job; work comes back to Clawd for checks; you get one plain report." width="560"></p>
 
 - You only talk to Clawd. He does jobs of one or two tool calls himself and hires for the rest.
 - Each hire gets a model and effort sized to the job, and a brief that names the skills that fit.
@@ -115,15 +118,21 @@ Type `/office` to open it. The Office tab looks like this:
 <p align="center"><img src="docs/screenshots/office.png" alt="The Office tab during the demo: Clawd is free while a Builder and a Researcher work, each with its model, tokens and a step-by-step progress bar" width="480"></p>
 
 - **Clawd's card.** His status, with a green, amber or red dot. The chat's model and effort. He stays free while specialists work, and falls asleep when the office is quiet.
-- **At work.** One card per specialist: its own words, model, time, tokens and a progress bar.
-- **Pair-up.** Specialists hired together share one card.
-- **Council.** The voices of a council share one card, with each voice's status. When all have finished, it shows the first line of each report.
+- **Needs you.** What waits on you: "You should know" cards, offers of a rule or of staff, the layoff notice and setup choices.
+- **The plan.** The goal, with "3 of 6 done" beside it and its summary under it. The last finished step stays in view, and earlier ones fold into "N steps done". A line runs beside the steps, and each specialist sits under its step. A failed specialist shows its reason, with **Details**, and then **Retry** and **Ask Clawd**. They fill your prompt box; nothing is sent.
+- **Later.** A fold of put-off work: the plan's Later ideas, then the Left undone items. Each has **Do it now** (fills your prompt box) and **Dismiss**.
+- **Also at work.** Specialists under no step of the plan. With no plan, this is the whole floor: one card per specialist with its own words, model, time, tokens and a progress bar. Pair-up members share one card. The voices of a council share one card, which shows the first line of each report when all have finished.
 - **Usage.** Context, session limit and weekly limit. Amber at 70%, red at 90%.
 
 The other tabs:
 
 - **People.** Your team, with what each helper does and how many tokens it has used. Helpers outside the team, including ones you install later, are laid off on their own; search finds them again.
-- **Settings.** The switches, the work finished this session, and Clawd's rules and voice.
+- **History.** What got done, kept in your project (see Privacy).
+  - *In progress:* the goal in hand.
+  - *Finished:* each goal that ended, one line. Open one for its summary, totals, steps, retries and failures, and the pages it made. A goal that was set aside has **Resume**, which fills your prompt box with its unfinished steps and never sends.
+  - *Other work:* one line per run that was not part of a goal.
+  - *Artifacts:* the Artifact Desk list.
+- **Settings.** The switches, and Clawd's rules and voice.
 
 Every helper gets its own pixel Clawd, drawn for what it does:
 
@@ -190,6 +199,7 @@ Most of it runs on your machine. Model calls use your plan.
 | You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
 | Left undone check | Haiku | Your request and Clawd's final report |
 | Coffee break | The session's model | One short question on the cached chat |
+| The plan and the history | No model | Nothing is sent. They are files in your project (see "What is stored"). |
 | Nothing installed fits a job | No model. Claude Code fetches one skills.sh search page for the plugin | Up to 6 plain keywords for the job, in the address. The "Search the public skill registry when nothing fits" switch in Settings turns it off. A skill is fetched from its source only if you say yes to installing it. |
 
 Apart from these calls, the plugin opens no network connections and starts no processes. The registry search is its one web request, made through Claude Code, only when nothing installed fits and the switch is on.
@@ -199,7 +209,9 @@ Apart from these calls, the plugin opens no network connections and starts no pr
 <details>
 <summary>What is stored, and where</summary>
 
-- **Your Claude Code config folder, never your project:** who you laid off, hire counts, the Artifact Desk list, "You should know" notes, and the Left undone list.
+- **Your Claude Code config folder:** who you laid off, hire counts, the Artifact Desk list, "You should know" notes, and the Left undone list.
+- **Your project's `.clawd-hq/plans/`:** the plan, one file per goal, as plain Markdown. You can commit it. A plan file in the project is read by Clawd, like CLAUDE.md: when a session starts the newest one becomes the goal in hand, and Clawd sees its title, summary, steps and Later items each time he uses the plan. Commit one only if you want your team's Clawd to see it. When a goal ends its file is emptied, and its Later items move to the Left undone list.
+- **Your project's `.clawd-hq/history-<session>.jsonl`:** the audit history behind the History tab. One line per goal start and end, specialist run, tool call and model request. A tool call keeps only its name, timing and whether it worked, never its input or output. A model request keeps only token counts. The only free text is a goal's title, summary and steps, a run's task, and an artifact's title, each cut to one line of 120 characters. A file rolls over at 2 MB and the old files are kept. `.clawd-hq/.gitignore` keeps these files out of git.
 - **Your project's CLAUDE.md:** only the rule lines you add with "Add to CLAUDE.md".
 - **Past sessions:** read on this computer. Only helper names and counts are kept.
 - **Your copies of Clawd's rules and voice:** in `~/.clawd-hq/`, made only when you edit them.

@@ -25,6 +25,7 @@ Most of it runs on your machine. Model calls go through Claude Code's own model 
 | You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
 | Left undone check | Haiku | Your request and Clawd's final report |
 | Coffee break | The session's model | One short question on the cached chat |
+| The plan and the history | No model | Nothing is sent. They are files in your project (see "What it writes"). |
 | Nothing installed fits a job | No model. Claude Code fetches one skills.sh search page for the plugin | Up to 6 plain keywords for the job, in the address. The "Search the public skill registry when nothing fits" switch in Settings turns it off. A skill is fetched from its source only if you say yes to installing it. |
 
 Apart from the registry search above, it fetches nothing from the network and starts no processes. That search is made through Claude Code, only when nothing installed fits and its switch is on.
@@ -44,13 +45,16 @@ What it reads on this computer:
 - The project's README, instruction files, manifests and file names, for setup's quick scan.
 - Specialists' transcripts, and the main chat after a long turn of Clawd's own, for the "You should know" check; the scout's transcript, for its picks.
 - Text written by Edit and Write calls, for TODO, skipped-test and not-implemented markers (Left undone).
+- The project's `.clawd-hq/plans/` and `.clawd-hq/history-*.jsonl`, for the plan and the History tab. A plan file is read by Clawd, like CLAUDE.md: the newest one becomes the goal in hand when a session starts, and Clawd sees its title, summary, steps and Later items each time he uses the plan. So a plan file someone else committed is text Clawd will read.
 - Your own voice file, if you set one.
 
 What it writes:
 
+- `<project>/.clawd-hq/plans/<goal>.md`: Clawd's plan for the goal in hand (title, an optional one-sentence summary, steps, the choices a specialist made, and a Later list), as Markdown you can commit. It is made when Clawd starts a goal and emptied when the goal ends. Put-off items then move to the Left undone list.
+- `<project>/.clawd-hq/history-<session>.jsonl`: one line per goal start and end, specialist run, tool call and model request. A tool call keeps its name, timing and whether it worked, never its input or output. A model request keeps token counts. The only free text is a goal's title, summary and steps, a run's task, and an artifact's title, each cut to 120 characters. It rolls over at 2 MB, old files are kept, and nothing is deleted. `.clawd-hq/.gitignore` keeps these files out of git. A `.clawd-hq` folder that leads out of the project is refused.
 - `~/.clawd-hq/chief-of-staff.md` and `~/.clawd-hq/soul.md`: your copies of Clawd's rules and voice, which the main chat follows. Made only when you press Edit; saved as `.bak` and emptied only when you press Reset.
 - Your project's CLAUDE.md: only the exact rule line shown, when you press "Add to CLAUDE.md".
-- The plugin's own store in your Claude Code config folder, never your project: setup's team and profile, who you laid off, hire counts, each project's token totals per helper, the Artifact Desk list, "You should know" notes, the Left undone list and a short log of its checks (when, what came of it, how many items; never your request or its report), and the Settings switches.
+- The plugin's own store in your Claude Code config folder: setup's team and profile, who you laid off, hire counts, each project's token totals per helper, the Artifact Desk list, "You should know" notes, the Left undone list and a short log of its checks (when, what came of it, how many items; never your request or its report), and the Settings switches.
 
 What it changes as text passes through:
 

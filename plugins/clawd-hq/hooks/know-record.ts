@@ -3,6 +3,7 @@
 // trim leaves a mark in words. hooks/know-hooks.ts reads the rows from the session and hands them in.
 import type { SessionMessage } from 'claude-code'
 import { BRIEF_NOTE } from './desk'
+import { PLAN_DRAFT_NOTE } from './plan-draft'
 import { isStepTool } from './steps'
 import { ago } from './office'
 
@@ -171,7 +172,7 @@ function headerOf(input: RecordInput, steps: number): string {
   ].join('\n')
 }
 
-const withoutOurNote = (text: string) => (text.includes(BRIEF_NOTE) ? `${text.replace(BRIEF_NOTE, '').trimEnd()}\n\n${OUR_NOTE}` : text)
+const withoutOurNote = (text: string) => (text.includes(BRIEF_NOTE) ? `${text.replace(BRIEF_NOTE, '').replace(PLAN_DRAFT_NOTE, '').trimEnd()}\n\n${OUR_NOTE}` : text)
 
 /**
  * The messages sent to the specialist in earlier runs, oldest first, each marked as one that may change the brief: the

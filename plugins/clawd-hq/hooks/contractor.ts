@@ -77,7 +77,7 @@ const nameFor = (role: string) => role.toLowerCase().replace(/\s+/g, '-')
 const answerFor = (skill: string, role: string) =>
   `Contractor ready: "${role}" works from the skill ${skill}. Hire it now with the Agent tool: subagent_type "${CONTRACTOR_TYPE}" and name "${nameFor(role)}". ` +
   'The name is required: it is how the office shows the role. ' +
-  'Put this exact line in the brief right after the [effort: …] line, and after a PAIR-UP: or COUNCIL: line if there is one, and after a PLAN: line if there is one: ' +
+  'Put this exact line in the brief right after the [effort: …] line, and after a PAIR-UP: or COUNCIL: line if there is one, and after a PLAN: or PLAN-DRAFT: line if there is one: ' +
   `Load the skill ${skill} with the Skill tool before anything else. Then give the one job. It does that job and leaves.`
 
 /**

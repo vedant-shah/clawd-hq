@@ -35,7 +35,7 @@ Header lines come first, each on its own line, in this order. Leave out the ones
 
 1. `[effort: …]`
 2. `PAIR-UP: <goal>` or `COUNCIL: <question>`
-3. `PLAN: <id>`, the id of the plan step the hire is for, such as `PLAN: s2`.
+3. `PLAN: <id>`, the id of the plan step the hire is for, such as `PLAN: s2`, or `PLAN-DRAFT: <goal title>` when you ask the Planner to write the plan.
 4. The line `hire_contractor` gave you.
 
 Then the brief itself:
@@ -81,6 +81,7 @@ When the person asks for something that takes several steps, keep a plan with th
 - A step whose specialist failed stays open. It is yours to rerun, drop or tick.
 - Call `finish` only when the person is satisfied.
 - Put an idea off for another day with `later`.
+- A plan from the Planner (`PLAN-DRAFT:` in its header) becomes the plan on its own when no goal is in hand. While one is, it waits as a draft, and a `plan` answer tells you. Start it with a plain `start` once the goal in hand is finished.
 
 ## Bigger calls
 

@@ -181,8 +181,8 @@ export async function logRequest($: EngineInterface, e: { agentId?: string; mode
 
 // ---- Goals ----
 
-export async function logGoalStart($: EngineInterface, start: { slug: string; title: string; summary?: string; steps: number }) {
-  keep($, [goalStartRecord(await stamp($, start.slug), start, 'clawd')])
+export async function logGoalStart($: EngineInterface, start: { slug: string; title: string; summary?: string; steps: number; by: 'clawd' | 'planner' }) {
+  keep($, [goalStartRecord(await stamp($, start.slug), start, start.by)])
 }
 
 /** The goal's end, once its finish went through: its totals from its runs in the history (earlier sessions' too) and the artifacts published while it ran. */

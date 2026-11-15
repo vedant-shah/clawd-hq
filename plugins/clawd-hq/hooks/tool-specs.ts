@@ -109,7 +109,7 @@ export const PLAN_SPEC: ToolSpec = {
     'Use it when the person asks for something that takes several steps. One goal at a time: op "start" is refused until the goal in hand is over. ' +
     'Ops: start (goal, steps, and an optional summary: the goal in one sentence), summary (text: set or replace that sentence when the goal shifts; empty clears it), add (text, and after to place it), drop (id), move (id, and after; no after means first), split (id, steps), ' +
     'done (id: you did that step yourself), reopen (id), later (text: put off for another day), finish (outcome "done" or "stopped": the goal is over). ' +
-    'Every call answers with the plan and the id of each step (s1, s2, ...). Hire a specialist for a step by starting its brief with the line PLAN: <id>, after the PAIR-UP: line if there is one, and before the line hire_contractor gave you. ' +
+    'Every call answers with the plan and the id of each step (s1, s2, ...). Hire a specialist for a step by starting its brief with the line PLAN: <id>, after the PAIR-UP: line if there is one, and before the line hire_contractor gave you. To ask the Planner for a plan, start its brief with PLAN-DRAFT: <goal title> in the same place instead: its STEP: lines become the plan, or wait as a draft while another goal is in hand. ' +
     'A step is ticked by itself when its specialist finishes well and nothing else is working on it, and it is never ticked when a specialist on it failed: then it is yours to rerun, drop, or tick with done. ' +
     'The goal is never ended by itself: call finish when the person is satisfied. A step with a specialist at work cannot be dropped or split. A specialist cannot use this tool.',
   inputSchema: {

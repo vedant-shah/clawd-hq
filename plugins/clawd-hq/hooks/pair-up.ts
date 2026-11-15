@@ -43,6 +43,25 @@ export function parsePlanLine(prompt: string): { stepId?: string; prompt: string
   return { stepId: id.toLowerCase(), prompt: rest === '' ? remainder : `${rest}${m[3]}${remainder}` }
 }
 
+const DRAFT_LINE = /^\s*PLAN-DRAFT:[ \t]*(\S[^\r\n]*?)[ \t]*(\r?\n|$)/i
+const DRAFT_CHARS = 120
+
+/**
+ * The `PLAN-DRAFT: <goal title>` line Clawd starts a brief with to ask the Planner for a plan, and the brief without it. It sits where
+ * `PLAN:` sits (after the effort line, before or after the pair-up line: the caller tries both places). An empty title is no draft.
+ */
+export function parsePlanDraftLine(prompt: string): { title?: string; prompt: string } {
+  const m = prompt.match(DRAFT_LINE)
+  const title = m ? fit(m[1] ?? '', DRAFT_CHARS) : ''
+  return !m || title === '' ? { prompt } : { title, prompt: prompt.slice(m[0].length) }
+}
+
+/** The plan line of a brief: a `PLAN: <step id>` (which step the hire is for) or a `PLAN-DRAFT: <goal title>` (a plan asked of the Planner), whichever starts it. */
+export function parsePlanHeader(prompt: string): { stepId?: string; title?: string; prompt: string } {
+  const step = parsePlanLine(prompt)
+  return step.stepId === undefined ? parsePlanDraftLine(prompt) : step
+}
+
 /** Two or more specialists hired together for one goal, in the order they were hired. `isCouncil` marks a council: voices on one question, drawn as one card with its own picture. */
 export type PairGroup = { goal: string; members: Employee[]; isCouncil?: true }
 

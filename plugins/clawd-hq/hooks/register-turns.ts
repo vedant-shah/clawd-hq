@@ -13,7 +13,8 @@ import { leftAnswer, leftAsked, leftOwnTurn, leftTurnStart } from './left-io'
 import { labelOf } from './office'
 import { turnEndBoss } from './office-state'
 import { askAgain } from './panes'
-import { clearNewMarks, settleRun } from './plan-run'
+import { draftRuns } from './plan-draft'
+import { clearNewMarks, receiveDraft, settleRun } from './plan-run'
 import { planRunIo } from './register-plan'
 import { DEMO } from './panel-model'
 import { noteThreshold } from './usage'
@@ -73,6 +74,9 @@ export function registerTurns(on: On, brief: BriefingOptions) {
       if (e.reason !== 'answer' && asker) await updateStaff($, l => edit(l, asker.id, one => (one.mood === 'failed' ? { ...one, reason: failureReason(e.reason, e.answer ?? '') } : one)))
       // The one place a plan step is ticked: a linked run's real hand-back. Its choices go under the step now; a stop signal or the engine's list ticks nothing.
       if (e.reason === 'answer') await settleRun(planRunIo($, brief), e.agentId)
+      // A Planner asked for a plan (`PLAN-DRAFT:`) and handed its report back: its STEP lines become the plan, or wait as a draft.
+      const draftTitle = draftRuns.get(e.agentId)
+      if (e.reason === 'answer' && draftTitle !== undefined) await receiveDraft(planRunIo($, brief), draftTitle, e.answer ?? '')
       await showStatus($)
     } else {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)

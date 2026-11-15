@@ -10,7 +10,8 @@ import type { BriefingOptions } from './instructions'
 import { keepBrief } from './know-check'
 import { freshHire, withBlurb } from './office-state'
 import { isActive } from './panel-model'
-import { parsePairUp, parsePlanLine } from './pair-up'
+import { parsePairUp, parsePlanHeader } from './pair-up'
+import { PLAN_DRAFT_NOTE, draftRuns } from './plan-draft'
 import { linkStep } from './plan-run'
 import { holdBack } from './payroll'
 import { enrollNow, gaugeIo, payrollIo, runIo, showStatus } from './register-io'
@@ -79,18 +80,21 @@ export function registerAgents(on: On, brief: BriefingOptions) {
     // Clawd's [effort: …] line comes off the brief; every agent learns how to report its questions and choices.
     // A pair-up member's `PAIR-UP: <goal>` line (hooks/pair-up.ts) comes off the same way, right after it.
     const { effort, prompt: unEffort } = parseEffort(e.prompt)
-    // The `PLAN: <step id>` line (hooks/plan-run.ts) comes off the same way, before the pair-up line or after it.
-    const planFirst = parsePlanLine(unEffort)
+    // The `PLAN: <step id>` or `PLAN-DRAFT: <goal title>` line (hooks/plan-run.ts) comes off the same way, before the pair-up line or after it.
+    const planFirst = parsePlanHeader(unEffort)
     const { goal, isCouncil, prompt: unPair } = parsePairUp(planFirst.prompt)
-    const planLast = planFirst.stepId === undefined ? parsePlanLine(unPair) : { stepId: undefined, prompt: unPair }
+    const planLast = planFirst.stepId === undefined && planFirst.title === undefined ? parsePlanHeader(unPair) : { stepId: undefined, title: undefined, prompt: unPair }
     const [prompt, planId] = [planLast.prompt, planFirst.stepId ?? planLast.stepId]
+    const draftTitle = planFirst.title ?? planLast.title // a `PLAN-DRAFT:` line: the Planner is asked for a plan the office files
     await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
     if (e.resume) return rejoin($, await next(e), e, effort) // the engine takes no change to a resumed message, so its effort line stays on it
     // A workflow's agent keeps the script's prompt (2.1.300 applies a rewrite there): its answer is the script's to read.
-    const sent = e.workflow ? e.prompt : prompt + BRIEF_NOTE
+    const isDraft = draftTitle !== undefined && brief.isOn && !e.workflow
+    const sent = e.workflow ? e.prompt : prompt + BRIEF_NOTE + (isDraft ? PLAN_DRAFT_NOTE : '') // only a draft's brief asks for STEP lines
     const r = await next({ ...e, prompt: sent })
     if (r.agentId) {
       keepBrief(r.agentId, sent)
+      if (isDraft) draftRuns.set(r.agentId, draftTitle)
       if (effort) efforts.set(r.agentId, effort)
       await newHire(runIo($), r.agentId, e.subagentType, e.description, e.name)
       const pair = goal !== undefined && !e.workflow ? { goal, at: await $.clock.now(), ...(isCouncil ? { isCouncil } : {}) } : undefined // a workflow keeps its script's prompt, so its line was never taken off

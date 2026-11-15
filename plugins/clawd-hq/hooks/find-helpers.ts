@@ -1,6 +1,7 @@
 // find_helpers: Clawd's search of everything installed before a hire. It lists the agents (laid off or not) and every skill the
 // engine knows, ranks them against a plain description of the job by word overlap (no model call), and returns the top five with
 // where each stands: staff (on this project's team), laid off (parked), or not on team. No `$` here: the lists come through closures.
+import { SKILLS_CLI_VERSION } from './constants'
 import { coveredCore } from './core-cover'
 import { CORE_FOUR } from './core-four'
 import { installedHelpers } from './helpers'
@@ -146,15 +147,24 @@ export async function listHelpers(io: FindIo): Promise<readonly Listed[]> {
 const CONTRACTOR_NAME = 'hire_contractor'
 /** The refusal for anyone but Clawd. */
 export const FIND_DENY = 'Only Clawd searches for helpers. Put what you need in your report and Clawd will staff it.'
-/** What to do for a job nothing fits: search the public registry at once, ask only to install, and never install without a yes. */
-const NO_FIT_STEPS =
-  'If the find-skills skill is installed, use it now to search the public skill registry for this job, without asking first. A search counts as one of your own quick lookups. ' +
-  'If it finds a strong match, come back to the person with its name, source, install count and why it fits, and ask whether to install it and use it for this job, or go ahead without it. ' +
-  'If it finds nothing good, say so in one line and use the general-purpose agent with a fuller brief. ' +
-  'If find-skills is not installed, ask once whether to install it, showing `npx skills add vercel-labs/skills@find-skills -g -y`, and meanwhile go ahead with the general-purpose agent. ' +
+/**
+ * What to do for a job nothing fits, with the search of the public skill registry on: one command Clawd runs himself, at the one pinned
+ * release (hooks/constants.ts), as a quick lookup of his own. Plain keywords only, so nothing but words reaches the command line. He asks
+ * before any install, and shows the exact `add` line.
+ */
+const SEARCH_STEPS =
+  `Search the public skill registry yourself, as one of your own quick lookups: run \`npx -y skills@${SKILLS_CLI_VERSION} find <3 to 6 plain keywords for the job>\`. ` +
+  'The keywords are plain words only: keep only letters, digits, spaces and hyphens, with no quotes, symbols or shell characters. ' +
+  'Judge what it lists. If one is a strong match, come back to the person with its name, source, install count and why it fits, ' +
+  `and ask whether to install it, showing the exact line \`npx -y skills@${SKILLS_CLI_VERSION} add <package>\`, or go ahead without it. ` +
+  'If nothing good is found, say so in one line and use the general-purpose agent with a fuller brief. ' +
   'Never install anything without the person\'s yes.'
-const NO_FIT = `Nothing installed fits this job. Say so in one line, and why. ${NO_FIT_STEPS}`
-const NONE_FITS = `If none of these fits the job, say so in one line, and why. ${NO_FIT_STEPS}`
+/** With the search off (the Settings switch): the plain path, and nothing is searched or sent. */
+const PLAIN_STEPS = 'Use the general-purpose agent, write a fuller brief, and say in one line why nothing fit.'
+const NO_FIT_ON = `Nothing installed fits this job. Say so in one line, and why. ${SEARCH_STEPS}`
+const NO_FIT_OFF = `Nothing installed fits this job. ${PLAIN_STEPS}`
+const NONE_FITS_ON = `If none of these fits the job, say so in one line, and why. ${SEARCH_STEPS}`
+const NONE_FITS_OFF = 'If none of these fits the job, say so in one line, and why. Use the general-purpose agent with a fuller brief.'
 
 /** What to do next with a match, in a line the model can follow. */
 function nextOf(h: Listed): string {
@@ -170,11 +180,11 @@ function nextOf(h: Listed): string {
 /** A match as Clawd sees it. A skill also says what it adds (`use`); an agent has no such label. */
 const shown = (h: Listed) => ({ name: h.id, kind: h.kind, ...(h.kind === 'skill' ? { use: useOf(h.id, h.about) } : {}), about: h.about, status: h.status, next: nextOf(h) })
 
-/** The answer to a call of `find_helpers`: the top matches for the job as JSON text, or why the call is refused. Only Clawd (no agent id) may search. */
-export async function findHelpers(io: FindIo, agentId: string | undefined, input: Record<string, unknown>): Promise<{ readonly result: string } | { readonly deny: string }> {
+/** The answer to a call of `find_helpers`: the top matches for the job as JSON text, or why the call is refused. Only Clawd (no agent id) may search. `isSearchOn` is the Settings switch for the registry search, read as it is when the call is answered. */
+export async function findHelpers(io: FindIo, agentId: string | undefined, input: Record<string, unknown>, isSearchOn = true): Promise<{ readonly result: string } | { readonly deny: string }> {
   if (agentId !== undefined) return { deny: FIND_DENY }
   const job = typeof input.job === 'string' ? input.job.trim().slice(0, JOB_CHARS) : ''
   if (job === '') return { deny: 'job must be text: say what the work is in a few words.' }
   const matches = rankHelpers(job, await listHelpers(io), MATCHES, keywordsOf(input.keywords)).map(shown)
-  return { result: JSON.stringify(matches.length > 0 ? { matches, ifNoneFits: NONE_FITS } : { matches, note: NO_FIT }) }
+  return { result: JSON.stringify(matches.length > 0 ? { matches, ifNoneFits: isSearchOn ? NONE_FITS_ON : NONE_FITS_OFF } : { matches, note: isSearchOn ? NO_FIT_ON : NO_FIT_OFF }) }
 }

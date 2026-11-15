@@ -45,8 +45,8 @@ const allTexts = (node: Tree): Tree[] =>
   node.type === 'Text' ? [node] : (node.children ?? []).flatMap(c => (typeof c === 'object' && c !== null ? allTexts(c as Tree) : []))
 
 const WHERE = 'Changes apply right away.'
-const TITLES = ['Clawd runs the chat', 'Quiet chat', 'You should know', 'Left undone check', 'Automatic setup']
-const FIELDS = ['chiefOfStaff', 'quietChat', 'youShouldKnow', 'leftUndone', 'autoSetup']
+const TITLES = ['Clawd runs the chat', 'Quiet chat', 'You should know', 'Left undone check', 'Automatic setup', 'Search the public skill registry when nothing fits']
+const FIELDS = ['chiefOfStaff', 'quietChat', 'youShouldKnow', 'leftUndone', 'autoSetup', 'skillSearch']
 /** The old one-line descriptions: the README has them now, the tab does not. */
 const LINES = [
   'Clawd hands work to specialists and reports in plain words.',
@@ -130,7 +130,7 @@ test('the configs view draws no weight prop, and its headings are bold and dim, 
   }
 })
 
-test('a config that is off reads Off on its toggle', { options: { chiefOfStaff: false, quietChat: false, youShouldKnow: false, leftUndone: false, autoSetup: false } }, async ($, on) => {
+test('a config that is off reads Off on its toggle', { options: { chiefOfStaff: false, quietChat: false, youShouldKnow: false, leftUndone: false, autoSetup: false, skillSearch: false } }, async ($, on) => {
   host(on)
   await $.session.start(START)
   for (const surface of SURFACES) {
@@ -144,7 +144,7 @@ test('each config reads on its own', { options: { quietChat: false } }, async ($
   host(on)
   await $.session.start(START)
   const ui = await mount($)
-  expect(await Promise.all(FIELDS.map(f => labelOf(ui, f)))).toEqual(['● On', '○ Off', '● On', '● On', '● On'])
+  expect(await Promise.all(FIELDS.map(f => labelOf(ui, f)))).toEqual(['● On', '○ Off', '● On', '● On', '● On', '● On'])
   await ui.unmount()
 })
 
@@ -165,7 +165,7 @@ test('pressing a toggle flips that config to the other value in the plugin\'s ow
   const { saved } = host(on)
   const asked = configs(on)
   await $.session.start(START)
-  const first: Record<string, boolean> = { chiefOfStaff: false, quietChat: false, youShouldKnow: false, leftUndone: true, autoSetup: false }
+  const first: Record<string, boolean> = { chiefOfStaff: false, quietChat: false, youShouldKnow: false, leftUndone: true, autoSetup: false, skillSearch: false }
   for (const [i, surface] of SURFACES.entries()) {
     const ui = await mount($, surface)
     for (const field of FIELDS) await ui.press({ key: `config-${field}` })
@@ -257,7 +257,7 @@ test('while Clawd is busy with a turn the configs cannot be changed: dimmed valu
     const ui = await mount($, surface)
     expect((await buttons(ui)).filter(k => k.startsWith('config-'))).toEqual([])
     const values = await ui.findAll({ type: 'Text', text: /^● On$/ })
-    expect(values).toHaveLength(5)
+    expect(values).toHaveLength(6)
     expect(values.every(t => t.props.dimColor === true)).toBe(true)
     expect(await shows(ui, 'You can change these when Clawd is free.')).toBe(true)
     // The busy line stands in for the one on when a change applies.

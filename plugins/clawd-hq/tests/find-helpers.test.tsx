@@ -1,8 +1,8 @@
 // find_helpers, the tool: Clawd searches every installed agent and skill for a job and gets the top five with where each stands.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { FIND_TOOL } from '../hooks/constants'
-import { START } from './host'
+import { FIND_TOOL, SKILLS_CLI_VERSION } from '../hooks/constants'
+import { SETTINGS, START } from './host'
 import { CWD, HOME, offerAgents, onboardHost } from './onboard-host'
 
 const TEAM = {
@@ -141,27 +141,90 @@ test('at most five come back, and a job nothing fits says so and points to the g
   const none = JSON.parse((await find($, { job: 'knit a sweater' })).result ?? '{}') as { matches: Match[]; note: string }
   expect(none.matches).toEqual([])
   expect(none.note).toMatch(/general-purpose/)
-  // The rule for a job nothing fits lives here: search with find-skills at once, ask only to install, never install without a yes.
   expect(none.note).toContain('Nothing installed fits this job. Say so in one line, and why.')
-  expect(none.note).toContain('If the find-skills skill is installed, use it now to search the public skill registry for this job, without asking first')
-  expect(none.note).toContain('A search counts as one of your own quick lookups.')
-  expect(none.note).toContain('its name, source, install count and why it fits')
-  expect(none.note).toContain('ask whether to install it and use it for this job, or go ahead without it')
-  expect(none.note).toContain('If it finds nothing good, say so in one line and use the general-purpose agent with a fuller brief.')
-  expect(none.note).toContain('If find-skills is not installed, ask once whether to install it, showing `npx skills add vercel-labs/skills@find-skills -g -y`, and meanwhile go ahead with the general-purpose agent.')
-  expect(none.note).toContain('Never install anything without the person\'s yes.')
 })
 
-test('a search that finds matches carries the same rule for the case that none of them fits', async ($, on) => {
+type Answer = { matches: Match[]; note?: string; ifNoneFits?: string }
+const answerTo = async ($: Engine, job: string) => JSON.parse((await find($, { job })).result ?? '{}') as Answer
+const NOTHING = 'knit a sweater'
+const SOME = 'review plan test code contract go'
+const SEARCH = `npx -y skills@${SKILLS_CLI_VERSION} find `
+const ADD = `npx -y skills@${SKILLS_CLI_VERSION} add <package>`
+
+test('with the switch on, a job nothing fits is told to run the pinned search, then ask before any install', async ($, on) => {
+  await office(on)
+  await $.session.start(START)
+  const { note } = await answerTo($, NOTHING)
+  expect(note).toContain('Nothing installed fits this job. Say so in one line, and why.')
+  expect(note).toContain(`run \`${SEARCH}<3 to 6 plain keywords for the job>\``)
+  expect(note).toContain('one of your own quick lookups')
+  expect(note).toContain('keep only letters, digits, spaces and hyphens')
+  expect(note).toContain('its name, source, install count and why it fits')
+  expect(note).toContain(`showing the exact line \`${ADD}\``)
+  expect(note).toContain('or go ahead without it')
+  expect(note).toContain('If nothing good is found, say so in one line and use the general-purpose agent with a fuller brief.')
+  expect(note).toContain('Never install anything without the person\'s yes.')
+})
+
+test('the pinned version is one value: the same release in the search line and in the add line, never a floating one', async ($, on) => {
+  await office(on)
+  await $.session.start(START)
+  const { note } = await answerTo($, NOTHING)
+  expect(SKILLS_CLI_VERSION).toMatch(/^\d+\.\d+\.\d+$/)
+  expect(note!.match(/skills@\S+/g)).toEqual([`skills@${SKILLS_CLI_VERSION}`, `skills@${SKILLS_CLI_VERSION}`])
+  expect(note).not.toMatch(/skills@(latest|next)|npx skills /)
+})
+
+test('no answer asks anyone to install find-skills or names its install line', async ($, on) => {
   await office(on)
   await $.session.start(START)
   await offerAgents($)
-  const some = JSON.parse((await find($, { job: 'review plan test code contract go' })).result ?? '{}') as { matches: Match[]; note?: string; ifNoneFits?: string }
+  for (const text of [...Object.values(await answerTo($, NOTHING)), ...Object.values(await answerTo($, SOME))]) {
+    if (typeof text === 'string') expect(text).not.toMatch(/find-skills|vercel-labs/)
+  }
+})
+
+test('a search that finds matches carries the same search rule for the case that none of them fits', async ($, on) => {
+  await office(on)
+  await $.session.start(START)
+  await offerAgents($)
+  const some = await answerTo($, SOME)
   expect(some.matches.length).toBeGreaterThan(0)
   expect(some.note).toBeUndefined()
   expect(some.ifNoneFits).toContain('If none of these fits the job, say so in one line, and why.')
-  expect(some.ifNoneFits).toContain('npx skills add vercel-labs/skills@find-skills -g -y')
+  expect(some.ifNoneFits).toContain(`run \`${SEARCH}`)
   expect(some.ifNoneFits).toContain('Never install anything without the person\'s yes.')
+})
+
+const PLAIN = 'Nothing installed fits this job. Use the general-purpose agent, write a fuller brief, and say in one line why nothing fit.'
+
+test('with the switch off in the settings, nothing is searched: the plain path to the general-purpose agent', { options: { skillSearch: false } }, async ($, on) => {
+  await office(on)
+  await $.session.start(START)
+  await offerAgents($)
+  expect((await answerTo($, NOTHING)).note).toBe(PLAIN)
+  const some = await answerTo($, SOME)
+  expect(some.ifNoneFits).toMatch(/general-purpose agent with a fuller brief/)
+  for (const text of [PLAIN, some.ifNoneFits ?? '']) expect(text).not.toMatch(/skills@|registry|npx|install it/)
+})
+
+test('a switch saved off in the store turns the search off', async ($, on) => {
+  onboardHost(on, { 'toggle:skillSearch': false })
+  await $.session.start(START)
+  await offerAgents($)
+  expect((await answerTo($, NOTHING)).note).toBe(PLAIN)
+})
+
+test('a press of the Settings switch is followed at once, in both directions, with no reload', async ($, on) => {
+  await office(on)
+  await $.session.start(START)
+  expect((await answerTo($, NOTHING)).note).toContain(SEARCH)
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...SETTINGS } as never)
+  await ui.press({ key: 'config-skillSearch' })
+  expect((await answerTo($, NOTHING)).note).toBe(PLAIN)
+  await ui.press({ key: 'config-skillSearch' })
+  expect((await answerTo($, NOTHING)).note).toContain(SEARCH)
+  await ui.unmount()
 })
 
 test('a specialist cannot search: its call is refused with where to put the need instead', async ($, on) => {

@@ -25,8 +25,9 @@ Most of it runs on your machine. Model calls go through Claude Code's own model 
 | You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
 | Left undone check | Haiku | Your request and Clawd's final report |
 | Coffee break | The session's model | One short question on the cached chat |
+| Nothing installed fits a job | No model. Clawd runs one `npx skills find` command himself, and it asks skills.sh | The 3 to 6 plain keywords he gives for the job. The "Search the public skill registry when nothing fits" switch in Settings turns it off. |
 
-It fetches nothing from the network and starts no processes.
+The plugin itself fetches nothing from the network and starts no processes. The registry search above is a command Clawd runs himself in your chat, and only when its switch is on.
 
 What it starts and calls by itself:
 

@@ -41,10 +41,10 @@ test('with no edits the briefing is byte for byte what the old file gave, quiet 
 
 test('the options are on by default, with no voice file of the person\'s own', () => {
   // A missing value reads as on, for the two switches setup used to ask about and for Automatic setup too.
-  expect(optionsOf({})).toEqual({ isOn: true, voiceFile: '', isQuiet: true, isKnowOn: true, isLeftOn: true, isAutoOn: true })
-  expect(optionsOf({ chiefOfStaff: false, voiceFile: '  /me/voice.md ', quietChat: false, youShouldKnow: false, leftUndone: false, autoSetup: false })).toEqual({ isOn: false, voiceFile: '/me/voice.md', isQuiet: false, isKnowOn: false, isLeftOn: false, isAutoOn: false })
+  expect(optionsOf({})).toEqual({ isOn: true, voiceFile: '', isQuiet: true, isKnowOn: true, isLeftOn: true, isAutoOn: true, isSearchOn: true })
+  expect(optionsOf({ chiefOfStaff: false, voiceFile: '  /me/voice.md ', quietChat: false, youShouldKnow: false, leftUndone: false, autoSetup: false, skillSearch: false })).toEqual({ isOn: false, voiceFile: '/me/voice.md', isQuiet: false, isKnowOn: false, isLeftOn: false, isAutoOn: false, isSearchOn: false })
   // A value of the wrong kind counts as unset.
-  expect(optionsOf({ chiefOfStaff: 'no', voiceFile: 7, quietChat: 'off', youShouldKnow: 'no', leftUndone: 'off', autoSetup: 'no' })).toEqual({ isOn: true, voiceFile: '', isQuiet: true, isKnowOn: true, isLeftOn: true, isAutoOn: true })
+  expect(optionsOf({ chiefOfStaff: 'no', voiceFile: 7, quietChat: 'off', youShouldKnow: 'no', leftUndone: 'off', autoSetup: 'no', skillSearch: 'off' })).toEqual({ isOn: true, voiceFile: '', isQuiet: true, isKnowOn: true, isLeftOn: true, isAutoOn: true, isSearchOn: true })
 })
 
 test('a bare session and a teammate are not briefed; every other session is', () => {

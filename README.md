@@ -52,7 +52,7 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 ### 2. Right team, right size
 
 - **Uses what you already have.** Setup picks your team from the agents and skills you have installed, whether that's ECC or your own. You might have 200 installed, but a project realistically uses 5 to 10, and those are the team. Each brief names the installed skills that fit the job. Nothing new to download.
-- **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort. When nothing installed fits, he says so and, if the `find-skills` skill is installed, searches the public skill registry at once and comes back with the best match, asking whether to install it for this job or go ahead without it. If `find-skills` isn't installed, he asks once whether to install it. Nothing is installed without your yes.
+- **Hires, doesn't guess.** Before a new kind of job, Clawd searches every installed agent and skill and picks the best fit, saying why when none fits. An off-team skill can be hired for one job as a contractor; hire it twice and he offers to make it staff. Every hire is named. A generalist is the last resort. When nothing installed fits, he says so and searches the public skill registry (skills.sh) himself, with a few plain keywords for the job. If something fits well he comes back with its name, source and install count and asks whether to install it for this job or go ahead without it. Turn the search off in Settings and he goes straight to the general-purpose agent. Nothing is installed without your yes.
 - **Right-sized hires.** Each job gets the smallest model and effort that can do it well, from Haiku to Opus. Skills are attached only when they add knowledge, not process: at most two, and none for a one-file edit or a job on the smallest model.
 - **Pair-ups.** Some jobs need more than one kind of specialist. They work on it together, check each other, and come back with one conclusion.
 - **Lay off unused helpers.** Helpers outside the team are laid off on their own, which keeps Clawd's choices short. A card on the Office tab names who was laid off, and search brings any back. This needs Automatic setup on.
@@ -168,6 +168,7 @@ All on by default. Flip them in the Settings tab.
 | Automatic setup | Setup runs only when you type `/office-setup`. |
 | You should know | Finished work isn't checked. Claude Code's own note works as usual. |
 | Left undone check | The model check is skipped. Code markers are still read. |
+| Search the public skill registry when nothing fits | Nothing is searched or sent. Clawd uses the general-purpose agent. |
 | Your own voice file | A path to a text file that changes Clawd's tone. Empty by default. |
 
 Clawd's rules also reach scripted runs (`claude -p` and the Agent SDK). Turn off "Clawd runs the chat" if you don't want that.
@@ -189,8 +190,9 @@ Most of it runs on your machine. Model calls use your plan.
 | You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
 | Left undone check | Haiku | Your request and Clawd's final report |
 | Coffee break | The session's model | One short question on the cached chat |
+| Nothing installed fits a job | No model. Clawd runs one `npx skills find` command himself, and it asks skills.sh | The 3 to 6 plain keywords he gives for the job. The "Search the public skill registry when nothing fits" switch in Settings turns it off. |
 
-Apart from these calls, the plugin opens no network connections and starts no processes.
+Apart from these calls, the plugin opens no network connections and starts no processes. The registry search is a command Clawd runs himself in your chat, and only when the switch is on.
 
 </details>
 

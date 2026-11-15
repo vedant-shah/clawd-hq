@@ -57,6 +57,13 @@
       "description": "On (default): the first time the office opens in a project with no saved setup, setup runs by itself, with no questions. It looks quietly around the project, picks a starting team, hires it and keeps how you like to work in mind, then leaves one small card on the Office tab saying what was set up. It uses your plan, about $0.15 per project: a read-only Sonnet scout reads the project to pick the team, an Opus call picks it instead only if the scout gives nothing usable, and a Haiku call reads your instruction files for how you like to work. Off: nothing runs by itself, not even a setup left half done, and helpers are not laid off by themselves; type /office-setup to run or finish it when you want.",
       "required": false,
       "default": true
+    },
+    "skillSearch": {
+      "type": "boolean",
+      "title": "Search the public skill registry when nothing fits",
+      "description": "On (default): when none of your installed agents and skills fits a job, Clawd runs one search of the public skill registry (skills.sh) himself, with 3 to 6 plain keywords for the job, through a pinned release of the skills command. The keywords are sent to skills.sh. If a strong match turns up, he tells you its name, source and install count and asks before he installs anything; nothing is installed without your yes. Off: nothing is searched or sent, and he uses the general-purpose agent with a fuller brief.",
+      "required": false,
+      "default": true
     }
   }
 }

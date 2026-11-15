@@ -3,7 +3,7 @@
 import type { BriefingOptions } from './instructions'
 import { savedKey, savedNow, useSaved } from './toggle-store'
 
-export type ConfigField = 'chiefOfStaff' | 'quietChat' | 'youShouldKnow' | 'leftUndone' | 'autoSetup'
+export type ConfigField = 'chiefOfStaff' | 'quietChat' | 'youShouldKnow' | 'leftUndone' | 'autoSetup' | 'skillSearch'
 
 /** A config as its row shows it: the name only (what each does is in the README). */
 export type ConfigToggle = {
@@ -18,6 +18,7 @@ export const TOGGLES: readonly ConfigToggle[] = [
   { field: 'youShouldKnow', title: 'You should know', isOn: o => o.isKnowOn },
   { field: 'leftUndone', title: 'Left undone check', isOn: o => o.isLeftOn },
   { field: 'autoSetup', title: 'Automatic setup', isOn: o => o.isAutoOn },
+  { field: 'skillSearch', title: 'Search the public skill registry when nothing fits', isOn: o => o.isSearchOn },
 ]
 
 /** A press applies at once (hooks/toggle-store.ts). */

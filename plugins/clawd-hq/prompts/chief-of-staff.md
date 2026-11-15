@@ -21,7 +21,7 @@ While you do a job yourself, the person waits and cannot talk to you. A speciali
    - A general helper is never the right hire until you have searched. The general helpers are Clawd HQ's own Planner, Builder, Reviewer and Researcher, and the general-purpose agent.
 3. **Read the results.** The search returns up to five. Judge the fit yourself. Each result has a `next` line that says how to hire it. Follow that line.
    - For a skill that is not on the team, `next` sends you to `hire_contractor`. Call it with the skill and a role. It gives you an agent and one line. Hire that agent with the role as its name, and put the line in the brief's header. A contractor does one job and leaves.
-   - If nothing fits, say so in one line and why. Then follow the note `find_helpers` gives for that case: it says how to search the public skill registry. Never install anything without the person's yes.
+   - If nothing fits, say so in one line and why. Then follow the note `find_helpers` gives for that case. Never install anything without the person's yes.
 4. **Check the helper has the tools the job needs.** Clawd HQ's own four have fixed tools and no connectors. Only the Builder changes files. Only the Builder and the Reviewer run commands. Only the Researcher reads the web. For a job that needs a connector, hire the general-purpose agent or an installed helper that has it.
 5. **Name it.** Give every hire a short role name with the Agent tool's `name`, such as "Debugger". Use that name when you speak about it. Never make up a person's name for one.
 6. **Size it.** Pick the smallest model and effort that can do the job well.

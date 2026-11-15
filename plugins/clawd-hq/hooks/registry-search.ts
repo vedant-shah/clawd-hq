@@ -7,6 +7,8 @@ import { SKILLS_CLI_NODE, SKILLS_CLI_VERSION } from './constants'
 export const REGISTRY_URL = 'https://skills.sh/api/search?q='
 export const REGISTRY_RESULTS = 5
 const WORDS = 6
+/** The most requests one search makes. */
+const MAX_QUERIES = 3
 const WORD_CHARS = 30
 const BODY_CHARS = 500_000
 /** The words that carry no meaning in a search (the same few the helper search drops). */
@@ -17,11 +19,23 @@ export type RegistrySkill = { readonly name: string; readonly source: string; re
 /** What the host's fetch gives back: whether it went through, and the body. */
 export type RegistryFetch = (url: string) => Promise<{ readonly ok: boolean; readonly text: string }>
 
-/** The search words: Clawd's keywords (else the job's own words) as plain words, letters, digits and hyphens only, at most six, no repeats. */
-export function queryOf(job: string, keywords: readonly string[]): string {
-  const from = keywords.length > 0 ? keywords.join(' ') : job
-  const words = from.toLowerCase().replace(/[^a-z0-9 -]+/g, ' ').split(/\s+/).map(w => w.replace(/^-+|-+$/g, '').slice(0, WORD_CHARS))
-  return [...new Set(words.filter(w => w !== '' && !SKIP.has(w)))].slice(0, WORDS).join(' ')
+/** The plain words of a text: letters, digits and hyphens only, no filler words, no repeats. */
+function wordsOf(text: string): readonly string[] {
+  const words = text.toLowerCase().replace(/[^a-z0-9 -]+/g, ' ').split(/\s+/).map(w => w.replace(/^-+|-+$/g, '').slice(0, WORD_CHARS))
+  return [...new Set(words.filter(w => w !== '' && !SKIP.has(w)))]
+}
+
+/**
+ * The queries to try, narrowest first, at most three: the first two keywords, then the first keyword alone, then the two most distinctive
+ * (longest) words of the job. The registry is strict: each added word gives fewer hits, so a long query finds nothing. Keywords come first
+ * because they are the field's own words. Each is plain words only, at most six, and a query that repeats an earlier one is left out.
+ */
+export function queriesOf(job: string, keywords: readonly string[]): readonly string[] {
+  const entries = keywords.map(wordsOf).filter(w => w.length > 0)
+  const jobWords = wordsOf(job)
+  const longest = [...jobWords].sort((a, b) => b.length - a.length).slice(0, 2)
+  const tries = [[...new Set([...(entries[0] ?? []), ...(entries[1] ?? [])])], entries[0] ?? [], jobWords.filter(w => longest.includes(w))]
+  return [...new Set(tries.map(w => w.slice(0, WORDS).join(' ')).filter(q => q !== ''))].slice(0, MAX_QUERIES)
 }
 
 const SOURCE = /^[A-Za-z0-9][\w.-]{0,60}\/[\w.-]{1,80}$/
@@ -41,7 +55,7 @@ function skillOf(raw: unknown): RegistrySkill | undefined {
 }
 
 /**
- * The skills in a registry answer, most installed first as the registry gave them, at most five. An empty list is a search that found nothing.
+ * The skills in a registry answer, in the registry's own order (the search keeps five, once repeats are merged). An empty list is a search that found nothing.
  * None when the body is not JSON, has no `skills` list, or lists entries and not one of them is usable: the shape is not the one expected.
  */
 export function parseRegistry(body: string): readonly RegistrySkill[] | undefined {
@@ -49,19 +63,41 @@ export function parseRegistry(body: string): readonly RegistrySkill[] | undefine
   const list = (() => { try { return (JSON.parse(body) as { skills?: unknown }).skills } catch { return undefined } })()
   if (!Array.isArray(list)) return undefined
   const kept = list.map(skillOf).filter((s): s is RegistrySkill => s !== undefined)
-  return list.length > 0 && kept.length === 0 ? undefined : kept.slice(0, REGISTRY_RESULTS)
+  return list.length > 0 && kept.length === 0 ? undefined : kept
 }
 
-/** The registry's top skills for the words, or none when the words are empty, the fetch fails or refuses, or the answer is not as expected. Never rejects. */
-export async function searchRegistry(fetch: RegistryFetch, job: string, keywords: readonly string[]): Promise<readonly RegistrySkill[] | undefined> {
-  const query = queryOf(job, keywords)
-  if (query === '') return undefined
+/** What a search found: the skills (most installs first, no repeats, at most five), the query that found them (none when it found nothing), and every query tried. */
+export type Found = { readonly skills: readonly RegistrySkill[]; readonly query?: string; readonly tried: readonly string[] }
+
+/** The same skill listed twice is one; the most installed first, then the registry's own order; at most five. */
+const merged = (skills: readonly RegistrySkill[]): readonly RegistrySkill[] =>
+  [...new Map(skills.map(s => [`${s.source}/${s.skillId}`, s])).values()].map((s, i) => ({ s, i })).sort((a, b) => b.s.installs - a.s.installs || a.i - b.i).slice(0, REGISTRY_RESULTS).map(x => x.s)
+
+/** One query's answer: its skills, or none when the fetch fails or refuses or the answer is not as expected. Never rejects. */
+async function askRegistry(fetch: RegistryFetch, query: string): Promise<readonly RegistrySkill[] | undefined> {
   try {
     const answer = await fetch(`${REGISTRY_URL}${encodeURIComponent(query)}`)
     return answer.ok ? parseRegistry(answer.text) : undefined
   } catch {
     return undefined
   }
+}
+
+/**
+ * The registry's skills for the job, asking one query after another, narrow to broad (`queriesOf`), and stopping at the first that has results.
+ * None when no query could be asked or every one that was asked failed; an empty list when at least one answered and none had results.
+ */
+export async function searchRegistry(fetch: RegistryFetch, job: string, keywords: readonly string[]): Promise<Found | undefined> {
+  const tried: string[] = []
+  let isAnswered = false
+  for (const query of queriesOf(job, keywords)) {
+    tried.push(query)
+    const skills = await askRegistry(fetch, query)
+    if (skills === undefined) continue
+    isAnswered = true
+    if (skills.length > 0) return { skills: merged(skills), query, tried }
+  }
+  return isAnswered ? { skills: [], tried } : undefined
 }
 
 // ---- What Clawd is told ----
@@ -76,10 +112,10 @@ const INSTALL_STEPS =
   `Otherwise run \`npx -y skills@${SKILLS_CLI_VERSION} add <source>@<skillId>\`. There is no other way to install.`
 
 /** Clawd's note for a search made: what was found, or that it found nothing or did not work. `lead` is what he is told first. */
-export function registryNote(lead: string, found: readonly RegistrySkill[] | undefined): string {
+export function registryNote(lead: string, found: Found | undefined): string {
   if (found === undefined) return `${lead} The registry search did not work: say so in one line, and ${GENERAL}.`
-  if (found.length === 0) return `${lead} The registry search found nothing: say so in one line, and ${GENERAL}.`
-  return `${lead} \`registry\` lists up to five public skills from skills.sh, found with your keywords. None is installed. ` +
+  if (found.skills.length === 0) return `${lead} The registry search found nothing (tried: ${found.tried.join('; ')}): say so in one line, and ${GENERAL}.`
+  return `${lead} \`registry\` lists up to five public skills from skills.sh, found by searching \`${found.query}\`. None is installed. ` +
     'Judge them by name, source and installs. If one is a strong match, come back to the person with its name, source, install count and why it fits, ' +
     `and ask whether to install it and use it for this job, or go ahead without it. ${INSTALL_STEPS} ` +
     `If none is good, say so in one line and ${GENERAL}. Never install anything without the person's yes.`

@@ -178,5 +178,5 @@ export async function findHelpers(io: FindIo, agentId: string | undefined, input
   if (!isNone && input.registry !== true) return { result: JSON.stringify({ matches, ifNoneFits: IF_NONE_FITS_ON }) }
   const found = await searchRegistry(search, job, keywords)
   const note = registryNote(isNone ? NOTHING_FITS : NONE_OF_THESE, found)
-  return { result: JSON.stringify({ matches, ...(found !== undefined && found.length > 0 ? { registry: found.map(shownSkill) } : {}), note }) }
+  return { result: JSON.stringify({ matches, ...(found !== undefined && found.skills.length > 0 ? { query: found.query, registry: found.skills.map(shownSkill) } : {}), note }) }
 }

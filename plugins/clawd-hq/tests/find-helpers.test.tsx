@@ -208,13 +208,60 @@ test('no answer runs a registry `find` through npx or asks anyone to install fin
   for (const a of all) for (const text of [a.note, a.ifNoneFits]) expect(text ?? '').not.toMatch(/find-skills|vercel-labs|npx[^`]* find\b|npx skills /)
 })
 
-test('the keywords go into the address as plain words only, at most six', async ($, on) => {
+test('the keywords go into the first address as plain words only, at most six', async ($, on) => {
   const urls = await web(on)
   await $.session.start(START)
   await answerTo($, NOTHING, ['UI; rm -rf /', 'a "quote" & $(boom)', 'layout', 'CSS', 'visual', 'polish', 'extra', 'seventh'])
-  expect(urls).toEqual(['https://skills.sh/api/search?q=ui%20rm%20rf%20quote%20boom%20layout'])
-  await answerTo($, 'knit a sweater in wool for the winter')
-  expect(urls[1]).toBe('https://skills.sh/api/search?q=knit%20sweater%20wool%20winter')
+  expect(urls).toEqual(['https://skills.sh/api/search?q=ui%20rm%20rf%20quote%20boom'])
+})
+
+const MINECRAFT = 'build a Minecraft datapack with custom mcfunction commands'
+const MINECRAFT_WORDS = ['minecraft', 'datapack', 'mcfunction', 'modding', 'game commands']
+/** The second call Clawd makes when the installed matches do not fit: the same job and keywords, with `registry` set. */
+const again = ($: Engine, job: string) => answerOf($, { job, keywords: MINECRAFT_WORDS, registry: true })
+const asked = (urls: string[]) => urls.map(u => decodeURIComponent(u.split('q=')[1] ?? ''))
+const DATAPACK = JSON.stringify({ skills: [{ source: 'jahrome907/minecraft-agent-skills', skillId: 'minecraft-datapack', name: 'minecraft-datapack', installs: 261 }] })
+
+/** The registry as it answers live: strict, so only the short query has results. */
+async function strictRegistry(on: Parameters<typeof onboardHost>[0], pages: Record<string, string>) {
+  const h = await office(on)
+  h.calls.web = url => ({ text: pages[decodeURIComponent(url.split('q=')[1] ?? '')] ?? '{"query":"","skills":[],"count":0}' })
+  return h.calls.fetches
+}
+
+test('a job whose long query finds nothing is searched with the keywords, narrow to broad, and the answer names the query that found the skills', async ($, on) => {
+  const urls = await strictRegistry(on, { 'minecraft datapack': DATAPACK })
+  await $.session.start(START)
+  const a = await again($, MINECRAFT) as Answer & { query?: string }
+  expect(asked(urls)).toEqual(['minecraft datapack'])
+  expect(a.query).toBe('minecraft datapack')
+  expect(a.registry?.map(r => [r.skillId, r.installs])).toEqual([['minecraft-datapack', 261]])
+  expect(a.note).toContain('found by searching `minecraft datapack`')
+})
+
+test('when the two keywords find nothing the first keyword alone is tried, then the job\'s two longest words, and no more than three requests are made', async ($, on) => {
+  const urls = await strictRegistry(on, {})
+  await $.session.start(START)
+  const a = await again($, MINECRAFT)
+  expect(asked(urls)).toEqual(['minecraft datapack', 'minecraft', 'minecraft mcfunction'])
+  expect(a.registry).toBeUndefined()
+  expect(a.note).toContain('The registry search found nothing (tried: minecraft datapack; minecraft; minecraft mcfunction): say so in one line, and use the general-purpose agent with a fuller brief.')
+})
+
+test('the job\'s own words are the last resort: they find it when the keywords do not', async ($, on) => {
+  const urls = await strictRegistry(on, { 'minecraft mcfunction': DATAPACK })
+  await $.session.start(START)
+  const a = await again($, MINECRAFT) as Answer & { query?: string }
+  expect(asked(urls)).toHaveLength(3)
+  expect(a.query).toBe('minecraft mcfunction')
+  expect(a.registry).toHaveLength(1)
+})
+
+test('a skill listed twice in the answer is listed once, and the most installed come first', async ($, on) => {
+  const one = (skillId: string, installs: number) => ({ source: 'a/b', skillId, name: skillId, installs })
+  await strictRegistry(on, { 'minecraft datapack': JSON.stringify({ skills: [one('x', 3), one('y', 90), one('x', 3)] }) })
+  await $.session.start(START)
+  expect((await again($, MINECRAFT)).registry?.map(r => r.skillId)).toEqual(['y', 'x'])
 })
 
 const ODD: Array<[string, { ok?: boolean; text?: string; throws?: boolean }]> = [
@@ -236,7 +283,7 @@ test('a search that finds nothing says so in one line and sends Clawd to the gen
   await $.session.start(START)
   const { registry, note } = await answerTo($, NOTHING, ['changelog'])
   expect(registry).toBeUndefined()
-  expect(note).toContain('The registry search found nothing: say so in one line, and use the general-purpose agent with a fuller brief.')
+  expect(note).toContain('The registry search found nothing (tried: changelog; knit sweater): say so in one line, and use the general-purpose agent with a fuller brief.')
 })
 
 test('with matches in hand nothing is fetched; none fitting is asked for again with `registry`, and then it is', async ($, on) => {

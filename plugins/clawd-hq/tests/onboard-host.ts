@@ -3,6 +3,9 @@
 import type { Engine } from 'claude-code/testing'
 import { PANE, host } from './host'
 
+/** What the host's network answers: the page, an error status, or a fetch that throws. */
+export type WebReply = { ok?: boolean; text?: string; throws?: boolean }
+
 type On = Parameters<typeof host>[0]
 type Surface = 'terminal' | 'desktop'
 
@@ -52,7 +55,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   for (const [path, text] of Object.entries(PROJECT)) h.files.set(path, text)
   h.session.loaded = LOADED
   const models = { opus: OPUS_TEAM as string | undefined, haiku: undefined as string | undefined, workflow: WORKFLOW_REPLY as string | undefined }
-  const calls = { models: [] as Array<{ model: string; prompt: string }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], web: undefined as { ok?: boolean; text?: string; throws?: boolean } | undefined, get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, contexts: [] as string[][], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
+  const calls = { models: [] as Array<{ model: string; prompt: string }>, fills: [] as string[], sent: [] as string[], fetches: [] as string[], web: undefined as WebReply | ((url: string) => WebReply) | undefined, get registered() { return h.agentSpecs.filter(s => s.name !== 'scout') }, contexts: [] as string[][], tools: [] as Array<{ tool: string; agentId?: string; input: Record<string, unknown> }> }
   const children = (dir: string) => {
     const prefix = `${dir.replace(/\/+$/, '')}/`
     const names = new Map<string, boolean>()
@@ -126,7 +129,7 @@ export function onboardHost(on: On, store: Record<string, unknown> = {}) {
   // The network: refused (500) unless a test sets `calls.web`, the page the registry search gets (or a fetch that throws).
   on('http.fetch', (_$, e) => {
     calls.fetches.push(String((e as { url: string }).url))
-    const r = calls.web
+    const r = typeof calls.web === 'function' ? calls.web(String((e as { url: string }).url)) : calls.web
     if (r?.throws) throw new Error('offline')
     return { value: r === undefined ? { status: 500 } : { status: r.ok === false ? 500 : 200, ok: r.ok !== false, headers: {}, text: r.text ?? '' } } as never
   })

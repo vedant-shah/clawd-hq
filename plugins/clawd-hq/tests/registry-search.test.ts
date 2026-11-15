@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { parseRegistry, queryOf, searchRegistry } from '../hooks/registry-search'
+import { parseRegistry, queriesOf, searchRegistry } from '../hooks/registry-search'
 
 const BODY = '{"query":"changelog","skills":[{"id":"elevenlabs/skills/update-skills-from-changelog","source":"elevenlabs/skills","skillId":"update-skills-from-changelog","name":"update-skills-from-changelog","installs":7211},{"id":"a/b/c","source":"a/b","skillId":"c","name":"c","installs":3}]}'
 
@@ -10,9 +10,9 @@ test('the registry\'s answer is read into its skills, each with its page', () =>
   ])
 })
 
-test('at most five are kept, in the registry\'s own order', () => {
+test('every valid entry is read, in the registry\'s own order: the search keeps five once repeats are merged', () => {
   const skills = Array.from({ length: 9 }, (_, i) => ({ source: 'a/b', skillId: `s${i}`, name: `s${i}`, installs: 100 - i }))
-  expect(parseRegistry(JSON.stringify({ skills }))?.map(s => s.skillId)).toEqual(['s0', 's1', 's2', 's3', 's4'])
+  expect(parseRegistry(JSON.stringify({ skills }))).toHaveLength(9)
 })
 
 test('a malformed body is none, never a throw', () => {
@@ -35,24 +35,78 @@ test('entries from a third party are kept only when plain: a source or id with o
   expect(parseRegistry(body)?.map(s => [s.skillId, s.name, s.installs])).toEqual([['ok', 'ok', 0], ['ok2', 'Fine name', 0]])
 })
 
-test('the search words are plain: letters, digits, spaces and hyphens, six at most, no repeats, no filler words', () => {
-  expect(queryOf('x', ['Changelog', 'release notes', 'changelog'])).toBe('changelog release notes')
-  expect(queryOf('x', ['a; b|c `d` $(e) "f" \'g\' <h> ../i'])).toBe('b c d e f g')
-  expect(queryOf('x', ['one', 'two', 'three', 'four', 'five', 'six', 'seven'])).toBe('one two three four five six')
-  expect(queryOf('Write the changelog for a release', [])).toBe('write changelog release')
-  expect(queryOf('???', ['--', '  '])).toBe('')
+test('the queries run narrow to broad: the first two keywords, the first keyword alone, then the two longest words of the job', () => {
+  expect(queriesOf('build a Minecraft datapack with custom mcfunction commands', ['minecraft', 'datapack', 'mcfunction', 'modding', 'game commands']))
+    .toEqual(['minecraft datapack', 'minecraft', 'minecraft mcfunction'])
 })
 
-test('the search asks for one address, URL-encoded, and gives the skills; an empty query asks nothing', async () => {
+test('a query that repeats an earlier one is left out, and no keywords leaves the job\'s own words', () => {
+  expect(queriesOf('knit a sweater', ['wool'])).toEqual(['wool', 'knit sweater'])
+  expect(queriesOf('knit a sweater', ['wool', 'wool'])).toEqual(['wool', 'knit sweater'])
+  expect(queriesOf('Write the changelog for a release', [])).toEqual(['changelog release'])
+  expect(queriesOf('', ['changelog', 'release notes', 'extra'])).toEqual(['changelog release notes', 'changelog'])
+  expect(queriesOf('???', ['--', '  '])).toEqual([])
+})
+
+test('every query is plain words: letters, digits, spaces and hyphens, six at most, no filler words', () => {
+  expect(queriesOf('', ['a; b|c `d` $(e) "f" \'g\' <h> ../i', 'j k l'])).toEqual(['b c d e f g'])
+  expect(queriesOf('', ['one two three four five six seven', 'eight'])[0]).toBe('one two three four five six')
+  expect(queriesOf('', ['UI; rm -rf /'])[0]).toBe('ui rm rf')
+})
+
+const result = (...ids: Array<[string, number]>) => JSON.stringify({ skills: ids.map(([id, installs]) => ({ source: 'a/b', skillId: id, name: id, installs })) })
+/** A fake fetch: each address answers from the page given for its words, empty when none is given; every address asked for is kept. */
+const fake = (pages: Record<string, string>) => {
   const asked: string[] = []
-  const fetch = async (url: string) => (asked.push(url), { ok: true, text: BODY })
-  expect((await searchRegistry(fetch, 'x', ['change log', 'a&b=c'])) ?.length).toBe(2)
-  expect(asked).toEqual(['https://skills.sh/api/search?q=change%20log%20b%20c'])
-  expect(await searchRegistry(fetch, '???', [])).toBeUndefined()
-  expect(asked).toHaveLength(1)
+  const fetch = async (url: string) => (asked.push(url), { ok: true, text: pages[decodeURIComponent(url.split('q=')[1] ?? '')] ?? '{"skills":[]}' })
+  return { asked, fetch }
+}
+
+test('an empty answer for the narrow query and results for a broader one gives the results, and says which query found them', async () => {
+  const f = fake({ minecraft: result(['minecraft-datapack', 261]) })
+  const found = await searchRegistry(f.fetch, 'build a datapack', ['minecraft', 'datapack'])
+  expect(found?.query).toBe('minecraft')
+  expect(found?.skills.map(s => s.skillId)).toEqual(['minecraft-datapack'])
+  expect(f.asked.map(u => decodeURIComponent(u.split('q=')[1]!))).toEqual(['minecraft datapack', 'minecraft'])
+})
+
+test('the search stops at the first query with results', async () => {
+  const f = fake({ 'minecraft datapack': result(['a', 5]), minecraft: result(['b', 9]) })
+  expect((await searchRegistry(f.fetch, 'x', ['minecraft', 'datapack']))?.query).toBe('minecraft datapack')
+  expect(f.asked).toHaveLength(1)
+})
+
+test('all three queries empty is a search that found nothing, after exactly three requests', async () => {
+  const f = fake({})
+  const found = await searchRegistry(f.fetch, 'build a datapack for mcfunction', ['minecraft', 'datapack'])
+  expect(found).toEqual({ skills: [], tried: ['minecraft datapack', 'minecraft', 'datapack mcfunction'] })
+  expect(f.asked).toHaveLength(3)
+})
+
+test('never more than three requests, whatever the keywords', async () => {
+  const f = fake({})
+  await searchRegistry(f.fetch, 'one two three four five', ['a1', 'b2', 'c3', 'd4', 'e5', 'f6', 'g7'])
+  expect(f.asked.length).toBeLessThanOrEqual(3)
+})
+
+test('repeats are merged by id, the most installed come first, and five are kept', async () => {
+  const f = fake({ wool: result(['a', 10], ['b', 500], ['a', 10], ['c', 30], ['d', 20], ['e', 40], ['f', 5], ['b', 500]) })
+  const found = await searchRegistry(f.fetch, 'x', ['wool'])
+  expect(found?.skills.map(s => s.skillId)).toEqual(['b', 'e', 'c', 'd', 'a'])
+})
+
+test('a query whose answer is odd is passed over; if every one fails the search did not work, and if one answered empty it found nothing', async () => {
+  const bad = async () => ({ ok: true, text: 'not json' })
+  expect(await searchRegistry(bad, '', ['wool', 'knit'])).toBeUndefined()
+  const f = fake({ wool: result(['k', 1]) })
+  const mixed = async (url: string) => (url.endsWith('wool%20knit') ? { ok: false, text: '' } : f.fetch(url))
+  expect((await searchRegistry(mixed, '', ['wool', 'knit']))?.query).toBe('wool')
+  const some = await searchRegistry(async url => (url.endsWith('wool') ? { ok: true, text: '{"skills":[]}' } : { ok: false, text: '' }), '', ['wool', 'knit'])
+  expect(some?.skills).toEqual([])
 })
 
 test('a refused or thrown fetch is none', async () => {
   expect(await searchRegistry(async () => ({ ok: false, text: BODY }), 'x', ['y'])).toBeUndefined()
   expect(await searchRegistry(async () => { throw new Error('offline') }, 'x', ['y'])).toBeUndefined()
+  expect(await searchRegistry(async () => ({ ok: true, text: BODY }), '???', [])).toBeUndefined()
 })

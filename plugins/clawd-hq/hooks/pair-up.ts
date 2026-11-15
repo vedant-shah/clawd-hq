@@ -1,9 +1,9 @@
-// Specialists Clawd hires together as a pair-up for one job: which of them share a card on the Office tab and in the finished list,
+// Specialists Clawd hires together as a pair-up for one job: which of them share a card on the Office tab's floor,
 // what that card is titled, and its one status line. Pure. A hire joins a pair-up through a `PAIR-UP: <goal>` first line in its brief.
 import type { Employee } from '../types'
 import { fit } from './desk'
 import { ago } from './office'
-import { atWork, doneLine, doneThisSession, isActive, tokensLabel } from './panel-model'
+import { atWork, doneLine, isActive, tokensLabel } from './panel-model'
 
 /** DECIDED: members hired with the same goal within 10 minutes of the first one share a card; a longer gap makes a separate job. */
 export const PAIR_WINDOW_MS = 10 * 60_000
@@ -103,14 +103,3 @@ export function floorSlots(staff: Employee[]): Slot[] {
   })
 }
 
-const slotTime = (s: Slot) => (s.kind === 'one' ? s.one.endedAt ?? 0 : Math.max(...s.group.members.map(m => m.endedAt ?? 0)))
-
-/** The finished list, newest first: a pair-up is one card once none of its members works; while one does, its finished members stay on the floor's card. */
-export function finishedSlots(staff: Employee[], since: number): Slot[] {
-  const groups = pairGroups(staff)
-  const singles = doneThisSession(staff, since).filter(one => groupOf(groups, one.id) === undefined).map((one): Slot => ({ kind: 'one', one }))
-  const over = groups
-    .filter(g => !g.members.some(isActive) && g.members.some(m => (m.endedAt ?? -1) >= since))
-    .map((group): Slot => ({ kind: 'pair', group }))
-  return [...singles, ...over].sort((a, b) => slotTime(b) - slotTime(a))
-}

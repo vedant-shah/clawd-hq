@@ -1,12 +1,10 @@
 // The Settings tab, made to scan: the plugin's configs (each on/off one a name with its toggle on the right; the voice
-// file read-only), one line on when a change applies, a link that swaps the tab to the list of finished work, and
-// Clawd's instructions and voice notes. Every text wraps; nothing here is cut.
+// file read-only), one line on when a change applies, and Clawd's instructions and voice notes (finished work is on the
+// History tab). Every text wraps; nothing here is cut.
 import { TOGGLES, WAIT_FOR_FREE, WHEN_APPLIED } from './configs'
 import type { ConfigToggle } from './configs'
 import { AMBER } from './office'
 import { clawdTab } from './panel-clawd'
-import { logTab } from './panel-log'
-import { doneThisSession } from './panel-model'
 import type { Kit } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
 
@@ -49,13 +47,10 @@ function configs(kit: Kit, data: PanelData, actions: PanelActions) {
 }
 
 export function settingsTab(kit: Kit, data: PanelData, actions: PanelActions) {
-  if (data.fx.isLogOpen === true) return logTab(kit, data, actions)
-  const { Box, Button } = kit
-  const finished = doneThisSession(data.staff, data.gauge.startedAt).length
+  const { Box } = kit
   return (
     <Box flexDirection="column" gap={1}>
       {configs(kit, data, actions)}
-      <Button key="settings-log" plain label={`Finished this session · ${finished} ›`} onPress={() => actions.showLog(true)} />
       {clawdTab(kit, data, actions)}
     </Box>
   )

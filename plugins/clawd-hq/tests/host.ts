@@ -13,14 +13,16 @@ export const paneProps = (requestId: string, title: string, over: Record<string,
 
 export const PANE = paneProps('clawd-hq', 'Office')
 export const PEOPLE = paneProps('clawd-hq-people', 'People')
+export const HISTORY = paneProps('clawd-hq-history', 'History')
 export const SETTINGS = paneProps('clawd-hq-settings', 'Settings')
 /** Every office pane, in tab order. */
-export const ALL_PANES = [PANE, PEOPLE, SETTINGS] as const
+export const ALL_PANES = [PANE, PEOPLE, HISTORY, SETTINGS] as const
 
-/** The Settings pane showing the finished-work list: the link to it is pressed when the pane is showing the switches. */
+/** The History pane with its Other work open: this session's finished work (once in Settings). The fold is opened when it is closed. */
 export async function mountLog($: Engine, surface: 'terminal' | 'desktop', over: Record<string, unknown> = {}) {
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...paneProps('clawd-hq-settings', 'Settings', over) })
-  if ((await ui.find({ key: 'settings-log' })) !== undefined) await ui.press({ key: 'settings-log' })
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...paneProps('clawd-hq-history', 'History', over) })
+  const fold = await ui.find({ key: 'history-other' })
+  if (fold !== undefined && String(fold.props.label ?? '').startsWith('▸')) await ui.press({ key: 'history-other' })
   return ui
 }
 export const SURFACES = ['terminal', 'desktop'] as const

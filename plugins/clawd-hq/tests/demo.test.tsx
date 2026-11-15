@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import { STEP_MS } from '../hooks/demo'
 import { tourSteps } from '../hooks/demo-script'
 import type { TourIo } from '../hooks/demo-script'
-import { PANE, PEOPLE, SETTINGS, host, paneProps } from './host'
+import { HISTORY, PANE, PEOPLE, SETTINGS, host, paneProps } from './host'
 
 const COUNT = 19
 
@@ -14,7 +14,7 @@ function recorder() {
   const calls: string[] = []
   const log = (name: string) => async (...args: unknown[]) => { calls.push(`${name} ${args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`.trim()) }
   const io: TourIo = {
-    show: log('show'), showLog: log('showLog'), setBusy: log('setBusy'), say: log('say'), hire: log('hire'), work: log('work'),
+    show: log('show'), showDone: log('showDone'), setBusy: log('setBusy'), say: log('say'), hire: log('hire'), work: log('work'),
     report: log('report'), think: log('think'), finish: log('finish'), clearFloor: log('clearFloor'),
   }
   return { io, calls }
@@ -51,7 +51,7 @@ test('every caption is plain and short: one idea, under twenty-five words, no ja
 test('the captions tell the features in story order', async () => {
   const { captions } = await stepsOf()
   const at = (word: RegExp) => captions.findIndex(c => word.test(c))
-  const order = [/gold crown/, /Simplified Technical English/, /five best/, /smallest model/, /bar/, /new instruction/, /bar fills again/, /contractor/, /leaves/, /pair-up/, /critique/, /council/, /never read each other/, /dissent/, /one card each/, /one box/, /Quiet chat/, /People/, /back to normal/i]
+  const order = [/gold crown/, /Simplified Technical English/, /five best/, /smallest model/, /bar/, /new instruction/, /bar fills again/, /contractor/, /leaves/, /pair-up/, /critique/, /council/, /never read each other/, /dissent/, /one line for each run/, /one box/, /Quiet chat/, /People/, /back to normal/i]
   const found = order.map(at)
   expect(found.every(i => i >= 0)).toBe(true)
   expect(found).toEqual([...found].sort((a, b) => a - b))
@@ -76,9 +76,10 @@ test('each step does what its caption says', async () => {
   expect(step(12)).toMatch(/hire skeptic[\s\S]*hire pragmatist[\s\S]*hire critic[\s\S]*hire architect/)
   expect(step(13)).toMatch(/think critic/)
   expect(step(14)).toMatch(/say .*recommend.*dissent/s)
-  expect(step(15)).toMatch(/showLog true[\s\S]*show settings/)
+  expect(step(15)).toMatch(/showDone true[\s\S]*show history/)
   expect(step(16)).toMatch(/clearFloor/)
-  expect(step(17)).toMatch(/showLog false[\s\S]*show settings|show settings/)
+  expect(step(16)).toMatch(/showDone false[\s\S]*show office/)
+  expect(step(17)).toMatch(/show settings/)
   expect(step(18)).toMatch(/show people/)
   expect(step(19)).toMatch(/show office/)
 })
@@ -99,7 +100,7 @@ async function tour(on: Parameters<typeof host>[0]) {
     await h.clock.advance(at - elapsed)
     elapsed = at
   }
-  const read = async ($: Engine, pane: typeof PANE | typeof PEOPLE | typeof SETTINGS) => {
+  const read = async ($: Engine, pane: typeof PANE | typeof PEOPLE | typeof HISTORY | typeof SETTINGS) => {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...pane })
     const out = { texts: await textsOf(ui), keys: (await ui.findAll({})).map(n => String(n.props.key ?? '')), has: (key: string) => ui.find({ key }) }
     return { ...out, ui }
@@ -207,17 +208,15 @@ test('the summing up: a recommendation marked as Clawd\'s, the lone dissent kept
   await r.ui.unmount()
 })
 
-test('finished work: the pair-up and the council are one card each, with what each member reported', async ($, on) => {
+test('finished work: on the History tab each member of the pair-up and the council is a line of its own, with no picture and no report', async ($, on) => {
   const t = await tour(on)
   await $.command.run({ command: 'office-demo', args: '' } as never)
   await t.to(15)
-  const r = await t.read($, SETTINGS)
-  expect(r.keys).toContain('done-council-demo-skeptic')
-  expect(r.keys).toContain('done-pair-demo-pairbuild')
-  expect(r.texts.filter(x => /^Council$/.test(x))).toHaveLength(1)
-  for (const voice of ['Skeptic', 'Pragmatist', 'Critic', 'Architect']) expect(r.texts).toContain(voice)
-  expect(r.texts.some(x => /^Dissent: /.test(x))).toBe(true) // the Critic's first line
-  expect(r.texts.some(x => /^Decided: /.test(x))).toBe(true) // the pair-up's choice
+  const r = await t.read($, HISTORY) // the History tab, its Other work open
+  const lines = r.keys.filter(k => k.startsWith('history-run-demo-'))
+  for (const one of ['skeptic', 'pragmatist', 'critic', 'architect', 'pairbuild']) expect(lines.some(k => k.startsWith(`history-run-demo-${one}@`)), one).toBe(true)
+  expect(r.keys.some(k => k.startsWith('done-'))).toBe(false)
+  expect(r.texts.some(x => /^Dissent: |^Decided: /.test(x))).toBe(false)
   await r.ui.unmount()
 })
 
@@ -237,7 +236,7 @@ test('quiet mode: the Settings tab shows its Quiet chat switch, on its own page 
   await t.to(17)
   const r = await t.read($, SETTINGS)
   expect(r.texts).toContain('Quiet chat')
-  expect(r.keys).toContain('settings-log') // switches, not the finished list
+  expect(r.keys).toContain('config-quietChat') // the page of switches
   await r.ui.unmount()
 })
 
@@ -285,7 +284,7 @@ test('afterwards the office is as it was found: no stand-ins, no caption, Clawd 
   await t.to(COUNT + 1) // the clean-up comes a second and a half after the last step
   await t.clock.advance(STEP_MS)
 
-  for (const pane of [PANE, PEOPLE, SETTINGS]) {
+  for (const pane of [PANE, PEOPLE, HISTORY, SETTINGS]) {
     const r = await t.read($, pane)
     expect(r.texts.some(x => x.includes('🎬'))).toBe(false)
     expect(r.keys.some(k => /demo/.test(k))).toBe(false)
@@ -296,10 +295,11 @@ test('afterwards the office is as it was found: no stand-ins, no caption, Clawd 
   expect(office.texts.some(x => /recommend/i.test(x))).toBe(false)
   await office.ui.unmount()
 
-  const settings = await t.read($, paneProps('clawd-hq-settings', 'Settings'))
-  expect(settings.keys).toContain('settings-log') // the finished list is closed again
-  expect((await settings.has('settings-log'))?.props.label).toBe('Finished this session · 0 ›')
-  await settings.ui.unmount()
+  // History's Other work is closed again, and with the stand-ins gone it has nothing to show.
+  const history = await t.read($, paneProps('clawd-hq-history', 'History'))
+  expect(history.keys).not.toContain('history-other-rows')
+  expect(history.keys).not.toContain('history-other')
+  await history.ui.unmount()
 
   const people = await t.read($, PEOPLE)
   expect(people.keys.some(k => k.startsWith('person-'))).toBe(false)

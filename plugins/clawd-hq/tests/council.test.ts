@@ -2,8 +2,8 @@ import { expect, test } from 'claude-code/testing'
 import { CHARACTERS, COMPACT, PALETTE } from '../hooks/avatar-data'
 import { avatarFor, clawdAvatar, compactIcon, tinyIcon } from '../hooks/avatars'
 import { councilIcon, councilTinyIcon } from '../hooks/council-avatar'
-import { COUNCIL_LEAD, fillCouncil, runCouncil, voiceLine, withVoiceNotes } from '../hooks/council'
-import { finishedSlots, floorSlots, pairGroups, parsePairUp } from '../hooks/pair-up'
+import { COUNCIL_LEAD, fillCouncil, runCouncil } from '../hooks/council'
+import { floorSlots, pairGroups, parsePairUp } from '../hooks/pair-up'
 import { trim } from '../hooks/pixels'
 import type { Employee } from '../types'
 
@@ -47,40 +47,12 @@ test('a council and a pair-up with the same words stay apart, and one voice alon
   expect('isCouncil' in groups[1]!).toBe(false)
 })
 
-test('a council takes one slot on the floor and in the finished list, like a pair-up', () => {
+test('a council takes one slot on the floor, like a pair-up', () => {
   const staff = [voice('a', 'Q?'), voice('b', 'Q?', MIN)]
   expect(floorSlots(staff).map(s => s.kind)).toEqual(['pair'])
-  const over = staff.map(s => ({ ...s, mood: 'done' as const, endedAt: 5 * MIN }))
-  expect(finishedSlots(over, 0).map(s => s.kind)).toEqual(['pair'])
 })
 
 // ---- The first line of a voice's report ----
-
-test('the first line of a report is plain words: marks, headings and code are left out', () => {
-  expect(voiceLine('Go with option B.\nBecause it is cheaper.')).toBe('Go with option B.')
-  expect(voiceLine('## Verdict\n\n**Pick B** because it is `cheap`.')).toBe('Pick B because it is cheap.')
-  expect(voiceLine('```\ncode\n```\n- First, keep the monolith.')).toBe('First, keep the monolith.')
-  expect(voiceLine('   \n\n')).toBeUndefined()
-  expect(voiceLine('')).toBeUndefined()
-})
-
-test('a long first line is cut at a word with no mark, so a card can wrap it', () => {
-  const long = Array.from({ length: 100 }, (_, i) => `word${i}`).join(' ')
-  const line = voiceLine(long)!
-  expect(line.length).toBeLessThanOrEqual(240)
-  expect(long.startsWith(line)).toBe(true)
-  expect(line).not.toMatch(/…|\.\.\.$/)
-})
-
-test('only a council voice keeps a report line; its choices are kept as before', () => {
-  const one = voice('a', 'Q?')
-  expect(withVoiceNotes(one, [], 'Pick B.\nWhy: cost.').report).toBe('Pick B.')
-  expect(withVoiceNotes(one, ['Chose B'], 'Pick B.')).toMatchObject({ report: 'Pick B.', choices: ['Chose B'] })
-  const alone = emp({ id: 'z' })
-  expect(withVoiceNotes(alone, [], 'Pick B.')).toBe(alone)
-  expect(withVoiceNotes(alone, ['Chose B'], 'Pick B.')).toMatchObject({ choices: ['Chose B'] })
-  expect('report' in withVoiceNotes(alone, ['Chose B'], 'Pick B.')).toBe(false)
-})
 
 // ---- The council's own avatar ----
 

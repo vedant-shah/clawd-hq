@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { RULES_FILE, VOICE_FILE } from '../hooks/instructions'
-import { SETTINGS, START, SURFACES, host, mountLog } from './host'
+import { HISTORY, SETTINGS, START, SURFACES, host, mountLog } from './host'
 
 type On = Parameters<typeof host>[0]
 
@@ -302,81 +302,65 @@ test('nothing in the configs view is cut short: every text wraps, on both surfac
   }
 })
 
-// ---- The finished-work list, inside the same tab ----
+// ---- Finished work moved to the History tab ----
 
-test('a link shows how many finished this session; pressing it swaps the tab to the list and Back swaps it back, on both surfaces', async ($, on) => {
+const mountHistory = ($: Parameters<typeof mountLog>[0], surface: 'terminal' | 'desktop') => $.ui.mount({ plugin: 'clawd-hq', surface, ...HISTORY })
+
+test('Settings has no link to finished work any more, and no list of it, on both surfaces', async ($, on) => {
   await oneFinisher($, on)
   for (const surface of SURFACES) {
     const ui = await mount($, surface)
-    const link = await ui.find({ key: 'settings-log' })
-    expect(link?.props.label).toBe('Finished this session · 1 ›')
-    expect(link?.props.plain).toBe(true)
-    expect(await shows(ui, 'CONFIGS')).toBe(true)
-
-    await ui.press({ key: 'settings-log' })
-    expect(await shows(ui, 'FINISHED THIS SESSION · 1')).toBe(true)
-    expect(await shows(ui, /^Writer$/)).toBe(true)
-    expect(await shows(ui, /Updated the setup guide/)).toBe(true)
-    expect(await shows(ui, 'CONFIGS')).toBe(false)
-    expect(await shows(ui, 'INSTRUCTIONS')).toBe(false)
     expect(await ui.find({ key: 'settings-log' })).toBeUndefined()
-    expect((await ui.find({ key: 'settings-back' }))?.props.label).toMatch(/Back/)
-
-    await ui.press({ key: 'settings-back' })
     expect(await shows(ui, 'CONFIGS')).toBe(true)
-    expect(await shows(ui, 'FINISHED THIS SESSION · 1')).toBe(false)
-    expect(await ui.find({ key: 'settings-back' })).toBeUndefined()
+    expect(await shows(ui, /Updated the setup guide/)).toBe(false)
     await ui.unmount()
   }
 })
 
-test('nothing in the finished list is cut short: its rows wrap, on both surfaces', async ($, on) => {
+test('nothing in Other work is cut short: a run\'s line wraps, on both surfaces', async ($, on) => {
   await oneFinisher($, on)
   for (const surface of SURFACES) {
     const ui = await mountLog($, surface)
     const texts = await ui.findAll({ type: 'Text' })
     expect(texts.some(t => t.props.wrap === 'truncate' || /…/.test(t.text))).toBe(false)
-    for (const line of [/^Writer$/, /^Updated the setup guide$/]) expect(texts.find(t => line.test(String(t.text)))?.props.wrap).toBe('wrap')
+    expect(texts.find(t => /^(✓ )?Writer {2}Updated the setup guide$/.test(String(t.text)))?.props.wrap).toBe('wrap')
     await ui.unmount()
   }
 })
 
-test('with nothing finished the link reads 0 and the list says so, with the Back link still there', async ($, on) => {
+test('with nothing finished the History tab says so', async ($, on) => {
   host(on)
   await $.session.start(START)
-  const ui = await mount($)
-  expect((await ui.find({ key: 'settings-log' }))?.props.label).toBe('Finished this session · 0 ›')
-  await ui.press({ key: 'settings-log' })
-  expect(await shows(ui, 'Nothing has finished yet this session.')).toBe(true)
-  expect(await ui.find({ key: 'settings-back' })).toBeDefined()
+  const ui = await mountHistory($, 'terminal')
+  expect(await shows(ui, 'Nothing has finished yet in this project.')).toBe(true)
   await ui.unmount()
 })
 
-test('the view choice is kept with the panel\'s display flags: another drawing of the pane, or the other surface, opens on the list too', async ($, on) => {
+test('Other work, opened in one drawing, is open in another drawing and on the other surface too; closed, it is closed everywhere', async ($, on) => {
   await oneFinisher($, on)
   const first = await mountLog($, 'terminal')
-  expect(await shows(first, 'FINISHED THIS SESSION · 1')).toBe(true)
+  expect(await shows(first, /Updated the setup guide/)).toBe(true)
   await first.unmount()
-  const other = await mount($, 'desktop')
-  expect(await shows(other, 'FINISHED THIS SESSION · 1')).toBe(true)
-  await other.press({ key: 'settings-back' })
+  const other = await mountHistory($, 'desktop')
+  expect(await shows(other, /Updated the setup guide/)).toBe(true)
+  await other.press({ key: 'history-other' })
   await other.unmount()
-  const again = await mount($, 'terminal')
-  expect(await shows(again, 'CONFIGS')).toBe(true)
+  const again = await mountHistory($, 'terminal')
+  expect(await shows(again, /Updated the setup guide/)).toBe(false)
   await again.unmount()
 })
 
-test('the list never adds a tab: the host still has the four panes', async ($, on) => {
+test('the History tab is one of the four panes; looking at finished work adds no tab', async ($, on) => {
   const { panes } = host(on)
   await $.command.run({ command: 'office', args: '' } as never)
   const ui = await mountLog($, 'terminal')
   await ui.unmount()
-  expect(panes.map(p => p.title)).toEqual(['Office', 'People', 'Settings'])
+  expect(panes.map(p => p.title)).toEqual(['Office', 'People', 'History', 'Settings'])
 })
 
 // ---- Clawd's instructions, below the switches ----
 
-test('below the switches and the link come Clawd\'s instructions, his voice notes, then the fixed rules, on both surfaces', async ($, on) => {
+test('below the switches come Clawd\'s instructions, his voice notes, then the fixed rules, on both surfaces', async ($, on) => {
   const { files } = host(on)
   files.set(`${ROOT}/${RULES_FILE}`, '# Clawd, chief of staff\n\n## What you do yourself\n\n- Talk with the person.\n')
   files.set(`${ROOT}/${VOICE_FILE}`, '# Clawd\'s voice\n\nTone notes.\n')
@@ -388,8 +372,7 @@ test('below the switches and the link come Clawd\'s instructions, his voice note
     expect(at('CONFIGS')).toBeGreaterThanOrEqual(0)
     expect(at('CONFIGS')).toBeLessThan(at('Quiet chat'))
     expect(at('Quiet chat')).toBeLessThan(at(WHERE))
-    expect(at(WHERE)).toBeLessThan(at('button:settings-log'))
-    expect(at('button:settings-log')).toBeLessThan(at('INSTRUCTIONS'))
+    expect(at(WHERE)).toBeLessThan(at('INSTRUCTIONS'))
     expect(at('INSTRUCTIONS')).toBeLessThan(at('VOICE NOTES'))
     // The fixed rules close the tab, short and dim, with no button.
     expect(at('VOICE NOTES')).toBeLessThan(at('ALWAYS'))

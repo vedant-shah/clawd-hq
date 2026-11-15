@@ -15,11 +15,11 @@
 // What waits is in this process's memory: a crash loses the records since the last batch; past the cap the oldest go, and how many is
 // written as a `dropped` record once writing works again.
 import {
-  IGNORE_RULE, READ_LIMIT, ROTATE_BYTES, droppedRecord, ignoresHistory, isHistoryFile, lineOf, nextRotation, parseFiles, rotatedName, sessionFile, utf8Length,
+  IGNORE_RULE, READ_LIMIT, ROTATE_BYTES, droppedRecord, ignoresHistory, isHistoryFile, isTabKind, lineOf, nextRotation, parseFiles, rotatedName, sessionFile, utf8Length,
 } from './history'
 import type { HistoryRecord } from './history'
 
-export type HistoryEntry = { name: string; kind: string; size: number; mtimeMs: number }
+export type HistoryEntry = { name: string; kind: string; size: number; mtimeMs: number; isLink?: boolean }
 
 export type HistoryIo = {
   /** The session's project folder now, for reading back; '' when there is none. */
@@ -72,6 +72,27 @@ async function placed(io: HistoryIo, root: string, name: string): Promise<{ ok: 
   return { ok: true, dir }
 }
 
+/**
+ * The history files a reader may read in this folder, as `placed` checks a writer's: none when `.clawd-hq` leads out of the project; of the
+ * entries, plain files only (no link, no folder), each within the read limit.
+ */
+async function readable(io: HistoryIo, root: string): Promise<{ dir: string; entries: readonly HistoryEntry[] }> {
+  const dir = historyDir(root)
+  try {
+    const base = (await io.stat(root)).realPath
+    if (base === undefined || !(await io.exists(dir))) return { dir, entries: [] }
+    const real = (await io.stat(dir)).realPath
+    if (real === undefined || norm(real).toLowerCase() !== `${norm(base)}/.clawd-hq`.toLowerCase()) {
+      await io.debug?.('history: not read: .clawd-hq leads out of the project').catch(() => undefined)
+      return { dir, entries: [] }
+    }
+    const entries = (await io.list(dir)).filter(e => isHistoryFile(e.name) && e.kind === 'file' && e.isLink !== true && e.size <= READ_LIMIT)
+    return { dir, entries }
+  } catch {
+    return { dir, entries: [] }
+  }
+}
+
 /** `.clawd-hq/.gitignore`, once per folder: written when absent, the one rule added to a file without it, every other line kept as it is. */
 async function ignoreOnce(io: HistoryIo, dir: string, root: string): Promise<void> {
   try {
@@ -99,7 +120,7 @@ async function writeTwice(io: HistoryIo, path: string, text: string): Promise<vo
 }
 
 /** A history for one plugin load: `add` records made in a folder, `flush` them, `readSince` a time. */
-export function makeHistory(io: HistoryIo, limits: HistoryLimits = LIMITS) {
+export function makeHistory(io: HistoryIo, limits: HistoryLimits = LIMITS, onWritten?: (root: string, records: readonly HistoryRecord[]) => void) {
   let waiting: readonly Entry[] = []
   let seq = 0
   let dropped = 0
@@ -181,6 +202,7 @@ export function makeHistory(io: HistoryIo, limits: HistoryLimits = LIMITS) {
         await ignoreOnce(io, place.dir, root)
         await writeSession(place.dir, session, mine.map(e => e.record))
         done.push(...mine.map(e => e.seq))
+        onWritten?.(root, mine.map(e => e.record))
       } catch (err) {
         failed = true
         await io.debug?.(`history: ${mine.length} records wait, the file could not be written: ${said(err)}`).catch(() => undefined)
@@ -223,16 +245,69 @@ export function makeHistory(io: HistoryIo, limits: HistoryLimits = LIMITS) {
     const root = io.root()
     const kept = waiting.filter(e => e.root === root && e.record.at >= at).map(e => e.record)
     if (root === '') return kept
-    const dir = historyDir(root)
-    const entries = await io.list(dir).catch(() => [] as readonly HistoryEntry[])
+    const { dir, entries } = await readable(io, root)
     // A file not changed since `at` holds nothing newer: the search stops at the files older than what is needed. A time of 0 is unknown: read.
-    const recent = entries.filter(e => isHistoryFile(e.name) && (e.mtimeMs === 0 || e.mtimeMs >= at) && e.size <= READ_LIMIT).sort((a, b) => b.mtimeMs - a.mtimeMs)
+    const recent = entries.filter(e => e.mtimeMs === 0 || e.mtimeMs >= at).sort((a, b) => b.mtimeMs - a.mtimeMs)
     const texts = await Promise.all(recent.map(e => io.read(`${dir}/${e.name}`).catch(() => '')))
     const read = parseFiles(texts).filter(r => r.at >= at)
     return [...read, ...kept].sort((a, b) => a.at - b.at)
   }
 
-  return { add, flush, readSince, pending: () => waiting.length, retryIn: async () => Math.max(0, retryAt - (await io.now())) }
+  /**
+   * The newest records of the current folder that the History tab draws from (`isTabKind`): the history files there, newest first, as many as
+   * fit in `maxBytes` (never more), and what still waits; sorted by time. Older files past the cap are not read: the tab shows the newest.
+   */
+  const readRecent = async (maxBytes: number): Promise<HistoryRecord[]> => {
+    const root = io.root()
+    const kept = waiting.filter(e => e.root === root).map(e => e.record).filter(isTabKind)
+    if (root === '') return kept
+    const { dir, entries } = await readable(io, root)
+    const files = [...entries].sort((a, b) => b.mtimeMs - a.mtimeMs)
+    const picked = files.reduce<{ names: string[]; bytes: number }>((at, e) => (at.bytes + e.size > maxBytes ? at : { names: [...at.names, e.name], bytes: at.bytes + e.size }), { names: [], bytes: 0 })
+    const texts = await Promise.all(picked.names.map(name => io.read(`${dir}/${name}`).catch(() => '')))
+    return [...parseFiles(texts).filter(isTabKind), ...kept].sort((a, b) => a.at - b.at)
+  }
+
+  return { add, flush, readSince, readRecent, pending: () => waiting.length, retryIn: async () => Math.max(0, retryAt - (await io.now())) }
 }
 
 export type History = ReturnType<typeof makeHistory>
+
+/**
+ * The History tab's records for one folder: read once, on the tab's first draw, then grown by what this session writes. The folder is taken
+ * before the read begins, so records written during it are held and added after it, those the read did not already hold.
+ */
+export function makeTabCache() {
+  type Shown = { root: string; records: readonly HistoryRecord[]; held?: readonly HistoryRecord[]; reading?: Promise<void> }
+  let shown: Shown | undefined
+
+  const get = async (root: string, read: () => Promise<HistoryRecord[]>): Promise<readonly HistoryRecord[]> => {
+    if (shown?.root === root) {
+      await shown.reading
+      return shown.records
+    }
+    const reading = (async () => {
+      const got = await read().catch(() => [] as HistoryRecord[])
+      if (shown?.root !== root) return
+      const lines = new Set(got.map(lineOf))
+      shown = { root, records: [...got, ...(shown.held ?? []).filter(r => !lines.has(lineOf(r)))] }
+    })()
+    shown = { root, records: [], held: [], reading }
+    await reading
+    return shown?.root === root ? shown.records : []
+  }
+
+  /** Records this session wrote in `root`: whether what the tab shows changed (none of the tab's kinds, or no read yet: no). */
+  const add = (root: string, records: readonly HistoryRecord[]): boolean => {
+    const mine = records.filter(isTabKind)
+    if (mine.length === 0 || shown?.root !== root) return false
+    if (shown.held !== undefined) {
+      shown = { ...shown, held: [...shown.held, ...mine] }
+      return false
+    }
+    shown = { ...shown, records: [...shown.records, ...mine] }
+    return true
+  }
+
+  return { get, add }
+}

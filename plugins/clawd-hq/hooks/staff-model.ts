@@ -75,7 +75,7 @@ export function restart(one: Employee, now: number, tick: number): Employee {
     return { ...one, mood: 'working', reason: undefined, endedAt: undefined, doneTick: undefined, endedBy: undefined, lastSeen: now }
   }
   return {
-    ...one, mood: 'working', activity: undefined, said: undefined, report: undefined, reason: undefined, ...NO_PROGRESS, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, inTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, skills: undefined, context: 0, counted: undefined,
+    ...one, mood: 'working', activity: undefined, said: undefined, reason: undefined, ...NO_PROGRESS, tools: 0, tokens: 0, outTokens: 0, peakInput: 0, inTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, skills: undefined, context: 0, counted: undefined,
     startedAt: now, endedAt: undefined, doneTick: undefined, endedBy: undefined, joinedTick: tick, lastSeen: now,
   }
 }

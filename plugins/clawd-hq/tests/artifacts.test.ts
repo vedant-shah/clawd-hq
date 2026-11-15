@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { ARTIFACT_KEEP, ARTIFACT_SHOWN, LIST_INPUT, LIST_LIMIT, TITLE_CHARS, listedLinks, listedPages, withoutGone, artifactCall, artifactsShown, cleanArtifacts, isArtifactLink, since, withArtifact, withoutArtifact, keepArtifact, hideArtifact, sweepArtifacts } from '../hooks/artifacts'
+import { ARTIFACT_KEEP, ARTIFACT_SHOWN, LIST_INPUT, LIST_LIMIT, TITLE_CHARS, listedLinks, listedPages, withoutGone, artifactCall, cleanArtifacts, realArtifacts, isArtifactLink, since, withArtifact, withoutArtifact, keepArtifact, hideArtifact, sweepArtifacts } from '../hooks/artifacts'
 import type { ArtifactIo } from '../hooks/artifacts'
 import type { Artifact } from '../types'
 
@@ -132,19 +132,12 @@ test('what was stored is checked on the way in: bad links, bad shapes and long l
   expect(cleanArtifacts(Array.from({ length: 80 }, (_, i) => made(i)))).toHaveLength(ARTIFACT_KEEP)
 })
 
-test('the newest 6 are shown, and the rest are counted', () => {
-  const list = Array.from({ length: 9 }, (_, i) => made(i))
-  const view = artifactsShown(list)
+test('the History tab shows the newest 6 and counts the rest (hooks/panel-artifacts.tsx draws them)', () => {
   expect(ARTIFACT_SHOWN).toBe(6)
-  expect(view.rows).toEqual(list.slice(0, 6))
-  expect(view.older).toBe(3)
-  expect(artifactsShown(list.slice(0, 6))).toEqual({ rows: list.slice(0, 6), older: 0 })
-  expect(artifactsShown([])).toEqual({ rows: [], older: 0 })
 })
 
 test('only real links are ever drawn, even from a list that was not cleaned', () => {
-  const view = artifactsShown([made(1), { url: 'https://evil.com/x', title: 'Evil', at: 1 }])
-  expect(view.rows).toEqual([made(1)])
+  expect(realArtifacts([made(1), { url: 'https://evil.com/x', title: 'Evil', at: 1 }])).toEqual([made(1)])
 })
 
 // ---- Pages deleted on claude.ai leave the list ----

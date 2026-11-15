@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { parseEffort } from '../hooks/desk'
-import { PAIR_WINDOW_MS, finishedSlots, floorSlots, pairGroups, pairLine, pairState, pairTitle, parsePairUp } from '../hooks/pair-up'
+import { PAIR_WINDOW_MS, floorSlots, pairGroups, pairLine, pairState, pairTitle, parsePairUp } from '../hooks/pair-up'
 import type { Employee } from '../types'
 
 const MIN = 60_000
@@ -110,13 +110,3 @@ test('a group with one member still at work is on the floor with all its members
   expect(floorSlots(over)).toEqual([])
 })
 
-test('the finished list gets one slot for a group that is over, newest first, and none for members of a group still working', () => {
-  const staff = [
-    emp({ id: 'old', mood: 'done', endedAt: 100 }),
-    paired('a', 'Ship it', 0, { mood: 'done', endedAt: 500 }), paired('b', 'Ship it', MIN, { mood: 'failed', endedAt: 900 }),
-    emp({ id: 'solo', mood: 'done', endedAt: 700 }),
-    paired('c', 'Other', 0, { mood: 'done', endedAt: 800 }), paired('d', 'Other', MIN),
-  ]
-  const slots = finishedSlots(staff, 200)
-  expect(slots.map(s => (s.kind === 'pair' ? `pair:${s.group.members.map(m => m.id).join('+')}` : s.one.id))).toEqual(['pair:a+b', 'solo'])
-})

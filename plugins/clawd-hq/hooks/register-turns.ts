@@ -6,7 +6,6 @@ import { isNotification, isPersonMessage, withHandBack, withNotice, withPersonSp
 import { editNote, editPartOf } from './clawd-edit'
 import { withTurnStarted } from './coffee-break'
 import { keepCoffeeRecord } from './coffee-debug'
-import { withVoiceNotes } from './council'
 import { parseChoices } from './desk'
 import type { BriefingOptions } from './instructions'
 import { checkHandback, checkOwnTurn, knowPrompt, knowTurnStart } from './know-check'
@@ -26,7 +25,7 @@ import { homeOf, refreshTab, rulesRide } from './register-rules'
 import { getFx, readBlurbs, readStaff, ses, setBoss, setFx, updateStaff } from './register-state'
 import { flushHistory } from './register-history'
 import { clockOut } from './run-io'
-import { failureReason } from './staff-model'
+import { failureReason, withChoices } from './staff-model'
 import { scoutHandoff } from './scout-run'
 import { edit } from './state'
 
@@ -64,7 +63,7 @@ export function registerTurns(on: On, brief: BriefingOptions) {
         if (e.reason === 'answer') await setBoss($, withHandBack) // work handed back: a checkpoint once Clawd has reported it
         const by = labelOf(asker, (await readBlurbs($))[asker.type] ?? '')
         const choices = parseChoices(e.answer ?? '')
-        if (choices.length > 0 || asker.pair?.isCouncil) await updateStaff($, l => edit(l, asker.id, one => withVoiceNotes(one, choices, e.reason === 'answer' ? e.answer ?? '' : '')))
+        if (choices.length > 0) await updateStaff($, l => edit(l, asker.id, one => withChoices(one, choices)))
         // After each hand-back, a check of the work against its report; a note may join Clawd's card.
         if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
         void leftAnswer(leftIo($), e, by)

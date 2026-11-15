@@ -316,7 +316,7 @@ test('the open fold draws every kept item, newest first; the heading counts all'
   expect(words.filter(w => /^TODO: job number/.test(w))[0]).toContain('number 4 ')
 })
 
-test('the section is on the Office tab only, below the specialists and above the artifacts', async ($, on) => {
+test('the section is on the Office tab only, below the specialists (the artifacts are on the History tab now)', async ($, on) => {
   const h = office(on)
   await $.session.start(START)
   await hire($)
@@ -326,7 +326,7 @@ test('the section is on the Office tab only, below the specialists and above the
   const { text } = await seen($)
   expect(text.indexOf('AT WORK')).toBeGreaterThan(-1)
   expect(text.indexOf('LATER')).toBeGreaterThan(text.indexOf('AT WORK'))
-  expect(text.indexOf('ARTIFACTS')).toBeGreaterThan(text.indexOf('LATER'))
+  expect(text).not.toContain('ARTIFACTS')
   expect((await seen($, 'terminal', PEOPLE)).text).not.toMatch(/LATER/)
 })
 

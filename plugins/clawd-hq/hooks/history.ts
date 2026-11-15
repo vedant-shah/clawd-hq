@@ -11,6 +11,7 @@
 // input or its output is kept: the builders take only the fields they name, and a name, model, tool or skill that is not a plain identifier
 // (no space, no @, at most 64 characters) is left out.
 import type { EndedBy, Employee, KnowTag, PlanStep } from '../types'
+import { isArtifactLink } from './artifacts'
 import { fit, parseChoices } from './desk'
 import { KNOW_TAGS, looksSecret, plainText } from './know'
 
@@ -44,6 +45,8 @@ export type StepEnd = { id: string; text: string; isDone: boolean; choices: stri
 export type GoalEndRecord = Common<'goal_end'> & {
   title: string; summary?: string; outcome: 'done' | 'stopped'; startedAt: number; stepsDone: number; stepsTotal: number
   runs: number; failedRuns: number; workMs: number; steps: StepEnd[]; artifacts?: Array<{ url: string; title: string }>
+  /** The goal's tokens as every tab counts them (each run's peak input plus its output, added up); the true sums stay on its run records. */
+  tokens?: number
 }
 export type ToolRecord = Common<'tool'> & { run?: string; name: string; type: string; tool: string; startedAt: number; endedAt: number; ms: number; ok: boolean; step?: string }
 export type RequestRecord = Common<'request'> & { run?: string; model: string; effort?: string; tokens: { in: number; out: number; cached: number; cacheWrite: number }; step?: string }
@@ -149,12 +152,16 @@ export function collapseRuns(records: readonly HistoryRecord[]): RunRecord[] {
   return [...last.values()]
 }
 
-/** A goal's totals from its run records: how many, how many failed, the working time added up (not the wall clock), and each step's retries and last outcome. */
+/** A run's tokens as the cards, People and every total count them: its peak input plus its output. The true sums stay on the record. */
+export const runTokens = (r: RunRecord) => r.tokens.inPeak + r.tokens.out
+
+/** A goal's totals from its run records: how many, how many failed, the working time added up (not the wall clock), the tokens, and each step's retries and last outcome. */
 export function goalTotals(records: readonly HistoryRecord[], steps: readonly PlanStep[]) {
   const runs = collapseRuns(records)
   const ordered = [...runs].sort((a, b) => a.endedAt - b.endedAt)
   return {
     runs: runs.length, failedRuns: runs.filter(r => r.outcome === 'failed').length, workMs: runs.reduce((n, r) => n + Math.max(0, r.endedAt - r.startedAt), 0),
+    tokens: runs.reduce((n, r) => n + runTokens(r), 0),
     steps: steps.map((step): StepEnd => {
       const on = ordered.filter(r => r.step === step.id)
       const last = on[on.length - 1]
@@ -167,7 +174,7 @@ export function goalTotals(records: readonly HistoryRecord[], steps: readonly Pl
 }
 
 export function goalEndRecord(s: Stamp, end: { title: string; summary?: string; outcome: 'done' | 'stopped'; startedAt: number; steps: readonly PlanStep[]; runs: readonly HistoryRecord[]; artifacts?: ReadonlyArray<{ url: string; title: string }> }): GoalEndRecord {
-  const pages = (end.artifacts ?? []).filter(a => a.url.startsWith('https://') && a.url.length <= URL_CHARS && !/\s/.test(a.url) && !looksSecret(a.url))
+  const pages = (end.artifacts ?? []).filter(a => isArtifactLink(a.url) && a.url.length <= URL_CHARS && !looksSecret(a.url))
   return defined({
     ...common('goal_end', s), title: freeText(end.title) ?? '', summary: freeText(end.summary), outcome: end.outcome, startedAt: end.startedAt,
     stepsDone: end.steps.filter(step => step.isDone).length, stepsTotal: end.steps.length, ...goalTotals(end.runs, end.steps),
@@ -190,9 +197,84 @@ export function parseFiles(texts: readonly string[]): HistoryRecord[] {
   })
 }
 
+/** The most steps, Decided lines a step, skills and pages a record read back may hold: what the plan and the office ever write. */
+const MAX_STEPS = 40
+const MAX_CHOICES = 5
+const MAX_LIST = 20
+const OUTCOME_LIST = ['done', 'failed', 'lost', 'stopped'] as const
+const ENDED_BY = ['signal', 'engine', 'stale'] as const
+const num = (x: unknown): number | undefined => (typeof x === 'number' && Number.isFinite(x) ? x : undefined)
+const oneOf = <T extends string>(x: unknown, list: readonly T[]): T | undefined => ((list as readonly unknown[]).includes(x) ? (x as T) : undefined)
+const obj = (x: unknown): Record<string, unknown> => (typeof x === 'object' && x !== null && !Array.isArray(x) ? (x as Record<string, unknown>) : {})
+const list = (x: unknown, most: number): unknown[] => (Array.isArray(x) ? x.slice(0, most) : [])
+
+/** A step of a goal_end read back: its id an identifier, its words and Decided lines clean free text, a few of each at most. */
+function cleanStep(raw: unknown): StepEnd | undefined {
+  const s = obj(raw)
+  const id = ident(s.id)
+  if (id === undefined) return undefined
+  return defined({
+    id, text: freeText(s.text) ?? '', isDone: s.isDone === true, choices: list(s.choices, MAX_CHOICES).map(freeText).filter((c): c is string => c !== undefined),
+    retries: count(s.retries), lastOutcome: oneOf(s.lastOutcome, OUTCOME_LIST),
+  })
+}
+
 /**
- * The records in a file's text: a line that does not parse, is not a record, has another version or an unknown kind is skipped. Two equal
- * lines in one file are two events (two calls in the same millisecond). Never throws.
+ * A record read back, rebuilt from its checked fields alone: the file is in the project and anyone may have edited it, so nothing in it is
+ * trusted. Free text goes through `freeText` (one clean line, 120 characters), names and ids through the identifier rule, links through
+ * `isArtifactLink`; lists are cut to what the office ever writes. A record missing what it cannot do without is no record.
+ */
+export function cleanRecord(raw: Record<string, unknown>): HistoryRecord | undefined {
+  const at = num(raw.at)
+  const kind = oneOf(raw.kind, KINDS)
+  if (raw.v !== HISTORY_V || at === undefined || kind === undefined || typeof raw.session !== 'string') return undefined
+  const base = { v: HISTORY_V, at, kind, session: ident(raw.session) ?? 'unknown', goal: ident(raw.goal) }
+  const tokens = obj(raw.tokens)
+  switch (kind) {
+    case 'goal_start': return defined({ ...base, kind, title: freeText(raw.title) ?? '', summary: freeText(raw.summary), steps: count(raw.steps), by: oneOf(raw.by, ['clawd', 'planner'] as const) ?? 'clawd' })
+    case 'run': {
+      const [run, startedAt, endedAt, outcome] = [ident(raw.run), num(raw.startedAt), num(raw.endedAt), oneOf(raw.outcome, OUTCOME_LIST)]
+      if (run === undefined || startedAt === undefined || endedAt === undefined || outcome === undefined) return undefined
+      const skills = list(raw.skills, MAX_LIST).map(ident).filter((k): k is string => k !== undefined)
+      const micro = obj(raw.micro)
+      return defined({
+        ...base, kind, step: ident(raw.step), stepText: freeText(raw.stepText), run, type: ident(raw.type) ?? 'unknown', name: ident(raw.name), task: freeText(raw.task) ?? '',
+        model: ident(raw.model), effort: oneOf(raw.effort, EFFORTS), skills: skills.length > 0 ? skills : undefined, group: oneOf(raw.group, ['pair', 'council'] as const),
+        startedAt, endedAt, outcome, endedBy: oneOf(raw.endedBy, ENDED_BY) ?? 'signal', tools: count(raw.tools),
+        tokens: { inPeak: count(tokens.inPeak), out: count(tokens.out), in: count(tokens.in), cached: count(tokens.cached), cacheWrite: count(tokens.cacheWrite) },
+        micro: raw.micro === undefined ? undefined : { done: count(micro.done), total: count(micro.total) },
+        choices: count(raw.choices), questions: count(raw.questions), notes: count(raw.notes), isRetry: raw.isRetry === true,
+      })
+    }
+    case 'goal_end': {
+      const [goal, outcome, startedAt] = [ident(raw.goal), oneOf(raw.outcome, ['done', 'stopped'] as const), num(raw.startedAt)]
+      if (goal === undefined || outcome === undefined || startedAt === undefined) return undefined
+      const steps = list(raw.steps, MAX_STEPS).map(cleanStep).filter((s): s is StepEnd => s !== undefined)
+      const pages = list(raw.artifacts, MAX_LIST).map(obj).filter(a => isArtifactLink(a.url) && String(a.url).length <= URL_CHARS && !looksSecret(String(a.url)))
+        .map(a => ({ url: String(a.url), title: freeText(a.title) ?? '' }))
+      return defined({
+        ...base, kind, goal, title: freeText(raw.title) ?? '', summary: freeText(raw.summary), outcome, startedAt, stepsDone: count(raw.stepsDone), stepsTotal: count(raw.stepsTotal),
+        runs: count(raw.runs), failedRuns: count(raw.failedRuns), workMs: count(raw.workMs), steps, artifacts: pages.length > 0 ? pages : undefined,
+        tokens: raw.tokens === undefined ? undefined : count(raw.tokens),
+      })
+    }
+    case 'tool': {
+      const [startedAt, endedAt] = [num(raw.startedAt), num(raw.endedAt)]
+      if (startedAt === undefined || endedAt === undefined) return undefined
+      return defined({ ...base, kind, run: ident(raw.run), name: ident(raw.name) ?? 'unknown', type: ident(raw.type) ?? 'unknown', tool: ident(raw.tool) ?? 'other', startedAt, endedAt, ms: count(raw.ms), ok: raw.ok === true, step: ident(raw.step) })
+    }
+    case 'request': return defined({ ...base, kind, run: ident(raw.run), model: ident(raw.model) ?? 'unknown', effort: oneOf(raw.effort, EFFORTS), tokens: { in: count(tokens.in), out: count(tokens.out), cached: count(tokens.cached), cacheWrite: count(tokens.cacheWrite) }, step: ident(raw.step) })
+    case 'note': {
+      const tag = oneOf(raw.tag, KNOW_TAGS as readonly KnowTag[])
+      return tag === undefined ? undefined : defined({ ...base, kind, run: ident(raw.run), tag })
+    }
+    case 'dropped': return defined({ ...base, kind, count: count(raw.count) })
+  }
+}
+
+/**
+ * The records in a file's text, each rebuilt by `cleanRecord`: a line that does not parse, is not a record, has another version or an unknown
+ * kind, or lacks what its kind needs, is skipped. Two equal lines in one file are two events (two calls in the same millisecond). Never throws.
  */
 export function parseHistory(raw: string): HistoryRecord[] {
   return raw.split(/\r?\n/).flatMap(line => {
@@ -200,14 +282,17 @@ export function parseHistory(raw: string): HistoryRecord[] {
     try {
       const one: unknown = JSON.parse(line)
       if (typeof one !== 'object' || one === null || Array.isArray(one)) return []
-      const r = one as Record<string, unknown>
-      const isRecord = r.v === HISTORY_V && (KINDS as readonly unknown[]).includes(r.kind) && typeof r.at === 'number' && typeof r.session === 'string'
-      return isRecord ? [one as HistoryRecord] : []
+      const clean = cleanRecord(one as Record<string, unknown>)
+      return clean === undefined ? [] : [clean]
     } catch {
       return []
     }
   })
 }
+
+/** The kinds the History tab draws from (or counts): what it reads and keeps; the tool and request records are left in the file. */
+export const TAB_KINDS: readonly HistoryRecord['kind'][] = ['run', 'goal_end', 'dropped', 'note']
+export const isTabKind = (r: HistoryRecord) => TAB_KINDS.includes(r.kind)
 
 // ---- Files ----
 

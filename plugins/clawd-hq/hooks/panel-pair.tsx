@@ -1,12 +1,11 @@
-// The card of specialists hired together as a pair-up (hooks/pair-up.ts): on the Office tab's floor while any of them works, in the finished list once none does.
+// The card of specialists hired together as a pair-up (hooks/pair-up.ts): on the Office tab's floor while any of them works.
 // DECIDED: the pictures are the smallest ones that already exist (the list icon, and the tiny picture on the terminal), side by side, not new art.
 import { avatarFor, compactIcon, tinyIcon } from './avatars'
-import { ago, givenName } from './office'
+import { givenName } from './office'
 import { isActive, titled } from './panel-model'
-import { choiceLines } from './panel-choices'
 import { pairLine, pairTitle } from './pair-up'
 import type { PairGroup } from './pair-up'
-import { TONE, councilDesk, councilDone } from './panel-council'
+import { councilDesk } from './panel-council'
 import type { Kit } from './panel-kit'
 import type { PanelData } from './panel-types'
 
@@ -41,29 +40,3 @@ export function pairDesk(kit: Kit, data: PanelData, group: PairGroup) {
   )
 }
 
-/** The finished list's row for a pair-up that is over: dimmed pictures, "A & B" with the goal, and when and how it ended. */
-export function pairDone(kit: Kit, data: PanelData, group: PairGroup) {
-  if (group.isCouncil) return councilDone(kit, data, group)
-  const { Box, Text, isTerminal } = kit
-  const first = group.members[0]!
-  const { state, text } = pairLine(group.members, data.now)
-  const when = `${ago(data.now - Math.max(...group.members.map(one => one.endedAt ?? 0)))} ago`
-  const color = TONE[state]
-  return (
-    <Box key={`done-pair-${first.id}`} flexDirection="row" gap={2} alignItems="center" flexWrap="wrap">
-      {pictures(kit, group, data, 'done-pair', 0.7)}
-      <Box flexDirection="column" flexShrink={1} flexGrow={1}>
-        <Text wrap="wrap">{titleOf(group, data)}</Text>
-        <Text dimColor wrap="wrap">{group.goal}</Text>
-        {choiceLines(kit, `done-pair-${first.id}`, group.members)}
-        {isTerminal && <Text color={color} dimColor={color === undefined} wrap="wrap">{`${when} · ${text}`}</Text>}
-      </Box>
-      {!isTerminal && (
-        <Box flexDirection="column" alignItems="flex-end" flexShrink={0}>
-          <Text dimColor>{when}</Text>
-          <Text color={color} dimColor={color === undefined}>{text}</Text>
-        </Box>
-      )}
-    </Box>
-  )
-}

@@ -13,7 +13,8 @@ import { knowActions } from './know-check'
 import { leftActions } from './left-io'
 import { oldActions } from './old-decisions'
 import { chooseOnboard } from './onboard'
-import { PANES, pinHeight } from './panes'
+import { PANES, paneOf, pinHeight } from './panes'
+import type { PaneView } from './panes'
 import { renderPanel } from './panel'
 import type { PanelTools } from './panel-kit'
 import type { PanelActions, PanelData } from './panel-types'
@@ -22,7 +23,8 @@ import { coffeeIo } from './register-coffee'
 import { artifactIo } from './register-artifacts'
 import { knowIo } from './register-know'
 import { leftIo } from './register-left'
-import { oldIo, payrollIo, ruleIo, showLog } from './register-io'
+import { historyRecords, noteHistory } from './register-history'
+import { oldIo, payrollIo, ruleIo } from './register-io'
 import { dismissLater } from './plan-run'
 import { goalKey } from './plan-live'
 import { laterPrompt, withFold } from './plan-view'
@@ -36,12 +38,20 @@ import { BRIEF0, reasonOf } from './state'
 
 // ---- The side panel: a snapshot to draw, and what it may ask for ----
 
-async function panelData($: EngineInterface, options: BriefingOptions): Promise<PanelData> {
+/** Whether the History pane is the one shown (a host that cannot say: shown). A hidden pane is drawn without reading the history. */
+async function isHistoryShown($: EngineInterface): Promise<boolean> {
+  const panes = await $.ui.panes().catch(() => [])
+  return panes.find(p => p.id === paneOf('history').id)?.isShown !== false
+}
+
+async function panelData($: EngineInterface, options: BriefingOptions, view: PaneView): Promise<PanelData> {
   return onStage({
     staff: await readStaff($), boss: await getBoss($), fx: await getFx($), tick: await readTick($), blurbs: await readBlurbs($),
     roster: await readRoster($), projectTokens: await readProjectTokens($), payroll: await getPayroll($),
     artifacts: await readArtifacts($), leftUndone: await readLeftUndone($), ruleOffers: await readRuleOffers($), contractorOffers: await readContractorOffers($), gauge: await readGauge($), now: await $.clock.now(), know: await knowIo($).card(),
     brief: { ...BRIEF0, ...(await readClawdBrief($)) }, options, onboard: await setupCard($), plan: await readPlan($),
+    // Only the History tab reads the history files, and only once it is shown; the other tabs draw without them.
+    ...(view === 'history' && (await isHistoryShown($)) ? { history: await historyRecords($) } : {}),
   })
 }
 
@@ -69,12 +79,12 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     layoffDismiss: () => setFx($, f => ({ ...f, layoffNotice: undefined })),
     hire: type => setLaidOff(payrollIo($), type, false),
     toggleUsage: () => setFx($, f => ({ ...f, isUsageOpen: !f.isUsageOpen })),
+    historyError: why => noteHistory($, `the History tab drew empty: ${why}`),
     toggleFold: key => setFx($, f => ({ ...f, folds: withFold(f.folds, key) })),
     agentAsk: prompt => knowIo($).fillPrompt(prompt),
     planLaterDo: async (goal, id) => { const plan = await readPlan($); const one = plan !== null && goalKey(plan) === goal ? plan.later.find(item => item.id === id) : undefined; if (one) await knowIo($).fillPrompt(laterPrompt(one.text)) },
     planLaterDismiss: (goal, id) => dismissLater(planRunIo($, opts), goal, id),
     coffeeBreak: isTerminal => takeCoffeeBreak(coffeeIo($), isTerminal).catch((err: unknown) => $.ui.toast(`Couldn't compact the chat: ${reasonOf(err)}.`)),
-    showLog: isOpen => showLog($, isOpen),
     setConfig: (field, value) => setConfig($, field, value),
     scrollClawd: async (part, dir) => { const text = (await readClawdBrief($))[part]?.text ?? ''; await setFx($, f => ({ ...f, scroll: scrolled(f.scroll, part, text, dir) })) },
     choose: async button => { void chooseOnboard(await onboardIo($, opts), button) }, // a step can wait on the question box or a model: the press does not
@@ -99,7 +109,7 @@ export function registerPanes(on: On, brief: BriefingOptions) {
         Svg: e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg,
       }
       const layout = { columns: e.props.bodyColumns, minHeight: pinHeight(e.surface, e.props.placement, e.props.scroll.bodyRows) }
-      return renderPanel(tools, layout, await panelData($, brief), panelActions($, brief), pane.view)
+      return renderPanel(tools, layout, await panelData($, brief, pane.view), panelActions($, brief), pane.view)
     })
   }
 }

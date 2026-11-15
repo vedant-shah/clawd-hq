@@ -1,11 +1,15 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { AMBER } from '../hooks/office'
-import { HOUR, PANE, PEOPLE, START, SURFACES, host, mountLog } from './host'
+import { collapseRuns, parseHistory } from '../hooks/history'
+import { AMBER, ago } from '../hooks/office'
+import { tokensLabel } from '../hooks/panel-model'
+import { HISTORY, HOUR, PANE, PEOPLE, START, SURFACES, host } from './host'
+import { planFs } from './plan-disk'
 
 // ---- A specialist is at work only while its run goes on ----
 
 type Eng = Engine
+const MIN = 60_000
 const BUILD = { prompt: 'Build the panel', description: 'Build redesigned panel', subagentType: 'ecc:tdd-guide' } as never
 const REPORT = 'Built it.\nQUESTION: Which launch date?\nQUESTION: Ship Friday or Monday? | Friday / Monday | recommend: Friday'
 const stop = ($: Eng, id: string, n: number, answer = 'ok') => $.turn.complete({ reason: 'answer', answer, turnId: `r${n}`, agentId: id, isAborted: false } as never)
@@ -25,16 +29,54 @@ async function floorOf($: Eng, surface: 'terminal' | 'desktop') {
   return seen
 }
 
-/** The Log pane's rows of one surface: [when, took] lines. */
-async function logLines($: Eng, surface: 'terminal' | 'desktop') {
-  const ui = await mountLog($, surface)
-  const lines = (await ui.findAll({ type: 'Text', text: /took|Failed after|Stopped after|Lost contact/ })).map(t => String(t.text))
+/** The test's host, kept so the finished runs can be read back from the history it holds. */
+let current: ReturnType<typeof host> | undefined
+function office(...args: Parameters<typeof host>) {
+  current = host(...args)
+  planFs(args[0], current.files) // the folder calls the history's writing asks the host
+  return current
+}
+/** The tests that keep a run alive with tool calls answer them; the others answer their own. */
+const answerTools = (on: Parameters<typeof host>[0]) => on('tool.call', () => ({ result: 'ok' }) as never)
+
+/**
+ * The finished runs, newest first, as their records in the history say how each ended: "took 2m · 82K tokens", "Failed after 1m", "Stopped
+ * after 1m", "Lost contact". (The finished list these were once read from moved to the History tab, one line a run.)
+ */
+async function logLines(_$: Eng, _surface: 'terminal' | 'desktop') {
+  const h = current!
+  for (let i = 0; i < 20; i += 1) await h.clock.advance(0) // the history's write is not waited on: let it land
+  const text = [...h.files.entries()].filter(([path]) => path.includes('/.clawd-hq/history')).map(([, t]) => t).join('\n')
+  return collapseRuns(parseHistory(text)).sort((a, b) => b.endedAt - a.endedAt).map(r => {
+    const span = ago(r.endedAt - r.startedAt)
+    const tokens = r.tokens.inPeak + r.tokens.out
+    if (r.outcome === 'lost') return 'Lost contact'
+    if (r.outcome === 'failed') return `Failed after ${span}`
+    if (r.outcome === 'stopped') return `Stopped after ${span}`
+    return `took ${span}${tokens > 0 ? ` · ${tokensLabel(tokens)} tokens` : ''}`
+  })
+}
+/** Time passing while the run works: a tool call every 10 seconds, so the frames do not take its quiet for an end. */
+async function working($: Eng, id: string, ms: number) {
+  for (let t = 0; t < ms; t += 10_000) {
+    await current!.clock.advance(Math.min(10_000, ms - t))
+    await work($, id)
+  }
+}
+
+/** The History tab's line for a run, where it has one. */
+async function historyLine($: Eng, surface: 'terminal' | 'desktop', id: string) {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...HISTORY })
+  const fold = await ui.find({ key: 'history-other' })
+  if (fold !== undefined && String(fold.props.label ?? '').startsWith('▸')) await ui.press({ key: 'history-other' })
+  const line = (await ui.findAll({})).find(n => String(n.props.key ?? '').startsWith(`history-run-${id}@`))
+  const drawn = line === undefined ? [] : await ui.findAll({ type: 'Text' })
   await ui.unmount()
-  return lines
+  return { line, texts: drawn.map(t => String(t.text)), colorOf: (words: RegExp) => drawn.find(t => words.test(String(t.text)))?.props.color }
 }
 
 test('a specialist whose run has ended is not at work, and the questions in its report put nothing on the floor', async ($, on) => {
-  host(on, [])
+  office(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('tool.call', () => ({ result: 'ok' }) as never)
   await $.agent.spawn(BUILD)
@@ -50,24 +92,26 @@ test('a specialist whose run has ended is not at work, and the questions in its 
   }
 })
 
-test('a resumed specialist is at work again while it runs and done when it stops; each run is timed on its own', async ($, on) => {
-  const { clock } = host(on, [])
+test('a resumed specialist is at work again while it runs and done when it stops; each run is timed on its own', { timeoutMs: 180_000 }, async ($, on) => {
+  const { clock } = office(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('tool.call', () => ({ result: 'ok' }) as never)
+  await $.session.start(START)
   await $.agent.spawn(BUILD)
   await work($, 't1')
-  await clock.advance(60_000)
+  await working($, 't1', 60_000)
   await stop($, 't1', 1, REPORT)
 
   for (const run of [2, 3, 4]) {
-    await clock.advance(2 * HOUR)
+    // Two hours between runs: the time it is timed on is its own. Passed in steps, as the session's frames tick every 400 ms.
+    for (let gone = 0; gone < 2 * HOUR; gone += 10 * MIN) await clock.advance(10 * MIN)
     for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
     await work($, 't1')
     for (const surface of SURFACES) {
       // Running again: at work, whatever its earlier report asked.
       expect(await floorOf($, surface)).toEqual({ atWork: true, empty: false, asks: false })
     }
-    await clock.advance(120_000)
+    await working($, 't1', 120_000)
     await stop($, 't1', run)
     for (const surface of SURFACES) {
       expect(await floorOf($, surface)).toEqual({ atWork: false, empty: true, asks: false })
@@ -75,14 +119,14 @@ test('a resumed specialist is at work again while it runs and done when it stops
   }
   for (const surface of SURFACES) {
     const lines = await logLines($, surface)
-    expect(lines).toHaveLength(1)
-    // The last run took two minutes, not the hours since the first spawn.
+    expect(lines).toHaveLength(4) // each run a record of its own
+    // The last run took two minutes, not the minutes since the first spawn.
     expect(lines[0]).toMatch(/took 2m/)
   }
 })
 
 test('a resumed specialist with nothing to ask is Working from its first model step, before any tool call', async ($, on) => {
-  const { clock } = host(on, [])
+  const { clock } = office(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'm', input_tokens: 5, output_tokens: 50, cache_read_input_tokens: 1_000, cache_creation_input_tokens: 0 } } as never
@@ -103,7 +147,7 @@ test('a resumed specialist with nothing to ask is Working from its first model s
 for (const [status, text] of [['idle', /took/], ['completed', /took/], ['failed', /Failed after/], ['killed', /Stopped after/]] as const) {
   test(`a specialist the engine reports as ${status} is sent home within a few frames even if no stop was seen`, async ($, on) => {
     const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
-    const { clock } = host(on, agents)
+    const { clock } = office(on, agents)
     on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
     on('tool.call', () => ({ result: 'ok' }) as never)
     await $.session.start(START)
@@ -121,7 +165,7 @@ for (const [status, text] of [['idle', /took/], ['completed', /took/], ['failed'
 
 test('a resumed run is not ended by the engine\'s stale "completed" in its first seconds', { timeoutMs: 30_000 }, async ($, on) => {
   const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'completed' }]
-  const { clock } = host(on, agents)
+  const { clock } = office(on, agents)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('tool.call', () => ({ result: 'ok' }) as never)
   await $.session.start(START)
@@ -137,19 +181,21 @@ test('a resumed run is not ended by the engine\'s stale "completed" in its first
 })
 
 test('the token figure is what the agent used, not each request\'s whole context added up', async ($, on) => {
-  const { clock } = host(on, [])
+  const { clock } = office(on, [])
+  answerTools(on)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   // Every request reads an 80 000-token cached prompt and writes 500 tokens.
   on('turn.step', async function* (_$, e) {
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'm', input_tokens: 10, output_tokens: 500, cache_read_input_tokens: 80_000, cache_creation_input_tokens: 0 } } as never
   })
+  await $.session.start(START)
   await $.agent.spawn(BUILD)
   for (const index of [0, 1, 2]) {
     const run = $.turn.step({ turnId: 'r1', index, model: 'm', messageCount: 3, agentId: 't1' } as never)
     let part = await run.next()
     while (!part.done) part = await run.next()
   }
-  await clock.advance(60_000)
+  await working($, 't1', 60_000)
   await stop($, 't1', 1)
   for (const surface of SURFACES) {
     const lines = await logLines($, surface)
@@ -166,11 +212,10 @@ const stepOf = async ($: Eng, id: string, index: number) => {
   let part = await run.next()
   while (!part.done) part = await run.next()
 }
-const MIN = 60_000
 
 test('a run the engine still calls running but that went silent for 30 minutes is recorded as lost contact, in amber, with no cheer', { timeoutMs: 30_000 }, async ($, on) => {
   const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
-  const { clock, toasts } = host(on, agents)
+  const { clock, toasts } = office(on, agents)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('tool.call', () => ({ result: 'ok' }) as never)
   await $.session.start(START)
@@ -185,12 +230,11 @@ test('a run the engine still calls running but that went silent for 30 minutes i
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
     // Not a failure and not a win: Clawd stays at "All clear".
     expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeDefined()
-    const log = await mountLog($, surface)
-    const lost = await log.find({ type: 'Text', text: /Lost contact after 30m/ })
-    expect(lost).toBeDefined()
-    expect(lost?.props.color).toBe(AMBER)
-    expect(await log.find({ type: 'Text', text: /took|Failed after/ })).toBeUndefined()
-    await log.unmount()
+    const { line, texts, colorOf } = await historyLine($, surface, 't1')
+    expect(line).toBeDefined()
+    expect(texts.some(t => /^lost contact after 30m · /.test(t)), surface).toBe(true)
+    expect(colorOf(/^lost contact after/), surface).toBe(AMBER)
+    expect(await logLines($, surface)).toEqual(['Lost contact'])
     await ui.unmount()
   }
   expect(toasts.filter(t => /finished|could not finish/.test(t))).toEqual([])
@@ -198,7 +242,7 @@ test('a run the engine still calls running but that went silent for 30 minutes i
 
 test('a specialist the engine reports as waiting is never lost, however long it waits', { timeoutMs: 60_000 }, async ($, on) => {
   const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'waiting' }]
-  const { clock } = host(on, agents)
+  const { clock } = office(on, agents)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('tool.call', () => ({ result: 'ok' }) as never)
   await $.session.start(START)
@@ -214,9 +258,9 @@ test('a specialist the engine reports as waiting is never lost, however long it 
   expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false })
 })
 
-test('a run ended by the engine list that then shows life goes on as the same run: clock and tokens kept, no leftover Log row', async ($, on) => {
+test('a run ended by the engine list that then shows life goes on as the same run: clock and tokens kept, no finished line while it works', async ($, on) => {
   const agents = [{ id: 't1', type: 'ecc:tdd-guide', description: 'Build redesigned panel', status: 'running' }]
-  const { clock } = host(on, agents)
+  const { clock } = office(on, agents)
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('tool.call', () => ({ result: 'ok' }) as never)
   on('turn.step', async function* (_$, e) {
@@ -234,11 +278,11 @@ test('a run ended by the engine list that then shows life goes on as the same ru
   expect(await floorOf($, 'terminal')).toMatchObject({ atWork: false })
   expect(await logLines($, 'terminal')).toHaveLength(1)
 
-  // A late tool call: the same run is back, with nothing in the Log.
+  // A late tool call: the same run is back, and the History tab has no finished line for it while it works.
   agents[0]!.status = 'running'
   await work($, 't1')
   for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: true, asks: false })
-  expect(await logLines($, 'terminal')).toEqual([])
+  for (const surface of SURFACES) expect((await historyLine($, surface, 't1')).line).toBeUndefined()
 
   await clock.advance(5_000)
   await stop($, 't1', 2)
@@ -251,7 +295,7 @@ test('a run ended by the engine list that then shows life goes on as the same ru
 // Two stop signals for one stop, and a stop for an agent nobody knows, are unit-tested on clockOut in tests/run-io.test.ts.
 
 test('a tool call with an agent id nobody announced and the engine does not list hires no one', async ($, on) => {
-  const { clock } = host(on, [])
+  const { clock } = office(on, [])
   on('tool.call', () => ({ result: 'ok' }) as never)
   await $.session.start(START)
   await work($, 'ghost')
@@ -266,19 +310,20 @@ test('a tool call with an agent id nobody announced and the engine does not list
 })
 
 test('an agent the engine lists but no spawn announced is still hired on its first tool call', async ($, on) => {
-  host(on, [{ id: 'x1', type: 'ecc:code-reviewer', description: 'Review', status: 'running' }])
+  office(on, [{ id: 'x1', type: 'ecc:code-reviewer', description: 'Review', status: 'running' }])
   on('tool.call', () => ({ result: 'ok' }) as never)
   await work($, 'x1')
   expect(await floorOf($, 'terminal')).toMatchObject({ atWork: true })
 })
 
 test('the token figure does not go down when a compaction shrinks the next request', async ($, on) => {
-  const { clock } = host(on, [])
+  const { clock } = office(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 't1' }))
   on('turn.step', async function* (_$, e) {
     const [cache, output] = e.index === 0 ? [80_000, 500] : [20_000, 300]
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { model: 'm', input_tokens: 10, output_tokens: output, cache_read_input_tokens: cache, cache_creation_input_tokens: 0 } } as never
   })
+  await $.session.start(START)
   await $.agent.spawn(BUILD)
   await stepOf($, 't1', 0)
   await stepOf($, 't1', 1)
@@ -303,7 +348,7 @@ function spawner(on: Parameters<typeof host>[0]) {
 const RESUME = (prompt: string, agentId = 't1') => ({ prompt, description: 'Resumed run', subagentType: 'ecc:tdd-guide', resume: { agentId } }) as never
 
 test('a resumed spawn passes the message on as it is: no reporting note is added a second time', async ($, on) => {
-  host(on, [])
+  office(on, [])
   const sent = spawner(on)
   await $.agent.spawn(BUILD)
   await stop($, 't1', 1)
@@ -314,10 +359,12 @@ test('a resumed spawn passes the message on as it is: no reporting note is added
 })
 
 test('a resumed specialist keeps its record and is at work again; the hire is not counted twice', async ($, on) => {
-  const { clock, saved } = host(on, [])
+  const { clock, saved } = office(on, [])
+  answerTools(on)
   spawner(on)
+  await $.session.start(START)
   await $.agent.spawn(BUILD)
-  await clock.advance(60_000)
+  await working($, 't1', 60_000)
   await stop($, 't1', 1)
   expect(saved.get('roster')).toMatchObject({ 'ecc:tdd-guide': { jobs: 1 } })
   for (const surface of SURFACES) expect(await floorOf($, surface)).toMatchObject({ atWork: false, empty: true })
@@ -330,13 +377,13 @@ test('a resumed specialist keeps its record and is at work again; the hire is no
   expect(await ui.find({ type: 'Text', text: / Build redesigned panel$/ })).toBeDefined()
   await ui.unmount()
   // A new run with its own clock: two minutes, not the hour since the first.
-  await clock.advance(120_000)
+  await working($, 't1', 120_000)
   await stop($, 't1', 2)
-  expect(await logLines($, 'terminal')).toEqual([expect.stringMatching(/took 2m/)])
+  expect(await logLines($, 'terminal')).toEqual([expect.stringMatching(/took 2m/), expect.stringMatching(/took 1m/)])
 })
 
 test('a resumed specialist the books do not hold (from before a reload) joins them at work, with no hire counted', async ($, on) => {
-  const { saved } = host(on, [])
+  const { saved } = office(on, [])
   spawner(on)
   await $.agent.spawn(RESUME('Carry on.', 'old1'))
   for (const surface of SURFACES) expect(await floorOf($, surface)).toEqual({ atWork: true, empty: false, asks: false })
@@ -344,7 +391,7 @@ test('a resumed specialist the books do not hold (from before a reload) joins th
 })
 
 test('a workflow\'s agent keeps the script\'s prompt as it is (its answer is the script\'s to read) and is still at work on the floor', async ($, on) => {
-  host(on, [])
+  office(on, [])
   const sent = spawner(on)
   await $.agent.spawn({ prompt: 'Review the diff. Answer in JSON.', description: 'Review', subagentType: 'general-purpose', workflow: { runId: 'wf_1', agentIndex: 1 } } as never)
   expect(sent).toEqual(['Review the diff. Answer in JSON.'])
@@ -352,7 +399,7 @@ test('a workflow\'s agent keeps the script\'s prompt as it is (its answer is the
 })
 
 test('a resume the engine refuses changes nothing on the books', async ($, on) => {
-  host(on, [])
+  office(on, [])
   on('agent.spawn', () => ({ deny: 'parked' }) as never)
   const r = await $.agent.spawn(RESUME('Carry on.', 'old1'))
   expect(r).toEqual({ deny: 'parked' })
@@ -384,7 +431,7 @@ const cardOf = async ($: Eng, id: string) => {
 const HIRE_MEDIUM = { prompt: '[effort: medium]\nBuild the panel', description: 'Build redesigned panel', subagentType: 'ecc:tdd-guide' } as never
 
 test('a resumed specialist with no effort line keeps its hired level on every request and on its card', async ($, on) => {
-  host(on, [])
+  office(on, [])
   spawner(on)
   const seen = efforts(on)
   await $.agent.spawn(HIRE_MEDIUM)
@@ -400,7 +447,7 @@ test('a resumed specialist with no effort line keeps its hired level on every re
 })
 
 test('a follow-up that starts with an effort line changes the level', async ($, on) => {
-  host(on, [])
+  office(on, [])
   spawner(on)
   const seen = efforts(on)
   await $.agent.spawn(HIRE_MEDIUM)
@@ -412,7 +459,7 @@ test('a follow-up that starts with an effort line changes the level', async ($, 
 })
 
 test('a resume the engine answers under another id hands the level on to that id', async ($, on) => {
-  host(on, [])
+  office(on, [])
   on('agent.spawn', (_$, e) => ({ model: 'claude-opus-5-5', agentId: (e as { resume?: unknown }).resume ? 'n2' : 't1' }) as never)
   const seen = efforts(on)
   await $.agent.spawn(HIRE_MEDIUM)

@@ -1,10 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 import { PANES, askAgain, askOnAttach, openAtStart, openPanes, paneOf, pinHeight, raise, type PaneIo } from '../hooks/panes'
 
-test('the three panes, in the order the host shows them as tabs, with the office keeping its old id and Settings last; there is no Decisions tab', () => {
-  expect(PANES.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-settings'])
-  expect(PANES.map(p => p.view)).toEqual(['office', 'people', 'settings'])
-  expect(PANES.map(p => p.title)).toEqual(['Office', 'People', 'Settings'])
+test('the four panes, in the order the host shows them as tabs, with the office keeping its old id and Settings last; there is no Decisions tab', () => {
+  expect(PANES.map(p => p.id)).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-history', 'clawd-hq-settings'])
+  expect(PANES.map(p => p.view)).toEqual(['office', 'people', 'history', 'settings'])
+  expect(PANES.map(p => p.title)).toEqual(['Office', 'People', 'History', 'Settings'])
 })
 
 test('every view has its pane', () => {
@@ -66,11 +66,11 @@ test('the cause: in the engine a pane opened again without focus stays behind, s
   expect(state.shown).toBe('clawd-hq-settings')
 })
 
-test('panes of the old Log, Clawd and Decisions tabs, left open from an earlier version, are closed and the strip reads Office, People, Settings', async () => {
+test('panes of the old Log, Clawd and Decisions tabs, left open from an earlier version, are closed and the strip reads Office, People, History, Settings', async () => {
   const { io, strip } = engineIo()
   for (const id of ['clawd-hq', 'clawd-hq-decisions', 'clawd-hq-people', 'clawd-hq-log', 'clawd-hq-clawd']) await io.open({ id, title: id, columns: 60 })
   await openPanes(io, false)
-  expect(strip).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-settings'])
+  expect(strip).toEqual(['clawd-hq', 'clawd-hq-people', 'clawd-hq-history', 'clawd-hq-settings'])
 })
 
 test('the old panes are closed before the new ones open, once each, and a host that refuses to close them does not stop the rest', async () => {
@@ -95,7 +95,7 @@ test('not asked to focus, each pane is opened once in tab order and nothing take
   const { io, opened } = fakeIo()
   await openPanes(io, false)
   // A second Office open without focus would change nothing in the engine (see the cause above), so none is made.
-  expect(opened.map(o => o.title)).toEqual(['Office', 'People', 'Settings'])
+  expect(opened.map(o => o.title)).toEqual(['Office', 'People', 'History', 'Settings'])
   expect(opened.some(o => o.focus === true)).toBe(false)
 })
 

@@ -2,6 +2,7 @@
 import { kitOf } from './panel-kit'
 import type { Kit, PanelTools } from './panel-kit'
 import { officeTab } from './panel-office'
+import { historyTab } from './panel-history'
 import { peopleTab } from './panel-people'
 import { settingsTab } from './panel-settings'
 import type { PanelActions, PanelData } from './panel-types'
@@ -13,6 +14,7 @@ export type PanelLayout = { columns: number; minHeight?: number | string }
 
 function bodyOf(kit: Kit, data: PanelData, view: PaneView, actions: PanelActions, cw: number) {
   if (view === 'people') return peopleTab(kit, data, actions)
+  if (view === 'history') return historyTab(kit, data, actions, cw)
   return view === 'settings' ? settingsTab(kit, data, actions) : officeTab(kit, data, actions, cw)
 }
 

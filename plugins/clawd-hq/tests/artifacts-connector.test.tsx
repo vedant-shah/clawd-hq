@@ -2,7 +2,19 @@
 // (MCP tools) and the built-in Artifact tool is not there.
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { PANE, START, host } from './host'
+import { HISTORY, START, host } from './host'
+
+/** The History tab with its Artifacts fold open: the list moved there from the Office tab. */
+async function openArtifacts($: Engine, surface: 'terminal' | 'desktop') {
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...HISTORY })
+  const fold = await ui.find({ key: 'history-artifacts' })
+  if (fold !== undefined && String(fold.props.label ?? '').startsWith('▸')) await ui.press({ key: 'history-artifacts' })
+  return ui
+}
+/** Every Text and every button's words, in the order drawn (the fold's label, "▾ Artifacts · N", is a button). */
+const wordsOf = async (ui: { findAll(q: object): Promise<Array<{ type?: string; props: Record<string, unknown>; text?: unknown }>> }) =>
+  (await ui.findAll({})).filter(n => n.type === 'Text' || n.type === 'Button').map(n => String(n.type === 'Button' ? n.props.label ?? n.text ?? '' : n.text))
+
 
 const SLUG = '42d37a55-5bdb-4d3b-9870-42b85285d9e0'
 const SLUG2 = '66962085-0314-4aff-a33b-7d1856d72556'
@@ -38,11 +50,11 @@ async function call($: Engine, tool: string, input: Record<string, unknown> = {}
   return ran
 }
 async function seen($: Engine, surface: 'terminal' | 'desktop' = 'terminal') {
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+  const ui = await openArtifacts($, surface)
   const result = {
     text: JSON.stringify(await ui.drawn()),
     links: (await ui.findAll({ type: 'Link' })).map(l => String(l.props.href)),
-    words: (await ui.findAll({ type: 'Text' })).map(t => String(t.text)),
+    words: await wordsOf(ui),
   }
   await ui.unmount()
   return result
@@ -55,7 +67,7 @@ test('a page published through the connector joins the desk as a link, on both s
   for (const surface of ['terminal', 'desktop'] as const) {
     const { links, words, text } = await seen($, surface)
     expect(links).toEqual([URL1])
-    expect(words).toContain('ARTIFACTS · 1')
+    expect(words).toContain('▾ Artifacts · 1')
     expect(text).toContain('Robot Vacuum Verdict')
   }
 })
@@ -81,7 +93,7 @@ test('an edit of the same page updates its row and moves it to the top; there is
   await call($, EDIT, { slug: SLUG, base_version: '1-aa', edits: [] })
   const { links, words, text } = await seen($)
   expect(links).toEqual([URL1, URL2])
-  expect(words).toContain('ARTIFACTS · 2')
+  expect(words).toContain('▾ Artifacts · 2')
   expect(text).toContain('Robot Vacuum Verdict, revised')
   expect(text).not.toContain('"Robot Vacuum Verdict"')
   expect(text).toMatch(/just now/)
@@ -96,7 +108,7 @@ test('a failed or refused connector call, and the connector\'s other tools, reco
   await call($, 'mcp__claude-artifacts__get_artifact', { slug: SLUG })
   await call($, 'mcp__claude-artifacts__read_artifact', { slug: SLUG })
   await call($, 'mcp__other__publish_version', { content: 'x' })
-  expect((await seen($)).text).not.toMatch(/ARTIFACT/)
+  expect((await seen($)).text).not.toMatch(/Artifacts ·/)
 })
 
 test('the desk is kept per project folder and survives sessions, with the slug', async ($, on) => {

@@ -88,13 +88,13 @@ test('a council and a pair-up with the same words do not share a card', async ($
   expect(keys).toContain('council-p3')
 })
 
-test('while any voice works the card is on the floor; once all are done it is one finished card with each voice\'s first line, wrapped', async ($, on) => {
+test('while any voice works the card is on the floor; once all are done each voice is a line of its own in Other work, with no report', async ($, on) => {
   const { clock } = office(on)
   await hireCouncil($)
   await clock.advance(2 * MIN)
   await stop($, 'p1', 1, 'Stay on MySQL for now.\nThe move costs a quarter.')
   await stop($, 'p2', 2, '## Verdict\n\n**Move**, but in stages.')
-  // Two have finished, one still works: no report lines yet.
+  // Two have finished, one still works: the card stays on the floor, with no report lines.
   const mid = await officeTexts($, 'terminal')
   expect(mid.keys).toContain('council-p1')
   expect(mid.texts.some(t => t.includes('Stay on MySQL'))).toBe(false)
@@ -103,22 +103,14 @@ test('while any voice works the card is on the floor; once all are done it is on
     expect((await officeTexts($, surface)).keys.some(k => k.startsWith('council-'))).toBe(false)
     const log = await mountLog($, surface)
     const texts = (await log.findAll({ type: 'Text' })).map(t => String(t.text))
-    const keys = (await log.findAll({})).map(n => String(n.props.key ?? ''))
-    expect(texts).toContain('Council')
-    expect(texts.some(t => t.includes(QUESTION))).toBe(true)
-    expect(texts.some(t => t.includes('Stay on MySQL for now.'))).toBe(true)
-    expect(texts.some(t => t.includes('The move costs a quarter'))).toBe(false)
-    expect(texts.some(t => t.includes('Move, but in stages.'))).toBe(true)
-    expect(texts.some(t => t.includes('Neither: fix the slow queries first.'))).toBe(true)
-    expect(texts.some(t => /Done · took 2m/.test(t))).toBe(true)
-    expect(keys).toContain('done-council-p1')
-    expect(keys).not.toContain('done-p1')
-    for (const n of await log.findAll({ type: 'Text' })) if (String(n.text).includes('Stay on MySQL')) expect(n.props.wrap).toBe('wrap')
+    const lines = (await log.findAll({})).map(n => String(n.props.key ?? '')).filter(k => k.startsWith('history-run-'))
     await log.unmount()
+    expect(lines.map(k => k.replace(/@.*$/, '')).sort(), surface).toEqual(['history-run-p1', 'history-run-p2', 'history-run-p3'])
+    expect(texts.some(t => /Stay on MySQL|in stages|slow queries/.test(t)), surface).toBe(false)
   }
 })
 
-test('a voice that failed shows no report line, and the card says Failed', async ($, on) => {
+test('a voice that failed is a line that says "failed" in red', async ($, on) => {
   const { clock } = office(on)
   await hireCouncil($)
   await clock.advance(MIN)
@@ -126,10 +118,11 @@ test('a voice that failed shows no report line, and the card says Failed', async
   await stop($, 'p2', 2, 'Go.')
   await stop($, 'p3', 3, 'It broke.', 'error')
   const log = await mountLog($, 'desktop')
+  const failed = (await log.findAll({ type: 'Text' })).find(t => /^failed · /.test(String(t.text)))
   const texts = (await log.findAll({ type: 'Text' })).map(t => String(t.text))
-  expect(texts.some(t => /^Failed after /.test(t))).toBe(true)
-  expect(texts.some(t => t.includes('It broke.'))).toBe(false)
   await log.unmount()
+  expect(failed?.props.color).toBe('#ee8a8a')
+  expect(texts.some(t => t.includes('It broke.'))).toBe(false)
 })
 
 // ---- Clawd's card: no button, and no hint (the command is in the README and the command list) ----

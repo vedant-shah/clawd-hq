@@ -1,5 +1,6 @@
 // Playing the tour (the script is in hooks/demo-script.ts): stand-in employees on the real panel, one step every few seconds, cleaned up at the end.
 // The office's own actions come in as `io`, so `$` and the state stay in the register-*.ts files. Nothing real is spawned, saved or announced.
+import { HISTORY_FOLD } from './history-view'
 import type { Boss, Employee, Fx } from '../types'
 import { sentenceOf } from './activity'
 import { tourSteps } from './demo-script'
@@ -16,8 +17,8 @@ export { onStage } from './demo-cast'
 /** What playing the tour needs of the office; every call is a closure built in register-io.ts. */
 export type DemoIo = {
   show: (view: PaneView) => Promise<unknown>
-  /** Settings shows the list of finished work (true) or its configs (false). */
-  showLog: (isOpen: boolean) => Promise<unknown>
+  /** The History tab's Other work fold, the finished work, opens (true) or closes (false). */
+  showDone: (isOpen: boolean) => Promise<unknown>
   boss: () => Promise<Boss>
   fx: () => Promise<Fx>
   setBoss: (fn: (b: Boss) => Boss) => Promise<unknown>
@@ -58,7 +59,7 @@ async function hire(io: DemoIo, id: string, cast: Cast) {
 }
 
 /** The stand-in's run ends well, with what it reported; Clawd cheers. */
-async function finish(io: DemoIo, id: string, words: Pick<Employee, 'report' | 'choices'> = {}) {
+async function finish(io: DemoIo, id: string, words: Pick<Employee, 'choices'> = {}) {
   const [now, t] = [await io.now(), await io.tick()]
   let label = ''
   await io.editStaff(id, one => { label = labelOf(one); return { ...endRun(one, 'done', 'signal', now, t), ...words, counted: one.tokens ?? 0 } })
@@ -73,7 +74,7 @@ export async function startDemo(io: DemoIo) {
   const id = (n: string) => `${DEMO}${n}`
   const steps = tourSteps({
     show: io.show,
-    showLog: io.showLog,
+    showDone: io.showDone,
     setBusy: isBusy => io.setBoss(b => ({ ...b, isBusy })),
     say: (text, ticks) => say(io, text, ticks),
     hire: (n, cast) => hire(io, id(n), cast),
@@ -98,7 +99,7 @@ export async function startDemo(io: DemoIo) {
     await io.dropStandIns()
     await io.setDemo(undefined)
     await io.setBoss(b => ({ ...saved, turns: b.turns }))
-    await io.showLog(savedFx.isLogOpen === true)
+    await io.showDone((savedFx.folds ?? []).includes(HISTORY_FOLD.other))
     await io.showStatus()
   }
   demoTimers.push(io.after(total * STEP_MS + 1500, () => { void endTour?.() }))

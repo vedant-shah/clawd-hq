@@ -198,7 +198,7 @@ test('Clawd\'s card says what he is doing with a coloured dot and no at-work cou
   }
 })
 
-test('a finished specialist moves to the finished list in Settings, not the Office; there is no break room and no send home', { timeoutMs: 30_000 }, async ($, on) => {
+test('a finished specialist moves to Other work on the History tab, not the Office; there is no break room and no send home', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock, session } = host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
   // A real session start, so the since-filter is exercised: the specialist finishes after it began.
@@ -223,18 +223,17 @@ test('a finished specialist moves to the finished list in Settings, not the Offi
 
     await ui.unmount()
 
+    // One line: the mark, the name and the task, and how long ago at the right.
     const log = await mountLog($, surface)
-    expect(await log.find({ type: 'Text', text: /^Writer$/ })).toBeDefined()
-    expect(await log.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
-    expect(await log.find({ type: 'Text', text: /1h 0m ago/ })).toBeDefined()
-    expect(await log.find({ type: 'Text', text: /took \d+[sm]/ })).toBeDefined()
+    expect(await log.find({ type: 'Text', text: /^(✓ )?Writer {2}Updated the setup guide$/ })).toBeDefined()
+    expect(await log.find({ type: 'Text', text: /^1h ago$/ })).toBeDefined()
     expect(await log.find({ type: 'Text', text: /AT WORK/ })).toBeUndefined()
     expect(await log.find({ type: 'Text', text: /Nothing has finished yet/ })).toBeUndefined()
     await log.unmount()
   }
 })
 
-test('the Log lists work newest first, and each row has a dimmed compact avatar', async ($, on) => {
+test('Other work lists work newest first, one line each, with no picture', async ($, on) => {
   const { clock } = host(on, [])
   let n = 0
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `l${(n += 1)}` }))
@@ -249,18 +248,14 @@ test('the Log lists work newest first, and each row has a dimmed compact avatar'
     const order = (await ui.findAll({ type: 'Text', text: /^(Planned the API|Reviewed the panel|Updated the guide)$/ })).map(t => String(t.text))
     expect(order).toEqual(['Updated the guide', 'Reviewed the panel', 'Planned the API'])
     expect(await ui.find({ type: 'Text', text: /DONE THIS SESSION|Showing/ })).toBeUndefined()
-    if (surface === 'terminal') {
-      const done = (await ui.findAll({ type: 'Raster' })).filter(r => String(r.props.key).startsWith('done-'))
-      expect(done).toHaveLength(3)
-      // A finished row draws the tiny picture too, dimmed.
-      expect(done.find(r => r.props.key === 'done-l1')!.props.cells).toBe(rasterCells(fade(trim(tinyIcon(avatarFor('ecc:planner'))), 0.7)))
-    }
-    else expect((await ui.findAll({ type: 'Svg' })).filter(svg => String(svg.props.source).includes('opacity="0.7"'))).toHaveLength(3)
+    expect((await ui.findAll({})).filter(n => String(n.props.key ?? '').startsWith('history-run-'))).toHaveLength(3)
+    // As the board: no picture on a line.
+    expect([...(await ui.findAll({ type: 'Raster' })), ...(await ui.findAll({ type: 'Svg' }))].filter(p => String(p.props.key ?? '').startsWith('done-'))).toEqual([])
     await ui.unmount()
   }
 })
 
-test('the Log shows 40 rows at most and says how many of how many', async ($, on) => {
+test('Other work shows 40 rows at most and says how many more there are', async ($, on) => {
   const { clock } = host(on, [])
   let n = 0
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `m${(n += 1)}` }))
@@ -270,14 +265,14 @@ test('the Log shows 40 rows at most and says how many of how many', async ($, on
     await clock.advance(1_000)
   }
   const ui = await mountLog($, 'desktop')
-  expect(await ui.find({ type: 'Text', text: /Showing 40 of 45/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^5 older$/ })).toBeDefined()
   expect(await ui.findAll({ type: 'Text', text: /^Job number \d+$/ })).toHaveLength(40)
   expect(await ui.find({ type: 'Text', text: /^Job number 45$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Job number 5$/ })).toBeUndefined()
   await ui.unmount()
 })
 
-test('a specialist that failed shows as Failed in amber in the Log, and Clawd says so on the Office', async ($, on) => {
+test('a specialist that failed is a red "failed" line in Other work, and Clawd says so on the Office', async ($, on) => {
   host(on, [])
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'f1' }))
   await $.agent.spawn({ prompt: 'Fix it', description: 'Fix the build', subagentType: 'ecc:build-error-resolver' } as never)
@@ -290,14 +285,14 @@ test('a specialist that failed shows as Failed in amber in the Log, and Clawd sa
     expect(await ui.find({ type: 'Text', text: /All clear/ })).toBeUndefined()
     await ui.unmount()
     const log = await mountLog($, surface)
-    const failed = await log.find({ type: 'Text', text: /Failed after/ })
+    const failed = await log.find({ type: 'Text', text: /^failed · / })
     expect(failed).toBeDefined()
-    expect(failed?.props.color).toBe(AMBER)
+    expect(failed?.props.color).toBe('#ee8a8a')
     await log.unmount()
   }
 })
 
-test('the Log empties on /clear, which only ends the session, and fills again after it', { timeoutMs: 30_000 }, async ($, on) => {
+test('/clear starts this session\'s finished work over; what finished before it stays on the History tab as a line of its own', { timeoutMs: 30_000 }, async ($, on) => {
   const { clock, session } = host(on, [])
   let spawned = 0
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: `a${(spawned += 1)}` }))
@@ -319,8 +314,7 @@ test('the Log empties on /clear, which only ends the session, and fills again af
     expect(await after.find({ type: 'Text', text: /No one at a desk yet/ })).toBeDefined()
     await after.unmount()
     const log = await mountLog($, surface)
-    expect(await log.find({ type: 'Text', text: /Updated the setup guide/ })).toBeUndefined()
-    expect(await log.find({ type: 'Text', text: /Nothing has finished yet this session/ })).toBeDefined()
+    expect(await log.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined() // still a line, now an earlier run's
     await log.unmount()
   }
 
@@ -329,8 +323,8 @@ test('the Log empties on /clear, which only ends the session, and fills again af
   await $.agent.spawn({ prompt: 'Fix', description: 'Fixed the build', subagentType: 'ecc:build-error-resolver' } as never)
   await $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 't2', agentId: 'a2', isAborted: false } as never)
   const again = await mountLog($, 'desktop')
-  expect(await again.find({ type: 'Text', text: /Nothing has finished yet/ })).toBeUndefined()
   expect(await again.find({ type: 'Text', text: /Fixed the build/ })).toBeDefined()
+  expect(await again.find({ type: 'Text', text: /Updated the setup guide/ })).toBeDefined()
   await again.unmount()
 })
 
@@ -362,7 +356,7 @@ test('text agents write is kept to one short line where it is stored (a task is 
   expect(toasts.find(t => t.includes('finished'))).not.toContain('\n')
   for (const surface of SURFACES) {
     const log = await mountLog($, surface)
-    const done = await log.find({ type: 'Text', text: /Update the setup guide/ })
+    const done = await log.find({ type: 'Text', text: /^Update the setup guide/ }) // the task itself, dim on its line
     expect(String(done?.text)).not.toContain('\n')
     expect(String(done?.text).length).toBeLessThanOrEqual(160)
     expect(String(done?.text)).not.toMatch(/…/)

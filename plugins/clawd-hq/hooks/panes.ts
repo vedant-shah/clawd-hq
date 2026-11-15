@@ -1,5 +1,5 @@
-// The office's panes: the host draws one tab per pane, so each of the three views is a pane of its own.
-export type PaneView = 'office' | 'people' | 'settings'
+// The office's panes: the host draws one tab per pane, so each of the four views is a pane of its own.
+export type PaneView = 'office' | 'people' | 'history' | 'settings'
 
 export type PaneSpec = {
   id: string
@@ -11,11 +11,12 @@ export type PaneSpec = {
 const BY_VIEW: Record<PaneView, PaneSpec> = {
   office: { id: 'clawd-hq', view: 'office', title: 'Office' },
   people: { id: 'clawd-hq-people', view: 'people', title: 'People' },
+  history: { id: 'clawd-hq-history', view: 'history', title: 'History' },
   settings: { id: 'clawd-hq-settings', view: 'settings', title: 'Settings' },
 }
 
 /** In the order the tabs read. The office keeps the id it always had. */
-export const PANES: readonly PaneSpec[] = [BY_VIEW.office, BY_VIEW.people, BY_VIEW.settings]
+export const PANES: readonly PaneSpec[] = [BY_VIEW.office, BY_VIEW.people, BY_VIEW.history, BY_VIEW.settings]
 
 /**
  * The ids of the Log, Clawd and Decisions tabs of earlier versions. Settings has an id of its own and the Decisions tab is
@@ -61,7 +62,7 @@ const openPane = async (io: PaneIo, p: PaneSpec, isFocused: boolean) => {
 }
 
 /**
- * Closes what an earlier version left open, then opens the three in tab order, each on its own so one failure leaves the rest.
+ * Closes what an earlier version left open, then opens the four in tab order, each on its own so one failure leaves the rest.
  * The host appends each new pane to the strip and shows it, so Settings ends up in front; opening an open pane again only
  * retitles it. The one way to bring Office forward is a `focus` request, which the surface grants only over an empty, idle
  * prompt box and which then gives Office the keyboard too. So Office is opened once more with `focus` only when asked;

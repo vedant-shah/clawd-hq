@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { ROTATE_BYTES, lineOf, parseHistory, toolRecord } from '../hooks/history'
 import type { HistoryRecord } from '../hooks/history'
-import { BACKOFF_MS, makeHistory } from '../hooks/history-io'
+import { BACKOFF_MS, makeHistory, makeTabCache } from '../hooks/history-io'
 import type { HistoryIo } from '../hooks/history-io'
 
 // Writing the history: one file per session, records in batches (the host has no append, so each batch is one read and one write), never
@@ -328,4 +328,62 @@ test('reading since a time: every history file changed since then, newest first,
   h.add(ROOT, [rec(60)])
   expect((await h.readSince(25)).map(r => r.at)).toEqual([30, 35, 40, 50, 60])
   expect(f.log).not.toContain(`read ${DIR}/history-s1-1.jsonl`) // older than what is needed: not read
+})
+
+// ---- What the History tab reads: its kinds only, within a strict cap, never through a link ----
+
+const runAt = (at: number, id = `r${at}`): HistoryRecord => parseHistory(JSON.stringify({ v: 1, at, kind: 'run', session: 's1', run: id, type: 't', task: 'x', startedAt: at - 1, endedAt: at, outcome: 'done', tokens: { inPeak: 0, out: 0 } }))[0]!
+const goalEndAt = (at: number): HistoryRecord => parseHistory(JSON.stringify({ v: 1, at, kind: 'goal_end', session: 's1', goal: 'g', title: 'G', outcome: 'done', startedAt: 0, steps: [] }))[0]!
+
+test('the tab\'s read keeps only the runs, goal ends, dropped and note records: tool calls and requests stay in the file', async () => {
+  const f = fake({ [FILE]: [rec(1), runAt(2), goalEndAt(3)].map(lineOf).join('\n') + '\n' })
+  const h = makeHistory(f.io)
+  h.add(ROOT, [rec(4), runAt(5)])
+  expect((await h.readRecent(1_000_000)).map(r => `${r.kind}@${r.at}`)).toEqual(['run@2', 'goal_end@3', 'run@5'])
+})
+
+test('the tab\'s read never goes past its cap: the newest files that fit, and not one byte more', async () => {
+  const newest = `${lineOf(runAt(30))}\n`
+  const older = `${lineOf(runAt(20))}\n`
+  const f = fake({ [FILE]: newest, [`${DIR}/history-s1-1.jsonl`]: older }, { [FILE]: 30, [`${DIR}/history-s1-1.jsonl`]: 20 })
+  const h = makeHistory(f.io)
+  expect((await h.readRecent(newest.length + older.length - 1)).map(r => r.at)).toEqual([30])
+  expect(f.log).not.toContain(`read ${DIR}/history-s1-1.jsonl`)
+  expect((await h.readRecent(newest.length + older.length)).map(r => r.at)).toEqual([20, 30])
+})
+
+test('the tab reads nothing through a .clawd-hq that leads out of the project, nor a history file that is a link', async () => {
+  const f = fake({ [FILE]: `${lineOf(runAt(1))}\n` })
+  f.links.set(DIR, '/elsewhere/.clawd-hq')
+  expect(await makeHistory(f.io).readRecent(1_000_000)).toEqual([])
+  expect(f.log.filter(l => l.startsWith('read '))).toEqual([])
+  expect(f.notes.join('\n')).toMatch(/leads out of the project/)
+  const g = fake({ [FILE]: `${lineOf(runAt(1))}\n` })
+  const list = g.io.list
+  g.io.list = async path => (await list(path)).map(e => ({ ...e, isLink: true }))
+  expect(await makeHistory(g.io).readRecent(1_000_000)).toEqual([])
+  expect(await makeHistory(g.io).readSince(0)).toEqual([])
+})
+
+// ---- The tab's records, kept once read ----
+
+test('a goal_end written while the first read is under way still shows once the read is done, and a record the read held already counts once', async () => {
+  const cache = makeTabCache()
+  const both = runAt(2)
+  let finish: (records: HistoryRecord[]) => void = () => undefined
+  const reading = cache.get(ROOT, () => new Promise(resolve => { finish = resolve }))
+  await Promise.resolve()
+  expect(cache.add(ROOT, [goalEndAt(3), both])).toBe(false) // held: nothing to redraw yet
+  finish([runAt(1), both])
+  expect((await reading).map(r => `${r.kind}@${r.at}`)).toEqual(['run@1', 'run@2', 'goal_end@3'])
+  expect((await cache.get(ROOT, async () => { throw new Error('read again') })).length).toBe(3)
+})
+
+test('once read, a record the tab shows redraws it; tool calls and requests alone do not, and are not kept', async () => {
+  const cache = makeTabCache()
+  await cache.get(ROOT, async () => [runAt(1)])
+  expect(cache.add(ROOT, [rec(2)])).toBe(false)
+  expect(cache.add(ROOT, [goalEndAt(3)])).toBe(true)
+  expect(cache.add('/other', [goalEndAt(4)])).toBe(false)
+  expect((await cache.get(ROOT, async () => [])).map(r => r.kind)).toEqual(['run', 'goal_end'])
 })

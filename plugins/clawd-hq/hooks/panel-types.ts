@@ -1,4 +1,5 @@
 // What the side panel is handed to draw, and the things it may ask for; register-panes.ts fills both.
+import type { HistoryRecord } from './history'
 import type { Artifact, Badge, Boss, ClawdBrief, ContractorOffer, Employee, Fx, Gauge, KnowState, LeftItem, Payroll, PlanState, RuleOffer } from '../types'
 import type { ClawdActions } from './clawd-edit'
 import type { ConfigField } from './configs'
@@ -40,6 +41,8 @@ export type PanelData = {
   plan: PlanState | null
   /** The setup step drawn under Clawd's card; none, or a finished one, draws nothing. */
   onboard?: OnboardCard
+  /** The project's history records (hooks/register-history.ts reads them once and keeps them): drawn by the History tab, read only for it. */
+  history?: readonly HistoryRecord[]
 }
 
 export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleActions & OldActions & ContractorActions & {
@@ -58,12 +61,12 @@ export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleAction
   planLaterDo: (goal: string, id: string) => unknown
   /** Dismiss on a Later item of the plan: that one item leaves the plan file. `goal` is the key of the goal it was drawn for; another goal's press is refused. */
   planLaterDismiss: (goal: string, id: string) => unknown
+  /** The History tab could not be drawn from its records (it draws empty instead): the reason, for the history's debug record. */
+  historyError: (why: string) => unknown
   /** Opens the usage footer's rows, or closes them. */
   toggleUsage: () => unknown
   /** The coffee break button pressed: the chat is compacted now (or, where the engine cannot, `/compact` is put in the prompt box). */
   coffeeBreak: (isTerminal: boolean) => unknown
-  /** Settings shows the list of finished work (true) or its configs again (false). */
-  showLog: (isOpen: boolean) => unknown
   /** A config's toggle handler: changes the plugin's own store to the specified value. Resolves to nothing on success or a plain string on error, and never rejects. */
   setConfig: (field: ConfigField, value: boolean) => unknown
   /** ▼ (1) or ▲ (-1) pressed under a file's box in Settings: its window moves about 10 lines. */

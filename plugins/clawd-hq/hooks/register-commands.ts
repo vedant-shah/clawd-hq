@@ -16,7 +16,7 @@ import { followFolder, setupFolder } from './session-folder'
 export function registerCommands(on: On, brief: BriefingOptions) {
   on('command.run', { command: 'office' }, async $ => {
     await openPanes(paneIo($), true)
-    return { text: `${BRAND} is open: Office · People · Settings are the tabs at the top.` }
+    return { text: `${BRAND} is open: Office · People · History · Settings are the tabs at the top.` }
   })
 
   // `/office-setup <folder>` looks at the folder given; the team and the rest stay filed under the session's own (hooks/session-folder.ts).

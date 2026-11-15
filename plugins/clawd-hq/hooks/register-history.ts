@@ -8,7 +8,7 @@ import type { EngineInterface } from 'claude-code'
 import { PLAN_TOOL } from './constants'
 import { goalEndRecord, goalStartRecord, ident, isRetryOf, noteRecord, requestRecord, runRecord, toolRecord } from './history'
 import type { HistoryRecord, Stamp } from './history'
-import { makeHistory } from './history-io'
+import { makeHistory, makeTabCache } from './history-io'
 import type { History, HistoryIo } from './history-io'
 import { DEMO } from './panel-model'
 import type { GoalEnd } from './plan-run'
@@ -28,12 +28,16 @@ const LAST_BATCHES = 50
 
 let history: History | undefined
 let timer: { cancel(): void } | undefined
+/** The History tab's records for one folder: read once when the tab first draws, then grown by what this session writes (hooks/history-io.ts). */
+let shown = makeTabCache()
+/** The most of the newest history files the History tab reads: four rotated files' worth. */
+const SHOWN_BYTES = 8 * 1024 * 1024
 
 function historyIo($: EngineInterface): HistoryIo {
   return {
     root: () => ses.cwd, now: () => $.clock.now(),
     exists: path => $.fs.exists(path), read: path => $.fs.read(path), write: (path, text) => $.fs.write(path, text),
-    list: async path => (await $.fs.list(path)).map(e => ({ name: e.name, kind: e.kind, size: e.size, mtimeMs: e.mtimeMs })),
+    list: async path => (await $.fs.list(path)).map(e => ({ name: e.name, kind: e.kind, size: e.size, mtimeMs: e.mtimeMs, isLink: e.isLink })),
     stat: async path => { const s = await $.fs.stat(path, { resolve: true }); return { kind: s.kind, isLink: s.isLink, realPath: s.realPath } },
     isMarked: async key => (await $.store.get(key)) === true, mark: key => $.store.set(key, true),
     debug: async line => { const at = await $.clock.now(); await $.store.set(HISTORY_DEBUG_KEY, withPlanNote(await $.store.get(HISTORY_DEBUG_KEY), line, at)) },
@@ -41,8 +45,26 @@ function historyIo($: EngineInterface): HistoryIo {
 }
 
 function historyOf($: EngineInterface): History {
-  history ??= makeHistory(historyIo($))
+  history ??= makeHistory(historyIo($), undefined, (root, records) => {
+    // What this session wrote joins what the History tab holds; the tab is drawn again only when what it shows changed (no file is read for it).
+    if (shown.add(root, records)) $.ui.invalidate('ui.render')
+  })
   return history
+}
+
+/** The project's history records for the History tab, read once (the newest files, up to a cap) and then kept up to date in memory. */
+export function historyRecords($: EngineInterface): Promise<readonly HistoryRecord[]> {
+  return shown.get(ses.cwd, () => historyOf($).readRecent(SHOWN_BYTES))
+}
+
+/** A line for the history's debug record. */
+export async function noteHistory($: EngineInterface, line: string): Promise<void> {
+  try {
+    const at = await $.clock.now()
+    await $.store.set(HISTORY_DEBUG_KEY, withPlanNote(await $.store.get(HISTORY_DEBUG_KEY), line, at))
+  } catch {
+    // A debug note that cannot be kept is let go.
+  }
 }
 
 /** The next flush `ms` from now, in place of any already set. */
@@ -184,5 +206,6 @@ export function forgetHistory() {
   timer?.cancel()
   timer = undefined
   history = undefined
+  shown = makeTabCache()
   void old?.flush(true).catch(() => undefined)
 }

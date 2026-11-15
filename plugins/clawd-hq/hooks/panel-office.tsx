@@ -1,6 +1,6 @@
-// The Office tab: Clawd's card, what waits on the person, the goal's plan with who is at work on it, and who else is at work. Finished work is listed in the Settings tab.
+// The Office tab: Clawd's card, what waits on the person, the goal's plan with who is at work on it, and who else is at work. Finished work and
+// the artifacts are on the History tab.
 import { clawdAvatar } from './avatars'
-import { artifactsShown, since } from './artifacts'
 import { clawdMood, poseOf, quipOf } from './clawd-says'
 import { lookAlt, lookOf, stepOf } from './clawd-look'
 import { COFFEE_OFFER_LINE, isDrinking, isOffering } from './coffee-break'
@@ -113,27 +113,6 @@ function needsYou({ kit, data, actions }: Ctx) {
   )
 }
 
-/** The pages Claude made in this project, newest first: each title a link that opens it, with how long ago and a dim Hide button. None, no section. */
-function artifactDesk({ kit, data, actions }: Ctx) {
-  const { Box, Text, Link, Button } = kit
-  const { rows, older } = artifactsShown(data.artifacts)
-  if (rows.length === 0) return null
-  return (
-    <Box key="artifact-desk" flexDirection="column">
-      <Text bold dimColor>{`ARTIFACTS · ${rows.length + older}`}</Text>
-      {rows.map(one => (
-        // A long title wraps under itself and is never cut with a mark; the time keeps its place beside it.
-        <Box key={`artifact-${one.url}`} flexDirection="row" columnGap={1}>
-          <Box flexShrink={1}><Text wrap="wrap"><Link href={one.url}>{one.title}</Link></Text></Box>
-          <Box flexShrink={0}><Text dimColor wrap="wrap">{since(data.now - one.at)}</Text></Box>
-          <Button key={`artifact-hide-${one.url}`} plain dimColor label="Hide" onPress={() => actions.hideArtifact(one.url)} />
-        </Box>
-      ))}
-      {older > 0 && <Text dimColor>{older === 1 ? '1 older artifact' : `${older} older artifacts`}</Text>}
-    </Box>
-  )
-}
-
 export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: number) {
   // Clawd off means no plan at all: none is drawn, and none of its Later items, even if one was loaded before he was switched off.
   const plan = data.options.isOn ? data.plan : null
@@ -147,7 +126,6 @@ export function officeTab(kit: Kit, data: PanelData, actions: PanelActions, cw: 
       {layout !== undefined && planSection(ctx, layout)}
       {floor(ctx, layout)}
       {layout === undefined && laterFold(ctx, { indent: 0, isAlone: true })}
-      {artifactDesk(ctx)}
     </kit.Box>
   )
 }

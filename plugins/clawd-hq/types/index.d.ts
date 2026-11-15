@@ -54,7 +54,6 @@ export type Employee = {
   /** Set when Clawd hired it as one of a pair-up (a `PAIR-UP: <goal>` first line in its brief): the job's goal and when it was hired. Members with the same goal hired close together share one card. */
   pair?: { goal: string; at: number; /** Set for a council voice (a `COUNCIL: <question>` first line): `goal` is the question, and the group is a council, not a pair-up. */ isCouncil?: true }
   /** A council voice's first report line, kept once its run ends well (hooks/council.ts); gone when it is sent back to work. */
-  report?: string
   /** Why the run failed, in the words of its last report (hooks/plan-view.ts shows it on the Office tab); none for a run that did not fail. */
   reason?: string
   /** The key choices it reported in its hand-backs (its DECIDED lines), oldest first, at most five (hooks/staff-model.ts). Kept for the session only, with the record. */
@@ -211,8 +210,6 @@ export type Fx = {
   folds?: string[]
   /** The usage footer's three rows are open above its button; shared by every pane. */
   isUsageOpen?: boolean
-  /** The Settings tab shows the list of finished work instead of the configs and Clawd's instructions. */
-  isLogOpen?: boolean
   /** Why the last press of a config's toggle did not change it; gone once a change goes through. */
   configNote?: string
   /** The project has an old decisions file and the person has not answered the one-time card about it yet (hooks/old-decisions.ts). */

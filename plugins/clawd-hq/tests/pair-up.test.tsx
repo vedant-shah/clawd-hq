@@ -2,7 +2,9 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { avatarFor, compactIcon, tinyIcon } from '../hooks/avatars'
 import { rasterCells, trim } from '../hooks/pixels'
-import { PANE, SURFACES, host, mountLog } from './host'
+import { collapseRuns, parseHistory } from '../hooks/history'
+import { PANE, START, SURFACES, host, mountLog } from './host'
+import { planFs } from './plan-disk'
 
 const MIN = 60_000
 const GOAL = 'Fix the login bug'
@@ -110,7 +112,7 @@ test('the pictures are the small ones, side by side: the tiny picture on the ter
   await desktop.unmount()
 })
 
-test('the card says Working while any member works, then leaves the floor and goes to the finished list as Done', async ($, on) => {
+test('the card says Working while any member works, then leaves the floor; in Other work each member is a line of its own', async ($, on) => {
   const { clock } = office(on)
   await hire($, 'author', brief('author'))
   await hire($, 'critic', brief('critic'))
@@ -124,20 +126,38 @@ test('the card says Working while any member works, then leaves the floor and go
     const { keys } = await officeTexts($, surface)
     expect(keys.some(k => k.startsWith('pair-'))).toBe(false)
     const log = await mountLog($, surface)
-    const texts = (await log.findAll({ type: 'Text' })).map(t => String(t.text))
-    expect(texts).toContain('Author & Critic')
-    expect(texts.some(t => /Done · took 3m/.test(t))).toBe(true)
-    expect(texts).toContain('FINISHED THIS SESSION · 1')
-    // The members are not listed again on their own.
-    const keysOfLog = (await log.findAll({})).map(n => String(n.props.key ?? ''))
-    expect(keysOfLog).toContain('done-pair-p1')
-    expect(keysOfLog).not.toContain('done-p1')
-    expect(keysOfLog).not.toContain('done-p2')
+    const lines = (await log.findAll({})).map(n => String(n.props.key ?? '')).filter(k => k.startsWith('history-run-'))
+    const label = (await log.find({ key: 'history-other' }))?.props.label
     await log.unmount()
+    expect(label, surface).toBe('▾ Other work · 2')
+    expect(lines.map(k => k.replace(/@.*$/, '')).sort(), surface).toEqual(['history-run-p1', 'history-run-p2'])
   }
 })
 
-test('the finished card says Failed when one member failed, and the others finishing well does not change it', async ($, on) => {
+test('each member\'s run is timed on its own in the history: the author two minutes, the critic three, both of the pair', async ($, on) => {
+  const h = office(on)
+  planFs(on, h.files)
+  await $.session.start(START)
+  // Time passing while the members work: a tool call every 10 seconds, so the frames do not take their quiet for an end.
+  const working = async (ms: number, ids: string[]) => {
+    for (let t = 0; t < ms; t += 10_000) {
+      await h.clock.advance(10_000)
+      for (const id of ids) await $.tool.call({ tool: 'Read', file_path: '/repo/src/a.ts', agentId: id } as never)
+    }
+  }
+  await hire($, 'author', brief('author'))
+  await hire($, 'critic', brief('critic'))
+  await working(2 * MIN, ['p1', 'p2'])
+  await stop($, 'p1', 1)
+  await working(MIN, ['p2'])
+  await stop($, 'p2', 2)
+  for (let i = 0; i < 20; i += 1) await h.clock.advance(0) // the history's write is not waited on: let it land
+  const text = [...h.files.entries()].filter(([path]) => path.includes('/.clawd-hq/history')).map(([, t]) => t).join('\n')
+  const runs = collapseRuns(parseHistory(text)).sort((a, b) => a.run.localeCompare(b.run))
+  expect(runs.map(r => [r.run, r.endedAt - r.startedAt, r.group])).toEqual([['p1', 2 * MIN, 'pair'], ['p2', 3 * MIN, 'pair']])
+})
+
+test('a member that failed is a red "failed" line; the other, done, a line of its own', async ($, on) => {
   const { clock } = office(on)
   await hire($, 'author', brief('author'))
   await hire($, 'critic', brief('critic'))
@@ -145,10 +165,10 @@ test('the finished card says Failed when one member failed, and the others finis
   await stop($, 'p1', 1)
   await stop($, 'p2', 2, 'error')
   const log = await mountLog($, 'desktop')
-  const texts = (await log.findAll({ type: 'Text' })).map(t => String(t.text))
-  expect(texts.some(t => /^Failed after /.test(t))).toBe(true)
-  expect(texts.some(t => /^Done/.test(t))).toBe(false)
+  const texts = await log.findAll({ type: 'Text' })
   await log.unmount()
+  expect(texts.filter(t => /^failed · /.test(String(t.text))).map(t => t.props.color)).toEqual(['#ee8a8a'])
+  expect(texts.filter(t => /^\d+[smhd]* ago$|^just now$/.test(String(t.text)))).toHaveLength(1)
 })
 
 test('a paired specialist that is sent back to work brings its card back to the floor', async ($, on) => {

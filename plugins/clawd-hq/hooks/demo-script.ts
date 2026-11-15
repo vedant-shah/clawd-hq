@@ -17,8 +17,8 @@ export type Cast = {
 
 export type TourIo = {
   show: (view: PaneView) => Promise<unknown>
-  /** Settings shows the list of finished work (true) or its configs (false). */
-  showLog: (isOpen: boolean) => Promise<unknown>
+  /** The History tab's Other work fold, the finished work, opens (true) or closes (false). */
+  showDone: (isOpen: boolean) => Promise<unknown>
   setBusy: (isBusy: boolean) => Promise<unknown>
   say: (text: string, ticks?: number) => Promise<unknown>
   /** `n` names a stand-in specialist for the length of the tour. */
@@ -27,8 +27,8 @@ export type TourIo = {
   /** The step tool's report: steps done of the plan, and a few plain words. */
   report: (n: string, done: number, total: number, note: string) => Promise<unknown>
   think: (n: string) => Promise<unknown>
-  /** Ends the stand-in's run well; `words` is what it reported (a council voice's first line, a pair-up member's choices). */
-  finish: (n: string, words?: Pick<Employee, 'report' | 'choices'>) => Promise<unknown>
+  /** Ends the stand-in's run well; `words` is what it reported (a pair-up member's choices). */
+  finish: (n: string, words?: Pick<Employee, 'choices'>) => Promise<unknown>
   /** Every stand-in goes home. */
   clearFloor: () => Promise<unknown>
 }
@@ -104,21 +104,21 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.hire('architect', voice('Architect', 'The long term, and how hard it is to undo'))
     }],
     ['Each voice answers alone. The voices never read each other.', async () => {
-      await io.finish('skeptic', { report: 'Position: ask what the scores really need first.' })
-      await io.finish('pragmatist', { report: 'Position: SQLite ships today and costs nothing to run.' })
-      await io.finish('architect', { report: 'Position: SQLite now; the move to Postgres is easy later.' })
+      await io.finish('skeptic')
+      await io.finish('pragmatist')
+      await io.finish('architect')
       await io.think('critic')
     }],
     ['Clawd sums up with a recommendation, and keeps the lone dissent. You decide.', async () => {
-      await io.finish('critic', { report: 'Dissent: SQLite may not hold up when many people write at once.' })
+      await io.finish('critic')
       await io.say('I recommend SQLite. The Critic dissents: many writers may be a problem. You decide.', 11)
     }],
-    ['Finished work stays tidy: the pair-up and the council get one card each, voice by voice.', async () => {
-      await io.showLog(true)
-      await io.show('settings')
+    ['Finished work goes to the History tab: one line for each run, newest first.', async () => {
+      await io.showDone(true)
+      await io.show('history')
     }],
     ['Questions wait and come in one box, only if they need you. Your answer settles the job at hand only.', async () => {
-      await io.showLog(false)
+      await io.showDone(false)
       await io.show('office')
       await io.clearFloor()
       await io.say('Two questions. I will ask them in one go.')

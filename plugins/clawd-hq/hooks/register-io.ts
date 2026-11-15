@@ -20,6 +20,7 @@ import type { GaugeIo } from './usage'
 import type { CouncilIo } from './council'
 import type { RunIo } from './run-io'
 import { logRun } from './register-history'
+import { HISTORY_FOLD } from './history-view'
 import { specialistOf } from './run-io'
 import { hire, withReport } from './staff-model'
 import { edit, inLine } from './state'
@@ -136,12 +137,14 @@ export function councilIo($: EngineInterface): CouncilIo {
 
 // ---- The demo: a scripted tour with stand-in employees, cleaned up at the end ----
 
-/** Settings shows the list of finished work (true) or its configs (false); the choice is a display flag, shared by every drawing. */
-export function showLog($: EngineInterface, isOpen: boolean) { return setFx($, f => ({ ...f, isLogOpen: isOpen })) }
+/** The History tab's Other work fold, the finished work, opens (true) or closes (false): a display flag, shared by every drawing. */
+export function showDone($: EngineInterface, isOpen: boolean) {
+  return setFx($, f => { const rest = (f.folds ?? []).filter(k => k !== HISTORY_FOLD.other); return { ...f, folds: isOpen ? [...rest, HISTORY_FOLD.other] : rest } })
+}
 
 export function demoIo($: EngineInterface): DemoIo {
   return {
-    show: view => raise(paneIo($), view), showLog: isOpen => showLog($, isOpen),
+    show: view => raise(paneIo($), view), showDone: isOpen => showDone($, isOpen),
     boss: () => getBoss($), fx: () => getFx($), setBoss: fn => setBoss($, fn), tick: () => readTick($), now: () => $.clock.now(),
     put: one => updateStaff($, l => hire(l, one)), // a stand-in joins the books: no hire is counted, nothing is enrolled, no toast
     editStaff: (id, fn) => updateStaff($, l => edit(l, id, fn)),

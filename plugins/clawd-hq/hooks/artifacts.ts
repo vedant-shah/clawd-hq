@@ -7,7 +7,7 @@ import { inLine } from './state'
 
 /** The newest this many artifacts are kept per project. */
 export const ARTIFACT_KEEP = 50
-/** The Office tab draws the newest this many; the rest are counted. */
+/** The History tab draws the newest this many; the rest are counted, and shown on asking. */
 export const ARTIFACT_SHOWN = 6
 /** A title is cut at a word to this many characters. */
 export const TITLE_CHARS = 80
@@ -420,11 +420,9 @@ export function cleanArtifacts(raw: unknown): Artifact[] {
   return kept.slice(0, ARTIFACT_KEEP)
 }
 
-/** The newest few to draw (real links only), and how many older ones there are. */
-export function artifactsShown(list: Artifact[]): { rows: Artifact[]; older: number } {
-  const real = list.filter(a => isArtifactLink(a.url))
-  return { rows: real.slice(0, ARTIFACT_SHOWN), older: Math.max(0, real.length - ARTIFACT_SHOWN) }
-}
+/** The artifacts with a real link, newest first. */
+export const realArtifacts = (list: readonly Artifact[]): Artifact[] => list.filter(a => isArtifactLink(a.url))
+
 
 /** How long ago, in plain steps: under a minute, minutes, hours, then days from two days on. */
 export function since(ms: number): string {

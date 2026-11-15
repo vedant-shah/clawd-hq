@@ -142,9 +142,15 @@ export function showDone($: EngineInterface, isOpen: boolean) {
   return setFx($, f => { const rest = (f.folds ?? []).filter(k => k !== HISTORY_FOLD.other); return { ...f, folds: isOpen ? [...rest, HISTORY_FOLD.other] : rest } })
 }
 
+/** One fold (a key of `Fx.folds`) opens or closes. */
+function setFold($: EngineInterface, key: string, isOpen: boolean) {
+  return setFx($, f => { const rest = (f.folds ?? []).filter(k => k !== key); return { ...f, folds: isOpen ? [...rest, key] : rest } })
+}
+
 export function demoIo($: EngineInterface): DemoIo {
   return {
-    show: view => raise(paneIo($), view), showDone: isOpen => showDone($, isOpen),
+    show: view => raise(paneIo($), view), showDone: isOpen => showDone($, isOpen), fold: (key, isOpen) => setFold($, key, isOpen),
+    setFolds: folds => setFx($, f => ({ ...f, folds })),
     boss: () => getBoss($), fx: () => getFx($), setBoss: fn => setBoss($, fn), tick: () => readTick($), now: () => $.clock.now(),
     put: one => updateStaff($, l => hire(l, one)), // a stand-in joins the books: no hire is counted, nothing is enrolled, no toast
     editStaff: (id, fn) => updateStaff($, l => edit(l, id, fn)),

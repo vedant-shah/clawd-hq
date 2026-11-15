@@ -201,7 +201,8 @@ export type Gauge = {
 export type Fx = {
   /** What the person typed into each tab's filter. */
   finds?: { people?: string }
-  demo?: { step: number; total: number; caption: string }
+  /** The tour in play: its step and caption, when it began, and the stand-in goal it draws (hooks/demo-plan.ts); nothing of it is saved. */
+  demo?: { step: number; total: number; caption: string; at?: number; plan?: PlanState }
   /** The payroll review waiting in the People tab: how many agent types this project has no use for, and why. */
   layoffs?: { count: number; total: number; stacks: string[]; why: string[] }
   /** Helpers the automatic trim (hooks/payroll.ts) just laid off, named on a card on the Office tab until the person dismisses it. */

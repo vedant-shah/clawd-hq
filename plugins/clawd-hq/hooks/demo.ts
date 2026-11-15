@@ -1,7 +1,7 @@
 // Playing the tour (the script is in hooks/demo-script.ts): stand-in employees on the real panel, one step every few seconds, cleaned up at the end.
 // The office's own actions come in as `io`, so `$` and the state stay in the register-*.ts files. Nothing real is spawned, saved or announced.
-import { HISTORY_FOLD } from './history-view'
-import type { Boss, Employee, Fx } from '../types'
+import { demoDoneFold, demoGoalFold, demoGoalKey, demoPlan } from './demo-plan'
+import type { Boss, Employee, Fx, PlanState } from '../types'
 import { sentenceOf } from './activity'
 import { tourSteps } from './demo-script'
 import type { Cast } from './demo-script'
@@ -19,6 +19,10 @@ export type DemoIo = {
   show: (view: PaneView) => Promise<unknown>
   /** The History tab's Other work fold, the finished work, opens (true) or closes (false). */
   showDone: (isOpen: boolean) => Promise<unknown>
+  /** One fold of the plan or of History (a key of `Fx.folds`) opens or closes. */
+  fold: (key: string, isOpen: boolean) => Promise<unknown>
+  /** Every fold as the tour found them, put back. */
+  setFolds: (folds: string[] | undefined) => Promise<unknown>
   boss: () => Promise<Boss>
   fx: () => Promise<Fx>
   setBoss: (fn: (b: Boss) => Boss) => Promise<unknown>
@@ -33,7 +37,7 @@ export type DemoIo = {
   after: (ms: number, fn: () => void) => { cancel: () => void }
 }
 
-/** DECIDED: twenty steps of 4.5 seconds make the tour about 90 seconds. */
+/** DECIDED: twenty-one steps of 4.5 seconds make the tour about 95 seconds. */
 export const STEP_MS = 4500
 let demoTimers: Array<{ cancel: () => void }> = []
 /** Puts the office back as the running tour found it; none while no tour plays. */
@@ -51,11 +55,12 @@ async function say(io: DemoIo, text: string, ticks = 10) {
 }
 
 /** A new stand-in, hired now; a pair-up or council member carries its goal, hired together with the others of its card. */
-async function hire(io: DemoIo, id: string, cast: Cast) {
+async function hire(io: DemoIo, id: string, cast: Cast, at: number) {
   const [now, t] = [await io.now(), await io.tick()]
-  const { type, name, description, model, effort, pair } = cast
+  const { type, name, description, model, effort, pair, step } = cast
+  const onStep = step === undefined ? {} : { stepId: step, planKey: demoGoalKey(at) }
   const group = pair === undefined ? {} : { pair: { goal: pair.goal, at: now, ...(pair.isCouncil ? { isCouncil: true as const } : {}) } }
-  await io.put({ ...freshHire({ id, type, description, name }, now, t), model, effort, ...group })
+  await io.put({ ...freshHire({ id, type, description, name }, now, t), model, effort, ...group, ...onStep })
 }
 
 /** The stand-in's run ends well, with what it reported; Clawd cheers. */
@@ -72,12 +77,17 @@ export async function startDemo(io: DemoIo) {
   await endTour?.() // a tour already playing is cleaned up first, so this one saves the office as it really was
   const [saved, savedFx] = [await io.boss(), await io.fx()]
   const id = (n: string) => `${DEMO}${n}`
+  const at = await io.now()
+  const shown = { total: 0, caption: '', step: 0, plan: undefined as PlanState | undefined }
+  const drawn = () => io.setDemo({ ...shown, at })
   const steps = tourSteps({
     show: io.show,
     showDone: io.showDone,
+    plan: async done => { shown.plan = done === null ? undefined : demoPlan(at, done); await drawn() },
+    fold: (which, isOpen) => io.fold(which === 'done' ? demoDoneFold(at) : demoGoalFold(at), isOpen),
     setBusy: isBusy => io.setBoss(b => ({ ...b, isBusy })),
     say: (text, ticks) => say(io, text, ticks),
-    hire: (n, cast) => hire(io, id(n), cast),
+    hire: (n, cast) => hire(io, id(n), cast, at),
     work: (n, tool, input) => work(io, id(n), tool, input),
     report: (n, done, total, note) => io.editStaff(id(n), one => withProgress(one, { done, total, note })),
     think: n => io.editStaff(id(n), one => ({ ...one, mood: 'thinking' })),
@@ -89,7 +99,8 @@ export async function startDemo(io: DemoIo) {
   steps.forEach(([caption, run], i) => {
     demoTimers.push(io.after(i * STEP_MS, () => {
       void (async () => {
-        await io.setDemo({ step: i + 1, total, caption })
+        Object.assign(shown, { step: i + 1, total, caption })
+        await drawn()
         await run()
       })().catch(() => undefined) // a step that fails is skipped; it must not become an unhandled rejection
     }))
@@ -99,7 +110,7 @@ export async function startDemo(io: DemoIo) {
     await io.dropStandIns()
     await io.setDemo(undefined)
     await io.setBoss(b => ({ ...saved, turns: b.turns }))
-    await io.showDone((savedFx.folds ?? []).includes(HISTORY_FOLD.other))
+    await io.setFolds(savedFx.folds)
     await io.showStatus()
   }
   demoTimers.push(io.after(total * STEP_MS + 1500, () => { void endTour?.() }))

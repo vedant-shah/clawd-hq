@@ -1,6 +1,7 @@
 // The team the People tab shows while the tour plays: five stand-ins with a short line each and a token total, in place of the real books.
 // Nothing here is saved; the panel's data is dressed on its way to the drawing (hooks/register-panes.ts), and the real books are untouched.
 import type { Badge } from '../types'
+import { demoHistory } from './demo-plan'
 import type { PanelData } from './panel-types'
 
 const CAST: ReadonlyArray<readonly [type: string, blurb: string, tokens: number]> = [
@@ -17,6 +18,10 @@ const TOKENS: Record<string, number> = Object.fromEntries(CAST.map(([type, , tok
 
 /** The panel's data while the tour plays: the stand-in team stands in for the real one. Outside the tour, the data as it is. */
 export function onStage(data: PanelData): PanelData {
-  if (data.fx.demo === undefined) return data
-  return { ...data, blurbs: BLURBS, roster: ROSTER, projectTokens: TOKENS, payroll: { ...data.payroll, laidOff: [] } }
+  const { demo } = data.fx
+  if (demo === undefined) return data
+  // The stand-in goal and the stand-in finished goal, in place of the real ones; the real plan and history are neither read nor written.
+  const goal = demo.plan === undefined ? { plan: null } : { plan: demo.plan }
+  const history = demo.at === undefined ? {} : { history: demoHistory(demo.at) }
+  return { ...data, ...goal, ...history, blurbs: BLURBS, roster: ROSTER, projectTokens: TOKENS, payroll: { ...data.payroll, laidOff: [] } }
 }

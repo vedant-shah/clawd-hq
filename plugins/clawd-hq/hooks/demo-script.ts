@@ -13,12 +13,18 @@ export type Cast = {
   model?: string
   effort?: Employee['effort']
   pair?: { goal: string; isCouncil?: true }
+  /** The step of the tour's plan it works on (hooks/demo-plan.ts). */
+  step?: string
 }
 
 export type TourIo = {
   show: (view: PaneView) => Promise<unknown>
   /** The History tab's Other work fold, the finished work, opens (true) or closes (false). */
   showDone: (isOpen: boolean) => Promise<unknown>
+  /** The tour's goal appears with these steps ticked (none: all next); `null` takes it off the tab. */
+  plan: (done: readonly string[] | null) => Promise<unknown>
+  /** The plan's done fold, or the finished goal on the History tab, opens (true) or closes (false). */
+  fold: (which: 'done' | 'goal', isOpen: boolean) => Promise<unknown>
   setBusy: (isBusy: boolean) => Promise<unknown>
   say: (text: string, ticks?: number) => Promise<unknown>
   /** `n` names a stand-in specialist for the length of the tour. */
@@ -40,10 +46,10 @@ const QUESTION = 'Postgres or SQLite for the scores?'
 const voice = (name: string, description: string): Cast =>
   ({ type: 'general-purpose', name, description, model: SONNET, effort: 'medium', pair: { goal: QUESTION, isCouncil: true } })
 
-const BUILDER: Cast = { type: BUILDER_TYPE, name: 'Builder', description: 'Add the export button', model: SONNET, effort: 'medium' }
-const RESEARCHER: Cast = { type: 'clawd-hq:core-researcher', name: 'Researcher', description: 'Find how exports work now', model: 'claude-haiku-4-5', effort: 'low' }
-const DESIGNER: Cast = { type: CONTRACTOR_TYPE, name: 'Designer', description: 'Style the export button', model: SONNET, effort: 'medium' }
-const PAIR_BUILDER: Cast = { ...BUILDER, description: PAIR_GOAL, pair: { goal: PAIR_GOAL } }
+const BUILDER: Cast = { type: BUILDER_TYPE, name: 'Builder', description: 'Add the export button', model: SONNET, effort: 'medium', step: 's2' }
+const RESEARCHER: Cast = { type: 'clawd-hq:core-researcher', name: 'Researcher', description: 'Find how exports work now', model: 'claude-haiku-4-5', effort: 'low', step: 's1' }
+const DESIGNER: Cast = { type: CONTRACTOR_TYPE, name: 'Designer', description: 'Style the export button', model: SONNET, effort: 'medium', step: 's3' }
+const PAIR_BUILDER: Cast = { ...BUILDER, description: PAIR_GOAL, step: undefined, pair: { goal: PAIR_GOAL } }
 const PAIR_REVIEWER: Cast = { type: 'clawd-hq:core-reviewer', name: 'Reviewer', description: PAIR_GOAL, model: SONNET, effort: 'medium', pair: { goal: PAIR_GOAL } }
 
 export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
@@ -60,7 +66,11 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.setBusy(true)
       await io.say('Searching the helpers. Five fit this job.')
     }],
-    ['Each hire gets the smallest model that can do the job, and a knowledge skill when it helps.', async () => {
+    ['A job of three or more pieces gets a plan on the Office tab: one line for each step, all waiting as next.', async () => {
+      await io.plan([])
+      await io.say('Four steps. Let me hire for them.')
+    }],
+    ['Hiring for a step moves it from next to now, with the specialist under it. Each gets the smallest model that fits.', async () => {
       await io.setBusy(false)
       await io.hire('build', BUILDER)
       await io.work('build', 'Skill', { skill: 'ecc:frontend-patterns' })
@@ -71,13 +81,13 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.report('build', 3, 5, 'Writing the test for the empty case')
       await io.report('research', 1, 3, 'Reading how exports work now')
     }],
-    ['Plans change. Clawd passes a new instruction to the working specialist, and nobody stops.', async () => {
+    ['Plans change. Clawd passes a new instruction to the working specialist; it picks it up at its next step, and nobody stops.', async () => {
       await io.say('New note for the Builder: use the round button.')
-      await io.report('build', 1, 5, 'Taking in the new instruction')
-    }],
-    ['The specialist picks it up at its next step. The bar fills again, and the job never restarts.', async () => {
       await io.report('build', 4, 5, 'Writing the round button')
+    }],
+    ['When a specialist finishes well, the office ticks its step.', async () => {
       await io.finish('research')
+      await io.plan(['s1'])
     }],
     ['If only an off-team skill fits, Clawd hires a contractor for one job. It wears a badge.', async () => {
       await io.hire('design', DESIGNER)
@@ -86,6 +96,10 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
     ['The contractor finishes and leaves. Hire the same skill twice, and Clawd offers to make it staff.', async () => {
       await io.finish('design')
       await io.finish('build')
+      await io.plan(['s1', 's2', 's3'])
+    }],
+    ['Done steps fold away to keep the plan short. Open the fold to see them.', async () => {
+      await io.fold('done', true)
     }],
     ['Risky work gets a pair-up: a builder and a reviewer on one card. The reviewer first says the plan back in its own words.', async () => {
       await io.hire('pairbuild', PAIR_BUILDER)
@@ -113,12 +127,16 @@ export function tourSteps(io: TourIo): Array<[string, () => Promise<void>]> {
       await io.finish('critic')
       await io.say('I recommend SQLite. The Critic dissents: many writers may be a problem. You decide.', 11)
     }],
-    ['Finished work goes to the History tab: one line for each run, newest first.', async () => {
+    ['The History tab keeps finished goals, one line each, and the work off the plan. Open a goal to see its steps.', async () => {
+      await io.fold('done', false)
+      await io.fold('goal', true)
       await io.showDone(true)
       await io.show('history')
     }],
     ['Questions wait and come in one box, only if they need you. Your answer settles the job at hand only.', async () => {
       await io.showDone(false)
+      await io.fold('goal', false)
+      await io.plan(null)
       await io.show('office')
       await io.clearFloor()
       await io.say('Two questions. I will ask them in one go.')

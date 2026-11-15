@@ -217,7 +217,7 @@ test('the demo caption stays at the top of every pane, above everything else', a
   await clock.advance(100)
   for (const pane of ALL_PANES) {
     const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...pane })
-    expect(await ui.find({ type: 'Text', text: /🎬 1\/19/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /🎬 1\/21/ })).toBeDefined()
     const rows = elementsOf((await ui.drawn()) as unknown as Tree)
     expect(rows[0]?.props.borderColor).toBe('yellow')
     expect(rows[rows.length - 1]?.props.key).toBe('gauges')
@@ -261,11 +261,11 @@ test('the tour brings History forward, its Other work open, for the finishers, t
   await $.command.run({ command: 'office-demo', args: '' } as never)
   const raised = () => opened.filter(o => o.focus === true).map(o => o.id)
 
-  await clock.advance(14 * 4_500 + 100)
+  await clock.advance(16 * 4_500 + 100)
   await clock.advance(100)
   expect(raised().pop()).toBe('clawd-hq-history')
   const log = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...paneProps('clawd-hq-history', 'History') })
-  expect(await log.find({ type: 'Text', text: /Finished work goes to the History tab: one line for each run, newest first\./ })).toBeDefined()
+  expect(await log.find({ type: 'Text', text: /The History tab keeps finished goals, one line each, and the work off the plan\./ })).toBeDefined()
   expect((await log.findAll({})).some(n => String(n.props.key ?? '').startsWith('history-run-demo-'))).toBe(true)
   expect(await log.find({ key: 'history-other-rows' })).toBeDefined()
   await log.unmount()
@@ -277,7 +277,7 @@ test('the tour brings History forward, its Other work open, for the finishers, t
   expect(await after.find({ key: 'history-other-rows' })).toBeUndefined()
   await after.unmount()
   const people = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...paneProps('clawd-hq-people', 'People') })
-  expect(await people.find({ type: 'Text', text: /^🎬 18\/19 · People lists the team/ })).toBeDefined()
+  expect(await people.find({ type: 'Text', text: /^🎬 20\/21 · People lists the team/ })).toBeDefined()
   await people.unmount()
 
   await clock.advance(4_500)
@@ -287,10 +287,10 @@ test('the tour brings History forward, its Other work open, for the finishers, t
 test('the tour says an answer in the question box settles the job at hand, and no longer says answers are saved as decisions', async ($, on) => {
   const { clock } = host(on, [])
   await $.command.run({ command: 'office-demo', args: '' } as never)
-  await clock.advance(15 * 4_500 + 100)
+  await clock.advance(17 * 4_500 + 100)
   await clock.advance(100)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...paneProps('clawd-hq', 'Office') })
-  const caption = await ui.find({ type: 'Text', text: /^🎬 16\/19 · Questions wait and come in one box/ })
+  const caption = await ui.find({ type: 'Text', text: /^🎬 18\/21 · Questions wait and come in one box/ })
   expect(String(caption?.text)).toContain('Your answer settles the job at hand only.')
   expect(String(caption?.text)).not.toMatch(/saved as decisions/)
   await ui.unmount()
@@ -323,8 +323,8 @@ test('with the host refusing every open and every listing, /office, /office-demo
   await expect($.command.run({ command: 'office', args: '' } as never)).resolves.toMatchObject({ text: expect.stringContaining('Office') })
   await expect($.command.run({ command: 'office-demo', args: '' } as never)).resolves.toMatchObject({ text: expect.stringContaining('tour') })
   await expect($.tool.call({ tool: 'mcp__clawd-hq__demo' } as never)).resolves.toBeDefined()
-  // The tour's own steps raise panes: all nineteen run, and the demo state is cleaned up at the end.
-  await clock.advance(20 * 4_500 + 2_000)
+  // The tour's own steps raise panes: all twenty-one run, and the demo state is cleaned up at the end.
+  await clock.advance(22 * 4_500 + 2_000)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PEOPLE })
   expect(await ui.find({ type: 'Text', text: /🎬/ })).toBeUndefined()
   await ui.unmount()

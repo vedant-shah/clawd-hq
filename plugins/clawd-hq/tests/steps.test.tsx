@@ -34,7 +34,7 @@ test('the step tool is registered with the demo, offer_rule and find_helpers too
   expect(tools).toEqual(['demo', 'offer_rule', 'step', 'find_helpers', 'hire_contractor', 'before_question', 'plan']) // no team_pick: the scout answers in its own words
 })
 
-test('every hire\'s brief carries the line that asks for steps, whatever its type', async ($, on) => {
+test('every hire\'s brief asks for a plain sentence of steps, and no longer orders the step tool, whatever its type', async ($, on) => {
   host(on)
   const prompts: string[] = []
   on('agent.spawn', (_$, e) => (prompts.push((e as { prompt: string }).prompt), { model: 'claude-opus-5-5', agentId: `h${prompts.length}` }))
@@ -44,11 +44,9 @@ test('every hire\'s brief carries the line that asks for steps, whatever its typ
   expect(prompts).toHaveLength(3)
   for (const prompt of prompts) {
     expect(prompt).toMatch(/Do the job/)
-    expect(prompt).toContain(STEP)
-    expect(prompt).toMatch(/before (any )?other work/i)
-    expect(prompt).toMatch(/`total`.*3 to 8/)
-    expect(prompt).toMatch(/`done: 0`/)
-    expect(prompt).toMatch(/after each step/i)
+    expect(prompt).toContain('Step 2 of 4: checking that the tests pass.')
+    expect(prompt).not.toContain(STEP)
+    expect(prompt).not.toMatch(/Progress:|`done: 0`|before (any )?other work|after each step/i)
   }
 })
 

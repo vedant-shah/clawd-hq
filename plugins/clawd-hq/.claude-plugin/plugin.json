@@ -61,7 +61,7 @@
     "skillSearch": {
       "type": "boolean",
       "title": "Search the public skill registry when nothing fits",
-      "description": "On (default): when none of your installed agents and skills fits a job, Clawd's search for helpers also looks the job up on the public skill registry (skills.sh), with up to 6 plain keywords for the job. The plugin asks Claude Code to fetch the search page, and nothing is downloaded or run. The keywords are sent to skills.sh. If a strong match turns up, he tells you its name, source and install count and asks before he installs anything; nothing is installed without your yes. Off: nothing is searched or sent, and he uses the general-purpose agent with a fuller brief.",
+      "description": "On (default): when none of your installed agents and skills fits a job, Clawd's search for helpers also looks the job up on the public skill registry (skills.sh), with up to three short searches of plain words (the job's keywords, and when they find nothing, words from the job description). The plugin asks Claude Code to fetch the search page, and nothing is downloaded or run. The keywords are sent to skills.sh. If a strong match turns up, he tells you its name, source and install count and asks before he installs anything; nothing is installed without your yes. Off: nothing is searched or sent, and he uses the general-purpose agent with a fuller brief.",
       "required": false,
       "default": true
     }

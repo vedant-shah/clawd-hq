@@ -25,7 +25,7 @@ claude plugin marketplace add vedant-shah/clawd-hq
 claude plugin install clawd-hq@clawd-hq
 ```
 
-Start a session. The office opens on its own. Type `/office-demo` for a 90-second tour.
+Start a session. The office opens on its own. Type `/office-demo` for a tour of about a minute and a half.
 
 Needs Claude Code v2.1.287 or later.
 
@@ -121,7 +121,7 @@ Type `/office` to open it. The Office tab looks like this:
 - **Needs you.** What waits on you: "You should know" cards, offers of a rule or of staff, the layoff notice and setup choices.
 - **The plan.** The goal, with "3 of 6 done" beside it and its summary under it. The last finished step stays in view, and earlier ones fold into "N steps done". A line runs beside the steps, and each specialist sits under its step. A failed specialist shows its reason, with **Details**, and then **Retry** and **Ask Clawd**. They fill your prompt box; nothing is sent.
 - **Later.** A fold of put-off work: the plan's Later ideas, then the Left undone items. Each has **Do it now** (fills your prompt box) and **Dismiss**.
-- **Also at work.** Specialists under no step of the plan. With no plan, this is the whole floor: one card per specialist with its own words, model, time, tokens and a progress bar. Pair-up members share one card. The voices of a council share one card, which shows the first line of each report when all have finished.
+- **Also at work.** Specialists under no step of the plan. With no plan, this is the whole floor: one card per specialist with its own words, model, time, tokens and a progress bar. Pair-up members share one card. The voices of a council share one card.
 - **Usage.** Context, session limit and weekly limit. Amber at 70%, red at 90%.
 
 The other tabs:
@@ -130,7 +130,7 @@ The other tabs:
 - **History.** What got done, kept in your project (see Privacy).
   - *In progress:* the goal in hand.
   - *Finished:* each goal that ended, one line. Open one for its summary, totals, steps, retries and failures, and the pages it made. A goal that was set aside has **Resume**, which fills your prompt box with its unfinished steps and never sends.
-  - *Other work:* one line per run that was not part of a goal.
+  - *Other work:* one line per run that was not part of a goal. A finished council leaves one line per voice here.
   - *Artifacts:* the Artifact Desk list.
 - **Settings.** The switches, and Clawd's rules and voice.
 
@@ -200,7 +200,7 @@ Most of it runs on your machine. Model calls use your plan.
 | Left undone check | Haiku | Your request and Clawd's final report |
 | Coffee break | The session's model | One short question on the cached chat |
 | The plan and the history | No model | Nothing is sent. They are files in your project (see "What is stored"). |
-| Nothing installed fits a job | No model. Claude Code fetches one skills.sh search page for the plugin | Up to 6 plain keywords for the job, in the address. The "Search the public skill registry when nothing fits" switch in Settings turns it off. A skill is fetched from its source only if you say yes to installing it. |
+| Nothing installed fits a job | No model. Claude Code fetches up to three skills.sh search pages for the plugin | Up to three searches, each with a few plain words in the address: the keywords for the job, and when they find nothing, words from the job description. The "Search the public skill registry when nothing fits" switch in Settings turns it off. A skill is fetched from its source only if you say yes to installing it. |
 
 Apart from these calls, the plugin opens no network connections and starts no processes. The registry search is its one web request, made through Claude Code, only when nothing installed fits and the switch is on.
 
@@ -209,9 +209,9 @@ Apart from these calls, the plugin opens no network connections and starts no pr
 <details>
 <summary>What is stored, and where</summary>
 
-- **Your Claude Code config folder:** who you laid off, hire counts, the Artifact Desk list, "You should know" notes, and the Left undone list.
+- **Your Claude Code config folder:** who you laid off, hire counts, the Artifact Desk list, "You should know" notes, the Left undone list, the steps of a plan the Planner wrote that is waiting for a goal to end (dropped after seven days), and short lines about plan problems that were passed over (never your words).
 - **Your project's `.clawd-hq/plans/`:** the plan, one file per goal, as plain Markdown. You can commit it. A plan file in the project is read by Clawd, like CLAUDE.md: when a session starts the newest one becomes the goal in hand, and Clawd sees its title, summary, steps and Later items each time he uses the plan. Commit one only if you want your team's Clawd to see it. When a goal ends its file is emptied, and its Later items move to the Left undone list.
-- **Your project's `.clawd-hq/history-<session>.jsonl`:** the audit history behind the History tab. One line per goal start and end, specialist run, tool call and model request. A tool call keeps only its name, timing and whether it worked, never its input or output. A model request keeps only token counts. The only free text is a goal's title, summary and steps, a run's task, and an artifact's title, each cut to one line of 120 characters. A file rolls over at 2 MB and the old files are kept. `.clawd-hq/.gitignore` keeps these files out of git.
+- **Your project's `.clawd-hq/history-<session>.jsonl`:** the audit history behind the History tab. One line per goal start and end, specialist run, tool call and model request. A tool call keeps only its name, timing and whether it worked, never its input or output. A model request keeps only token counts. The only free text is a goal's title, summary and steps, a step's Decided lines, a run's task, and an artifact's title, each cut to one line of 120 characters. Artifact links are kept too. A file rolls over at 2 MB and the old files are kept. When `.clawd-hq/.gitignore` is missing, the plugin writes it with that rule (`history*.jsonl`), which keeps these files out of git.
 - **Your project's CLAUDE.md:** only the rule lines you add with "Add to CLAUDE.md".
 - **Past sessions:** read on this computer. Only helper names and counts are kept.
 - **Your copies of Clawd's rules and voice:** in `~/.clawd-hq/`, made only when you edit them.

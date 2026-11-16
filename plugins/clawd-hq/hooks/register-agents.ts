@@ -10,7 +10,7 @@ import type { BriefingOptions } from './instructions'
 import { keepBrief } from './know-check'
 import { freshHire, withBlurb } from './office-state'
 import { isActive } from './panel-model'
-import { parsePairUp, parsePlanHeader } from './pair-up'
+import { parsePairUp, parsePlanHeader, parsePlanLine } from './pair-up'
 import { PLAN_DRAFT_NOTE, draftRuns } from './plan-draft'
 import { linkStep } from './plan-run'
 import { holdBack } from './payroll'
@@ -81,9 +81,11 @@ export function registerAgents(on: On, brief: BriefingOptions) {
     // A pair-up member's `PAIR-UP: <goal>` line (hooks/pair-up.ts) comes off the same way, right after it.
     const { effort, prompt: unEffort } = parseEffort(e.prompt)
     // The `PLAN: <step id>` or `PLAN-DRAFT: <goal title>` line (hooks/plan-run.ts) comes off the same way, before the pair-up line or after it.
-    const planFirst = parsePlanHeader(unEffort)
+    // With Clawd off a `PLAN-DRAFT:` line is left in the brief as it is: nothing is made of it, so it stays the brief's own words.
+    const readPlanLine = (text: string): { stepId?: string; title?: string; prompt: string } => (brief.isOn ? parsePlanHeader(text) : parsePlanLine(text))
+    const planFirst = readPlanLine(unEffort)
     const { goal, isCouncil, prompt: unPair } = parsePairUp(planFirst.prompt)
-    const planLast = planFirst.stepId === undefined && planFirst.title === undefined ? parsePlanHeader(unPair) : { stepId: undefined, title: undefined, prompt: unPair }
+    const planLast = planFirst.stepId === undefined && planFirst.title === undefined ? readPlanLine(unPair) : { stepId: undefined, title: undefined, prompt: unPair }
     const [prompt, planId] = [planLast.prompt, planFirst.stepId ?? planLast.stepId]
     const draftTitle = planFirst.title ?? planLast.title // a `PLAN-DRAFT:` line: the Planner is asked for a plan the office files
     await setBoss($, withNewWork) // a hire or a resume is new work: the coffee break checkpoint is over
@@ -94,7 +96,7 @@ export function registerAgents(on: On, brief: BriefingOptions) {
     const r = await next({ ...e, prompt: sent })
     if (r.agentId) {
       keepBrief(r.agentId, sent)
-      if (isDraft) draftRuns.set(r.agentId, draftTitle)
+      if (isDraft) draftRuns.set(r.agentId, { title: draftTitle, folder: ses.cwd }) // the draft belongs to the folder the Planner was hired in
       if (effort) efforts.set(r.agentId, effort)
       await newHire(runIo($), r.agentId, e.subagentType, e.description, e.name)
       const pair = goal !== undefined && !e.workflow ? { goal, at: await $.clock.now(), ...(isCouncil ? { isCouncil } : {}) } : undefined // a workflow keeps its script's prompt, so its line was never taken off

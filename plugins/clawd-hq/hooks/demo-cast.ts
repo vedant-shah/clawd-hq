@@ -20,7 +20,7 @@ const TOKENS: Record<string, number> = Object.fromEntries(CAST.map(([type, , tok
 export function onStage(data: PanelData): PanelData {
   const { demo } = data.fx
   if (demo === undefined) return data
-  // The stand-in goal and the stand-in finished goal, in place of the real ones; the real plan and history are neither read nor written.
+  // The stand-in goal and the stand-in finished goal, in place of the real ones; the real plan and history are not drawn while the tour plays, and the tour writes neither.
   const goal = demo.plan === undefined ? { plan: null } : { plan: demo.plan }
   const history = demo.at === undefined ? {} : { history: demoHistory(demo.at) }
   return { ...data, ...goal, ...history, blurbs: BLURBS, roster: ROSTER, projectTokens: TOKENS, payroll: { ...data.payroll, laidOff: [] } }

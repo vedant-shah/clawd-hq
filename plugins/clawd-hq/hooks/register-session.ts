@@ -78,7 +78,7 @@ export function registerSession(on: On, brief: BriefingOptions) {
       ['coffee break', () => forgetCoffee($)],
       ['/office', () => $.command.register({ name: 'office', description: `Open ${BRAND}, the virtual office of this session’s agents` })],
       ['/office-council', () => $.command.register({ name: 'office-council', description: 'Ask a few independent voices about a hard choice: /office-council <question>' })],
-      ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a 90-second tour of ${BRAND}’s features` })],
+      ['/office-demo', () => $.command.register({ name: 'office-demo', description: `Play a tour (about a minute and a half) of ${BRAND}’s features` })],
       ['demo tool', () => $.tool.register(DEMO_SPEC)],
       ['payroll', async () => { const saved = (await $.store.get(`payroll:${ses.cwd}`)) as Payroll | undefined; if (saved) await updatePayroll($, () => ({ ...PAYROLL0, ...saved })) }],
       // This project's pages only: a list left by another folder is replaced, and what the store holds is checked.

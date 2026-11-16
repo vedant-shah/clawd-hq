@@ -22,25 +22,26 @@ export function planFiles($: EngineInterface): PlanIo {
   }
 }
 
-/** The draft this process holds, for one folder: a plain variable (it is not a plan, and nothing draws it), replaced and never changed in place. */
-let held: PlanDraft | null = null
-
 /**
- * The Planner's plan waiting for Clawd, for this project folder: held in memory, and kept in the plugin's store so a reload does not lose it.
- * What the store holds is read for the folder the session is in now, and only when it is a draft.
+ * The Planner's plan waiting for Clawd in a project folder: kept in the plugin's store, and read from it again each time (a write reads it
+ * again too), so a draft another session spent cannot come back from a copy held here. `held` is only what was last seen, for a store that
+ * cannot be read right now.
  */
+let held: ReadonlyMap<string, PlanDraft | null> = new Map()
+
 export function planDraftIo($: EngineInterface): PlanRunIo['draft'] {
-  const get = async (): Promise<PlanDraft | null> => {
-    if (held !== null && held.folder === ses.cwd) return held
-    held = draftFrom(await $.store.get(draftKey(ses.cwd)).catch(() => undefined), ses.cwd)
-    return held
+  const read = async (folder: string): Promise<PlanDraft | null> => {
+    const fresh = await $.store.get(draftKey(folder)).then(raw => ({ draft: draftFrom(raw, folder) }), () => undefined)
+    const draft = fresh === undefined ? held.get(folder) ?? null : fresh.draft
+    held = new Map([...held, [folder, draft]])
+    return draft
   }
   return {
-    get,
-    set: async fn => {
-      const next = fn(await get())
-      held = next
-      await $.store.set(draftKey(ses.cwd), next)
+    get: read,
+    set: async (folder, fn) => {
+      const next = fn(await read(folder))
+      held = new Map([...held, [folder, next]])
+      await $.store.set(draftKey(folder), next)
       return next
     },
   }

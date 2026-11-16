@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
+import { STEP_SPEC } from '../hooks/tool-specs'
 import { PANE, START, SURFACES, host } from './host'
 
 const STEP = 'mcp__clawd-hq__step'
@@ -358,4 +359,14 @@ test('a tool note that begins with a step is cleaned the same way', async ($, on
     expect(texts).toContain('Reading the footer')
     expect(texts).toContain('Step 2 of 5')
   }
+})
+
+test('the step tool says it is optional and that a plain "Step N of M" sentence works as well, and stays registered up front', async ($, on) => {
+  const { toolSpecs } = host(on)
+  await $.session.start(START)
+  expect(toolSpecs.find(t => t.name === 'step')?.isDeferred).toBe(false)
+  expect(STEP_SPEC.description).toContain('optionally report')
+  expect(STEP_SPEC.description).toContain('Using it is optional')
+  expect(STEP_SPEC.description).toContain('"Step 2 of 4: checking that the tests pass."')
+  expect(STEP_SPEC.description).toContain('works just as well')
 })

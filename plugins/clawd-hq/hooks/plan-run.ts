@@ -10,7 +10,7 @@ import type { PlanIo } from './plan-io'
 import type { PlanOp, PlanView } from './plan'
 import { cleanText } from './plan'
 import { looksSecret } from './know'
-import { draftNote, parseSteps } from './plan-draft'
+import { DRAFT_MS, draftNote, parseSteps, sameTitle, startedNote } from './plan-draft'
 import type { PlanDraft } from './plan-draft'
 
 /** How a goal ended, as the history record will want it (Phase 4 writes the `goal_end` record from this). */
@@ -34,8 +34,8 @@ export type PlanRunIo = {
   goalStarted: (start: { slug: string; title: string; summary?: string; steps: number; by: 'clawd' | 'planner' }) => Promise<void>
   /** The `goal_end` record of the history. Called once, after the finish went through (the Later items kept, the file emptied), outside the plan files' write queue; a throw is recorded. */
   goalEnded: (end: GoalEnd) => Promise<void>
-  /** The Planner's plan waiting for Clawd (one at most), kept in memory and in the plugin's store, never as a plan file. `set` changes it in one write and gives back what it now holds. */
-  draft: { get: () => Promise<PlanDraft | null>; set: (fn: (draft: PlanDraft | null) => PlanDraft | null) => Promise<PlanDraft | null> }
+  /** The Planner's plan waiting for Clawd in a project folder (one at most), kept in memory and in the plugin's store, never as a plan file. `set` reads the store again, changes it in one write and gives back what it now holds. */
+  draft: { get: (folder: string) => Promise<PlanDraft | null>; set: (folder: string, fn: (draft: PlanDraft | null) => PlanDraft | null) => Promise<PlanDraft | null> }
   /** When a goal began by its `goal_start` record in the history: for a plan from before the file kept its own `started` line. */
   goalStartedAt: (slug: string) => Promise<number | undefined>
 }
@@ -102,7 +102,7 @@ async function start(io: PlanRunIo, call: { goal: unknown; steps: readonly unkno
   } catch (err) {
     await note(io, `the start of the goal could not be recorded: ${err instanceof Error ? err.message : String(err)}`)
   }
-  await io.draft.set(() => null).catch(() => undefined) // a plan is in hand now: a draft that waited is spent, started or set aside by Clawd's own start
+  await io.draft.set(root, () => null).catch(() => undefined) // a plan is in hand now: a draft that waited is spent, started or set aside by Clawd's own start
   return { result: next === null ? '' : planText(next, await io.staff()) }
 }
 
@@ -157,18 +157,40 @@ export async function planTool(io: PlanRunIo, agentId: string | undefined, input
   return withDraftNote(io, await answerTo(io, input))
 }
 
-/** The answer of a call, with the note of a waiting draft after it: once, on the first answer after the Planner's report. Never throws. */
+/**
+ * The draft of this project folder, or none. One that has waited longer than `DRAFT_DAYS` is dropped here, when it is next looked at: a plan
+ * nobody started for a week is no longer what the person asked for.
+ */
+async function liveDraft(io: PlanRunIo): Promise<PlanDraft | null> {
+  const root = io.root()
+  const draft = await io.draft.get(root)
+  if (draft === null || (await io.now()) - draft.at <= DRAFT_MS) return draft
+  await io.draft.set(root, () => null)
+  return null
+}
+
+/**
+ * The answer of a call, with a note of the Planner's plan after it, once: that it waits (with its steps, to start it), or that the office
+ * started it by itself. On the first answer after the Planner's report. Never throws.
+ */
 async function withDraftNote(io: PlanRunIo, answer: Answer): Promise<Answer> {
   try {
-    const waiting = await io.draft.get()
-    if (waiting === null || waiting.isTold) return answer
-    await io.draft.set(prev => (prev === null ? prev : { ...prev, isTold: true }))
-    const note = draftNote(waiting)
-    return 'result' in answer ? { result: `${answer.result}\n${note}` } : { deny: `${answer.deny}\n${note}` }
+    const draft = await liveDraft(io)
+    if (draft === null || draft.isTold) return answer
+    await io.draft.set(io.root(), prev => (prev === null ? prev : prev.kind === 'started' ? null : { ...prev, isTold: true }))
+    const text = draft.kind === 'started' ? startedNote(draft) : draftNote(draft)
+    return 'result' in answer ? { result: `${answer.result}\n${text}` } : { deny: `${answer.deny}\n${text}` }
   } catch (err) {
     await note(io, `the note of a waiting plan could not be given: ${err instanceof Error ? err.message : String(err)}`)
     return answer
   }
+}
+
+/** A `start` with a goal and no steps, while a waiting draft has that same title: the draft's steps are the call's. */
+async function withDraftSteps(io: PlanRunIo, call: Extract<PlanCall, { kind: 'start' }>): Promise<{ call: Extract<PlanCall, { kind: 'start' }>; by: 'clawd' | 'planner' }> {
+  if (call.steps.length > 0 || typeof call.goal !== 'string') return { call, by: 'clawd' }
+  const draft = await liveDraft(io)
+  return draft?.kind === 'waiting' && sameTitle(draft.title, call.goal) ? { call: { ...call, steps: draft.steps }, by: 'planner' } : { call, by: 'clawd' }
 }
 
 async function answerTo(io: PlanRunIo, input: Record<string, unknown>): Promise<Answer> {
@@ -176,7 +198,7 @@ async function answerTo(io: PlanRunIo, input: Record<string, unknown>): Promise<
   if ('error' in parsed) return deny(parsed.error)
   const call = parsed.call
   try {
-    if (call.kind === 'start') return await start(io, call)
+    if (call.kind === 'start') { const used = await withDraftSteps(io, call); return await start(io, used.call, used.by) }
     // A goal left in the project by an earlier session (or one that Clawd's being off kept from loading) is picked up here.
     if ((await io.get()) === null) await loadPlan(io)
     const state = await io.get()
@@ -268,20 +290,25 @@ export async function clearNewMarks(io: PlanRunIo): Promise<void> {
 
 /**
  * A specialist that carried `PLAN-DRAFT: <goal title>` handed its report back (the real hand-back, never a guessed end). Its `STEP:` lines
- * become the plan, exactly as `start` makes one, when there are two or more and no goal is in hand; otherwise they are kept as a draft, one
- * at most (a newer one replaces the older), and Clawd is told in the answer of his next `plan` call. With Clawd off, nothing is made and nothing
- * is kept. Never throws.
+ * become the plan, exactly as `start` makes one, when there are two or more, no goal is in hand and the session is still in the folder the
+ * Planner was hired in (`folder`); Clawd is then told once that it was started. Otherwise they are kept as a draft for that folder, one at
+ * most, and Clawd is told in the answer of his next `plan` call there. A newer draft replaces the older, and so does a later report of the
+ * same Planner when Clawd resumes it: that report is a newer plan, whatever it replaces. With Clawd off, nothing is made and nothing is
+ * kept. Never throws.
  */
-export async function receiveDraft(io: PlanRunIo, title: string, report: string): Promise<void> {
+export async function receiveDraft(io: PlanRunIo, title: string, report: string, folder: string = io.root()): Promise<void> {
   try {
     if (!io.isOn()) return
     const steps = parseSteps(report)
     const goal = cleanText(title)
     if (steps.length === 0 || goal === '' || looksSecret(goal)) return
-    if (steps.length >= 2 && 'result' in (await start(io, { goal, steps }, 'planner'))) return
-    // A goal is in hand (or the start was refused): the steps wait. `start` cleared a draft only when it made a plan, so the older one is replaced here.
-    const draft: PlanDraft = { folder: io.root(), title: goal, steps, at: await io.now(), isTold: false }
-    await io.draft.set(() => draft)
+    const at = await io.now()
+    if (steps.length >= 2 && folder === io.root() && 'result' in (await start(io, { goal, steps }, 'planner'))) {
+      await io.draft.set(folder, () => ({ folder, title: goal, steps, at, isTold: false, kind: 'started' }))
+      return
+    }
+    // A goal is in hand, another folder is open, or the start was refused: the steps wait for that folder.
+    await io.draft.set(folder, () => ({ folder, title: goal, steps, at, isTold: false, kind: 'waiting' }))
   } catch (err) {
     await note(io, `a plan from the Planner could not be taken: ${err instanceof Error ? err.message : String(err)}`)
   }

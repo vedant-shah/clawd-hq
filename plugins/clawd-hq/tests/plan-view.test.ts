@@ -192,3 +192,16 @@ test('the prompts the buttons fill in name the agent and the reason, and say wha
   expect(retryPrompt('Tester 5', emp())).toBe('Tester 5 failed: it did not say why. Hire it again once that is fixed.')
   expect(laterPrompt('Add an XLSX option.')).toBe('You put this off: Add an XLSX option. Do it now.')
 })
+
+test('a pair-up where only one member carries PLAN: stands under that step whole; members linked to different steps stay as they are', () => {
+  const linked = emp({ id: 'a', stepId: 's4', pair: { goal: 'Ship it', at: 1_000 } })
+  const mate = emp({ id: 'b', stepId: undefined, planKey: undefined, pair: { goal: 'Ship it', at: 1_000 } })
+  const layout = planLayout(state(), [linked, mate], none)
+  expect(layout.outsiders).toEqual([])
+  const [block] = layout.steps
+  expect(block!.step.id).toBe('s4')
+  expect(block!.shown.map(slot => slot.kind)).toEqual(['pair'])
+  expect(block!.atWork).toBe(2)
+  const split = planLayout(state(), [linked, emp({ id: 'c', stepId: 's5', pair: { goal: 'Ship it', at: 1_000 } }), mate], none)
+  expect(split.outsiders.flatMap(slot => (slot.kind === 'one' ? [slot.one.id] : slot.group.members.map(m => m.id)))).toEqual(['b'])
+})

@@ -12,11 +12,12 @@ export const DEMO_SPEC: ToolSpec = {
 
 export const STEP_SPEC: ToolSpec = {
   name: 'step',
-  // In the prompt's own list: a specialist would not otherwise search for it, and its brief names it as one it has.
+  // Registered and not deferred, though a brief no longer orders it: the four shipped agents list it among their tools, so it must be there when they look.
   isDeferred: false,
   description:
-    'For a specialist (a subagent): report how far along your work is, so the person watching sees a progress bar. ' +
-    'Call it first with your plan as `total` (3 to 8 steps) and `done: 0`, then after each step with `done` and a note of a few plain words. ' +
+    'For a specialist (a subagent): optionally report how far along your work is, so the person watching sees a progress bar. ' +
+    'Using it is optional: a plain sentence such as "Step 2 of 4: checking that the tests pass." in your reply works just as well, and gives the same bar. ' +
+    'If you use it, call it first with your plan as `total` (3 to 8 steps) and `done: 0`, then after each step with `done` and a note of a few plain words. ' +
     'A new `total` replaces the old one when the plan changes. Ignored in the main chat.',
   inputSchema: {
     type: 'object',

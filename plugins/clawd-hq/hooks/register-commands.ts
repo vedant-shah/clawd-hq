@@ -38,6 +38,6 @@ export function registerCommands(on: On, brief: BriefingOptions) {
   on('command.run', { command: 'office-demo' }, async $ => {
     await openPanes(paneIo($), false)
     await startDemo(demoIo($))
-    return { text: `The ${BRAND} tour is playing in the side panel (about 90 seconds).` }
+    return { text: `The ${BRAND} tour is playing in the side panel (about a minute and a half).` }
   })
 }

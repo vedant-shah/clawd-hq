@@ -137,15 +137,58 @@ test('a report with fewer than two steps makes no plan', async ($, on) => {
   expect(planFiles(h)).toEqual([])
 })
 
-test('with Clawd off the line still comes off the brief, but no note is added, no plan is made and no draft is kept', { options: { chiefOfStaff: false } }, async ($, on) => {
+test('with Clawd off the PLAN-DRAFT: line stays in the brief untouched: no note, no plan, no draft', { options: { chiefOfStaff: false } }, async ($, on) => {
   const h = office(on)
   await $.session.start(START)
   await hire($, 'PLAN-DRAFT: Export scores\nPlan the export.')
-  expect(h.prompts[0]).not.toContain('PLAN-DRAFT')
-  expect(h.prompts[0]).not.toContain(PLAN_DRAFT_NOTE)
+  expect(h.prompts[0]).toBe(`PLAN-DRAFT: Export scores\nPlan the export.${BRIEF_NOTE}`)
   await end($, 'p1')
   expect(planFiles(h)).toEqual([])
   expect(h.saved.get('planDraft:/repo')).toBeUndefined()
+})
+
+test('a long PLAN-DRAFT: line is cut for the title but its full text stays as the first line of the brief; a short one is gone from it', async ($, on) => {
+  const h = office(on)
+  await $.session.start(START)
+  const long = `Export the scores as a CSV file for every class, ${'with all the columns the teachers asked for, '.repeat(4)}and a header row.`
+  await hire($, `PLAN-DRAFT: ${long}\nPlan the export.`)
+  await hire($, 'PLAN-DRAFT: Export scores. Then also read the docs first.\nPlan the export.')
+  await hire($, 'PLAN-DRAFT: Export scores\nPlan the export.')
+  expect(h.prompts[0]).toBe(`${long}\nPlan the export.${BRIEF_NOTE}${PLAN_DRAFT_NOTE}`)
+  expect(h.prompts[1]).toBe(`Export scores. Then also read the docs first.\nPlan the export.${BRIEF_NOTE}${PLAN_DRAFT_NOTE}`)
+  expect(h.prompts[2]).toBe(`Plan the export.${BRIEF_NOTE}${PLAN_DRAFT_NOTE}`)
+  await end($, 'p1', 'STEP: a\nSTEP: b')
+  expect(planFiles(h)).toHaveLength(1) // the title was cut to a size a plan can hold, and the plan was made
+})
+
+test('PLAN-DRAFT: on an agent that is not the Planner works the same: it is the line that asks, not the type', async ($, on) => {
+  const h = office(on)
+  await $.session.start(START)
+  await hire($, 'PLAN-DRAFT: Export scores\nPlan the export.', { subagentType: 'general-purpose' })
+  expect(h.prompts[0]).toBe(`Plan the export.${BRIEF_NOTE}${PLAN_DRAFT_NOTE}`)
+  await end($, 'p1')
+  expect(planFiles(h)).toEqual([SCORES])
+})
+
+test('a draft another session spent cannot come back: the store is read again, not a copy held here', async ($, on) => {
+  const h = office(on, { [SCORES]: THREE })
+  await $.session.start(START)
+  await hire($, 'PLAN-DRAFT: Add XLSX\nPlan XLSX.')
+  await end($, 'p1', 'STEP: Pick a library\nSTEP: Write it')
+  expect(JSON.stringify(h.saved.get('planDraft:/repo'))).toContain('Add XLSX')
+  h.saved.set('planDraft:/repo', null) // another session started it and spent it
+  expect((await plan($, { op: 'later', text: 'Tidy' })).result).not.toContain('waiting')
+  expect(h.saved.get('planDraft:/repo')).toBeNull()
+})
+
+test('a plan the office started by itself is told to Clawd once on his next plan answer, and the store keeps nothing after', async ($, on) => {
+  const h = office(on)
+  await $.session.start(START)
+  await hire($, 'PLAN-DRAFT: Export scores\nPlan the export.')
+  await end($, 'p1')
+  expect((await plan($, { op: 'later', text: 'Tidy' })).result).toContain("The Planner's plan for Export scores was started: 3 steps.")
+  expect((await plan($, { op: 'later', text: 'Tidy more' })).result).not.toContain('was started')
+  expect(h.saved.get('planDraft:/repo')).toBeNull()
 })
 
 test('a workflow agent keeps its prompt as the script wrote it, and files nothing', async ($, on) => {

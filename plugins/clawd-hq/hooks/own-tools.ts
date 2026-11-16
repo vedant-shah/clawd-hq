@@ -19,7 +19,7 @@ export type OwnToolIo = {
   readonly plan: (agentId: string | undefined, input: Record<string, unknown>) => Promise<{ readonly result: string } | { readonly deny: string }>
 }
 
-const TOUR_TEXT = `The ${BRAND} tour is playing in the side panel for about 90 seconds. If the panel is not visible, the user can type /office.`
+const TOUR_TEXT = `The ${BRAND} tour is playing in the side panel for about a minute and a half. If the panel is not visible, the user can type /office.`
 
 const PAUSE_TEXT = 'Ready.'
 

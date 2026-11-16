@@ -4,7 +4,7 @@ import type { Employee, Fx, PlanState, PlanStep } from '../types'
 import { doneLine, deskWords, isActive, modelLabel, tokensLabel, workLine } from './panel-model'
 import { fit } from './desk'
 import { ago } from './office'
-import { floorSlots } from './pair-up'
+import { floorSlots, pairGroups } from './pair-up'
 import type { Slot } from './pair-up'
 import { blockingFailures, goalKey, statusOf } from './plan-live'
 import type { StepStatus } from './plan-live'
@@ -95,8 +95,22 @@ function outsidersOf(staff: readonly Employee[], key: string, placed: ReadonlySe
   return { outsiders, outsidersAtWork: outsiders.reduce((n, slot) => n + working(slot), 0) }
 }
 
-export function planLayout(state: PlanState, staff: readonly Employee[], folds: ReadonlySet<string>): PlanLayout {
+/**
+ * A pair-up or council where only some members carry a `PLAN:` line (Clawd wrote it on one brief): when its linked members all name one step
+ * of this goal, the others stand under that step too, so the group is not split between the step and "Also at work". Members linked to
+ * different steps are left as they are. Copies, never the books themselves.
+ */
+function withGroupSteps(staff: readonly Employee[], key: string): readonly Employee[] {
+  const homes = new Map(pairGroups([...staff]).flatMap(group => {
+    const steps = new Set(group.members.filter(m => m.planKey === key && m.stepId !== undefined).map(m => m.stepId!))
+    return steps.size === 1 ? group.members.filter(m => m.stepId === undefined).map(m => [m.id, [...steps][0]!] as const) : []
+  }))
+  return staff.map(one => (homes.has(one.id) ? { ...one, stepId: homes.get(one.id), planKey: key } : one))
+}
+
+export function planLayout(state: PlanState, rawStaff: readonly Employee[], folds: ReadonlySet<string>): PlanLayout {
   const key = goalKey(state)
+  const staff = withGroupSteps(rawStaff, key)
   const open = state.steps.filter(step => !step.isDone)
   const runsOn = (step: PlanStep) => staff.filter(one => one.stepId === step.id && one.planKey === key)
   const blockOf = (step: PlanStep): StepBlock => {

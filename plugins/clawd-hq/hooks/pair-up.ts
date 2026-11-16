@@ -45,15 +45,23 @@ export function parsePlanLine(prompt: string): { stepId?: string; prompt: string
 
 const DRAFT_LINE = /^\s*PLAN-DRAFT:[ \t]*(\S[^\r\n]*?)[ \t]*(\r?\n|$)/i
 const DRAFT_CHARS = 120
+/** A line with more words than any goal title, or a sentence break inside it, holds more than a title. */
+const TITLE_WORDS = 12
+const SENTENCE_BREAK = /[.!?;][ \t]+\S/
 
 /**
  * The `PLAN-DRAFT: <goal title>` line Clawd starts a brief with to ask the Planner for a plan, and the brief without it. It sits where
  * `PLAN:` sits (after the effort line, before or after the pair-up line: the caller tries both places). An empty title is no draft.
+ * The title is the line cut to a size a card can hold; when the line was cut, or holds more than a title (many words, or a sentence break),
+ * its full text stays as the first line of the brief, so nothing Clawd wrote there is lost.
  */
 export function parsePlanDraftLine(prompt: string): { title?: string; prompt: string } {
   const m = prompt.match(DRAFT_LINE)
-  const title = m ? fit(m[1] ?? '', DRAFT_CHARS) : ''
-  return !m || title === '' ? { prompt } : { title, prompt: prompt.slice(m[0].length) }
+  const full = m ? (m[1] ?? '') : ''
+  const title = fit(full, DRAFT_CHARS)
+  if (!m || title === '') return { prompt }
+  const isMore = title !== full || full.split(/\s+/).length > TITLE_WORDS || SENTENCE_BREAK.test(full)
+  return { title, prompt: `${isMore ? `${full}${m[2] === '' ? '' : m[2]}` : ''}${prompt.slice(m[0].length)}` }
 }
 
 /** The plan line of a brief: a `PLAN: <step id>` (which step the hire is for) or a `PLAN-DRAFT: <goal title>` (a plan asked of the Planner), whichever starts it. */

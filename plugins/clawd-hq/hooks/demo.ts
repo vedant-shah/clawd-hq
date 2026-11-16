@@ -79,12 +79,21 @@ export async function startDemo(io: DemoIo) {
   const id = (n: string) => `${DEMO}${n}`
   const at = await io.now()
   const shown = { total: 0, caption: '', step: 0, plan: undefined as PlanState | undefined }
+  // The folds the tour itself opened or closed, so the end puts back those and nothing else: one the person opened meanwhile stays open.
+  const [opened, closed] = [new Set<string>(), new Set<string>()]
+  const tracked = async (change: () => Promise<unknown>) => {
+    const before = (await io.fx()).folds ?? []
+    await change()
+    const after = (await io.fx()).folds ?? []
+    after.filter(k => !before.includes(k)).forEach(k => opened.add(k))
+    before.filter(k => !after.includes(k)).forEach(k => closed.add(k))
+  }
   const drawn = () => io.setDemo({ ...shown, at })
   const steps = tourSteps({
     show: io.show,
-    showDone: io.showDone,
+    showDone: isOpen => tracked(() => io.showDone(isOpen)),
     plan: async done => { shown.plan = done === null ? undefined : demoPlan(at, done); await drawn() },
-    fold: (which, isOpen) => io.fold(which === 'done' ? demoDoneFold(at) : demoGoalFold(at), isOpen),
+    fold: (which, isOpen) => tracked(() => io.fold(which === 'done' ? demoDoneFold(at) : demoGoalFold(at), isOpen)),
     setBusy: isBusy => io.setBoss(b => ({ ...b, isBusy })),
     say: (text, ticks) => say(io, text, ticks),
     hire: (n, cast) => hire(io, id(n), cast, at),
@@ -110,7 +119,11 @@ export async function startDemo(io: DemoIo) {
     await io.dropStandIns()
     await io.setDemo(undefined)
     await io.setBoss(b => ({ ...saved, turns: b.turns }))
-    await io.setFolds(savedFx.folds)
+    // Put back only what the tour changed: the folds it opened that were shut before close, the ones it shut that were open before open again.
+    const before = savedFx.folds ?? []
+    const now = (await io.fx()).folds ?? []
+    const kept = now.filter(k => !(opened.has(k) && !before.includes(k)))
+    await io.setFolds([...kept, ...[...closed].filter(k => before.includes(k) && !kept.includes(k))])
     await io.showStatus()
   }
   demoTimers.push(io.after(total * STEP_MS + 1500, () => { void endTour?.() }))

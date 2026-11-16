@@ -10,7 +10,7 @@ export const emp = (over: Partial<Employee> = {}): Employee => ({ id: 'a1', type
 
 export function office(files: Record<string, string> = {}, isOn = true) {
   const d = disk(files)
-  const mine = { state: null as PlanState | null, draft: null as PlanDraft | null, started: [] as Array<{ title: string; steps: number; by: string }>, staff: [] as Employee[], isOn, later: [] as string[][], ended: [] as GoalEnd[], keepFails: false, seamFails: false, at: 1_000, setDelays: [] as number[], getFails: false }
+  const mine = { state: null as PlanState | null, drafts: new Map<string, PlanDraft | null>(), get draft() { return this.drafts.get(ROOT) ?? null }, started: [] as Array<{ title: string; steps: number; by: string }>, staff: [] as Employee[], isOn, later: [] as string[][], ended: [] as GoalEnd[], keepFails: false, seamFails: false, at: 1_000, setDelays: [] as number[], getFails: false }
   const io: PlanRunIo = {
     isOn: () => mine.isOn, root: () => ROOT, files: d.io, now: async () => mine.at,
     get: async () => { if (mine.getFails) throw new Error('the state is shut'); return mine.state },
@@ -18,7 +18,7 @@ export function office(files: Record<string, string> = {}, isOn = true) {
     set: async fn => { for (let i = mine.setDelays.shift() ?? 0; i > 0; i -= 1) await Promise.resolve(); mine.state = fn(mine.state); return mine.state },
     staff: async () => mine.staff,
     keepLater: async texts => { if (mine.keepFails) throw new Error('the list refused'); mine.later.push(texts) },
-    draft: { get: async () => mine.draft, set: async fn => { mine.draft = fn(mine.draft); return mine.draft } },
+    draft: { get: async folder => mine.drafts.get(folder) ?? null, set: async (folder, fn) => { const next = fn(mine.drafts.get(folder) ?? null); mine.drafts.set(folder, next); return next } },
     goalStarted: async start => { mine.started.push({ title: start.title, steps: start.steps, by: start.by }) },
     goalStartedAt: async () => undefined,
     goalEnded: async end => { if (mine.seamFails) throw new Error('the record refused'); mine.ended.push(end) },

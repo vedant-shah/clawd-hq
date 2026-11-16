@@ -75,8 +75,8 @@ export function registerTurns(on: On, brief: BriefingOptions) {
       // The one place a plan step is ticked: a linked run's real hand-back. Its choices go under the step now; a stop signal or the engine's list ticks nothing.
       if (e.reason === 'answer') await settleRun(planRunIo($, brief), e.agentId)
       // A Planner asked for a plan (`PLAN-DRAFT:`) and handed its report back: its STEP lines become the plan, or wait as a draft.
-      const draftTitle = draftRuns.get(e.agentId)
-      if (e.reason === 'answer' && draftTitle !== undefined) await receiveDraft(planRunIo($, brief), draftTitle, e.answer ?? '')
+      const draft = draftRuns.get(e.agentId)
+      if (e.reason === 'answer' && draft !== undefined) await receiveDraft(planRunIo($, brief), draft.title, e.answer ?? '', draft.folder)
       await showStatus($)
     } else {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)

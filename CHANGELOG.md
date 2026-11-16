@@ -2,6 +2,23 @@
 
 All notable changes to Clawd HQ. Newest first.
 
+## 1.2.1 - 2026-11-16
+
+### Added
+
+- **Plan links.** A `PLAN: <id>` line at the top of Clawd's follow-up message moves that specialist onto the step.
+- **Docs.** A new Office illustration, a demo video and an awesome-list badge in the README.
+
+### Changed
+
+- **Skill search looks wider.** When the installed helpers are weak fits for a job, skills.sh is searched in the same lookup. Clawd recommends a good skill and asks before installing. The job's words now go to skills.sh more often. The Settings switch still turns it off.
+- **Task list.** While Clawd is on, Claude Code's own task-list reminders are dropped, and its task-list tools point to the plan. Nothing is blocked.
+
+### Fixed
+
+- **Auto-compact.** On work and Team accounts, where the rules ride with a message, Clawd's rules are sent again right after a compaction. Every automatic compaction also adds a one-line "still Clawd" reminder. Teammate and bare sessions are left alone.
+- **History.** The tab redraws once its first read finishes.
+
 ## 1.2.0 - 2026-11-16
 
 ### Added

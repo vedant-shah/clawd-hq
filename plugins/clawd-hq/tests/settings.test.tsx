@@ -45,7 +45,7 @@ const allTexts = (node: Tree): Tree[] =>
   node.type === 'Text' ? [node] : (node.children ?? []).flatMap(c => (typeof c === 'object' && c !== null ? allTexts(c as Tree) : []))
 
 const WHERE = 'Changes apply right away.'
-const TITLES = ['Clawd runs the chat', 'Quiet chat', 'You should know', 'Left undone check', 'Automatic setup', 'Search the public skill registry when nothing fits']
+const TITLES = ['Clawd runs the chat', 'Quiet chat', 'You should know', 'Left undone check', 'Automatic setup', 'Search the public skill registry when matches are weak']
 const FIELDS = ['chiefOfStaff', 'quietChat', 'youShouldKnow', 'leftUndone', 'autoSetup', 'skillSearch']
 /** The old one-line descriptions: the README has them now, the tab does not. */
 const LINES = [

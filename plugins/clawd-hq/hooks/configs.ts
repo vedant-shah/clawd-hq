@@ -18,7 +18,7 @@ export const TOGGLES: readonly ConfigToggle[] = [
   { field: 'youShouldKnow', title: 'You should know', isOn: o => o.isKnowOn },
   { field: 'leftUndone', title: 'Left undone check', isOn: o => o.isLeftOn },
   { field: 'autoSetup', title: 'Automatic setup', isOn: o => o.isAutoOn },
-  { field: 'skillSearch', title: 'Search the public skill registry when nothing fits', isOn: o => o.isSearchOn },
+  { field: 'skillSearch', title: 'Search the public skill registry when matches are weak', isOn: o => o.isSearchOn },
 ]
 
 /** A press applies at once (hooks/toggle-store.ts). */

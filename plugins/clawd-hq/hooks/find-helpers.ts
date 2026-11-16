@@ -9,7 +9,7 @@ import { hireTypes, installedSkills } from './hire'
 import type { SavedTeam } from './hire'
 import { teamKey } from './onboard-types'
 import type { OnboardIo, PastUse } from './onboard-types'
-import { IF_NONE_FITS_OFF, IF_NONE_FITS_ON, NONE_OF_THESE, NOTHING_FITS, NO_FIT_OFF, registryNote, searchRegistry, shownSkill } from './registry-search'
+import { IF_NONE_FITS_OFF, IF_NONE_FITS_ON, NONE_OF_THESE, NOTHING_FITS, NO_FIT_OFF, WEAK_FITS, registryNote, searchRegistry, shownSkill } from './registry-search'
 import type { RegistryFetch } from './registry-search'
 import { useOf } from './skill-use'
 import { idOf } from './team-rules'
@@ -19,6 +19,8 @@ export const MATCHES = 5
 const JOB_CHARS = 1000
 const MAX_KEYWORDS = 12
 const KEYWORD_CHARS = 40
+/** MARKED CHOICE: the score a match needs to count as a strong fit (a name word is 3, a description word 1): a name hit plus a description word, or four description words. */
+export const STRONG_FIT = 4
 
 export type Status = 'staff' | 'laid off' | 'not on team'
 /**
@@ -84,13 +86,25 @@ function capped(rows: readonly Scored[], shown: readonly Scored[]): readonly Sco
  * job itself and is among the matches; otherwise it ranks by its own fit.
  */
 export function rankHelpers(job: string, list: readonly Listed[], limit = MATCHES, keywords: readonly string[] = []): readonly Listed[] {
+  return rankScored(job, list, limit, keywords).map(r => r.h)
+}
+
+/** The same ranking with each match's score: what `isWeak` reads. */
+function rankScored(job: string, list: readonly Listed[], limit: number, keywords: readonly string[]): readonly Scored[] {
   const words = jobWords([job, ...keywords].join(' '))
   const rows = list.map((h): Scored => {
     const score = scoreOf(words, h)
     return { h, score, rank: score }
   })
-  return sorted(capped(rows, sorted(rows).slice(0, limit))).slice(0, limit).map(r => r.h)
+  return sorted(capped(rows, sorted(rows).slice(0, limit))).slice(0, limit)
 }
+
+/** The shipped four's names: a job they alone match has no helper of its own among the installed. */
+const OWN_FOUR = new Set(CORE_FOUR.map(h => h.type))
+
+/** Weak matches: the best score is under `STRONG_FIT`, or every match is one of Clawd HQ's own four. No match at all is not weak but none (handled apart). */
+const isWeak = (rows: readonly Scored[]): boolean =>
+  rows.length > 0 && (Math.max(...rows.map(r => r.score)) < STRONG_FIT || rows.every(r => OWN_FOUR.has(r.h.id)))
 
 // ---- Everything installed ----
 
@@ -165,18 +179,20 @@ const shown = (h: Listed) => ({ name: h.id, kind: h.kind, ...(h.kind === 'skill'
 /**
  * The answer to a call of `find_helpers`: the top matches for the job as JSON text, or why the call is refused. Only Clawd (no agent id) may search.
  * `search` is the public registry's search (hooks/registry-search.ts), or none while the Settings switch is off. With it, a job nothing installed
- * fits is searched there at once, and a job with matches Clawd finds unfit is searched when he asks again with `registry: true`.
+ * fits, or whose matches are weak (`isWeak`), is searched there at once; a job with strong matches Clawd finds unfit is searched when he asks again with `registry: true`.
  */
 export async function findHelpers(io: FindIo, agentId: string | undefined, input: Record<string, unknown>, search?: RegistryFetch): Promise<{ readonly result: string } | { readonly deny: string }> {
   if (agentId !== undefined) return { deny: FIND_DENY }
   const job = typeof input.job === 'string' ? input.job.trim().slice(0, JOB_CHARS) : ''
   if (job === '') return { deny: 'job must be text: say what the work is in a few words.' }
   const keywords = keywordsOf(input.keywords)
-  const matches = rankHelpers(job, await listHelpers(io), MATCHES, keywords).map(shown)
+  const rows = rankScored(job, await listHelpers(io), MATCHES, keywords)
+  const matches = rows.map(r => shown(r.h))
   const isNone = matches.length === 0
   if (search === undefined) return { result: JSON.stringify(isNone ? { matches, note: NO_FIT_OFF } : { matches, ifNoneFits: IF_NONE_FITS_OFF }) }
-  if (!isNone && input.registry !== true) return { result: JSON.stringify({ matches, ifNoneFits: IF_NONE_FITS_ON }) }
+  const isWeakFit = isWeak(rows)
+  if (!isNone && !isWeakFit && input.registry !== true) return { result: JSON.stringify({ matches, ifNoneFits: IF_NONE_FITS_ON }) }
   const found = await searchRegistry(search, job, keywords)
-  const note = registryNote(isNone ? NOTHING_FITS : NONE_OF_THESE, found)
+  const note = registryNote(isNone ? NOTHING_FITS : isWeakFit && input.registry !== true ? WEAK_FITS : NONE_OF_THESE, found)
   return { result: JSON.stringify({ matches, ...(found !== undefined && found.skills.length > 0 ? { query: found.query, registry: found.skills.map(shownSkill) } : {}), note }) }
 }

@@ -12,6 +12,7 @@ import { freshHire, withBlurb } from './office-state'
 import { isActive } from './panel-model'
 import { parsePairUp, parsePlanHeader, parsePlanLine } from './pair-up'
 import { PLAN_DRAFT_NOTE, draftRuns } from './plan-draft'
+import { movedTo, parseFollowUp, recipientOf } from './plan-follow'
 import { linkStep } from './plan-run'
 import { holdBack } from './payroll'
 import { enrollNow, gaugeIo, payrollIo, runIo, showStatus } from './register-io'
@@ -26,6 +27,7 @@ import { handScoutSpawn, scoutHandoff, spawnTypeOf } from './scout-run'
 import { SCOUT_TYPE } from './scout-spec'
 import { hire, withSaid, withStep } from './staff-model'
 import { edit, inLine } from './state'
+import { TASK_REMINDERS, TASK_WRITE_TOOLS, dropsReminder, isSoftOn, withTaskNote } from './task-tools'
 import { noteRequest } from './usage'
 
 /** A resumed specialist is at work again, on a new run; one the books lost (from before a reload) joins them, not counted as a hire. */
@@ -74,6 +76,18 @@ export function registerAgents(on: On, brief: BriefingOptions) {
     })
   }
 
+  // The host's own task list (hooks/task-tools.ts), soft: nothing is refused. What the session is (`ses.taskKind`) is set
+  // from the first system prompt: `noteSessionKind` (register-state.ts), called by the plugin's one prompt.compose hook (register-rules.ts).
+  for (const tool of TASK_WRITE_TOOLS) {
+    on('tool.describe', { tool }, async ($, e, next) => {
+      const r = await next(e)
+      return isSoftOn(brief.isOn, ses.taskKind) ? withTaskNote(r) : r
+    })
+  }
+  for (const type of TASK_REMINDERS) {
+    on('prompt.attachment', { type }, async ($, e, next) => (dropsReminder(brief.isOn, ses.taskKind, e.agentId) ? { text: null } : next(e)))
+  }
+
   on('agent.spawn', async ($, e, next) => {
     if (spawnTypeOf(e) === SCOUT_TYPE) return handScoutSpawn(scoutHandoff, next.origin.plugin === 'clawd-hq', () => next(e)) as never // the setup scout: no brief notes, no desk
     // A resumed run keeps its first brief (the engine takes no change to it) and its place on the books: no hire is counted again.
@@ -104,6 +118,25 @@ export function registerAgents(on: On, brief: BriefingOptions) {
       const planKey = planId !== undefined && !e.workflow ? await linkStep(planRunIo($, brief), planId) : undefined
       await updateStaff($, l => edit(l, r.agentId!, one => ({ ...one, ...(effort ? { effort } : {}), ...(pair ? { pair } : {}), ...(planKey !== undefined ? { stepId: planId, planKey } : {}), model: one.model || r.model })))
       await showStatus($)
+    }
+    return r
+  })
+
+  // Clawd's follow-up to a specialist on the books (SendMessage, which resumes it) may start with `PLAN: <step id>` (hooks/plan-follow.ts):
+  // the line comes off the message here, where the host takes a rewrite (it takes none of a resumed run's prompt), and once the message
+  // is delivered the specialist is linked to that step. An id the plan does not have, or no goal in hand, leaves its link as it was.
+  // A books that cannot be read sends the message as it is; a link that cannot be kept is a debug record, never a failed send.
+  on('session.send', async ($, e, next) => {
+    const follow = e.agentId === undefined ? parseFollowUp(e.text) : { text: e.text }
+    const one = follow.stepId === undefined ? undefined : recipientOf(await readStaff($).catch(() => []), e.to)
+    const stepId = follow.stepId
+    if (one === undefined || stepId === undefined) return next(e)
+    const r = await next({ ...e, text: follow.text })
+    const io = planRunIo($, brief)
+    const planKey = r.isDelivered ? await linkStep(io, stepId) : undefined
+    if (planKey !== undefined) {
+      await updateStaff($, l => edit(l, one.id, run => movedTo(run, stepId, planKey)))
+        .catch(err => io.files.debug(`plan: a follow-up could not be linked to ${stepId}: ${err instanceof Error ? err.message : String(err)}`).catch(() => undefined))
     }
     return r
   })

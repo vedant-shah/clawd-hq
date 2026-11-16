@@ -281,7 +281,11 @@ export function makeTabCache() {
   type Shown = { root: string; records: readonly HistoryRecord[]; held?: readonly HistoryRecord[]; reading?: Promise<void> }
   let shown: Shown | undefined
 
-  const get = async (root: string, read: () => Promise<HistoryRecord[]>): Promise<readonly HistoryRecord[]> => {
+  /**
+   * `onRead` is called once, when the first read has landed: the draw that waited on it began before it, so what changed meanwhile (a step
+   * ticked, a record held) is drawn only by one more draw.
+   */
+  const get = async (root: string, read: () => Promise<HistoryRecord[]>, onRead?: () => void): Promise<readonly HistoryRecord[]> => {
     if (shown?.root === root) {
       await shown.reading
       return shown.records
@@ -291,6 +295,7 @@ export function makeTabCache() {
       if (shown?.root !== root) return
       const lines = new Set(got.map(lineOf))
       shown = { root, records: [...got, ...(shown.held ?? []).filter(r => !lines.has(lineOf(r)))] }
+      onRead?.()
     })()
     shown = { root, records: [], held: [], reading }
     await reading

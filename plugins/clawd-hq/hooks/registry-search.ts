@@ -122,6 +122,8 @@ export function registryNote(lead: string, found: Found | undefined): string {
 }
 
 export const NOTHING_FITS = `Nothing installed fits this job. ${SO_SAY}`
+/** With only weak matches: the search is made without being asked, and a strong installed fit still wins. */
+export const WEAK_FITS = 'The installed matches are weak fits: hire one only if it truly fits the job.'
 export const NONE_OF_THESE = 'You judged that none of the matches fits.'
 /** With matches in hand and the search on: if none fits, ask again with `registry` set, and nothing is searched until then. */
 export const IF_NONE_FITS_ON =

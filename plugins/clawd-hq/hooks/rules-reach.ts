@@ -34,7 +34,10 @@ export const withCompose = (r: Reach, isDelivered: boolean): Reach => ({ ...r, i
 export const withSent = (r: Reach): Reach => ({ ...r, isSent: true })
 /** A main chat request: one carrying fewer messages than the last means the copy that rode is gone. */
 export const withRequest = (r: Reach, messages: number): Reach => (messages < r.messages ? { ...r, isSent: false, messages } : { ...r, messages })
-/** /clear or a resume: another conversation. What was seen of the system prompt hook stays, as it is the machine's. */
+/**
+ * /clear, a resume, or a compaction of the main chat: the copy that rode is gone. What was seen of the system prompt hook stays,
+ * as it is the machine's. The count starts over, so the shorter chat's next request is not taken for another shrink.
+ */
 export const withNewConversation = (r: Reach): Reach => ({ ...r, isSent: false, messages: 0 })
 
 /**
@@ -54,3 +57,23 @@ export function judged(r: Reach, wasBypassed: boolean | undefined): { isLost: bo
 /** The text that rides with a prompt: what it is and why it is there, the rules, then the profile from setup. */
 export const fallbackText = (rules: string, profile?: string): string =>
   [FRAME, rules, ...(profile === undefined ? [] : [profile])].join('\n\n')
+
+/**
+ * One line after Claude Code compacts the chat by itself. Its summary ends by telling the model to carry on with no questions,
+ * which can outweigh the system prompt on the first reply after it, so this says the rules still stand.
+ */
+export const COMPACT_REMINDER = 'Clawd HQ: the chat was just compacted. You are still Clawd, the chief of staff, and your standing instructions still apply to the work you resume.'
+
+/** A message Clawd HQ adds to the compacted chat: built from its text, with no handle, as `session.compact` takes one. */
+export type AddedRow = { role: 'user'; text: string; toolUses: never[] }
+const added = (text: string): AddedRow => ({ role: 'user', text, toolUses: [] })
+
+/**
+ * The compacted chat with what Clawd HQ adds, right after the summary (the first message) and ahead of the messages kept
+ * verbatim: the rules when they ride with messages (`copy`), then the reminder after an automatic compaction. Nothing to add: the same list.
+ */
+export function afterCompaction<T>(rows: readonly T[], add: { copy?: string; isAuto: boolean }): readonly (T | AddedRow)[] {
+  const extra = [...(add.copy === undefined ? [] : [added(add.copy)]), ...(add.isAuto ? [added(COMPACT_REMINDER)] : [])]
+  if (extra.length === 0) return rows
+  return [...rows.slice(0, 1), ...extra, ...rows.slice(1)]
+}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { REACH0, fallbackText, isFallbackDue, judged, statusOf, withCompose, withNewConversation, withRequest, withSent } from '../hooks/rules-reach'
+import { COMPACT_REMINDER, REACH0, afterCompaction, fallbackText, isFallbackDue, judged, statusOf, withCompose, withNewConversation, withRequest, withSent } from '../hooks/rules-reach'
 
 describe('when the rules ride with a prompt', () => {
   test('not seen, not sent, and not known to run here: they ride', () => {
@@ -65,5 +65,28 @@ describe('the text that rides', () => {
   })
   test('the profile from setup follows the rules', () => {
     expect(fallbackText('# Rules', 'Their role: Web developer').endsWith('# Rules\n\nTheir role: Web developer')).toBe(true)
+  })
+})
+
+describe('after a compaction', () => {
+  const summary = { role: 'user' as const, text: 'Summary.', toolUses: [] }
+  const kept = { role: 'assistant' as const, text: 'Kept.', toolUses: [] }
+  test('the copy, then the reminder, sit right after the summary, ahead of the kept messages', () => {
+    const rows = afterCompaction([summary, kept], { copy: 'RULES', isAuto: true })
+    expect(rows.map(r => r.text)).toEqual(['Summary.', 'RULES', COMPACT_REMINDER, 'Kept.'])
+    expect(rows[1]?.role).toBe('user')
+    expect(rows[2]?.role).toBe('user')
+  })
+  test('nothing to add leaves the very same list', () => {
+    const rows = [summary, kept]
+    expect(afterCompaction(rows, { isAuto: false })).toBe(rows)
+  })
+  test('the reminder is one line', () => {
+    expect(COMPACT_REMINDER.includes('\n')).toBe(false)
+  })
+  test('nothing is changed in place', () => {
+    const rows = [summary, kept]
+    afterCompaction(rows, { copy: 'RULES', isAuto: true })
+    expect(rows).toEqual([summary, kept])
   })
 })

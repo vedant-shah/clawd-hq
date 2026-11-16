@@ -15,6 +15,8 @@ import { agentListCache } from './quiet-agents'
 import { quietRecorder } from './quiet-debug'
 import { REACH0 } from './rules-reach'
 import { BOSS0, BRIEF0, FX0, GAUGE0, PAYROLL0 } from './state'
+import { kindAfter } from './task-tools'
+import type { SessionKind } from './task-tools'
 
 const staff = atom({ plugin: 'clawd-hq', key: 'staff' } as const, [] as Employee[])
 const boss = atom({ plugin: 'clawd-hq', key: 'boss' } as const, BOSS0)
@@ -83,6 +85,7 @@ export async function setFx($: EngineInterface, fn: (f: Fx) => Fx) { await updat
  * - isEditTurn: the main chat's turn began with an edit request from the Settings tab, so the plugin's own instruction files are off limits until it ends.
  * - isArtifactsWarned: set once a write of the artifact list failed this session, so the person is told once.
  * - artifactPrefix: the tool-name prefix of the claude-artifacts connector as a recorded publish showed it; none until one has.
+ * - taskKind: whether this session is a chief of staff's or a teammate's or bare one, from its first system prompt (hooks/task-tools.ts); kept for the module's life.
  * - quietLog, agentList: the quiet chat's record of its decisions (`debug:quiet`, hooks/quiet-debug.ts) and its short-lived read of the agent list; both start over with each conversation.
  */
 export const ses = {
@@ -93,10 +96,19 @@ export const ses = {
   isEditTurn: false,
   isArtifactsWarned: false,
   artifactPrefix: undefined as string | undefined,
+  taskKind: 'unknown' as SessionKind,
   quietLog: quietRecorder(),
   agentList: agentListCache(),
 }
 export const forgetQuiet = () => { ses.quietLog.reset(); ses.agentList = agentListCache() }
+
+/** A system prompt rendered: the first says whether this session is a chief of staff's (hooks/task-tools.ts). A teammate's or bare one has the task tools' text asked again, so it keeps the host's own. */
+export function noteSessionKind($: EngineInterface, traits: readonly string[]) {
+  const kind = kindAfter(ses.taskKind, traits)
+  if (kind === ses.taskKind) return
+  ses.taskKind = kind
+  if (kind === 'other') $.ui.invalidate('tool.describe')
+}
 
 // Each agent's effort, set the moment it is hired so its first request already carries it; staff keeps it across reloads.
 export const efforts = new Map<string, Effort>()

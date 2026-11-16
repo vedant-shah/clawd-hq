@@ -54,7 +54,8 @@ function historyOf($: EngineInterface): History {
 
 /** The project's history records for the History tab, read once (the newest files, up to a cap) and then kept up to date in memory. */
 export function historyRecords($: EngineInterface): Promise<readonly HistoryRecord[]> {
-  return shown.get(ses.cwd, () => historyOf($).readRecent(SHOWN_BYTES))
+  // Once the first read lands, the tab is drawn again at once: the draw that waited on it holds the plan as it stood before the read.
+  return shown.get(ses.cwd, () => historyOf($).readRecent(SHOWN_BYTES), () => void $.ui.invalidate('ui.render'))
 }
 
 /** A line for the history's debug record. */

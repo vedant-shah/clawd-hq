@@ -159,3 +159,99 @@ test('with Clawd not running the chat, nothing rides with messages and no warnin
   await request($, 3, false)
   expect(await lostLine($)).toBeUndefined()
 })
+
+// A compaction of the main chat. The engine compacts by itself (`auto`) inside a turn, after the person's message was
+// sent, so the copy that rode earlier is summarized away before the next request. The test host answers with one summary.
+type Row = { role: string; text: string }
+const compacted = async ($: Engine, trigger: string, over: Record<string, unknown> = {}) =>
+  ((await $.session.compact({ trigger, messages: [{ role: 'user', text: 'Carry on', toolUses: [] }], ...over } as never)) as { messages?: Row[] }).messages ?? []
+const SUMMARY = 'A summary of the chat so far.'
+const isReminder = (row?: Row) => row?.role === 'user' && /still Clawd/.test(row.text)
+
+test('an automatic compaction inside a turn: the first request after it still carries the rules, right after the summary', BYPASSED, async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  await say($)
+  await request($, 40, false)
+  expect(carriesRules(await say($, 'Carry on'))).toBe(false) // sent before the engine compacts: one copy has ridden already
+  const rows = await compacted($, 'auto')
+  expect(rows[0]?.text).toBe(SUMMARY)
+  expect(rows[1]?.role).toBe('user')
+  expect(carriesRules([rows[1]?.text ?? ''])).toBe(true)
+  await request($, 3, false)
+  expect(await lostLine($)).toBeUndefined()
+  expect(carriesRules(await say($, 'And the tests'))).toBe(false) // marked sent: no second copy
+})
+
+test('where the system prompt hook runs, an automatic compaction leaves the summary as it is and adds only the reminder', async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  await say($)
+  await request($, 40)
+  const rows = await compacted($, 'auto')
+  expect(rows.length).toBe(2)
+  expect(rows[0]?.text).toBe(SUMMARY)
+  expect(isReminder(rows[1])).toBe(true)
+  expect(carriesRules(rows.map(r => r.text))).toBe(false)
+})
+
+test('the reminder is one line, and only after an automatic compaction of the main chat', async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  await request($, 40)
+  const [auto, manual, ahead, specialist] = [await compacted($, 'auto'), await compacted($, 'manual'), await compacted($, 'precompute'), await compacted($, 'auto', { agentId: 'a1' })]
+  expect(auto[1]?.text.includes('\n')).toBe(false)
+  for (const rows of [manual, ahead, specialist]) expect(rows.map(r => r.text)).toEqual([SUMMARY])
+})
+
+test('a /compact the person types also brings the rules back on that road, without the reminder', BYPASSED, async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  await say($)
+  await request($, 40, false)
+  const rows = await compacted($, 'manual')
+  expect(carriesRules([rows[1]?.text ?? ''])).toBe(true)
+  expect(rows.some(isReminder)).toBe(false)
+})
+
+test('a compaction that is vetoed changes nothing: the copy that rode earlier still stands', BYPASSED, async ($, on) => {
+  const { compact } = office(on)
+  await $.session.start(START)
+  await say($)
+  await request($, 40, false)
+  compact.skip = 'off'
+  const r = (await $.session.compact({ trigger: 'auto', messages: [] } as never)) as { skip?: string; messages?: unknown }
+  expect(r).toEqual({ skip: 'off' })
+  expect(carriesRules(await say($, 'Carry on'))).toBe(false)
+})
+
+test('with Clawd not running the chat, a compaction is left as it is', { ...BYPASSED as object, options: { chiefOfStaff: false } } as never, async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  await request($, 40, false)
+  expect((await compacted($, 'auto')).map(r => r.text)).toEqual([SUMMARY])
+})
+
+// What the session is comes from its first system prompt: a teammate's or a bare one is not the chief of staff's.
+const composeAs = ($: Engine, traits: string[]) =>
+  $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits } as never)
+
+for (const trait of ['teammate', 'bare']) {
+  test(`a ${trait} session's automatic compaction gets neither the rules nor the reminder`, async ($, on) => {
+    office(on)
+    await $.session.start(START)
+    await composeAs($, [trait])
+    await request($, 40, false)
+    expect((await compacted($, 'auto')).map(r => r.text)).toEqual([SUMMARY])
+    expect((await compacted($, 'manual')).map(r => r.text)).toEqual([SUMMARY])
+  })
+}
+
+test('a compaction before any system prompt has reached Clawd HQ is taken for the chief of staff\'s: the backup road never tells the kind', BYPASSED, async ($, on) => {
+  office(on)
+  await $.session.start(START)
+  await composeAs($, ['teammate']) // routed past Clawd HQ, as every system prompt is on this road: the kind stays unknown
+  const rows = await compacted($, 'auto')
+  expect(carriesRules([rows[1]?.text ?? ''])).toBe(true)
+  expect(isReminder(rows[2])).toBe(true)
+})

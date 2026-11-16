@@ -286,7 +286,7 @@ test('a search that finds nothing says so in one line and sends Clawd to the gen
   expect(note).toContain('The registry search found nothing (tried: changelog; knit sweater): say so in one line, and use the general-purpose agent with a fuller brief.')
 })
 
-test('with matches in hand nothing is fetched; none fitting is asked for again with `registry`, and then it is', async ($, on) => {
+test('with a strong installed match nothing is fetched; none fitting is asked for again with `registry`, and then it is', async ($, on) => {
   const urls = await web(on)
   await $.session.start(START)
   await offerAgents($)
@@ -301,6 +301,22 @@ test('with matches in hand nothing is fetched; none fitting is asked for again w
   expect(again.matches.length).toBeGreaterThan(0)
   expect(again.registry?.map(r => r.skillId)).toEqual(['update-skills-from-changelog', 'changelog-writer'])
   expect(again.note).toContain('You judged that none of the matches fits.')
+})
+
+test('weak installed matches (only Clawd HQ\'s own four, a research job) are searched on skills.sh on the first call, with one note', async ($, on) => {
+  const urls = await web(on)
+  await $.session.start(START)
+  await offerAgents($)
+  await $.agent.offer({ agent: 'clawd-hq:core-researcher', description: "Clawd HQ's Researcher. Use to find things out before deciding or building: what a library or tool does, or what the web says about a question." } as never)
+  const a = await answerOf($, { job: 'research AWS AgentCore from Confluence pages and AWS docs', keywords: ['aws', 'agentcore', 'confluence'] })
+  expect(a.matches.length).toBeGreaterThan(0)
+  expect(urls.length).toBeGreaterThan(0)
+  expect(urls[0]).toContain('https://skills.sh/api/search?q=aws%20agentcore')
+  expect(a.registry?.length).toBeGreaterThan(0)
+  expect(a.ifNoneFits).toBeUndefined()
+  expect(a.note).toContain('weak fits')
+  expect(a.note).toContain('ask whether to install it')
+  expect(a.note).toContain('Never install anything without the person\'s yes.')
 })
 
 test('with the switch off in the settings, nothing is fetched and no search is mentioned: the plain path to the general-purpose agent', { options: { skillSearch: false } }, async ($, on) => {

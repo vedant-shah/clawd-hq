@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import { STEP_MS } from '../hooks/demo'
 import { parseHistory } from '../hooks/history'
 import type { HistoryRecord } from '../hooks/history'
-import { START, host } from './host'
+import { HISTORY, START, host } from './host'
 import { planFs } from './plan-disk'
 import { antKey } from './fake-secrets'
 
@@ -334,4 +334,51 @@ test('a history that cannot be written keeps its notes under its own debug key, 
   await endSession($)
   expect(JSON.stringify(h.saved.get('debug:history'))).toMatch(/records wait/)
   expect(JSON.stringify(h.saved.get('debug:plan') ?? '')).not.toMatch(/history/)
+})
+
+// ---- The History tab's first read ----
+
+test('the History tab asks to be drawn again once its first read of the files lands, so a step ticked during the read is not left out', async ($, on) => {
+  let release = () => undefined as void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  /** Only the first read of an earlier session's file once armed (the History tab's) is held: the history's own later reads go through. */
+  const held = { isArmed: false, isHit: false }
+  const OLD = `${DIR}/history-old.jsonl`
+  on('fs.read', { path: OLD }, async (_$, e, next) => {
+    if (held.isArmed && !held.isHit) {
+      held.isHit = true
+      await gate
+    }
+    return next(e)
+  })
+  const redraws = { isCounting: false, count: 0 }
+  on('ui.invalidate', { event: 'ui.render' }, (_$, e, next) => {
+    if (redraws.isCounting) redraws.count += 1
+    return next(e)
+  })
+  const h = office(on)
+  h.files.set(OLD, `${JSON.stringify({ v: 1, at: 1, kind: 'note', session: 'old', text: 'earlier' })}\n`)
+  await $.session.start(START)
+  await start($)
+  await $.tool.call({ tool: PLAN, op: 'done', id: 's1' } as never)
+  await hire($, 'PLAN: s2\nBuild it.')
+  held.isArmed = true
+  const drawing = $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...HISTORY })
+  for (let i = 0; i < 300 && !held.isHit; i += 1) await h.clock.advance(0)
+  expect(held.isHit).toBe(true)
+  // The last step is ticked while the tab's read is held, and what that writes is settled before the read lands.
+  await handBack($, 'p1')
+  for (let i = 0; i < 50; i += 1) await h.clock.advance(0)
+  redraws.isCounting = true
+  release()
+  const ui = await drawing
+  for (let i = 0; i < 50; i += 1) await h.clock.advance(0)
+  await ui.unmount()
+  // The draw that waited on the read began with the plan as it stood then: one more draw is asked for at once, not at the next frame.
+  expect(redraws.count).toBeGreaterThan(0)
+  // That draw shows the step ticked during the read.
+  const again = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...HISTORY })
+  expect((await again.findAll({ type: 'Text' })).map(t => String(t.text)).join('\n')).toContain('2 of 2 done')
+  await again.unmount()
+  await endSession($)
 })

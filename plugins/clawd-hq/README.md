@@ -26,9 +26,9 @@ Most of it runs on your machine. Model calls go through Claude Code's own model 
 | Left undone check | Haiku | Your request and Clawd's final report |
 | Coffee break | The session's model | One short question on the cached chat |
 | The plan and the history | No model | Nothing is sent. They are files in your project (see "What it writes"). |
-| Nothing installed fits a job | No model. Claude Code fetches up to three skills.sh search pages for the plugin | Up to three searches, each with a few plain words in the address: the keywords for the job, and when they find nothing, words from the job description. The "Search the public skill registry when nothing fits" switch in Settings turns it off. A skill is fetched from its source only if you say yes to installing it. |
+| Installed matches for a job are weak or missing | No model. Claude Code fetches up to three skills.sh search pages for the plugin | Up to three searches, each with a few plain words in the address: the keywords for the job, and when they find nothing, words from the job description. The "Search the public skill registry when matches are weak" switch in Settings turns it off. A skill is fetched from its source only if you say yes to installing it. |
 
-Apart from the registry search above, it fetches nothing from the network and starts no processes. That search is made through Claude Code, only when nothing installed fits and its switch is on.
+Apart from the registry search above, it fetches nothing from the network and starts no processes. That search is made through Claude Code, only when the installed matches are weak or missing and its switch is on. The job's keywords therefore go to skills.sh more often than when it ran only if nothing matched.
 
 What it starts and calls by itself:
 

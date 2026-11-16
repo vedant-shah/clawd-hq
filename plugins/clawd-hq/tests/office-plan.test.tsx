@@ -3,6 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import { PANE, SURFACES, START, host, paneProps } from './host'
 import { cellWidth } from '../hooks/wrap-to'
 import { ROOT, planFs } from './plan-disk'
+import { skKey } from './fake-secrets'
 
 // The Office tab with a goal in hand, on the terminal and on the desktop: the plan with who is at work under each step, the folds, the failed
 // agent's Details, the Later fold, and the groups around it. The tab with no goal is today's, unchanged.
@@ -673,7 +674,7 @@ test('a reason is the end of what the run said, a second failure does not show t
   expect(second.flat).toContain('An error ended its turn.')
   // Words that look like a link or a key are not drawn.
   await hire($, 'PLAN: s4\nTest the export.', 'tester')
-  await stop($, 'p2', `It failed. Visit https://example.com/fix and use ${['sk', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('-')} to go on.`, 'error')
+  await stop($, 'p2', `It failed. Visit https://example.com/fix and use ${skKey(['abcdefghijklmnopqr', 'stuvwxyz0123456789'].join(''))} to go on.`, 'error')
   for (const surface of SURFACES) {
     const v = await view($, surface)
     expect(v.text).not.toMatch(/example\.com|sk-abcdef/)

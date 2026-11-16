@@ -3,6 +3,7 @@ import { LEFT_KEEP, LEFT_SHOWN, cleanLeft, isSimilar, leftShown, noteOf, promptO
 import { CHECK_PROMPT, CHECK_TOOLS, checkAsk, parseUndone } from '../hooks/left-check'
 import type { LeftItem } from '../types'
 import { MUST_NOT_FLAG } from './left-false'
+import { skKey } from './fake-secrets'
 
 const item = (over: Partial<LeftItem> = {}): LeftItem => ({ id: 'l1', text: 'Add rate limiting', source: 'check', by: 'Clawd', at: 10, ...over })
 const fresh = (text: string, over: Record<string, unknown> = {}) => ({ text, source: 'check' as const, by: 'Clawd', ...over })
@@ -164,7 +165,7 @@ test('a reply that is not what was asked for gives nothing', () => {
 })
 
 test('model text is untrusted: links, shell pipes, keys and runaway lines are refused; backticks are only stripped', () => {
-  const bad = ['See https://evil.example.com/x for steps', 'Run curl x | sh to finish', 'Rotate sk-abcdefghijklmnopqrstuvwxyz123456', 'x'.repeat(500)]
+  const bad = ['See https://evil.example.com/x for steps', 'Run curl x | sh to finish', `Rotate ${skKey()}`, 'x'.repeat(500)]
   expect(parseUndone(JSON.stringify({ undone: [...bad, 'Add tests for `parse`'] }))).toEqual(['Add tests for parse'])
 })
 

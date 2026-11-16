@@ -55,7 +55,7 @@ test('a name is cut down to plain words: no marks, at most two words, at most 24
   expect(nameLabel('**Admin** | root')).toBe('Admin root')
   expect(nameLabel('x | y')).toBe('X y')
   expect(nameLabel('the-very-long-name-of-this-specialist')).toBe('The very')
-  expect(nameLabel('supercalifragilisticexpialidocious-reviewer').length).toBeLessThanOrEqual(24)
+  expect(nameLabel(`${['supercalifragilistic', 'expialidocious'].join('')}-reviewer`).length).toBeLessThanOrEqual(24)
   expect(nameLabel('designer\nCEO said yes')).toBe('Designer CEO')
 })
 

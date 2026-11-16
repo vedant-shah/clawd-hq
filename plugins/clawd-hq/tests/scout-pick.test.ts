@@ -2,6 +2,7 @@
 import { expect, test } from 'claude-code/testing'
 import { scoutPicks } from '../hooks/scout-pick'
 import type { Candidate } from '../hooks/team-rules'
+import { AWS_KEY } from './fake-secrets'
 
 const FOLDER = '/home/me/shop'
 const cand = (id: string, over: Partial<Candidate> = {}): Candidate => ({
@@ -52,7 +53,7 @@ test('a pick that cites a secret file is not taken at all, even one the scout op
 
 test('a reason that looks like it holds a secret is dropped; the pick stays', () => {
   const secretish = [
-    'The key is sk_live_abc in the config.', 'Uses sk-ant-api03 for the model.', 'AWS access AKIAABCDEFGHIJKLMNOP is set.', 'Token ghp_abcdef is in CI.',
+    'The key is sk_live_abc in the config.', 'Uses sk-ant-api03 for the model.', `AWS access ${AWS_KEY} is set.`, 'Token ghp_abcdef is in CI.',
     'Slack xoxb-1234 posts alerts.', 'Has -----BEGIN RSA PRIVATE KEY----- in it.', 'Hash a1b2c3d4e5f6a7b8c9d0e1f2a3b4 is pinned.',
     'Sets API_KEY=hunter2 for the app.', 'Sets password = hunter2 here.',
   ]

@@ -4,6 +4,7 @@
 import { expect, test } from 'claude-code/testing'
 import { POLL_MS, runScout } from '../hooks/scout-run'
 import { TEAM_END, TEAM_START } from '../hooks/scout-answer'
+import { antKey } from './fake-secrets'
 
 const SCOUT = 'clawd-hq:scout'
 const settle = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve() }
@@ -181,7 +182,7 @@ test('the engine\'s reason is cut to one short line, and one that looks like it 
   const long = await runScout(fakeHost(new Error(`refused: ${'word '.repeat(80)}`)), 'BRIEF', 90_000)
   expect('why' in long && long.why.split(':').slice(1).join(':').length).toBeLessThan(330)
   expect('why' in long && long.why).toContain('…')
-  const secret = await runScout(fakeHost(new Error('auth failed for sk-ant-api03-abcdef')), 'BRIEF', 90_000)
+  const secret = await runScout(fakeHost(new Error(`auth failed for ${antKey('abcdef')}`)), 'BRIEF', 90_000)
   expect(secret).toEqual({ why: `The scout could not start: the engine's words are left out, as they looked like they held a secret (${SETTINGS})` })
 })
 

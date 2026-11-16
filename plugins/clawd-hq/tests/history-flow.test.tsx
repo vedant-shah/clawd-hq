@@ -5,6 +5,7 @@ import { parseHistory } from '../hooks/history'
 import type { HistoryRecord } from '../hooks/history'
 import { START, host } from './host'
 import { planFs } from './plan-disk'
+import { antKey } from './fake-secrets'
 
 // history.jsonl through the real plugin: each record kind once per event, every field, no inputs or outputs, nothing from the demo, nothing
 // lost at a normal session end, and with Clawd off the runs, tools and requests still kept.
@@ -143,12 +144,12 @@ test('one tool record per call, Clawd\'s and an agent\'s, with times and whether
 })
 
 test('no input or output reaches the file: a secret-looking command and a file path are never written', async ($, on) => {
-  const h = office(on, () => ({ result: 'token=sk-ant-api03-OUTPUT /Users/me/out.txt' }))
+  const h = office(on, () => ({ result: `token=${antKey('OUTPUT')} /Users/me/out.txt` }))
   await $.session.start(START)
   await hire($, 'Deploy it.')
-  await $.tool.call({ tool: 'Bash', command: 'curl -H "Authorization: Bearer sk-ant-api03-SECRETSECRET" https://example.com', agentId: 'p1' } as never)
+  await $.tool.call({ tool: 'Bash', command: `curl -H "Authorization: Bearer ${antKey('SECRETSECRET')}" https://example.com`, agentId: 'p1' } as never)
   await $.tool.call({ tool: 'Read', file_path: '/Users/me/.ssh/id_rsa' } as never)
-  await handBack($, 'p1', 'Used sk-ant-api03-SECRETSECRET from /Users/me/.ssh/id_rsa.')
+  await handBack($, 'p1', `Used ${antKey('SECRETSECRET')} from /Users/me/.ssh/id_rsa.`)
   await endSession($)
   const text = h.files.get(FILE)!
   expect(ofKind(h, 'tool')).toHaveLength(2)

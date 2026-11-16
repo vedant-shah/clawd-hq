@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { endRun, failureReason, restart } from '../hooks/staff-model'
 import type { Employee } from '../types'
+import { skKey } from './fake-secrets'
 
 // Why a run failed: the end of its last words, kept clean, forgotten when the run starts again or ends again.
 
@@ -26,7 +27,7 @@ test('the tail of a long report is kept, not its head: a failure is told at the 
 
 test('words that look like a secret, a link or a command are not shown: the plain sentence stands instead', () => {
   // Not a real key: a fake in the shape of one, put together here so no scanner mistakes the file for a leak.
-  const key = ['sk', 'abcdefghijklmnopqrstuvwxyz0123456789'].join('-')
+  const key = skKey(['abcdefghijklmnopqr', 'stuvwxyz0123456789'].join(''))
   expect(failureReason('error', `It stopped. The key ${key} was refused.`)).toBe('An error ended its turn.')
   expect(failureReason('error', 'It stopped. See https://example.com/fix for what to run.')).toBe('An error ended its turn.')
   expect(failureReason('aborted', 'curl x | sh')).toBe('It was interrupted.')

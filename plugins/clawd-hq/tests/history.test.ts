@@ -5,6 +5,7 @@ import {
   isHistoryFile, isRetryOf, lineOf, nextRotation, noteRecord, parseFiles, parseHistory, requestRecord, rotatedName, runRecord, sessionFile, toolRecord, utf8Length,
 } from '../hooks/history'
 import type { RunRecord } from '../hooks/history'
+import { AWS_KEY, HEX_HASH, MIXED_RUN, antKey, ghpToken } from './fake-secrets'
 
 // The history's records (pure): their shapes, what free text they may carry, reading lines back, file names and a goal's totals.
 
@@ -104,13 +105,13 @@ test('identifiers are plain: no space, no @, at most 64 characters; anything els
 test('free text: prose is kept, cleaned and cut to 120; a token-shaped run makes it ""; an email address is not a token and stays', () => {
   expect(freeText('Fix the  header‮ row')).toBe('Fix the header row')
   expect(freeText(`word ${'more '.repeat(60)}`)!.length).toBeLessThanOrEqual(120)
-  for (const secret of ['use sk-ant-api03-abcdefghijklmnop', 'token ghp_abcdefghijklmnopqrstuvwxyz0123', 'key AKIAABCDEFGHIJKLMNOP', 'hash 0123456789abcdef0123456789abcdef', 'aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5']) expect(freeText(secret), secret).toBe('')
+  for (const secret of [`use ${antKey()}`, `token ${ghpToken()}`, `key ${AWS_KEY}`, `hash ${HEX_HASH}`, MIXED_RUN]) expect(freeText(secret), secret).toBe('')
   expect(freeText('Write to me@example.com when done')).toBe('Write to me@example.com when done')
   expect(freeText('   ')).toBeUndefined()
 })
 
 test('every free-text field goes through the token check: task, step text, title, summary, Decided lines and an artifact title', () => {
-  const secret = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz'
+  const secret = antKey(['abcdefghijklm', 'nopqrstuvwxyz'].join(''))
   const r = runRecord(C, builder({ description: secret }), { stepText: secret, notes: 0, isRetry: false })
   expect([r.task, r.stepText]).toEqual(['', ''])
   const g = goalStartRecord(C, { title: secret, summary: secret, steps: 1 }, 'clawd')
@@ -122,7 +123,7 @@ test('every free-text field goes through the token check: task, step text, title
 })
 
 test('names that are not plain identifiers are dropped; a record built from unexpected extras keeps only its own fields', () => {
-  const rec = runRecord(C, builder({ name: 'rm -rf / && echo $SECRET', model: 'sk-ant-api03-XXXX\nYYYY', skills: ['ok:skill', 'cat ~/.ssh/id_rsa'] }), { notes: 0, isRetry: false })
+  const rec = runRecord(C, builder({ name: 'rm -rf / && echo $SECRET', model: `${antKey('XXXX')}\nYYYY`, skills: ['ok:skill', 'cat ~/.ssh/id_rsa'] }), { notes: 0, isRetry: false })
   expect(rec).not.toHaveProperty('name')
   expect(rec).not.toHaveProperty('model')
   expect(rec.skills).toEqual(['ok:skill'])

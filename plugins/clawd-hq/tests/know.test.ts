@@ -4,6 +4,7 @@ import {
   looksSecret, nextCheck, parseNote, plainText, skipsAfter, withLog, withNote, withOpened, withoutNote,
 } from '../hooks/know'
 import type { KnowNote } from '../types'
+import { AWS_KEY, MIXED_RUN_34, antKey, ghpToken } from './fake-secrets'
 
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length
 const note = (n: number, over: Partial<KnowNote> = {}): KnowNote => ({ id: `k${n}`, who: 'Tester', line: `Line ${n}.`, tag: 'Heads up', at: n, ...over })
@@ -127,14 +128,14 @@ test('control characters and hidden marks are taken out of what is shown', () =>
 })
 
 test('a learn line that looks like a key or token is dropped; such a line in the explanation is left out', () => {
-  expect(looksSecret('Your key sk-ant-api03-abcdefghijklmnop was printed.')).toBe(true)
-  expect(looksSecret('Token ghp_abcdefghijklmnopqrstuvwxyz0123 leaked.')).toBe(true)
-  expect(looksSecret('AWS key AKIAABCDEFGHIJKLMNOP is in the log.')).toBe(true)
-  expect(looksSecret('It holds aB3dE5gH7jK9mN1pQ3rS5tU7vW9xY1zA3c, a random string.')).toBe(true)
+  expect(looksSecret(`Your key ${antKey()} was printed.`)).toBe(true)
+  expect(looksSecret(`Token ${ghpToken()} leaked.`)).toBe(true)
+  expect(looksSecret(`AWS key ${AWS_KEY} is in the log.`)).toBe(true)
+  expect(looksSecret(`It holds ${MIXED_RUN_34}, a random string.`)).toBe(true)
   expect(looksSecret('The Tester changed hooks/know-record.ts and 108 steps ran.')).toBe(false)
   expect(looksSecret('Commit 9010bfb was not pushed.')).toBe(false)
-  expect(parseNote('learn: The key sk-ant-api03-abcdefghijklmnop was printed.')).toEqual({ kind: 'failed', why: 'the line looked like a key or token' })
-  const parsed = parseNote('learn: A key was printed in the log.\ntag: Heads up\nexplain: **Rotate the key**\nIt was sk-ant-api03-abcdefghijklmnop.\n\nRotate it now.')
+  expect(parseNote(`learn: The key ${antKey()} was printed.`)).toEqual({ kind: 'failed', why: 'the line looked like a key or token' })
+  const parsed = parseNote(`learn: A key was printed in the log.\ntag: Heads up\nexplain: **Rotate the key**\nIt was ${antKey()}.\n\nRotate it now.`)
   expect(parsed).toMatchObject({ kind: 'note', explain: 'Rotate it now.' })
 })
 

@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import { CODE_EXTENSIONS, FILE_MAX, FILE_TOOLS, isProjectCode, languageOf, linesWritten, unfinishedLines } from '../hooks/left-scan'
 import type { Language } from '../hooks/left-scan'
+import { skKey } from './fake-secrets'
 
 // The only source left in the scanner: real code markers in the text a file tool newly wrote, in a code file. Never prose.
 
@@ -96,7 +97,7 @@ test('only lines that are new count: what the old text already had is not read a
 })
 
 test('a line with a key or token is left out, and a long line is cut at a word with no mark', () => {
-  expect(hits('// TODO: rotate sk-abcdefghijklmnopqrstuvwxyz123456')).toEqual([])
+  expect(hits(`// TODO: rotate ${skKey()}`)).toEqual([])
   const [hit] = unfinishedLines('', `// TODO: ${'word '.repeat(80)}`, 'slash')
   expect(hit!.text.length).toBeLessThanOrEqual(FILE_MAX)
   expect(hit!.text).not.toMatch(/…|\.\.\.$/)

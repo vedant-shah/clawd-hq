@@ -5,6 +5,7 @@ import { parseEffort } from '../hooks/desk'
 import { planTool, receiveDraft } from '../hooks/plan-run'
 import { BASE, FILE } from './plan-disk'
 import { office } from './plan-office'
+import { ghpToken, skKey } from './fake-secrets'
 
 // The Planner's plans: the PLAN-DRAFT: header line, the STEP: lines of a report, and what a real hand-back does with them.
 
@@ -68,8 +69,8 @@ test('junk is cleaned like a step the plan tool is given: control characters, co
 })
 
 test('a step that looks like a key or a token is left out, and the others stay', () => {
-  const token = 'sk-abcdefghijklmnopqrstuvwxyz0123'
-  expect(parseSteps(`STEP: Use the key ${token}\nSTEP: Write the export\nSTEP: ghp_${'a1B2'.repeat(6)}`)).toEqual(['Write the export'])
+  const token = skKey(['abcdefghijklmnop', 'qrstuvwxyz0123'].join(''))
+  expect(parseSteps(`STEP: Use the key ${token}\nSTEP: Write the export\nSTEP: ${ghpToken('a1B2'.repeat(6))}`)).toEqual(['Write the export'])
 })
 
 // ---- What a hand-back does ----
@@ -160,7 +161,7 @@ test('with Clawd off nothing is made and nothing is kept', async () => {
 test('a title that is empty or looks like a key makes nothing', async () => {
   const { io, mine } = office()
   await receiveDraft(io, '   ', REPORT)
-  await receiveDraft(io, 'sk-abcdefghijklmnopqrstuvwxyz0123', REPORT)
+  await receiveDraft(io, skKey(['abcdefghijklmnop', 'qrstuvwxyz0123'].join('')), REPORT)
   expect(mine.state).toBeNull()
   expect(mine.draft).toBeNull()
 })

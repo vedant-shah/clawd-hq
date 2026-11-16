@@ -127,7 +127,8 @@ export function registerAgents(on: On, brief: BriefingOptions) {
   // is delivered the specialist is linked to that step. An id the plan does not have, or no goal in hand, leaves its link as it was.
   // A books that cannot be read sends the message as it is; a link that cannot be kept is a debug record, never a failed send.
   on('session.send', async ($, e, next) => {
-    const follow = e.agentId === undefined ? parseFollowUp(e.text) : { text: e.text }
+    // Only Clawd's own SendMessage call: a specialist's message, or a plugin's send, passes untouched.
+    const follow = e.agentId === undefined && e.origin?.kind === 'model' ? parseFollowUp(e.text) : { text: e.text }
     const one = follow.stepId === undefined ? undefined : recipientOf(await readStaff($).catch(() => []), e.to)
     const stepId = follow.stepId
     if (one === undefined || stepId === undefined) return next(e)

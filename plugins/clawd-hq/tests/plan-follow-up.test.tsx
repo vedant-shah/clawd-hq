@@ -14,7 +14,8 @@ type Answer = { result?: string; deny?: string }
 const plan = ($: Engine, input: Record<string, unknown>) => $.tool.call({ tool: TOOL, ...input } as never) as Promise<Answer>
 const hire = ($: Engine, prompt: string, extra: Record<string, unknown> = {}) => $.agent.spawn({ prompt, description: 'Build the export', subagentType: 'general-purpose', name: 'builder', ...extra } as never)
 const end = ($: Engine, id: string, answer = 'Done.', reason = 'answer') => $.turn.complete({ reason, answer, turnId: `t-${id}-${reason}-${answer.length}`, agentId: id, isAborted: false } as never)
-const send = ($: Engine, to: string, text: string, agentId?: string) => $.session.send({ to, text, ...(agentId ? { agentId } : {}) } as never) as Promise<{ isDelivered: boolean; reason?: string }>
+/** A message as the model's own SendMessage call sends it; `origin` names another sender, such as a plugin. */
+const send = ($: Engine, to: string, text: string, agentId?: string, origin: Record<string, unknown> = { kind: 'model' }) => $.session.send({ to, text, origin, ...(agentId ? { agentId } : {}) } as never) as Promise<{ isDelivered: boolean; reason?: string }>
 /** The follow-up resuming its specialist, as the engine raises it after the send: the message it delivered is the resumed run's prompt. */
 const resume = ($: Engine, id: string, text: string) => hire($, text, { resume: { agentId: id } })
 const debug = (h: ReturnType<typeof host>) => JSON.stringify(h.saved.get('debug:plan') ?? [])
@@ -200,4 +201,30 @@ test('an off-plan run\'s choices stay off the step a follow-up then links its sp
   const text = fileText(h)!
   expect(text).toContain('- [x] Build it  <!-- s2 -->\n  - Decided: Stream big files — memory\n')
   expect(text).not.toContain('legacy folder')
+})
+
+test('a follow-up that is only the PLAN line goes out as written, never empty, and still links on delivery', async ($, on) => {
+  const h = office(on)
+  await $.session.start(START)
+  await hire($, 'Look around first.')
+  await end($, 'p1')
+  await send($, 'builder', 'PLAN: s2')
+  expect(h.sent.at(-1)?.text).toBe('PLAN: s2')
+  await send($, 'builder', '[effort: high]\nPLAN: s2\n')
+  expect(h.sent.at(-1)?.text).toBe('[effort: high]\nPLAN: s2\n')
+  await resume($, 'p1', 'PLAN: s2')
+  await end($, 'p1')
+  expect(fileText(h)).toContain('- [x] Build it  <!-- s2 -->')
+})
+
+test('a plugin\'s message with a PLAN line passes untouched and links nothing: only the model\'s own SendMessage counts', async ($, on) => {
+  const h = office(on)
+  await $.session.start(START)
+  await hire($, 'Look around first.')
+  await end($, 'p1')
+  await send($, 'builder', 'PLAN: s2\nBuild it.', undefined, { kind: 'plugin', name: 'another-mod' })
+  expect(h.sent.at(-1)?.text).toBe('PLAN: s2\nBuild it.')
+  await resume($, 'p1', 'PLAN: s2\nBuild it.')
+  await end($, 'p1')
+  expect(fileText(h)).toBe(THREE)
 })

@@ -6,13 +6,14 @@ import { parsePlanLine } from './pair-up'
 
 /**
  * The step a follow-up names, and the message without the line. The line counts first, or right after an `[effort: …]` line, which stays
- * on the message (the resumed run reads its effort from it). Only a step id makes a plan line, as in a brief (`parsePlanLine`).
+ * on the message (the resumed run reads its effort from it). Only a step id makes a plan line, as in a brief (`parsePlanLine`). A message
+ * that is nothing but its header lines goes as written: a specialist is never sent an empty message, and the step is still named.
  */
 export function parseFollowUp(text: string): { stepId?: string; text: string } {
   const { prompt: unEffort } = parseEffort(text)
   const { stepId, prompt } = parsePlanLine(unEffort)
   if (stepId === undefined) return { text }
-  return { stepId, text: text.slice(0, text.length - unEffort.length) + prompt }
+  return { stepId, text: prompt.trim() === '' ? text : text.slice(0, text.length - unEffort.length) + prompt }
 }
 
 /**

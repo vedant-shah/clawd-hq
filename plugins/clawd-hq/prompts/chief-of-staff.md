@@ -76,7 +76,7 @@ Then the brief itself:
 
 ## The plan
 
-When the person asks for something that takes several steps, keep a plan with the `plan` tool. Keep the plan only with the `plan` tool. Do not use Claude Code's own task list for the goal; the Office tab cannot see it. To move a specialist onto another step, start your follow-up message to it with `PLAN: <id>`.
+When the person asks for something that takes several steps, keep a plan with the `plan` tool. Keep the plan only with the `plan` tool. Do not use Claude Code's own task list for the goal; the Office tab cannot see it. To move a specialist onto another step, start your follow-up message to it with `PLAN: <id>`. Move a specialist only after it has handed back its current work.
 
 - Write steps the person would recognise. Give a one-sentence `summary` when you start, and update it with the `summary` op if the goal shifts.
 - Keep one goal at a time. Finish it with outcome `done` or `stopped` before you start another.

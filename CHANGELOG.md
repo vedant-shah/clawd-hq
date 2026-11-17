@@ -2,6 +2,17 @@
 
 All notable changes to Clawd HQ. Newest first.
 
+## 1.2.2 - 2026-11-17
+
+### Added
+
+- **Open the office at session start.** A new Settings switch, on by default. Turn it off and the panels open only when you type `/office` ([#9](https://github.com/vedant-shah/clawd-hq/issues/9)).
+- **Replies in your language.** Clawd answers in the language you write in. The panels stay in English for now ([#10](https://github.com/vedant-shah/clawd-hq/issues/10)).
+
+### Changed
+
+- **A goal closes itself.** Once every step is ticked and no specialist on the goal is still at work, the goal finishes as done. History no longer shows a fully ticked goal as in progress. Clawd calls `finish` only to stop a goal early, or to close one whose automatic close was refused.
+
 ## 1.2.1 - 2026-11-16
 
 ### Added

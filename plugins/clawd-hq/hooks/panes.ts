@@ -78,6 +78,8 @@ export async function openPanes(io: PaneIo, isFocusing: boolean) {
 let isFocusOwed = false
 /** The start found no surface (the desktop app starts the session before it draws), so the panes open once one is there. */
 let isOpenOwed = false
+/** The switch's reader from the last start, asked again when the owed open fires. */
+let isOpenOnNow: () => boolean = () => true
 
 const officeOf = async (io: PaneIo) => (await io.list()).find(x => x.id === paneOf('office').id)
 
@@ -98,9 +100,15 @@ const isNotFront = async (io: PaneIo) => {
  * may turn the request down (a reply already running, text in the prompt box); that is noted for `askAgain`.
  * A plugin reloaded mid-session (a config changed) finds Office still up: the panes stay as the person left them, with
  * no focus request and no second try.
+ * `isOn` reads the "Open the office at session start" switch at the moment it is asked: off, nothing is opened or asked for,
+ * and nothing is left owed for the attach or the first reply. It is asked again when an owed open fires, so a switch turned
+ * off in between still holds. `/office` is not affected.
  */
-export async function openAtStart(io: PaneIo) {
+export async function openAtStart(io: PaneIo, isOn: () => boolean = () => true) {
   isFocusOwed = false
+  isOpenOwed = false
+  isOpenOnNow = isOn
+  if (!isOn()) return
   isOpenOwed = !(await surfaced(io))
   if (isOpenOwed) return
   let isUp = false
@@ -112,7 +120,7 @@ export async function openAtStart(io: PaneIo) {
 /** The start's open, made now if it found no surface then and there is one now. Whether it was made. */
 async function openOwed(io: PaneIo): Promise<boolean> {
   if (!isOpenOwed || !(await surfaced(io))) return false
-  await openAtStart(io)
+  await openAtStart(io, isOpenOnNow)
   return true
 }
 

@@ -117,7 +117,7 @@ export function registerSession(on: On, brief: BriefingOptions) {
     void sweepArtifacts(artifactIo($), ses.cwd).catch(() => undefined) // not waited for: session start never holds on it
 
     // Once the engine has the session's surfaces, Office opens and is asked to the front; with none yet, on attach (hooks/panes.ts).
-    return next(e).finally(() => void openAtStart(paneIo($)))
+    return next(e).finally(() => void openAtStart(paneIo($), () => brief.isOpenOn))
   })
 
   // The host moved the session (the desktop app can start it in a spare folder): what is kept per folder follows (issue #5).

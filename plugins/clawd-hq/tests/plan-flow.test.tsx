@@ -55,7 +55,7 @@ test('hiring with PLAN: s2 and the run ending well puts [x] on s2 in the file', 
   expect(fileText(h)).toContain('- [x] Build it  <!-- s2 -->')
   expect(fileText(h)).toContain('- [ ] Find how it works  <!-- s1 -->')
   expect(fileText(h)).toContain('- [ ] Review  <!-- s3 -->')
-  // The goal is never ended by itself, and Clawd's next answer shows the new standing.
+  // Other steps are still open, so the goal stays open, and Clawd's next answer shows the new standing.
   expect((await plan($, { op: 'later', text: 'Tidy up' })).result).toContain('Plan: Export scores (1 of 3 done)')
 })
 

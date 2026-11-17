@@ -50,7 +50,7 @@ What it reads on this computer:
 
 What it writes:
 
-- `<project>/.clawd-hq/plans/<goal>.md`: Clawd's plan for the goal in hand (title, an optional one-sentence summary, steps, the choices a specialist made, and a Later list), as Markdown you can commit. It is made when Clawd starts a goal and emptied when the goal ends. Put-off items then move to the Left undone list.
+- `<project>/.clawd-hq/plans/<goal>.md`: Clawd's plan for the goal in hand (title, an optional one-sentence summary, steps, the choices a specialist made, and a Later list), as Markdown you can commit. It is made when Clawd starts a goal and emptied when the goal ends. A goal ends by itself when its last step is ticked, or earlier if Clawd stops it. Put-off items then move to the Left undone list.
 - `<project>/.clawd-hq/history-<session>.jsonl`: one line per goal start and end, specialist run, tool call and model request. A tool call keeps its name, timing and whether it worked, never its input or output. A model request keeps token counts. The only free text is a goal's title, summary and steps, a step's Decided lines, a run's task, and an artifact's title, each cut to 120 characters. Artifact links are kept too. It rolls over at 2 MB, old files are kept, and nothing is deleted. When `.clawd-hq/.gitignore` is missing, the plugin writes it with that rule (`history*.jsonl`), which keeps these files out of git. A `.clawd-hq` folder that leads out of the project is refused.
 - `~/.clawd-hq/chief-of-staff.md` and `~/.clawd-hq/soul.md`: your copies of Clawd's rules and voice, which the main chat follows. Made only when you press Edit; saved as `.bak` and emptied only when you press Reset.
 - Your project's CLAUDE.md: only the exact rule line shown, when you press "Add to CLAUDE.md".
@@ -66,6 +66,7 @@ What it changes as text passes through:
 - Agent list: while Clawd runs the chat, helpers you laid off are hidden from the model. With it off, none are hidden.
 - Quiet chat: it hides specialists' finished notices, Clawd's no-update lines and background hints, and hides or dims the office's own bookkeeping rows. Errors always show, and the expanded view (ctrl+o) shows everything.
 - "You should know": while this one is on and an office tab is open, Claude Code's own "You should know" question gets a quiet answer.
+- "Open the office at session start": with it off, a new session opens no panels and does not ask to bring Office to the front. `/office` still opens them.
 - While you edit Clawd's files from Settings, writes to the plugin's built-in files are refused.
 
 The Settings switches are kept in the plugin's own store. Claude Code's /config does not show a press; a value set in /config is used until you press that switch.

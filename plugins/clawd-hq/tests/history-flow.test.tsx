@@ -360,13 +360,14 @@ test('the History tab asks to be drawn again once its first read of the files la
   h.files.set(OLD, `${JSON.stringify({ v: 1, at: 1, kind: 'note', session: 'old', text: 'earlier' })}\n`)
   await $.session.start(START)
   await start($)
+  await $.tool.call({ tool: PLAN, op: 'add', text: 'Check it' } as never) // a third step, so the tick below is not the goal's last (that would close the goal)
   await $.tool.call({ tool: PLAN, op: 'done', id: 's1' } as never)
   await hire($, 'PLAN: s2\nBuild it.')
   held.isArmed = true
   const drawing = $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...HISTORY })
   for (let i = 0; i < 300 && !held.isHit; i += 1) await h.clock.advance(0)
   expect(held.isHit).toBe(true)
-  // The last step is ticked while the tab's read is held, and what that writes is settled before the read lands.
+  // A step is ticked while the tab's read is held, and what that writes is settled before the read lands.
   await handBack($, 'p1')
   for (let i = 0; i < 50; i += 1) await h.clock.advance(0)
   redraws.isCounting = true
@@ -378,7 +379,7 @@ test('the History tab asks to be drawn again once its first read of the files la
   expect(redraws.count).toBeGreaterThan(0)
   // That draw shows the step ticked during the read.
   const again = await $.ui.mount({ plugin: 'clawd-hq', surface: 'desktop', ...HISTORY })
-  expect((await again.findAll({ type: 'Text' })).map(t => String(t.text)).join('\n')).toContain('2 of 2 done')
+  expect((await again.findAll({ type: 'Text' })).map(t => String(t.text)).join('\n')).toContain('2 of 3 done')
   await again.unmount()
   await endSession($)
 })

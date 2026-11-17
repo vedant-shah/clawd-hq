@@ -65,7 +65,7 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 ### 3. Checks, and keeps you oriented
 
 - **You should know.** Our own check on finished work: Haiku reads the specialist's full record against its report, and speaks up only when something matters. It backs off if you ignore it. It stands in for Claude Code's built-in You should know while it's on, so you aren't told twice. Every card has **Ask Clawd**.
-- **The plan.** For a job of several steps, Clawd keeps a short, ordered plan for the one goal in hand. It has an optional one-sentence summary. A step ticks itself when its specialist finishes well, and stays open if the specialist failed. Ideas put off go on a "Later" list. A plan from the Planner becomes the plan, or waits as a draft while another goal is in hand. Clawd works on one goal at a time.
+- **The plan.** For a job of several steps, Clawd keeps a short, ordered plan for the one goal in hand. It has an optional one-sentence summary. A step ticks itself when its specialist finishes well, and stays open if the specialist failed. When the last step is ticked, the goal closes itself as done. Ideas put off go on a "Later" list. A plan from the Planner becomes the plan, or waits as a draft while another goal is in hand. Clawd works on one goal at a time.
 - **Left undone.** Lists work that was put off, like TODOs and skipped tests. It sits in the Later fold of the Office tab, next to the plan's own put-off ideas. "Do it now" puts it in your prompt box.
 - **Coffee break.** Compacts a long chat at a calm moment, never mid-build.
 - **Lasting rules, on your say-so.** When you state a rule for later work ("always", "from now on"), Clawd offers it on a card. One press adds that exact line to the project's CLAUDE.md, which every specialist already reads. An answer in the question box settles only the job at hand.
@@ -181,6 +181,7 @@ All on by default. Flip them in the Settings tab.
 | You should know | Finished work isn't checked. Claude Code's own note works as usual. |
 | Left undone check | The model check is skipped. Code markers are still read. |
 | Search the public skill registry when matches are weak | Nothing is searched or sent. Clawd uses the general-purpose agent. |
+| Open the office at session start | A new session opens no panels and doesn't ask to bring Office to the front. `/office` still opens them. |
 | Your own voice file | A path to a text file that changes Clawd's tone. Empty by default. |
 
 Clawd's rules also reach scripted runs (`claude -p` and the Agent SDK). Turn off "Clawd runs the chat" if you don't want that.

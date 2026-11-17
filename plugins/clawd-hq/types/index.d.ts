@@ -87,6 +87,8 @@ export type PlanState = {
   steps: PlanStep[]
   later: Array<{ id: string; text: string }>
   startedAt: number
+  /** Every step is ticked, but ending the goal was refused and Clawd was told (hooks/plan-run.ts); only `finish` ends it now. Gone once a step is open again. */
+  isStuck?: true
 }
 
 /** A page on claude.ai that Claude published or opened with the Artifact tool (or published with the claude-artifacts connector) in this project, newest first. */

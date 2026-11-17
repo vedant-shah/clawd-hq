@@ -3,7 +3,7 @@
 // what each call may do as `PlanRunIo`. Nothing here may break the person's turn: a failure is an answer or a debug record, never thrown.
 import type { Employee, PlanState, PlanStep } from '../types'
 import { fit } from './desk'
-import { activeStepIds, clearNew, goalKey, parseCall, planText, stateFrom, tickDue, touchedBy, withReopened } from './plan-live'
+import { activeStepIds, clearNew, closeDue, goalKey, parseCall, planText, stateFrom, tickDue, touchedBy, withReopened } from './plan-live'
 import type { PlanCall } from './plan-live'
 import { GONE, changeGoal, finishGoal, loadGoals, saveIds, startGoal } from './plan-io'
 import type { PlanIo } from './plan-io'
@@ -54,7 +54,9 @@ type Answer = { readonly result: string } | { readonly deny: string }
 
 export const DENY_SPECIALIST = 'Only Clawd keeps the plan. Put what you want changed in your report for Clawd.'
 export const DENY_OFF = 'The plan is off while "Clawd runs the chat" is off.'
-const NO_GOAL = 'There is no goal in hand. Start one first: op "start" with a goal and its steps.'
+const NO_GOAL = 'There is no goal in hand (a goal closes by itself when its last step is ticked). Start one first: op "start" with a goal and its steps.'
+/** Added after the plan, in the answer of the call that ticked the goal's last step. */
+const CLOSED = 'The goal is complete and closed.'
 const GOAL_GONE = 'The plan file of this goal is gone (another session may have ended it), so the plan was cleared. Start a new goal if there is more to do.'
 
 /** A debug line for a failure that was swallowed; a record that cannot be written changes nothing. */
@@ -88,7 +90,7 @@ export async function loadPlan(io: PlanRunIo): Promise<void> {
   }
 }
 
-const deny = (reason: string): Answer => ({ deny: reason })
+const deny = (reason: string): { readonly deny: string } => ({ deny: reason })
 
 async function start(io: PlanRunIo, call: { goal: unknown; steps: readonly unknown[]; summary?: unknown }, by: 'clawd' | 'planner' = 'clawd'): Promise<Answer> {
   const root = io.root()
@@ -107,7 +109,7 @@ async function start(io: PlanRunIo, call: { goal: unknown; steps: readonly unkno
 }
 
 /** A plan file that is gone clears the state, so a ghost goal does not stay. */
-async function refused(io: PlanRunIo, reason: string): Promise<Answer> {
+async function refused(io: PlanRunIo, reason: string): Promise<{ readonly deny: string }> {
   if (reason !== GONE) return deny(reason)
   await io.set(() => null)
   return deny(GOAL_GONE)
@@ -126,10 +128,31 @@ async function operate(io: PlanRunIo, state: PlanState, call: Extract<PlanCall, 
   })
   if (!done.ok) return refused(io, done.reason)
   const held = next as PlanState | null
-  return { result: held === null ? '' : planText(held, await io.staff()) }
+  if (held === null) return { result: '' }
+  const staff = await io.staff()
+  const text = planText(held, staff)
+  const line = await closingLine(io, closeDue(state, held, staff), held)
+  return { result: line === undefined ? text : `${text}\n${line}` }
 }
 
-async function finish(io: PlanRunIo, state: PlanState, outcome: 'done' | 'stopped'): Promise<Answer> {
+const HELD = 'All steps are ticked. The goal closes when the specialists at work hand back.'
+
+/**
+ * The line to add to a `plan` answer once every step is ticked (`closeDue`): the goal is closed here, or is held back by a specialist at work.
+ * A close that is refused (the Later items could not be kept) leaves the goal open and marks it `isStuck`, so this is said once and the goal is
+ * not tried again by itself; Clawd ends it with `finish`, outcome `done`.
+ */
+async function closingLine(io: PlanRunIo, due: ReturnType<typeof closeDue>, state: PlanState): Promise<string | undefined> {
+  if (due === 'none') return undefined
+  if (due === 'held') return HELD
+  const closed = await close(io, state, 'done')
+  if (!('deny' in closed)) return `${CLOSED} ${closed.moved}`
+  await io.set(prev => (prev !== null && prev.slug === state.slug ? { ...prev, isStuck: true } : prev))
+  return `All steps are ticked but the goal could not be closed (${closed.deny}). Call finish with outcome "done" to close it.`
+}
+
+/** Ends the goal: the Later items kept, the file emptied, the state cleared, the `goal_end` record written. Either how it went, or why it was refused. */
+async function close(io: PlanRunIo, state: PlanState, outcome: 'done' | 'stopped'): Promise<{ readonly moved: string } | { readonly deny: string }> {
   let kept = 0
   const ended = await finishGoal(io.files, io.root(), state.slug, async later => {
     // Every put-off item is kept or the goal is not ended: a failure here is refused (and the file left as it is), never let go.
@@ -143,8 +166,13 @@ async function finish(io: PlanRunIo, state: PlanState, outcome: 'done' | 'stoppe
   } catch (err) {
     await note(io, `the end of the goal could not be recorded: ${err instanceof Error ? err.message : String(err)}`)
   }
-  const moved = kept === 0 ? 'There were no put-off items to move.' : `${kept} put-off ${kept === 1 ? 'item was' : 'items were'} moved to the project's Later list.`
-  return { result: `The goal "${fit(state.title, 120)}" is over (${outcome}). ${moved} There is no goal in hand now.` }
+  return { moved: kept === 0 ? 'There were no put-off items to move.' : `${kept} put-off ${kept === 1 ? 'item was' : 'items were'} moved to the project's Later list.` }
+}
+
+async function finish(io: PlanRunIo, state: PlanState, outcome: 'done' | 'stopped'): Promise<Answer> {
+  const closed = await close(io, state, outcome)
+  if ('deny' in closed) return closed
+  return { result: `The goal "${fit(state.title, 120)}" is over (${outcome}). ${closed.moved} There is no goal in hand now.` }
 }
 
 /**
@@ -232,7 +260,7 @@ export async function linkStep(io: PlanRunIo, stepId: string): Promise<string | 
  * A linked run handed its report back. Its choices go under the step; and when it ended well and nothing else holds the step back
  * (hooks/plan-live.ts, `tickDue`) the step is ticked, in the same write. Only a hand-back does this (the caller is the hand-back path, once
  * per hand-back): a run that merely stopped, or that the engine's list says is done, ticks nothing. A run of an earlier goal does nothing
- * to this one. Never ends the goal. Safe to call again for the same run. Never throws.
+ * to this one. A hand-back that leaves every step ticked and no specialist of the goal at work ends the goal (`closeIfComplete`). Safe to call again for the same run. Never throws.
  */
 export async function settleRun(io: PlanRunIo, runId: string): Promise<void> {
   try {
@@ -252,9 +280,18 @@ export async function settleRun(io: PlanRunIo, runId: string): Promise<void> {
       await io.set(prev => (prev !== null && prev.slug === state.slug ? stateFrom(plan, state.slug, prev.startedAt, prev, []) : prev))
     })
     if (!done.ok) await note(io, `a step could not be ticked: ${done.reason}`)
+    else await closeIfComplete(io, state)
   } catch (err) {
     await note(io, `a step could not be ticked: ${err instanceof Error ? err.message : String(err)}`)
   }
+}
+
+/** After a hand-back: the goal ends as done when every step is ticked and no specialist of it is still at work (`closeDue`). Clawd is told in the answer of his next `plan` call (`NO_GOAL`). A refused end is a debug record, and the goal stays open; his next `plan` call tries again and tells him if it fails. */
+async function closeIfComplete(io: PlanRunIo, before: PlanState): Promise<void> {
+  const held = await io.get()
+  if (held === null || held.slug !== before.slug || closeDue(before, held, await io.staff()) !== 'close') return
+  const closed = await close(io, held, 'done')
+  if ('deny' in closed) await note(io, `the goal could not be closed after its last step was ticked: ${closed.deny}`)
 }
 
 /**

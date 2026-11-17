@@ -236,7 +236,7 @@ test('a run that failed, was lost or stopped leaves the step unticked and the fi
   }
 })
 
-test('a step with another linked run at work, or one that failed, is not ticked; the goal is never ended', async () => {
+test('a step with another linked run at work, or one that failed, is not ticked', async () => {
   const busy = await running()
   busy.mine.staff = [busy.run, emp({ id: 'r2', stepId: 's2', startedAt: 150 })]
   await settleRun(busy.io, 'r1')
@@ -245,10 +245,182 @@ test('a step with another linked run at work, or one that failed, is not ticked;
   failed.mine.staff = [failed.run, emp({ id: 'r2', stepId: 's2', startedAt: 150, mood: 'failed', endedAt: 300 })]
   await settleRun(failed.io, 'r1')
   expect(failed.d.writes).toHaveLength(0)
-  const last = await running({}, { [FILE]: BASE.replace('- [ ] Find the bug', '- [x] Find the bug') })
-  await settleRun(last.io, 'r1')
-  expect(last.d.held.get(FILE)).toContain('- [x] Fix it')
-  expect(last.mine.state).not.toBeNull()
+})
+
+// ---- The goal closes itself when its last step is ticked ----
+
+const ONE_LEFT = BASE.replace('- [ ] Find the bug', '- [x] Find the bug')
+const CLOSED = 'The goal is complete and closed.'
+
+test('a hand-back that ticks the last step closes the goal: Later kept, file emptied, goal_end written as done, state cleared', async () => {
+  const { io, d, mine } = await running({}, { [FILE]: `${ONE_LEFT}\n## Later\n\n- [ ] Put off  <!-- l1 -->\n` })
+  mine.at = 7_000
+  await settleRun(io, 'r1')
+  expect(d.held.get(FILE)).toBe('')
+  expect(mine.state).toBeNull()
+  expect(mine.later).toEqual([['Put off']])
+  expect(mine.ended).toMatchObject([{ slug: 'fix-login', outcome: 'done', endedAt: 7_000, steps: [{ id: 's1', isDone: true }, { id: 's2', isDone: true }] }])
+})
+
+test('a hand-back that ticks a step while others stay open does not close the goal', async () => {
+  const { io, d, mine } = await running()
+  await settleRun(io, 'r1')
+  expect(d.held.get(FILE)).toContain('- [x] Fix it')
+  expect(mine.state).not.toBeNull()
+  expect(mine.ended).toHaveLength(0)
+})
+
+test('done on the last open step closes the goal, and the answer says so in one line after the plan', async () => {
+  const { io, d, mine } = office({ [FILE]: ONE_LEFT })
+  await loadPlan(io)
+  const a = result(await call(io, { op: 'done', id: 's2' }))
+  expect(a).toContain('Plan: Fix login (2 of 2 done)')
+  expect(a.split('\n').filter(line => line.startsWith(CLOSED))).toHaveLength(1)
+  expect(d.held.get(FILE)).toBe('')
+  expect(mine.state).toBeNull()
+  expect(mine.ended).toMatchObject([{ outcome: 'done', steps: [{ isDone: true }, { isDone: true }] }])
+})
+
+test('done on a step while another is open leaves the goal open', async () => {
+  const { io, mine } = office({ [FILE]: BASE })
+  await loadPlan(io)
+  expect(result(await call(io, { op: 'done', id: 's1' }))).not.toContain(CLOSED)
+  expect(mine.state).not.toBeNull()
+})
+
+test('dropping the only open step closes the goal; dropping every step does not (a goal with no steps never closes by itself)', async () => {
+  const a = office({ [FILE]: ONE_LEFT })
+  await loadPlan(a.io)
+  expect(result(await call(a.io, { op: 'drop', id: 's2' }))).toContain(CLOSED)
+  expect(a.d.held.get(FILE)).toBe('')
+  const b = office({ [FILE]: '# Fix login\n\n- [ ] Only  <!-- s1 -->\n' })
+  await loadPlan(b.io)
+  const dropped = result(await call(b.io, { op: 'drop', id: 's1' }))
+  expect(dropped).toContain('(0 of 0 done)')
+  expect(dropped).not.toContain(CLOSED)
+  expect(b.mine.state).not.toBeNull()
+  expect(b.mine.ended).toHaveLength(0)
+})
+
+test('a plan that was all ticked when loaded is not closed by an unrelated call; it closes when a step is reopened and ticked again', async () => {
+  const { io, d, mine } = office({ [FILE]: BASE.replace(/\[ \]/g, '[x]') })
+  await loadPlan(io)
+  expect(result(await call(io, { op: 'later', text: 'Idea' }))).not.toContain(CLOSED)
+  expect(mine.state).not.toBeNull()
+  await call(io, { op: 'reopen', id: 's1' })
+  expect(result(await call(io, { op: 'done', id: 's1' }))).toContain(CLOSED)
+  expect(d.held.get(FILE)).toBe('')
+})
+
+test('after the goal closed by itself, add, reopen and done say there is no goal and that a goal closes when its last step is ticked; start makes a new one', async () => {
+  const { io, mine } = office({ [FILE]: ONE_LEFT })
+  await loadPlan(io)
+  await call(io, { op: 'done', id: 's2' })
+  for (const input of [{ op: 'add', text: 'More' }, { op: 'reopen', id: 's2' }, { op: 'done', id: 's2' }]) {
+    expect(await call(io, input)).toMatchObject({ deny: expect.stringContaining('closes by itself when its last step is ticked') })
+  }
+  expect(result(await call(io, { op: 'start', goal: 'Next', steps: ['x'] }))).toContain('Plan: Next (0 of 1 done)')
+  expect(mine.state?.slug).toBe('next')
+})
+
+const WITH_LATER = `${ONE_LEFT}\n## Later\n\n- [ ] Put off  <!-- l1 -->\n`
+const COULD_NOT = 'All steps are ticked but the goal could not be closed'
+
+test('when the Later items cannot be kept, the ticked goal stays open; the answer says why and to call finish with outcome done', async () => {
+  const { io, d, mine } = office({ [FILE]: WITH_LATER })
+  await loadPlan(io)
+  mine.keepFails = true
+  const a = result(await call(io, { op: 'done', id: 's2' }))
+  expect(a).toContain(COULD_NOT)
+  expect(a).toContain('the list refused')
+  expect(a).toContain('finish with outcome "done"')
+  expect(d.held.get(FILE)).toContain('- [x] Fix it')
+  expect(mine.state).not.toBeNull()
+})
+
+test('a close that was refused is told once: the next plan answers are plain, and finish with outcome done then closes the goal', async () => {
+  const { io, d, mine } = office({ [FILE]: WITH_LATER })
+  await loadPlan(io)
+  mine.keepFails = true
+  await call(io, { op: 'done', id: 's2' })
+  mine.keepFails = false
+  const next = result(await call(io, { op: 'summary', text: 'Still open' }))
+  expect(next).not.toContain(COULD_NOT)
+  expect(next).not.toContain(CLOSED)
+  expect(mine.state).not.toBeNull()
+  expect(result(await call(io, { op: 'finish', outcome: 'done' }))).toContain('is over (done)')
+  expect(d.held.get(FILE)).toBe('')
+  expect(mine.ended).toMatchObject([{ outcome: 'done' }])
+})
+
+test('a close refused after a hand-back is told in the next plan answer, once', async () => {
+  const { io, d, mine } = await running({}, { [FILE]: WITH_LATER })
+  mine.keepFails = true
+  await settleRun(io, 'r1')
+  expect(mine.state).not.toBeNull()
+  expect(d.notes.some(n => n.includes('could not be closed'))).toBe(true)
+  const first = result(await call(io, { op: 'summary', text: 'x' }))
+  expect(first).toContain(COULD_NOT)
+  expect(result(await call(io, { op: 'summary', text: 'y' }))).not.toContain(COULD_NOT)
+})
+
+// ---- A goal does not close while a specialist of it is at work ----
+
+const working = (mine: { state: PlanState | null }, over: Partial<Employee> = {}) => emp({ id: 'r1', stepId: 's2', planKey: goalKey(mine.state!), ...over })
+
+test('done on the last step while a specialist is still on it does not close the goal, and the answer says it will close when they hand back', async () => {
+  const { io, d, mine } = office({ [FILE]: ONE_LEFT })
+  await loadPlan(io)
+  mine.staff = [working(mine)]
+  const a = result(await call(io, { op: 'done', id: 's2' }))
+  expect(a).toContain('Plan: Fix login (2 of 2 done)')
+  expect(a).toContain('All steps are ticked. The goal closes when the specialists at work hand back.')
+  expect(a).not.toContain(CLOSED)
+  expect(d.held.get(FILE)).toContain('- [x] Fix it')
+  expect(mine.state).not.toBeNull()
+  expect(mine.ended).toHaveLength(0)
+})
+
+test('that specialist\'s hand-back files its choices, then closes the goal', async () => {
+  const { io, d, mine } = office({ [FILE]: ONE_LEFT })
+  await loadPlan(io)
+  mine.staff = [working(mine)]
+  await call(io, { op: 'done', id: 's2' })
+  mine.staff = [working(mine, { mood: 'done', endedAt: 500, choices: ['use one file'] })]
+  await settleRun(io, 'r1')
+  expect(mine.ended).toMatchObject([{ outcome: 'done', steps: [{ id: 's1' }, { id: 's2', choices: ['use one file'] }] }])
+  expect(d.held.get(FILE)).toBe('')
+  expect(mine.state).toBeNull()
+})
+
+test('a goal held back by a run that then failed closes on the next plan call, with no new tick', async () => {
+  const { io, d, mine } = office({ [FILE]: ONE_LEFT })
+  await loadPlan(io)
+  mine.staff = [working(mine)]
+  await call(io, { op: 'done', id: 's2' })
+  mine.staff = [working(mine, { mood: 'failed', endedAt: 500 })]
+  expect(result(await call(io, { op: 'summary', text: 'Wrapped up' }))).toContain(CLOSED)
+  expect(d.held.get(FILE)).toBe('')
+  expect(mine.state).toBeNull()
+})
+
+test('a hand-back that ticks the last step while another run of the goal is at work holds the goal; the other run\'s hand-back closes it', async () => {
+  const { io, d, mine } = await running({}, { [FILE]: ONE_LEFT })
+  mine.staff = [mine.staff[0]!, emp({ id: 'r2', stepId: 's1', planKey: goalKey(mine.state!) })]
+  await settleRun(io, 'r1')
+  expect(mine.state).not.toBeNull()
+  expect(d.held.get(FILE)).toContain('- [x] Fix it')
+  mine.staff = [mine.staff[0]!, emp({ id: 'r2', stepId: 's1', planKey: goalKey(mine.state!), mood: 'done', endedAt: 600 })]
+  await settleRun(io, 'r2')
+  expect(d.held.get(FILE)).toBe('')
+  expect(mine.state).toBeNull()
+})
+
+test('a run of an earlier goal does not hold this goal back', async () => {
+  const { io, mine } = office({ [FILE]: ONE_LEFT })
+  await loadPlan(io)
+  mine.staff = [emp({ id: 'old', stepId: 's2', planKey: 'older-goal:5' })]
+  expect(result(await call(io, { op: 'done', id: 's2' }))).toContain(CLOSED)
 })
 
 test('a finished run\'s choices go under its step, once each and five at most, also when the step is not ticked', async () => {

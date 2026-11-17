@@ -60,6 +60,23 @@ export function tickDue(state: PlanState, staff: readonly Employee[], run: Emplo
   return blockingFailures(step, runs).length === 0
 }
 
+const isTicked = (state: PlanState) => state.steps.length > 0 && state.steps.every(step => step.isDone)
+
+/**
+ * What a goal whose steps are all ticked should do now: `close` (end it as done), `held` (a specialist of this goal is still at work, so it
+ * waits), or `none`. A goal is ticked-through, with at least one step (a goal with none never closes by itself), and not `isStuck`.
+ * DECIDED: it is a candidate when `before` was not ticked through (the change just ticked its last step), or when this session has worked on
+ * it (a run linked to it is on the books): so a goal held back by a run closes when that run is no longer at work, with no new tick. A plan
+ * that was already ticked through when loaded, with no run of this session on it, is left for Clawd to finish.
+ */
+export function closeDue(before: PlanState | null, after: PlanState, staff: readonly Employee[]): 'close' | 'held' | 'none' {
+  const key = goalKey(after)
+  if (!isTicked(after) || after.isStuck === true) return 'none'
+  const isCandidate = (before !== null && !isTicked(before)) || staff.some(one => one.planKey === key)
+  if (!isCandidate) return 'none'
+  return activeStepIds(staff, key).size > 0 ? 'held' : 'close'
+}
+
 /** The plan state for a file's view: each step keeps its mark and its reopening from before; steps new to the state, and `touched` ones, are marked new. */
 export function stateFrom(view: PlanView, slug: string, startedAt: number, prev: PlanState | null, touched: readonly string[]): PlanState {
   const old = prev !== null && prev.slug === slug ? prev.steps : undefined
@@ -68,7 +85,8 @@ export function stateFrom(view: PlanView, slug: string, startedAt: number, prev:
     const isNew = (before === undefined && old !== undefined) || touched.includes(step.id) || before?.isNew === true
     return { ...step, ...(isNew ? { isNew: true } : {}), ...(before?.reopenedAt === undefined ? {} : { reopenedAt: before.reopenedAt }) }
   })
-  return { slug, title: view.title, ...(view.summary === undefined ? {} : { summary: view.summary }), steps, later: view.later, startedAt: prev !== null && prev.slug === slug ? prev.startedAt : startedAt }
+  const isStuck = prev !== null && prev.slug === slug && prev.isStuck === true && steps.length > 0 && steps.every(step => step.isDone)
+  return { slug, title: view.title, ...(view.summary === undefined ? {} : { summary: view.summary }), steps, later: view.later, startedAt: prev !== null && prev.slug === slug ? prev.startedAt : startedAt, ...(isStuck ? { isStuck: true as const } : {}) }
 }
 
 /** The steps an operation added or changed, for the "new" mark: a start marks them all; done, reopen and move mark the one they changed. */

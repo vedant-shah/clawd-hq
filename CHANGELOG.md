@@ -2,6 +2,18 @@
 
 All notable changes to Clawd HQ. Newest first.
 
+## 1.2.3 - 2026-11-19
+
+### Changed
+
+- **The office stays closed until you open it.** The "Open the office at session start" switch is now off by default. A fresh session shows a one-line tip to type `/office`, until the office has been opened once. Turn the switch on to have the panels open at every start.
+- **Automatic setup waits for the office.** It starts the first time the office is opened (`/office`, `/office-setup`, the switch, or the Office panel shown), and a setup left half done waits too. Nothing runs or spends while the office stays closed.
+- **Each session keeps its own goal.** Several sessions in one folder, such as Downloads, no longer share a goal. A fresh session starts with an empty Office tab. Another session's open goal shows in History under "Open in other sessions", and **Resume** takes it over. A plan file records the session that started it.
+
+### Fixed
+
+- **A goal saved before this update** isn't picked up by any session on its own. It shows in History with **Resume**, and Clawd is told its name the next time he works on the plan, so it's never lost silently.
+
 ## 1.2.2 - 2026-11-17
 
 ### Added

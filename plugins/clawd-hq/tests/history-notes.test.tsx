@@ -18,7 +18,7 @@ const ROWS = (brief: string) => [
   { role: 'assistant', text: 'All tests pass.', toolUses: [] },
 ]
 
-test('a note raised about a run is written as its run and its tag, never its words', { timeoutMs: 15_000 }, async ($, on) => {
+test('a note raised about a run is written as its run and its tag, never its words', { timeoutMs: 15_000, options: { openAtStart: true } }, async ($, on) => { // the note check runs while an office tab is open, so the office opens at the start
   const h = host(on, [])
   planFs(on, h.files)
   on('session.id', () => ({ value: 's1' }) as never)

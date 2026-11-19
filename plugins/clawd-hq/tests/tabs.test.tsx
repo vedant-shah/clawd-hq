@@ -42,7 +42,7 @@ async function settle($: Engine) {
   }
 }
 
-test('a desktop session opens the four panes in order once its surface attaches, then asks for Office to be shown, whatever old decisions the project has', async ($, on) => {
+test('a desktop session opens the four panes in order once its surface attaches, then asks for Office to be shown, whatever old decisions the project has', { options: { openAtStart: true } }, async ($, on) => {
   const { opened, panes, files } = host(on)
   seedDecisions(files, [{ text: 'Scores live in Postgres' }, { text: 'Use Drizzle for migrations' }])
   // The desktop app runs the session headless: it starts with no surface and attaches after. An open before then would be
@@ -60,7 +60,7 @@ test('a desktop session opens the four panes in order once its surface attaches,
   expect(panes.map(p => p.id)).toEqual(IDS)
 })
 
-test('a terminal session start opens the four panes in order and then asks for Office to be shown, as the desktop does', async ($, on) => {
+test('a terminal session start opens the four panes in order and then asks for Office to be shown, as the desktop does', { options: { openAtStart: true } }, async ($, on) => {
   const { opened, panes } = host(on)
   await $.session.start(START)
   await settle($)
@@ -73,7 +73,7 @@ test('a terminal session start opens the four panes in order and then asks for O
 const mainReplyEnds = ($: Engine) => $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 't1', isAborted: false } as never)
 const focusAsks = (opened: Array<{ id: string; focus?: true }>) => opened.filter(o => o.focus === true).map(o => o.id)
 
-test('a focus request the surface refused at session start (a reply is running) is made once more when the first main-chat reply ends, and never again', async ($, on) => {
+test('a focus request the surface refused at session start (a reply is running) is made once more when the first main-chat reply ends, and never again', { options: { openAtStart: true } }, async ($, on) => {
   const { opened, front, focus, panes } = host(on)
   // The surface is showing another tab and turns the request down.
   front.id = 'clawd-hq-settings'
@@ -104,7 +104,7 @@ test('a focus request the surface refused at session start (a reply is running) 
   }
 })
 
-test('the desktop app attaching after the session started: Office is asked to the front when it attaches, and not again after the first reply', async ($, on) => {
+test('the desktop app attaching after the session started: Office is asked to the front when it attaches, and not again after the first reply', { options: { openAtStart: true } }, async ($, on) => {
   const { opened, front, surface } = host(on)
   front.id = 'clawd-hq-settings'
   surface.isAbsent = true
@@ -125,7 +125,7 @@ test('the desktop app attaching after the session started: Office is asked to th
   expect(front.id).toBe('clawd-hq-people')
 })
 
-test('an attach when nothing is owed (the start was granted) does not move the person off the tab they are on', async ($, on) => {
+test('an attach when nothing is owed (the start was granted) does not move the person off the tab they are on', { options: { openAtStart: true } }, async ($, on) => {
   const { opened, front } = host(on)
   front.id = 'clawd-hq-settings'
   await $.session.start(START)
@@ -138,7 +138,7 @@ test('an attach when nothing is owed (the start was granted) does not move the p
   expect(front.id).toBe('clawd-hq-people')
 })
 
-test('a reload of the plugin (a config changed) finds its panes up: they open again without focus, and nothing is asked after the reply', async ($, on) => {
+test('a reload of the plugin (a config changed) finds its panes up: they open again without focus, and nothing is asked after the reply', { options: { openAtStart: true } }, async ($, on) => {
   const { opened, front, focus } = host(on)
   front.id = 'clawd-hq-settings'
   await $.session.start(START)
@@ -158,7 +158,7 @@ test('a reload of the plugin (a config changed) finds its panes up: they open ag
   expect(front.id).toBe('clawd-hq-settings')
 })
 
-test('a granted request at session start is not made again after the first reply', async ($, on) => {
+test('a granted request at session start is not made again after the first reply', { options: { openAtStart: true } }, async ($, on) => {
   const { opened, front } = host(on)
   front.id = 'clawd-hq-settings'
   await $.session.start(START)

@@ -63,7 +63,7 @@ export function optionsOf(options: Readonly<Record<string, unknown>>): BriefingO
   const { chiefOfStaff, voiceFile, quietChat, youShouldKnow, leftUndone, autoSetup, skillSearch, openAtStart } = options
   return {
     isOn: chiefOfStaff !== false, voiceFile: typeof voiceFile === 'string' ? voiceFile.trim() : '', isQuiet: quietChat !== false,
-    isKnowOn: youShouldKnow !== false, isLeftOn: leftUndone !== false, isAutoOn: autoSetup !== false, isSearchOn: skillSearch !== false, isOpenOn: openAtStart !== false,
+    isKnowOn: youShouldKnow !== false, isLeftOn: leftUndone !== false, isAutoOn: autoSetup !== false, isSearchOn: skillSearch !== false, isOpenOn: openAtStart === true, // off by default: the one switch that does not read a missing value as on
   }
 }
 

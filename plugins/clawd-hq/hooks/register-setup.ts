@@ -25,6 +25,7 @@ import { knowIo } from './register-know'
 import { planRunIo } from './register-plan'
 import { homeOf } from './register-rules'
 import { getFx, getPayroll, readBlurbs, readOnboard, readRoster, ses, setFx, updateArtifacts, updateContractorOffers, updateLeftUndone, updateOnboard, updatePayroll } from './register-state'
+import { isOfficeOpened } from './office-tip'
 import { offerRule } from './rule-io'
 import { askClawd, runScout, scoutHandoff } from './scout-run'
 import type { ScoutHost } from './scout-run'
@@ -70,7 +71,8 @@ export async function onboardIo($: EngineInterface, opts: BriefingOptions): Prom
   return guardRun(() => ses.cwd !== at, {
     now: () => now, cwd: ses.cwd, home: () => home, isFolder: path => $.fs.stat(path).then(s => s.kind === 'dir', () => false), configDir: () => config || undefined, blurbs: () => known, allAgentTypes: () => types, parked: () => p.laidOff,
     get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value),
-    isShown: async () => (await $.session.surfaces().catch(() => [])).length > 0, isAutoOn: () => opts.isAutoOn,
+    // Setup starts once a surface is drawn and the office has been opened for real (hooks/office-tip.ts): a closed office only delays it.
+    isShown: async () => isOfficeOpened() && (await $.session.surfaces().catch(() => [])).length > 0, isAutoOn: () => opts.isAutoOn,
     list: dir => listEntries(dir, d => $.fs.list(d), path => $.fs.stat(path)), read: path => $.fs.read(path).catch(() => undefined), exists: path => $.fs.exists(path),
     ancestors: async name => ancestorPaths(await $.fs.ancestors({ names: [name] })),
     breakdown: async () => breakdownOf(await $.session.usage({ breakdown: 'summary' })), commands: async () => commandsOf(await $.command.list()),

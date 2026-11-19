@@ -1,7 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { RULES_FILE, VOICE_FILE } from '../hooks/instructions'
-import { HISTORY, SETTINGS, START, SURFACES, host, mountLog } from './host'
+import { CLOSED, HISTORY, SETTINGS, START, SURFACES, host as baseHost, mountLog } from './host'
+
+/** These tests read the switches as they come by default, so the host keeps the plugin's real defaults (an office closed at start). */
+const host = (on: Parameters<typeof baseHost>[0], agents: unknown[] = [], store: Record<string, unknown> = {}) => baseHost(on, agents, { ...CLOSED, ...store })
 
 type On = Parameters<typeof host>[0]
 
@@ -91,8 +94,8 @@ test('Settings lists the four configs, each a name with its toggle on the right 
     expect(await shows(ui, /^SWITCHES$/)).toBe(false)
     const tree = (await ui.drawn()) as unknown as Tree
     for (const [i, field] of FIELDS.entries()) {
-      // All four are on by default.
-      expect(await labelOf(ui, field)).toBe('● On')
+      // Every switch is on by default, except the one that opens the office at session start.
+      expect(await labelOf(ui, field)).toBe(field === 'openAtStart' ? '○ Off' : '● On')
       // The name and the toggle share one row, pushed to its two ends.
       const row = rowOf(tree, `config-${field}`)
       expect(row?.props.flexDirection).toBe('row')
@@ -144,7 +147,7 @@ test('each config reads on its own', { options: { quietChat: false } }, async ($
   host(on)
   await $.session.start(START)
   const ui = await mount($)
-  expect(await Promise.all(FIELDS.map(f => labelOf(ui, f)))).toEqual(['● On', '○ Off', '● On', '● On', '● On', '● On', '● On'])
+  expect(await Promise.all(FIELDS.map(f => labelOf(ui, f)))).toEqual(['● On', '○ Off', '● On', '● On', '● On', '● On', '○ Off'])
   await ui.unmount()
 })
 
@@ -165,7 +168,7 @@ test('pressing a toggle flips that config to the other value in the plugin\'s ow
   const { saved } = host(on)
   const asked = configs(on)
   await $.session.start(START)
-  const first: Record<string, boolean> = { chiefOfStaff: false, quietChat: false, youShouldKnow: false, leftUndone: true, autoSetup: false, skillSearch: false, openAtStart: false }
+  const first: Record<string, boolean> = { chiefOfStaff: false, quietChat: false, youShouldKnow: false, leftUndone: true, autoSetup: false, skillSearch: false, openAtStart: true }
   for (const [i, surface] of SURFACES.entries()) {
     const ui = await mount($, surface)
     for (const field of FIELDS) await ui.press({ key: `config-${field}` })
@@ -257,7 +260,7 @@ test('while Clawd is busy with a turn the configs cannot be changed: dimmed valu
     const ui = await mount($, surface)
     expect((await buttons(ui)).filter(k => k.startsWith('config-'))).toEqual([])
     const values = await ui.findAll({ type: 'Text', text: /^● On$/ })
-    expect(values).toHaveLength(7)
+    expect(values).toHaveLength(6) // the seventh switch, opening the office at start, is off by default
     expect(values.every(t => t.props.dimColor === true)).toBe(true)
     expect(await shows(ui, 'You can change these when Clawd is free.')).toBe(true)
     // The busy line stands in for the one on when a change applies.

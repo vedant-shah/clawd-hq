@@ -25,7 +25,9 @@ export async function mountLog($: Engine, surface: 'terminal' | 'desktop', over:
   if (fold !== undefined && String(fold.props.label ?? '').startsWith('▸')) await ui.press({ key: 'history-other' })
   return ui
 }
-export const SURFACES = ['terminal', 'desktop'] as const
+/** For the `store` argument of `host`: the plugin's real default, a closed office (the test host otherwise opens it). */
+export const CLOSED = { 'toggle:openAtStart': undefined }
+export const SURFACES =['terminal', 'desktop'] as const
 export const HOUR = 3_600_000
 
 export const START = { cwd: '/repo', surface: 'terminal', isInteractive: true } as never
@@ -71,7 +73,9 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
     return { value: undefined } as never
   })
   /** The plugin's store, in memory and seeded from `store`. `isWriteFailing` is a store that refuses a write, `failKeys` the keys alone that it refuses; `held` is a write that waits until it settles. */
-  const saved = new Map<string, unknown>(Object.entries(store))
+  // The plugin's own default is a closed office. The test host keeps the old one (the panes open at session start) so each test
+  // stays about its own subject; a test of the closed default passes `CLOSED` in `store` to opt out.
+  const saved = new Map<string, unknown>(Object.entries({ 'toggle:openAtStart': true, ...store }))
   const kv = { isWriteFailing: false, held: undefined as Promise<void> | undefined, failKeys: new Set<string>() }
   on('store.get', (_$, e) => ({ value: saved.get((e as { key: string }).key) }) as never)
   on('store.set', async (_$, e) => {

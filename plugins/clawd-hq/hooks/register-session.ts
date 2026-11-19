@@ -11,6 +11,7 @@ import { leftStart } from './left-io'
 import { BRAND } from './office'
 import { isLively, isSettling, settle } from './office-state'
 import { checkOld } from './old-decisions'
+import { markOpened, noticeOpen, tipOffice } from './office-tip'
 import { checkOnboard, isSetupBusy, savedOf, startOnboard } from './onboard'
 import { askOnAttach, openAtStart } from './panes'
 import { checkPayroll, resetPayroll } from './payroll'
@@ -38,6 +39,7 @@ import { startGauge } from './usage'
 async function onFrame($: EngineInterface, frames: number, opts: BriefingOptions) {
   const [list, f, b, t0] = [await readStaff($), await getFx($), await getBoss($), await readTick($)]
   if (frames % 8 === 0) {
+    await noticeOpen($) // the office panel opened without /office also lets setup start
     const followed = followFolder(folderIo($, opts)).catch(() => false) // not waited for: a slow check never holds a frame
     await reconcile(runIo($))
     const isDrawn = (await $.session.surfaces().catch(() => [])).length > 0 // the desktop attaches after session start
@@ -117,8 +119,18 @@ export function registerSession(on: On, brief: BriefingOptions) {
     void sweepArtifacts(artifactIo($), ses.cwd).catch(() => undefined) // not waited for: session start never holds on it
 
     // Once the engine has the session's surfaces, Office opens and is asked to the front; with none yet, on attach (hooks/panes.ts).
-    return next(e).finally(() => void openAtStart(paneIo($), () => brief.isOpenOn))
+    // Closed by default: with the switch off, a short tip says how to open the office, until it has been opened once.
+    return next(e).finally(() => void openAtStart(paneIo($), () => brief.isOpenOn).then(() => (brief.isOpenOn ? markOpened($) : tipOffice($))))
   })
+
+  // /office and /office-setup are the person opening the office: the tip is over for good and setup may start.
+  // The command itself runs after this (hooks/register-commands.ts). The tour does not count.
+  for (const command of ['office', 'office-setup']) {
+    on('command.run', { command }, async ($, e, next) => {
+      await markOpened($)
+      return next(e)
+    })
+  }
 
   // The host moved the session (the desktop app can start it in a spare folder): what is kept per folder follows (issue #5).
   // The host's own handling (the settings hooks beneath) goes first; the move is followed after it.

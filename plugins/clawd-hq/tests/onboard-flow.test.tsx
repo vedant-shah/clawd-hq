@@ -5,8 +5,8 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { DONE_HEAD, DONE_TAIL } from '../hooks/onboard-cards'
 import { SOURCES_KEY, isSetupBusy } from '../hooks/onboard'
-import { CLEAR, START, SURFACES } from './host'
-import { CWD, frames, offerAgents, office, onboardHost, press, saveOf, settle } from './onboard-host'
+import { CLEAR, CLOSED, START, SURFACES } from './host'
+import { CWD, frames, offerAgents, offerAgentsClosed, office, onboardHost, press, saveOf, settle } from './onboard-host'
 import type { OnboardHost } from './onboard-host'
 
 type Surface = (typeof SURFACES)[number]
@@ -23,7 +23,16 @@ async function open($: Engine, h: OnboardHost, surface: Surface) {
   await $.session.start(surface === 'terminal' ? START : DESKTOP_START)
   await offerAgents($)
   if (surface === 'desktop') await $.session.attach(DESKTOP)
+  await $.command.run({ command: 'office', args: '' } as never) // setup starts when the office opens
   await frames(h)
+}
+
+/** The same start with the office left closed (the default): nothing opens it. */
+async function startClosed($: Engine, h: OnboardHost, surface: Surface) {
+  await $.session.start(surface === 'terminal' ? START : DESKTOP_START)
+  await offerAgentsClosed($)
+  if (surface === 'desktop') await $.session.attach(DESKTOP)
+  await frames(h, 20)
 }
 
 const opusCalls = (h: OnboardHost) => h.calls.models.filter(m => m.model === 'opus')
@@ -142,6 +151,7 @@ test('the desktop app: nothing runs before its view attaches, then setup runs by
   expect(saveOf(h)).toBeUndefined()
   expect(h.calls.models).toEqual([])
   await $.session.attach(DESKTOP)
+  await $.command.run({ command: 'office', args: '' } as never)
   await frames(h)
   expect(saveOf(h)?.step).toBe('done')
 })
@@ -411,4 +421,84 @@ test('with Automatic setup off and no setup saved, the automatic trim is not mad
   for (const agent of MANY) await $.agent.offer({ agent, description: 'Go work.' } as never)
   await frames(h, 60)
   expect((h.saved.get(`payroll:${CWD}`) as { isReviewed: boolean } | undefined)?.isReviewed).not.toBe(true)
+})
+
+// ---- Setup waits for the office to open ----
+
+/** A host with the plugin's real default, an office closed at start (the test host otherwise opens it). */
+const closedHost = (on: Parameters<typeof onboardHost>[0], store: Record<string, unknown> = {}) => onboardHost(on, { ...CLOSED, ...store })
+
+for (const surface of SURFACES) {
+  test(`${surface}: with the office closed, setup does not run, and nothing is saved, asked or said`, async ($, on) => {
+    const h = closedHost(on)
+    await startClosed($, h, surface)
+    expect(saveOf(h)).toBeUndefined()
+    expect(h.calls.models).toEqual([])
+    expect(h.calls.registered).toEqual([])
+    expect(h.toasts.filter(t => !/Type \/office/.test(t))).toEqual([])
+  })
+}
+
+test('setup runs on the first open of the office, through /office', async ($, on) => {
+  const h = closedHost(on)
+  await startClosed($, h, 'terminal')
+  expect(saveOf(h)).toBeUndefined()
+  await $.command.run({ command: 'office', args: '' } as never)
+  await frames(h)
+  expect(saveOf(h)?.step).toBe('done')
+  expect(opusCalls(h)).toHaveLength(1)
+  expect(h.toasts.filter(t => /fail|error/i.test(t))).toEqual([])
+})
+
+test('with the switch on the office opens at the start, and setup runs with no /office', { options: { openAtStart: true } }, async ($, on) => {
+  const h = closedHost(on)
+  await startClosed($, h, 'terminal')
+  expect(saveOf(h)?.step).toBe('done')
+})
+
+test('opening the tour does not start setup', async ($, on) => {
+  const h = closedHost(on)
+  await startClosed($, h, 'terminal')
+  await $.command.run({ command: 'office-demo', args: '' } as never)
+  await frames(h, 20)
+  expect(saveOf(h)).toBeUndefined()
+})
+
+test('the office panel opened through Claude Code\'s own controls, with no /office typed, starts setup and keeps the marker', async ($, on) => {
+  const h = closedHost(on)
+  await startClosed($, h, 'terminal')
+  expect(saveOf(h)).toBeUndefined()
+  h.panes.push({ id: 'clawd-hq', title: 'Office' }) // the host's own control puts the panel on screen
+  await frames(h)
+  expect(saveOf(h)?.step).toBe('done')
+  expect(h.saved.get('officeOpened')).toBe(true)
+})
+
+test('another tab of the office opened on its own (People) does not count as opening the office', async ($, on) => {
+  const h = closedHost(on)
+  await startClosed($, h, 'terminal')
+  h.panes.push({ id: 'clawd-hq-people', title: 'People' })
+  await frames(h, 20)
+  expect(saveOf(h)).toBeUndefined()
+  expect(h.saved.has('officeOpened')).toBe(false)
+})
+
+test('the tour\'s own panes do not keep the marker either', async ($, on) => {
+  const h = closedHost(on)
+  await startClosed($, h, 'terminal')
+  await $.command.run({ command: 'office-demo', args: '' } as never)
+  await frames(h, 20)
+  expect(h.saved.has('officeOpened')).toBe(false)
+})
+
+test('a setup left half done waits for the office too, then resumes from its saved step', async ($, on) => {
+  const h = closedHost(on, { [KEY]: { step: 'team', role: 'Software engineer', at: OLD }, [`team:${CWD}`]: SAVED_TEAM })
+  await startClosed($, h, 'terminal')
+  expect(saveOf(h)?.step).toBe('team')
+  expect(h.calls.registered).toEqual([])
+  expect(h.calls.models).toEqual([])
+  await $.command.run({ command: 'office', args: '' } as never)
+  await frames(h)
+  expect(saveOf(h)?.step).toBe('done')
+  expect(opusCalls(h)).toHaveLength(0)
 })

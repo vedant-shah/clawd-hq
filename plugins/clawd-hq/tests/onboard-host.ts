@@ -159,9 +159,15 @@ export const settle = async (h: OnboardHost, rounds = 60) => { for (let i = 0; i
 /** Enough frames for the setup check (every 8th), then the work it started. */
 export const frames = async (h: OnboardHost, n = 9) => { for (let i = 0; i < n; i += 1) await h.clock.advance(400); await settle(h) }
 
-/** Every agent type is offered, as Claude Code does at session start. */
-export async function offerAgents($: Engine) {
+/** Every agent type is offered, as Claude Code does at session start; the office stays closed. */
+export async function offerAgentsClosed($: Engine) {
   for (const [agent, description] of Object.entries(AGENTS)) await $.agent.offer({ agent, description } as never)
+}
+
+/** The same, and the person types /office: setup starts once the office has been opened (it is held while the office is closed). */
+export async function offerAgents($: Engine) {
+  await offerAgentsClosed($)
+  await $.command.run({ command: 'office', args: '' } as never)
 }
 
 /** The Office tab as drawn now: its texts and the setup card's buttons (key and label). */

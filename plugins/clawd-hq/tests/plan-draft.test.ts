@@ -167,7 +167,9 @@ test('a title that is empty or looks like a key makes nothing', async () => {
 })
 
 test('a draft read back from the store is checked: the right folder, a title, and some steps', () => {
-  expect(draftKey('/repo')).toBe('planDraft:/repo')
+  // A draft is the session's own: two sessions in one folder have two slots.
+  expect(draftKey('/repo', 's1')).toBe('planDraft:/repo:s1')
+  expect(draftKey('/repo', 's2')).not.toBe(draftKey('/repo', 's1'))
   const ok = { folder: '/repo', title: 'T', steps: ['a'], at: 5, isTold: true, kind: 'waiting' }
   expect(draftFrom(ok, '/repo')).toEqual(ok)
   expect(draftFrom({ ...ok, folder: '/other' }, '/repo')).toBeNull()

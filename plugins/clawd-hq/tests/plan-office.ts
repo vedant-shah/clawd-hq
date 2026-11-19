@@ -8,17 +8,25 @@ import { ROOT, disk } from './plan-disk'
 export const KEY = 'fix-login:0'
 export const emp = (over: Partial<Employee> = {}): Employee => ({ id: 'a1', type: 'general-purpose', description: 'Do it', mood: 'working', tools: 0, startedAt: 100, joinedTick: 0, planKey: KEY, ...over })
 
-export function office(files: Record<string, string> = {}, isOn = true) {
-  const d = disk(files)
-  const mine = { state: null as PlanState | null, drafts: new Map<string, PlanDraft | null>(), get draft() { return this.drafts.get(ROOT) ?? null }, started: [] as Array<{ title: string; steps: number; by: string }>, staff: [] as Employee[], isOn, later: [] as string[][], ended: [] as GoalEnd[], keepFails: false, seamFails: false, at: 1_000, setDelays: [] as number[], getFails: false }
+/** The session of a test's office unless it says another: the one the plan files of the tests (`BASE`) name. */
+export const SESSION = 's1'
+
+/**
+ * One session's office. `over.d` is another office's disk, so two sessions share one project folder (the state, the staff and the drafts
+ * are each session's own); `over.session` is the id the session has, which a test may change as /clear does.
+ */
+export function office(files: Record<string, string> = {}, isOn = true, over: { session?: string; d?: ReturnType<typeof disk> } = {}) {
+  const d = over.d ?? disk(files)
+  const mine = { state: null as PlanState | null, session: over.session ?? SESSION, drafts: new Map<string, PlanDraft | null>(), get draft() { return this.drafts.get(ROOT) ?? null }, started: [] as Array<{ title: string; steps: number; by: string }>, staff: [] as Employee[], isOn, later: [] as string[][], ended: [] as GoalEnd[], notes: [] as string[], keepFails: false, seamFails: false, at: 1_000, setDelays: [] as number[], getFails: false }
   const io: PlanRunIo = {
-    isOn: () => mine.isOn, root: () => ROOT, files: d.io, now: async () => mine.at,
+    isOn: () => mine.isOn, root: () => ROOT, files: d.io, now: async () => mine.at, session: async () => mine.session,
     get: async () => { if (mine.getFails) throw new Error('the state is shut'); return mine.state },
     // A write that is slow lands late: what is set in the wrong order shows.
     set: async fn => { for (let i = mine.setDelays.shift() ?? 0; i > 0; i -= 1) await Promise.resolve(); mine.state = fn(mine.state); return mine.state },
     staff: async () => mine.staff,
     keepLater: async texts => { if (mine.keepFails) throw new Error('the list refused'); mine.later.push(texts) },
     draft: { get: async folder => mine.drafts.get(folder) ?? null, set: async (folder, fn) => { const next = fn(mine.drafts.get(folder) ?? null); mine.drafts.set(folder, next); return next } },
+    notes: { get: async () => mine.notes, set: async fn => { mine.notes = fn(mine.notes); return mine.notes } },
     goalStarted: async start => { mine.started.push({ title: start.title, steps: start.steps, by: start.by }) },
     goalStartedAt: async () => undefined,
     goalEnded: async end => { if (mine.seamFails) throw new Error('the record refused'); mine.ended.push(end) },

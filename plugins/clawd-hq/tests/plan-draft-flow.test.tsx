@@ -13,7 +13,9 @@ const TOOL = 'mcp__clawd-hq__plan'
 const DIR = `${ROOT}/.clawd-hq`
 const PLANS = `${DIR}/plans`
 const SCORES = `${PLANS}/export-scores.md`
-const THREE = '# Export scores\n\n- [ ] Find how it works  <!-- s1 -->\n- [ ] Build it  <!-- s2 -->\n- [ ] Review  <!-- s3 -->\n'
+const THREE = '# Export scores\n\n- [ ] Find how it works  <!-- s1 -->\n- [ ] Build it  <!-- s2 -->\n- [ ] Review  <!-- s3 -->\n<!-- session: s1 -->\n'
+/** Where session `s1` (the session of these tests) keeps the draft waiting in /repo. */
+const DRAFT_KEY = 'planDraft:/repo:s1'
 const REPORT = 'Read the code.\nSTEP: Find where scores live\nSTEP: Write the export\nSTEP: Test it\n'
 
 type Answer = { result?: string; deny?: string }
@@ -116,7 +118,17 @@ test('a draft survives a reload of the plugin: it is kept in the store', async (
   await $.session.start(START)
   await hire($, 'PLAN-DRAFT: Add XLSX\nPlan XLSX.')
   await end($, 'p1', 'STEP: Pick a library\nSTEP: Write it')
-  expect(JSON.stringify(h.saved.get('planDraft:/repo'))).toContain('Add XLSX')
+  expect(JSON.stringify(h.saved.get(DRAFT_KEY))).toContain('Add XLSX')
+})
+
+test('a draft belongs to the session whose Planner made it: another session\'s draft, and one saved before drafts named a session, are not shown', async ($, on) => {
+  const h = office(on, { [SCORES]: THREE })
+  const draft = { folder: '/repo', title: 'Not mine', steps: ['a', 'b'], at: 1_000, isTold: false, kind: 'waiting' }
+  h.saved.set('planDraft:/repo:s2', draft)
+  h.saved.set('planDraft:/repo', draft)
+  await $.session.start(START)
+  expect((await plan($, { op: 'later', text: 'Tidy' })).result).not.toContain('waiting')
+  expect(h.saved.get('planDraft:/repo:s2')).toEqual(draft)
 })
 
 test('a guessed end makes nothing: a stop signal that is not a hand-back, or a hand-back that failed, ticks and files nothing', async ($, on) => {
@@ -144,7 +156,7 @@ test('with Clawd off the PLAN-DRAFT: line stays in the brief untouched: no note,
   expect(h.prompts[0]).toBe(`PLAN-DRAFT: Export scores\nPlan the export.${BRIEF_NOTE}`)
   await end($, 'p1')
   expect(planFiles(h)).toEqual([])
-  expect(h.saved.get('planDraft:/repo')).toBeUndefined()
+  expect(h.saved.get(DRAFT_KEY)).toBeUndefined()
 })
 
 test('a long PLAN-DRAFT: line is cut for the title but its full text stays as the first line of the brief; a short one is gone from it', async ($, on) => {
@@ -175,10 +187,10 @@ test('a draft another session spent cannot come back: the store is read again, n
   await $.session.start(START)
   await hire($, 'PLAN-DRAFT: Add XLSX\nPlan XLSX.')
   await end($, 'p1', 'STEP: Pick a library\nSTEP: Write it')
-  expect(JSON.stringify(h.saved.get('planDraft:/repo'))).toContain('Add XLSX')
-  h.saved.set('planDraft:/repo', null) // another session started it and spent it
+  expect(JSON.stringify(h.saved.get(DRAFT_KEY))).toContain('Add XLSX')
+  h.saved.set(DRAFT_KEY, null) // a copy of this session's (a hot reload ran another copy of the plugin) started it and spent it
   expect((await plan($, { op: 'later', text: 'Tidy' })).result).not.toContain('waiting')
-  expect(h.saved.get('planDraft:/repo')).toBeNull()
+  expect(h.saved.get(DRAFT_KEY)).toBeNull()
 })
 
 test('a plan the office started by itself is told to Clawd once on his next plan answer, and the store keeps nothing after', async ($, on) => {
@@ -188,7 +200,7 @@ test('a plan the office started by itself is told to Clawd once on his next plan
   await end($, 'p1')
   expect((await plan($, { op: 'later', text: 'Tidy' })).result).toContain("The Planner's plan for Export scores was started: 3 steps.")
   expect((await plan($, { op: 'later', text: 'Tidy more' })).result).not.toContain('was started')
-  expect(h.saved.get('planDraft:/repo')).toBeNull()
+  expect(h.saved.get(DRAFT_KEY)).toBeNull()
 })
 
 test('a workflow agent keeps its prompt as the script wrote it, and files nothing', async ($, on) => {

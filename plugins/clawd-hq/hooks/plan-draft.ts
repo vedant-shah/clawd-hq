@@ -67,8 +67,11 @@ export const draftNote = (draft: Pick<PlanDraft, 'title' | 'steps'>) =>
 /** What Clawd is told, once, after the office started the Planner's plan by itself. */
 export const startedNote = (draft: Pick<PlanDraft, 'title' | 'steps'>) => `The Planner's plan for ${draft.title} was started: ${draft.steps.length} ${draft.steps.length === 1 ? 'step' : 'steps'}.`
 
-/** The store key of the draft waiting in one project folder. */
-export const draftKey = (folder: string) => `planDraft:${folder}`
+/**
+ * The store key of the draft waiting for one session in one project folder. DECIDED: a draft is its session's own, as its goal is, so two
+ * sessions in a folder have two slots; one saved under the folder alone (before drafts named a session) is read by no one and ages out.
+ */
+export const draftKey = (folder: string, session: string) => `planDraft:${folder}:${session}`
 
 /** A draft as the store held it, or none when what it holds is not one (the store is read, never trusted). */
 export function draftFrom(raw: unknown, folder: string): PlanDraft | null {

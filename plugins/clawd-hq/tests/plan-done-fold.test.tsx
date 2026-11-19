@@ -13,7 +13,7 @@ type Surface = (typeof SURFACES)[number]
 const PLAN = `${ROOT}/.clawd-hq/plans/export-scores.md`
 /** The plan file with the first `done` steps ticked; the first two steps carry a choice each. */
 const planText = (done: number) => ['# Export scores as CSV', '',
-  ...STEPS.flatMap((text, i) => [`- [${i < done ? 'x' : ' '}] ${text}  <!-- s${i + 1} -->`, ...(i < 2 ? [`  - Decided: choice ${i + 1}`] : [])]), ''].join('\n')
+  ...STEPS.flatMap((text, i) => [`- [${i < done ? 'x' : ' '}] ${text}  <!-- s${i + 1} -->`, ...(i < 2 ? [`  - Decided: choice ${i + 1}`] : [])]), '<!-- session: unknown -->', ''].join('\n')
 
 /** A session with a goal of seven steps, the first `done` ticked. */
 async function goal($: Engine, on: Parameters<typeof host>[0], done: number) {

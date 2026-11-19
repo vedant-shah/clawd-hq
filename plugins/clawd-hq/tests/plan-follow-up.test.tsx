@@ -8,7 +8,8 @@ import { ROOT, planFs } from './plan-disk'
 
 const TOOL = 'mcp__clawd-hq__plan'
 const PLAN = `${ROOT}/.clawd-hq/plans/export-scores.md`
-const THREE = '# Export scores\n\n- [ ] Find how it works  <!-- s1 -->\n- [ ] Build it  <!-- s2 -->\n- [ ] Review  <!-- s3 -->\n'
+// The host of these tests does not say its session, so it is "unknown", and so is the owner this plan file names.
+const THREE = '# Export scores\n\n- [ ] Find how it works  <!-- s1 -->\n- [ ] Build it  <!-- s2 -->\n- [ ] Review  <!-- s3 -->\n<!-- session: unknown -->\n'
 
 type Answer = { result?: string; deny?: string }
 const plan = ($: Engine, input: Record<string, unknown>) => $.tool.call({ tool: TOOL, ...input } as never) as Promise<Answer>

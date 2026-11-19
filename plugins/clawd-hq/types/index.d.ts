@@ -87,6 +87,8 @@ export type PlanState = {
   steps: PlanStep[]
   later: Array<{ id: string; text: string }>
   startedAt: number
+  /** The session that owns the goal, as the plan file's `session` line said when it was last read or written (hooks/plan-run.ts); none for a plan of no session. A file that says another is not written to. */
+  session?: string
   /** Every step is ticked, but ending the goal was refused and Clawd was told (hooks/plan-run.ts); only `finish` ends it now. Gone once a step is open again. */
   isStuck?: true
 }
@@ -309,6 +311,8 @@ declare module 'claude-code' {
       onboard: { step: string; lines: readonly string[]; buttons: readonly unknown[] } | null
       /** The goal in hand (hooks/plan-live.ts); null when there is none, or when Clawd is off and none was loaded. */
       plan: PlanState | null
+      /** Lines for Clawd that wait for his next `plan` answer (hooks/plan-run.ts): a hand-back that found no goal. Kept for the session only. */
+      planNotes: string[]
     }
   }
 }

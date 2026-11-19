@@ -217,14 +217,15 @@ test('with Clawd off, runs, tools and requests are still kept, and no goal is (t
 // ---- The goal's start, kept in its plan file ----
 
 const PLAN_FILE = `${DIR}/plans/export-scores-as-csv.md`
-const seededPlan = (started?: number) => `# Export scores as CSV\n\n- [x] Find it  <!-- s1 -->\n- [ ] Build it  <!-- s2 -->\n${started === undefined ? '' : `<!-- started: ${started} -->\n`}<!-- next: s3 l1 -->\n`
+const seededPlan = (started?: number) => `# Export scores as CSV\n\n- [x] Find it  <!-- s1 -->\n- [ ] Build it  <!-- s2 -->\n${started === undefined ? '' : `<!-- started: ${started} -->\n`}<!-- session: s1 -->\n<!-- next: s3 l1 -->\n`
 
 test('a new plan writes its start in its file, beside the next line, and its goal_start is stamped with it', async ($, on) => {
   const h = office(on)
   await $.session.start(START)
   await start($)
   await endSession($)
-  const began = Number(/<!-- started: (\d+) -->\n<!-- next: /.exec(h.files.get(PLAN_FILE)!)![1])
+  expect(h.files.get(PLAN_FILE)).toContain('<!-- session: s1 -->') // and the session that started the goal, for the goal's owner
+  const began = Number(/<!-- started: (\d+) -->\n<!-- session: s1 -->\n<!-- next: /.exec(h.files.get(PLAN_FILE)!)![1])
   expect(began).toBeGreaterThan(0)
   expect(ofKind(h, 'goal_start')[0]!.at).toBe(began)
 })

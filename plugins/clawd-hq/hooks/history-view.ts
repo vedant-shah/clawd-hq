@@ -3,6 +3,7 @@
 // one line per run, this session's (from the books) and earlier sessions' (from the history) alike, newest first.
 // panel-history.tsx draws it for the terminal and the desktop.
 import type { Employee, Fx, PlanState } from '../types'
+import type { PlanView } from './plan'
 import { collapseRuns, runTokens } from './history'
 import type { GoalEndRecord, HistoryRecord, Outcome, RunRecord, StepEnd } from './history'
 import { nameLabel, ago, roleOf } from './office'
@@ -34,10 +35,16 @@ export type GoalLine = {
   pages: Array<{ url: string; title: string }>
   /** What Resume puts in the prompt box, for a goal set aside. */
   resume?: string
+  /** A goal another session left open (or a plan file of no session): it is listed with its steps, not as a goal that ended. */
+  isElsewhere?: true
+  /** Resume takes this open goal over for this session (hooks/plan-run.ts `takeOver`): shown only with Clawd on and no goal in hand. */
+  canTakeOver?: boolean
 }
 export type OtherLine = { id: string; name: string; task: string; outcome: Outcome; startedAt: number; at: number }
 export type HistoryLayout = {
   inProgress?: { title: string; done: number; total: number }
+  /** Goals other sessions left open in this folder, newest first (hooks/register-panes.ts lists them from the plan files). */
+  open: GoalLine[]
   goals: GoalLine[]; olderGoals: number; isGoalsOlderOpen: boolean
   other: { count: number; isOpen: boolean; lines: OtherLine[]; older: number; isOlderOpen: boolean }
   isEmpty: boolean
@@ -81,6 +88,25 @@ function goalLine(end: GoalEndRecord, runs: readonly RunRecord[], folds: Readonl
   }
 }
 
+/** A plan file in the folder that this session does not own: its slug and view as `loadGoals` gives them (hooks/plan-io.ts). */
+export type OpenGoal = { slug: string; plan: PlanView; mtimeMs: number }
+
+/**
+ * Another session's open goal as a line of its own: its steps with their ticks and choices, and a Resume that takes it over for this session.
+ * DECIDED: it is listed apart from the goals that ended, never as in progress (that is this session's goal), and `at` is when it began (the
+ * plan file's `started` line, else the file's time) so its fold key is stable.
+ */
+function openLine(one: OpenGoal, folds: ReadonlySet<string>, canResume: boolean): GoalLine {
+  const at = one.plan.startedAt ?? one.mtimeMs
+  const fold = HISTORY_FOLD.goal(one.slug, at)
+  const done = one.plan.steps.filter(step => step.isDone).length
+  const steps: StepLine[] = one.plan.steps.map(step => ({ id: step.id, text: step.text, mark: step.isDone ? 'done' : 'open', choices: step.choices }))
+  return {
+    fold, slug: one.slug, at, title: one.plan.title, ...(one.plan.summary === undefined ? {} : { summary: one.plan.summary }), isSetAside: false, isOpen: folds.has(fold),
+    stats: `${done} of ${plural(one.plan.steps.length, 'step')} done`, steps, pages: [], isElsewhere: true, canTakeOver: canResume,
+  }
+}
+
 /** A run's name as the office shows it: the name it was given, else its type's role. */
 const nameOf = (name: string | undefined, type: string) => (name ? nameLabel(name) : '') || roleOf(type).title
 const OUTCOMES: readonly string[] = ['done', 'failed', 'lost', 'stopped']
@@ -108,6 +134,8 @@ export function prepared(records: readonly HistoryRecord[]): Prepared {
 
 export type HistoryInput = {
   records: readonly HistoryRecord[]; staff: Employee[]; sessionStart: number; plan: PlanState | null; isOn: boolean; folds: Fx['folds']
+  /** The plan files of this folder that another session owns, or no session (hooks/register-panes.ts). Shown only while Clawd runs the chat. */
+  openGoals?: readonly OpenGoal[]
 }
 
 export function historyLayout(input: HistoryInput): HistoryLayout {
@@ -130,19 +158,22 @@ export function historyLayout(input: HistoryInput): HistoryLayout {
   const isOlderOpen = folds.has(HISTORY_FOLD.otherOlder)
   const room = isOlderOpen ? count : OTHER_SHOWN
   const plan = input.isOn ? input.plan : null
+  // Open goals of other sessions: never the goal in hand, and none with Clawd off (a goal is Clawd's, as the plan is).
+  const open = !input.isOn ? [] : (input.openGoals ?? []).filter(one => one.slug !== input.plan?.slug)
+    .map(one => openLine(one, folds, canResume)).sort((a, b) => b.at - a.at)
   return {
     ...(plan === null ? {} : { inProgress: { title: plan.title, done: plan.steps.filter(s => s.isDone).length, total: plan.steps.length } }),
-    goals, olderGoals: Math.max(0, ends.length - GOALS_SHOWN), isGoalsOlderOpen,
+    open, goals, olderGoals: Math.max(0, ends.length - GOALS_SHOWN), isGoalsOlderOpen,
     other: {
       count, isOpen: folds.has(HISTORY_FOLD.other), lines: all.slice(0, room),
       older: Math.max(0, count - OTHER_SHOWN), isOlderOpen,
     },
-    isEmpty: ends.length === 0 && count === 0,
+    isEmpty: ends.length === 0 && count === 0 && open.length === 0,
   }
 }
 
 /** The empty tab: what a layout that could not be made falls back to. */
-const EMPTY_LAYOUT: HistoryLayout = { goals: [], olderGoals: 0, isGoalsOlderOpen: false, other: { count: 0, isOpen: false, lines: [], older: 0, isOlderOpen: false }, isEmpty: true }
+const EMPTY_LAYOUT: HistoryLayout = { open: [], goals: [], olderGoals: 0, isGoalsOlderOpen: false, other: { count: 0, isOpen: false, lines: [], older: 0, isOlderOpen: false }, isEmpty: true }
 
 /** The layout, or (a record no check foresaw broke it) the empty tab and a word about why, so the tab never fails to draw. */
 export function safeHistoryLayout(input: HistoryInput, onError: (why: string) => void): HistoryLayout {

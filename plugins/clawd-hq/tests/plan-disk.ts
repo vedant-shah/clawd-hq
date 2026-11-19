@@ -4,7 +4,10 @@ import type { PlanIo } from '../hooks/plan-io'
 export const ROOT = '/repo'
 export const DIR = `${ROOT}/.clawd-hq/plans`
 export const FILE = `${DIR}/fix-login.md`
-export const BASE = '# Fix login\n\n- [ ] Find the bug  <!-- s1 -->\n- [ ] Fix it  <!-- s2 -->\n'
+/** A plan file saved before plan files named their session: no one owns it. */
+export const LEGACY = '# Fix login\n\n- [ ] Find the bug  <!-- s1 -->\n- [ ] Fix it  <!-- s2 -->\n'
+/** The same plan, started by session `s1` (the session the tests' offices have unless they say another). */
+export const BASE = `${LEGACY}<!-- session: s1 -->\n`
 
 /**
  * A project folder in memory. Folders are what files lie in; `links` makes a path lead somewhere else (as `stat` and `list` tell it);

@@ -9,6 +9,7 @@
 //   ## Later                              the put-off list, same line format, ids `l1`, `l2`, ...
 //   <!-- next: s7 l3 -->                  the next id to give out in each list, so a deleted step's number is not used again
 //   <!-- started: 1794370000000 -->       when the goal began (epoch ms), written at start; a plan from before it has none
+//   <!-- session: <id> -->                the session that owns the goal (hooks/plan-run.ts): written at start, moved by a takeover; a plan from before it has none
 //
 // A step owns the indented lines straight under it (its `Decided:` lines and any note a person indented there): they move with it.
 // Any other line (notes, blank lines, a step the parser does not know) is a row of its own, kept where it is.
@@ -32,6 +33,8 @@ export type Row =
   | { kind: 'next'; s: number; l: number; text: string; eol: string }
   /** When the goal began, written once at its start. Only the first such line in a file counts. */
   | { kind: 'started'; at: number; text: string; eol: string }
+  /** The session that owns the goal. Only the first such line in a file counts. */
+  | { kind: 'session'; id: string; text: string; eol: string }
   | Item
 
 /** `rows[0]` is always the title. `eol` is the line break the file uses (the first one in it), for the lines that are added. */
@@ -44,6 +47,9 @@ const DECIDED = /^ {2}- Decided:[ \t]*(\S.*?)[ \t]*$/
 const INDENTED = /^[ \t]+\S/
 const NEXT = /^<!-- next: s(\d{1,6}) l(\d{1,6}) -->$/
 const STARTED = /^<!-- started: (\d{1,15}) -->$/
+/** A session id: letters, digits and . _ : + - only, so it can never close the comment or carry a second line. */
+export const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,99}$/
+const SESSION = /^<!-- session: ([A-Za-z0-9][A-Za-z0-9._:+-]{0,99}) -->$/
 /** The largest number an id may have: the id pattern reads six digits. */
 export const MAX_ID = 999_999
 const itemLine = (prefix: 's' | 'l') => new RegExp(`^- \\[([ xX])\\] +(\\S.*?)(?: +<!-- *(${prefix}\\d{1,6}) *-->)?[ \\t]*$`)
@@ -83,6 +89,8 @@ function readLine(at: Reading, line: { text: string; eol: string }): Reading {
   if (mark && !at.rows.some(row => row.kind === 'next')) return { ...at, rows: [...at.rows, { kind: 'next', s: Number(mark[1]), l: Number(mark[2]), text, eol }] }
   const began = STARTED.exec(text)
   if (began && !at.rows.some(row => row.kind === 'started')) return { ...at, rows: [...at.rows, { kind: 'started', at: Number(began[1]), text, eol }] }
+  const owner = SESSION.exec(text)
+  if (owner && !at.rows.some(row => row.kind === 'session')) return { ...at, rows: [...at.rows, { kind: 'session', id: owner[1]!, text, eol }] }
   return { ...at, rows: [...at.rows, { kind: 'other', text, eol }] }
 }
 
@@ -117,6 +125,27 @@ export function summaryOf(file: PlanFile): string | undefined {
 export function startedOf(file: PlanFile): number | undefined {
   const row = file.rows.find((r): r is Extract<Row, { kind: 'started' }> => r.kind === 'started')
   return row?.at
+}
+
+/** The session that owns the goal, as its `session` line says; none for a plan from before the line (it is owned by no session). */
+export function sessionOf(file: PlanFile): string | undefined {
+  const row = file.rows.find((r): r is Extract<Row, { kind: 'session' }> => r.kind === 'session')
+  return row?.id
+}
+
+/**
+ * The file with its `session` line saying `id`: the line replaced in place, or made before the `next` line (at the end when there is none).
+ * A file that already says it is returned as it is. `id` must be a plain id (`SESSION_ID`); the caller checks.
+ */
+export function withSession(file: PlanFile, id: string): PlanFile {
+  const text = `<!-- session: ${id} -->`
+  const at = file.rows.findIndex(row => row.kind === 'session')
+  if (at !== -1) return (file.rows[at] as { text: string }).text === text ? file : { ...file, rows: file.rows.map((row, i) => (i === at ? { ...row, id, text } : row)) }
+  const mark = file.rows.findIndex(row => row.kind === 'next')
+  const end = mark === -1 ? file.rows.length : mark
+  const before = file.rows.slice(0, end)
+  const kept = end === file.rows.length ? [...before.slice(0, -1), closeRow(before[before.length - 1]!, file.eol)] : before
+  return { ...file, rows: [...kept, { kind: 'session', id, text, eol: file.eol }, ...file.rows.slice(end)] }
 }
 
 /** The position of the `## Later` heading, or -1. */

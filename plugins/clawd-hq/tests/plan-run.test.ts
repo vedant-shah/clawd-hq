@@ -149,9 +149,9 @@ test('a call that throws is an answer and a debug record, never a crash', async 
 // ---- Loading ----
 
 test('loading holds the newest plan and saves the ids that were provisional first', async () => {
-  const { io, d, mine } = office({ [FILE]: '# Hand\n- [ ] By hand\n- [ ] A  <!-- s4 -->\n' })
+  const { io, d, mine } = office({ [FILE]: '# Hand\n- [ ] By hand\n- [ ] A  <!-- s4 -->\n<!-- session: s1 -->\n' })
   await loadPlan(io)
-  expect(d.held.get(FILE)).toBe('# Hand\n- [ ] By hand  <!-- s5 -->\n- [ ] A  <!-- s4 -->\n<!-- next: s6 l1 -->\n')
+  expect(d.held.get(FILE)).toBe('# Hand\n- [ ] By hand  <!-- s5 -->\n- [ ] A  <!-- s4 -->\n<!-- session: s1 -->\n<!-- next: s6 l1 -->\n')
   expect(mine.state?.steps.map(s => s.id)).toEqual(['s5', 's4'])
 })
 
@@ -293,7 +293,7 @@ test('dropping the only open step closes the goal; dropping every step does not 
   await loadPlan(a.io)
   expect(result(await call(a.io, { op: 'drop', id: 's2' }))).toContain(CLOSED)
   expect(a.d.held.get(FILE)).toBe('')
-  const b = office({ [FILE]: '# Fix login\n\n- [ ] Only  <!-- s1 -->\n' })
+  const b = office({ [FILE]: '# Fix login\n\n- [ ] Only  <!-- s1 -->\n<!-- session: s1 -->\n' })
   await loadPlan(b.io)
   const dropped = result(await call(b.io, { op: 'drop', id: 's1' }))
   expect(dropped).toContain('(0 of 0 done)')
@@ -521,7 +521,7 @@ test('an earlier goal\'s runs never count for the new goal\'s steps, even with t
 // ---- The state follows the files, in order ----
 
 test('a hand-back settling a step while Clawd adds one leaves both in the state, whichever is slow', async () => {
-  const six = `# Fix login\n\n${[1, 2, 3, 4, 5, 6].map(n => `- [ ] Step ${n}  <!-- s${n} -->`).join('\n')}\n`
+  const six = `# Fix login\n\n${[1, 2, 3, 4, 5, 6].map(n => `- [ ] Step ${n}  <!-- s${n} -->`).join('\n')}\n<!-- session: s1 -->\n`
   const { io, mine } = office({ [FILE]: six })
   await loadPlan(io)
   mine.staff = [emp({ id: 'r1', stepId: 's2', mood: 'done', endedAt: 500 })]
@@ -543,7 +543,7 @@ test('a reload of the goal in hand keeps what only the session knows: reopenings
   expect(mine.state?.steps.map(s => [s.id, s.isNew === true, s.reopenedAt])).toEqual([['s1', true, undefined], ['s2', false, 55]])
   // Another goal takes none of it.
   d.held.delete(FILE)
-  d.held.set(`${DIR}/other.md`, '# Other\n- [ ] x  <!-- s1 -->\n')
+  d.held.set(`${DIR}/other.md`, '# Other\n- [ ] x  <!-- s1 -->\n<!-- session: s1 -->\n')
   await loadPlan(io)
   expect(mine.state).toMatchObject({ slug: 'other', startedAt: 0 })
 })
@@ -613,9 +613,9 @@ test('a Dismiss pressed for another goal is refused with a debug record, and the
   expect(d.notes.some(n => n.includes('another goal'))).toBe(true)
 })
 
-test('the office\'s own ops cannot be asked for through the tool: not forget, not decide', async () => {
+test('the office\'s own ops cannot be asked for through the tool: not forget, not decide, not own', async () => {
   const { io, d } = office({ [FILE]: LATER })
   await loadPlan(io)
-  for (const op of ['forget', 'decide']) expect(await call(io, { op, id: 'l1', choices: ['x'] })).toMatchObject({ deny: expect.stringContaining('The op must be one of') })
+  for (const op of ['forget', 'decide', 'own']) expect(await call(io, { op, id: 'l1', choices: ['x'] })).toMatchObject({ deny: expect.stringContaining('The op must be one of') })
   expect(d.writes).toHaveLength(0)
 })

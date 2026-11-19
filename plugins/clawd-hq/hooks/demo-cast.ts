@@ -23,5 +23,6 @@ export function onStage(data: PanelData): PanelData {
   // The stand-in goal and the stand-in finished goal, in place of the real ones; the real plan and history are not drawn while the tour plays, and the tour writes neither.
   const goal = demo.plan === undefined ? { plan: null } : { plan: demo.plan }
   const history = demo.at === undefined ? {} : { history: demoHistory(demo.at) }
-  return { ...data, ...goal, ...history, blurbs: BLURBS, roster: ROSTER, projectTokens: TOKENS, payroll: { ...data.payroll, laidOff: [] } }
+  // Nor are another session's open goals: the tour's History tab shows the stand-ins only.
+  return { ...data, ...goal, ...history, openGoals: [], blurbs: BLURBS, roster: ROSTER, projectTokens: TOKENS, payroll: { ...data.payroll, laidOff: [] } }
 }

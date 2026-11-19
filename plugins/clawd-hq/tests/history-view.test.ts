@@ -4,6 +4,7 @@ import { goalEndRecord, runTokens } from '../hooks/history'
 import type { GoalEndRecord, HistoryRecord, RunRecord } from '../hooks/history'
 import { HISTORY_FOLD, historyLayout, prepared, resumePrompt, safeHistoryLayout } from '../hooks/history-view'
 import type { HistoryInput } from '../hooks/history-view'
+import type { PlanView } from '../hooks/plan'
 
 // The History tab's content (pure): the tokens a goal line counts, which runs are Other work, when Resume shows, the layout kept while the
 // records are the same, and a record that breaks the layout falling back to the empty tab.
@@ -97,6 +98,40 @@ test('while a goal is in hand Resume is hidden (one goal at a time)', () => {
 test('a set-aside goal with no unfinished step has no Resume', () => {
   const allDone = end({ steps: [{ id: 's1', text: 'Plan the move', isDone: true, choices: [], retries: 0 }] })
   expect(resumeOf(historyLayout(input([allDone])))).toBeUndefined()
+})
+
+// ---- Open goals of other sessions ----
+
+const open = (slug: string, over: Partial<PlanView> = {}) => ({
+  slug, mtimeMs: NOW - 2 * HOUR,
+  plan: { title: 'Fix login', steps: [{ id: 's1', text: 'Find the bug', isDone: true, choices: ['use a test'] }, { id: 's2', text: 'Fix it', isDone: false, choices: [] }], later: [], startedAt: NOW - 3 * HOUR, session: 'elsewhere', ...over } as PlanView,
+})
+
+test('a goal another session left open is listed with its steps and a Resume that takes it over', () => {
+  const [line] = historyLayout(input([], { openGoals: [open('fix-login')] })).open
+  expect(line).toMatchObject({ slug: 'fix-login', title: 'Fix login', isElsewhere: true, canTakeOver: true, isSetAside: false, at: NOW - 3 * HOUR })
+  expect(line!.stats).toBe('1 of 2 steps done')
+  expect(line!.steps).toEqual([
+    { id: 's1', text: 'Find the bug', mark: 'done', choices: ['use a test'] },
+    { id: 's2', text: 'Fix it', mark: 'open', choices: [] },
+  ])
+})
+
+test('an open goal of another session shows without Resume while this session has a goal, and with Clawd off nothing of it shows', () => {
+  expect(historyLayout(input([], { openGoals: [open('fix-login')], plan: PLAN })).open[0]).toMatchObject({ canTakeOver: false })
+  expect(historyLayout(input([], { openGoals: [open('fix-login')], isOn: false })).open).toEqual([])
+})
+
+test('the goal in hand is never listed as another session\'s, and an old plan file with no session is listed like any other', () => {
+  expect(historyLayout(input([], { openGoals: [open('export-scores')], plan: PLAN })).open).toEqual([])
+  const { session: _gone, ...legacy } = open('fix-login').plan
+  expect(historyLayout(input([], { openGoals: [{ slug: 'fix-login', mtimeMs: 1, plan: legacy }] })).open.map(g => g.slug)).toEqual(['fix-login'])
+})
+
+test('open goals make the tab non-empty, newest first, and fold under their own key', () => {
+  const layout = historyLayout(input([], { openGoals: [open('older', { startedAt: NOW - 9 * HOUR }), open('newer')], folds: [HISTORY_FOLD.goal('newer', NOW - 3 * HOUR)] }))
+  expect(layout.isEmpty).toBe(false)
+  expect(layout.open.map(g => [g.slug, g.isOpen])).toEqual([['newer', true], ['older', false]])
 })
 
 test('Resume asks with the clean step words only, and never more than 2,000 characters, cut at a whole line', () => {

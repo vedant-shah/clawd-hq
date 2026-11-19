@@ -1,5 +1,6 @@
 // What the side panel is handed to draw, and the things it may ask for; register-panes.ts fills both.
 import type { HistoryRecord } from './history'
+import type { OpenGoal } from './history-view'
 import type { Artifact, Badge, Boss, ClawdBrief, ContractorOffer, Employee, Fx, Gauge, KnowState, LeftItem, Payroll, PlanState, RuleOffer } from '../types'
 import type { ClawdActions } from './clawd-edit'
 import type { ConfigField } from './configs'
@@ -43,6 +44,8 @@ export type PanelData = {
   onboard?: OnboardCard
   /** The project's history records (hooks/register-history.ts reads them once and keeps them): drawn by the History tab, read only for it. */
   history?: readonly HistoryRecord[]
+  /** The plan files of this folder that another session owns (or no session), for the History tab's Resume (hooks/register-panes.ts lists them; read only for that tab). */
+  openGoals?: readonly OpenGoal[]
 }
 
 export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleActions & OldActions & ContractorActions & {
@@ -57,6 +60,8 @@ export type PanelActions = KnowActions & ClawdActions & LeftActions & RuleAction
   toggleFold: (key: string) => unknown
   /** Retry or Ask Clawd on a failed agent: the prompt box is filled with the text, never sent. */
   agentAsk: (prompt: string) => unknown
+  /** Resume on another session's open goal (History tab): this session takes the goal over, and the prompt box is filled to carry on, never sent. `slug` is the plan file's name. */
+  resumeGoal: (slug: string) => unknown
   /** Do it now on a Later item of the plan: the prompt box is filled, never sent. */
   planLaterDo: (goal: string, id: string) => unknown
   /** Dismiss on a Later item of the plan: that one item leaves the plan file. `goal` is the key of the goal it was drawn for; another goal's press is refused. */

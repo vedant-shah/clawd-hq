@@ -8,7 +8,9 @@ import { ROOT, planFs } from './plan-disk'
 
 const TOOL = 'mcp__clawd-hq__plan'
 const PLAN = `${ROOT}/.clawd-hq/plans/export-scores.md`
-const THREE = '# Export scores\n\n- [ ] Find how it works  <!-- s1 -->\n- [ ] Build it  <!-- s2 -->\n- [ ] Review  <!-- s3 -->\n'
+// A plan file names the session that started it; these tests' host does not say its session, so it is "unknown", and so is the goal's owner.
+const OWNER = '<!-- session: unknown -->\n'
+const THREE = `# Export scores\n\n- [ ] Find how it works  <!-- s1 -->\n- [ ] Build it  <!-- s2 -->\n- [ ] Review  <!-- s3 -->\n${OWNER}`
 const WITH_LATER = `${THREE}\n## Later\n\n- [ ] Add XLSX  <!-- l1 -->\n- [x] Old idea  <!-- l2 -->\n`
 
 type Answer = { result?: string; deny?: string }
@@ -196,9 +198,9 @@ test('finish moves the unticked Later items to the project\'s Later list, emptie
 })
 
 test('at session start the newest plan is the goal in hand, and steps added by hand get their ids in the file first', async ($, on) => {
-  const h = office(on, { [PLAN]: '# Export scores\n- [ ] By hand\n- [ ] Build it  <!-- s4 -->\n' })
+  const h = office(on, { [PLAN]: `# Export scores\n- [ ] By hand\n- [ ] Build it  <!-- s4 -->\n${OWNER}` })
   await $.session.start(START)
-  expect(fileText(h)).toBe('# Export scores\n- [ ] By hand  <!-- s5 -->\n- [ ] Build it  <!-- s4 -->\n<!-- next: s6 l1 -->\n')
+  expect(fileText(h)).toBe(`# Export scores\n- [ ] By hand  <!-- s5 -->\n- [ ] Build it  <!-- s4 -->\n${OWNER}<!-- next: s6 l1 -->\n`)
   expect((await plan($, { op: 'done', id: 's5' })).result).toContain('s5 done')
 })
 

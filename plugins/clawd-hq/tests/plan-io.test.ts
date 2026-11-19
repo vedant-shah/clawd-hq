@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
-import { changeGoal, finishGoal, loadGoals, plansDir, saveIds, startGoal } from '../hooks/plan-io'
+import { TAKEN, changeGoal, finishGoal, loadGoals, plansDir, saveIds, startGoal } from '../hooks/plan-io'
 import type { PlanIo } from '../hooks/plan-io'
-import { BASE, DIR, FILE, ROOT, disk } from './plan-disk'
+// These tests are about the file calls, not who owns a goal: `NO_SESSION` is the plan file with no session line, and `WITH_SESSION` the same plan with one.
+import { BASE as WITH_SESSION, DIR, FILE, LEGACY as NO_SESSION, ROOT, disk } from './plan-disk'
 
 // Reading and writing the plan files, on a file system held in memory: what is there is never lost, and nothing is written that was not read.
 
@@ -18,15 +19,45 @@ test('start writes the new plan in the project\'s plans folder and answers with 
   const d = disk()
   const r = await start(d.io)
   expect(r).toMatchObject({ ok: true, slug: 'fix-login', plan: { title: 'Fix login', steps: [{ id: 's1', text: 'Find the bug' }, { id: 's2', text: 'Fix it' }] } })
-  expect(d.held.get(FILE)).toBe(`${BASE}<!-- next: s3 l1 -->\n`)
+  expect(d.held.get(FILE)).toBe(`${NO_SESSION}<!-- next: s3 l1 -->\n`)
   expect(plansDir(`${ROOT}/`)).toBe(DIR)
 })
 
+test('start puts the session that starts the goal in the file', async () => {
+  const d = disk()
+  const r = await startGoal(d.io, ROOT, { goal: 'Fix login', steps: ['Find the bug', 'Fix it'], session: 's1', hasCurrent: no })
+  expect(r).toMatchObject({ ok: true, plan: { session: 's1' } })
+  expect(d.held.get(FILE)).toBe(`${WITH_SESSION}<!-- next: s3 l1 -->\n`)
+})
+
+test('a change, a finish and a saving of ids are refused, and write nothing, when the file names another session than the one the caller holds the goal for', async () => {
+  const d = disk({ [FILE]: WITH_SESSION })
+  const done = { op: 'done', id: 's1' } as const
+  for (const owner of ['s2', undefined]) {
+    expect(await changeGoal(d.io, ROOT, 'fix-login', done, none, undefined, { owner })).toEqual({ ok: false, reason: TAKEN })
+    expect(await finishGoal(d.io, ROOT, 'fix-login', async () => undefined, undefined, { owner })).toEqual({ ok: false, reason: TAKEN })
+    expect(await saveIds(d.io, ROOT, 'fix-login', undefined, { owner })).toEqual({ ok: false, reason: TAKEN })
+  }
+  expect(d.writes).toHaveLength(0)
+  expect(await changeGoal(d.io, ROOT, 'fix-login', done, none, undefined, { owner: 's1' })).toMatchObject({ ok: true })
+  expect(d.writes).toHaveLength(1)
+  // A plan of no session is guarded for "no owner" only.
+  const old = disk({ [FILE]: NO_SESSION })
+  expect(await changeGoal(old.io, ROOT, 'fix-login', done, none, undefined, { owner: 's1' })).toEqual({ ok: false, reason: TAKEN })
+  expect(await changeGoal(old.io, ROOT, 'fix-login', done, none, undefined, { owner: undefined })).toMatchObject({ ok: true })
+})
+
+test('with no guard the file is changed whoever owns it (a takeover starts from another session\'s goal)', async () => {
+  const d = disk({ [FILE]: WITH_SESSION })
+  expect(await changeGoal(d.io, ROOT, 'fix-login', { op: 'own', session: 's9' }, none)).toMatchObject({ ok: true, plan: { session: 's9' } })
+  expect(d.held.get(FILE)).toContain('<!-- session: s9 -->')
+})
+
 test('start takes the next free name when a plan file with that name is there, whatever its case', async () => {
-  const d = disk({ [FILE]: BASE, [`${DIR}/Fix-Login-2.md`]: '# Other\n', [`${DIR}/notes.txt`]: 'x' })
+  const d = disk({ [FILE]: NO_SESSION, [`${DIR}/Fix-Login-2.md`]: '# Other\n', [`${DIR}/notes.txt`]: 'x' })
   const r = await start(d.io, { steps: ['A'] })
   expect(r).toMatchObject({ ok: true, slug: 'fix-login-3' })
-  expect(d.held.get(FILE)).toBe(BASE)
+  expect(d.held.get(FILE)).toBe(NO_SESSION)
   expect(d.held.has(`${DIR}/fix-login-3.md`)).toBe(true)
 })
 
@@ -84,15 +115,15 @@ test('start answers with the reason when the write fails, and leaves a debug rec
 // ---- changing a plan ----
 
 test('a change reads the file, applies the one operation, and writes the whole file', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   const r = await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)
   expect(r).toMatchObject({ ok: true, slug: 'fix-login' })
-  expect(d.held.get(FILE)).toBe(`${BASE}- [ ] Review  <!-- s3 -->\n<!-- next: s4 l1 -->\n`)
+  expect(d.held.get(FILE)).toBe(`${NO_SESSION}- [ ] Review  <!-- s3 -->\n<!-- next: s4 l1 -->\n`)
   expect(d.calls.filter(c => c.startsWith('read'))).toHaveLength(1)
 })
 
 test('the file is read again for every change: what the person added by hand meanwhile is kept, and its steps get ids', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   await changeGoal(d.io, ROOT, 'fix-login', { op: 'done', id: 's1' }, none)
   d.held.set(FILE, `${d.held.get(FILE)!}A note by hand\n- [ ] Added by hand\n`)
   await changeGoal(d.io, ROOT, 'fix-login', { op: 'done', id: 's2' }, none)
@@ -100,40 +131,40 @@ test('the file is read again for every change: what the person added by hand mea
 })
 
 test('changes made at the same moment all land, one after the other, on the latest contents', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   const results = await Promise.all([
     changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Third' }, none),
     changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Fourth' }, none),
     changeGoal(d.io, ROOT, 'fix-login', { op: 'later', text: 'Put off' }, none),
   ])
   expect(results.every(r => r.ok)).toBe(true)
-  expect(d.held.get(FILE)).toBe(`${BASE}- [ ] Third  <!-- s3 -->\n- [ ] Fourth  <!-- s4 -->\n\n## Later\n\n- [ ] Put off  <!-- l1 -->\n<!-- next: s5 l2 -->\n`)
+  expect(d.held.get(FILE)).toBe(`${NO_SESSION}- [ ] Third  <!-- s3 -->\n- [ ] Fourth  <!-- s4 -->\n\n## Later\n\n- [ ] Put off  <!-- l1 -->\n<!-- next: s5 l2 -->\n`)
 })
 
 test('the file\'s own line breaks are kept', async () => {
-  const d = disk({ [FILE]: eolize(BASE, '\r\n') })
+  const d = disk({ [FILE]: eolize(NO_SESSION, '\r\n') })
   await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)
-  expect(d.held.get(FILE)).toBe(eolize(`${BASE}- [ ] Review  <!-- s3 -->\n<!-- next: s4 l1 -->\n`, '\r\n'))
+  expect(d.held.get(FILE)).toBe(eolize(`${NO_SESSION}- [ ] Review  <!-- s3 -->\n<!-- next: s4 l1 -->\n`, '\r\n'))
 })
 
 test('a step with a specialist at work on it is not dropped: the live ids are passed in', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   const r = await changeGoal(d.io, ROOT, 'fix-login', { op: 'drop', id: 's2' }, new Set(['s2']))
   expect(r).toMatchObject({ ok: false })
   expect(d.writes).toHaveLength(0)
 })
 
 test('an operation that is refused, does not exist, or changes nothing writes nothing', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   expect(await changeGoal(d.io, ROOT, 'fix-login', { op: 'drop', id: 's9' }, none)).toEqual({ ok: false, reason: 'There is no step s9.' })
   expect(await changeGoal(d.io, ROOT, 'fix-login', { op: 'explode' } as never, none)).toMatchObject({ ok: false })
   expect(await changeGoal(d.io, ROOT, 'fix-login', { op: 'reopen', id: 's1' }, none)).toMatchObject({ ok: true })
   expect(d.writes).toHaveLength(0)
-  expect(d.held.get(FILE)).toBe(BASE)
+  expect(d.held.get(FILE)).toBe(NO_SESSION)
 })
 
 test('even an operation that throws is an answer and a debug record, never a crash, and writes nothing', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   const r = await changeGoal(d.io, ROOT, 'fix-login', null as never, none)
   expect(r).toMatchObject({ ok: false })
   expect(d.writes).toHaveLength(0)
@@ -141,7 +172,7 @@ test('even an operation that throws is an answer and a debug record, never a cra
 })
 
 test('dropping the highest step keeps its number for good: the next step added does not take it', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   await changeGoal(d.io, ROOT, 'fix-login', { op: 'drop', id: 's2' }, none)
   expect(d.held.get(FILE)).toBe('# Fix login\n\n- [ ] Find the bug  <!-- s1 -->\n<!-- next: s3 l1 -->\n')
   const r = await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'New' }, none)
@@ -151,18 +182,18 @@ test('dropping the highest step keeps its number for good: the next step added d
 // ---- never write what could not be read ----
 
 test('a file that cannot be read is never written to: the reason comes back and nothing is written', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   d.fail.read.add(FILE)
   const r = await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)
   expect(r).toMatchObject({ ok: false })
   expect((r as { reason: string }).reason).toContain('too big to read')
   expect(d.writes).toHaveLength(0)
-  expect(d.held.get(FILE)).toBe(BASE)
+  expect(d.held.get(FILE)).toBe(NO_SESSION)
   expect(d.notes).toHaveLength(1)
 })
 
 test('a check that fails is no licence to write either', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   d.fail.exists = true
   expect(await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)).toMatchObject({ ok: false })
   d.fail.exists = false
@@ -190,17 +221,17 @@ test('a file with no title line is not a plan: it is left alone, however the ope
 })
 
 test('a write that fails comes back as its reason, with a debug record, and the old file stays', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   d.fail.write = true
   const r = await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)
   expect(r).toMatchObject({ ok: false })
   expect((r as { reason: string }).reason).toContain('EACCES')
-  expect(d.held.get(FILE)).toBe(BASE)
+  expect(d.held.get(FILE)).toBe(NO_SESSION)
   expect(d.notes).toHaveLength(1)
 })
 
 test('a debug record that cannot be written does not turn a failure into a crash', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   d.fail.read.add(FILE)
   d.fail.debug = true
   expect(await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)).toMatchObject({ ok: false })
@@ -218,7 +249,7 @@ test('a name that could lead out of the plans folder is refused before any file 
 // ---- links ----
 
 test('a plan file that is a link is neither read nor written', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   d.links.set(FILE, '/elsewhere/fix-login.md')
   const r = await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)
   expect(r).toMatchObject({ ok: false })
@@ -227,7 +258,7 @@ test('a plan file that is a link is neither read nor written', async () => {
 })
 
 test('a plan file whose real place is outside the plans folder is refused, link or no link', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   d.links.set(FILE, '/repo/.clawd-hq/other/fix-login.md')
   expect(await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)).toMatchObject({ ok: false })
   expect(d.writes).toHaveLength(0)
@@ -235,7 +266,7 @@ test('a plan file whose real place is outside the plans folder is refused, link 
 
 test('a plans folder, or a .clawd-hq folder, that leads outside the project is refused for a start, a change and a load', async () => {
   for (const linked of [DIR, `${ROOT}/.clawd-hq`]) {
-    const d = disk({ [FILE]: BASE })
+    const d = disk({ [FILE]: NO_SESSION })
     d.links.set(linked, `/elsewhere${linked.slice(ROOT.length)}`)
     expect(await start(d.io)).toMatchObject({ ok: false })
     expect(await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'Review' }, none)).toMatchObject({ ok: false })
@@ -247,7 +278,7 @@ test('a plans folder, or a .clawd-hq folder, that leads outside the project is r
 })
 
 test('a project folder that cannot be placed leaves the plans alone', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   d.links.set(ROOT, '')
   const placed = d.io.stat
   d.io.stat = async path => ({ ...(await placed(path)), realPath: path === ROOT ? undefined : path })
@@ -258,7 +289,7 @@ test('a project folder that cannot be placed leaves the plans alone', async () =
 // ---- loading ----
 
 test('loading gives each plan in the folder, the one modified most recently first, by the file\'s own time', async () => {
-  const d = disk({ [FILE]: BASE, [`${DIR}/older.md`]: '# Older\n- [ ] x  <!-- s1 -->\n', [`${DIR}/notes.md`]: 'not a plan\n', [`${DIR}/readme.txt`]: '# Not markdown\n' })
+  const d = disk({ [FILE]: NO_SESSION, [`${DIR}/older.md`]: '# Older\n- [ ] x  <!-- s1 -->\n', [`${DIR}/notes.md`]: 'not a plan\n', [`${DIR}/readme.txt`]: '# Not markdown\n' })
   d.mtimes.set(FILE, 200)
   d.mtimes.set(`${DIR}/older.md`, 100)
   const goals = await loadGoals(d.io, ROOT)
@@ -268,7 +299,7 @@ test('loading gives each plan in the folder, the one modified most recently firs
 
 test('loading skips names that are not <slug>.md, a folder called x.md, and links, however the listing names them', async () => {
   const good = '# Good\n- [ ] x  <!-- s1 -->\n'
-  const d = disk({ [FILE]: BASE, [`${DIR}/Weird Name.md`]: good, [`${DIR}/..md`]: good, [`${DIR}/linked.md`]: good, [`${DIR}/hidden.md`]: good })
+  const d = disk({ [FILE]: NO_SESSION, [`${DIR}/Weird Name.md`]: good, [`${DIR}/..md`]: good, [`${DIR}/linked.md`]: good, [`${DIR}/hidden.md`]: good })
   d.extra.push({ name: 'x.md', kind: 'dir' })
   d.listAs.set(`${DIR}/linked.md`, { kind: 'other', isLink: true })
   // Listed as a plain file, but its real place says otherwise.
@@ -287,11 +318,11 @@ test('loading never writes: a step added by hand keeps no id in the file, and th
 
 test('loading with no plans folder, an unlistable one, or an unreadable file gives what could be read, and never throws', async () => {
   expect(await loadGoals(disk().io, ROOT)).toEqual([])
-  const a = disk({ [FILE]: BASE })
+  const a = disk({ [FILE]: NO_SESSION })
   a.fail.list = true
   expect(await loadGoals(a.io, ROOT)).toEqual([])
   expect(a.notes).toHaveLength(1)
-  const b = disk({ [FILE]: BASE, [`${DIR}/other.md`]: '# Other\n- [ ] x  <!-- s1 -->\n' })
+  const b = disk({ [FILE]: NO_SESSION, [`${DIR}/other.md`]: '# Other\n- [ ] x  <!-- s1 -->\n' })
   b.fail.read.add(FILE)
   expect((await loadGoals(b.io, ROOT)).map(g => g.slug)).toEqual(['other'])
   expect(b.notes).toHaveLength(1)
@@ -301,7 +332,7 @@ test('loading with no plans folder, an unlistable one, or an unreadable file giv
 // ---- ending a goal: the file is written empty, and an empty plan file is no plan ----
 
 test('finish hands over the Later items not ticked, then writes the file empty; a plan file that is empty is no plan', async () => {
-  const d = disk({ [FILE]: `${BASE}\n## Later\n\n- [ ] Put off  <!-- l1 -->\n- [x] Done later  <!-- l2 -->\n- [ ] Also put off  <!-- l3 -->\n` })
+  const d = disk({ [FILE]: `${NO_SESSION}\n## Later\n\n- [ ] Put off  <!-- l1 -->\n- [x] Done later  <!-- l2 -->\n- [ ] Also put off  <!-- l3 -->\n` })
   const handed: string[][] = []
   const r = await finishGoal(d.io, ROOT, 'fix-login', async later => { handed.push(later) })
   expect(r).toEqual({ ok: true, slug: 'fix-login' })
@@ -312,11 +343,11 @@ test('finish hands over the Later items not ticked, then writes the file empty; 
 })
 
 test('finish leaves the file as it is when the Later items could not be kept, or when it cannot be read or is not a plan', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   const r = await finishGoal(d.io, ROOT, 'fix-login', async () => { throw new Error('the list refused') })
   expect(r).toMatchObject({ ok: false })
   expect((r as { reason: string }).reason).toContain('the list refused')
-  expect(d.held.get(FILE)).toBe(BASE)
+  expect(d.held.get(FILE)).toBe(NO_SESSION)
   d.fail.read.add(FILE)
   expect(await finishGoal(d.io, ROOT, 'fix-login', async () => undefined)).toMatchObject({ ok: false })
   expect(d.writes).toHaveLength(0)
@@ -326,11 +357,11 @@ test('finish leaves the file as it is when the Later items could not be kept, or
 })
 
 test('finish answers with the reason when the empty write fails, and the file stays', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   d.fail.write = true
   const r = await finishGoal(d.io, ROOT, 'fix-login', async () => undefined)
   expect(r).toMatchObject({ ok: false })
-  expect(d.held.get(FILE)).toBe(BASE)
+  expect(d.held.get(FILE)).toBe(NO_SESSION)
   expect(d.notes).toHaveLength(1)
 })
 
@@ -338,9 +369,9 @@ test('a new goal may take the name of a file that was emptied', async () => {
   const d = disk({ [FILE]: '' })
   const r = await start(d.io)
   expect(r).toMatchObject({ ok: true, slug: 'fix-login' })
-  expect(d.held.get(FILE)).toBe(`${BASE}<!-- next: s3 l1 -->\n`)
+  expect(d.held.get(FILE)).toBe(`${NO_SESSION}<!-- next: s3 l1 -->\n`)
   // A file with something in it still holds its name.
-  const full = disk({ [FILE]: BASE })
+  const full = disk({ [FILE]: NO_SESSION })
   expect(await start(full.io)).toMatchObject({ slug: 'fix-login-2' })
 })
 
@@ -353,7 +384,7 @@ test('saving ids writes the numbers a step added by hand will have, once; a file
   expect(d.held.get(FILE)).toBe('# Hand\n- [ ] By hand  <!-- s5 -->\n- [ ] A  <!-- s4 -->\n<!-- next: s6 l1 -->\n')
   await saveIds(d.io, ROOT, 'fix-login')
   expect(d.writes).toHaveLength(1)
-  const whole = disk({ [FILE]: BASE })
+  const whole = disk({ [FILE]: NO_SESSION })
   await saveIds(whole.io, ROOT, 'fix-login')
   expect(whole.writes).toHaveLength(0)
 })
@@ -371,7 +402,7 @@ test('saving ids never writes a file that could not be read, is a link, or is no
 // ---- the session's copy is set inside the queue ----
 
 test('what is done after a change is saved runs inside the queue: the next change waits for it, also for ids, an end, and the load of a goal', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   const order: string[] = []
   const slow = (name: string) => async () => { order.push(`${name} begins`); for (let i = 0; i < 30; i += 1) await Promise.resolve(); order.push(`${name} ends`) }
   await Promise.all([
@@ -384,7 +415,7 @@ test('what is done after a change is saved runs inside the queue: the next chang
 })
 
 test('an operation and the ids it may not touch are asked for when the change\'s turn comes, from the session as it is then', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   let busy = new Set<string>()
   const first = changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'A' }, none, async () => { busy = new Set(['s2']) })
   const second = changeGoal(d.io, ROOT, 'fix-login', async () => ({ op: 'drop', id: 's2' }), () => busy)
@@ -394,7 +425,7 @@ test('an operation and the ids it may not touch are asked for when the change\'s
 })
 
 test('a callback that throws is a failure with a debug record, and the answer is not ok', async () => {
-  const d = disk({ [FILE]: BASE })
+  const d = disk({ [FILE]: NO_SESSION })
   const r = await changeGoal(d.io, ROOT, 'fix-login', { op: 'add', text: 'A' }, none, () => { throw new Error('the state refused') })
   expect(r).toMatchObject({ ok: false, reason: expect.stringContaining('the state refused') })
   expect(d.notes).toHaveLength(1)

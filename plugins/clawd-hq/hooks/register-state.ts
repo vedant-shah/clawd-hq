@@ -35,6 +35,7 @@ const know = atom({ plugin: 'clawd-hq', key: 'know' } as const, KNOW0)
 const clawdBrief = atom({ plugin: 'clawd-hq', key: 'brief' } as const, BRIEF0)
 const onboard = atom({ plugin: 'clawd-hq', key: 'onboard' } as const, null as OnboardCard | null)
 const plan = atom({ plugin: 'clawd-hq', key: 'plan' } as const, null as PlanState | null)
+const planNotes = atom({ plugin: 'clawd-hq', key: 'planNotes' } as const, [] as string[])
 
 /** The change a write applies to what an atom holds. */
 type Change<A> = A extends Atom<infer T> ? (value: T) => T : never
@@ -68,6 +69,8 @@ export function readOnboard($: EngineInterface) { return read($, onboard) }
 export function updateOnboard($: EngineInterface, fn: Change<typeof onboard>) { return update($, onboard, fn) }
 export function readPlan($: EngineInterface) { return read($, plan) }
 export function updatePlan($: EngineInterface, fn: Change<typeof plan>) { return update($, plan, fn) }
+export function readPlanNotes($: EngineInterface) { return read($, planNotes) }
+export function updatePlanNotes($: EngineInterface, fn: Change<typeof planNotes>) { return update($, planNotes, fn) }
 
 // Values written by an older version of the mod lack the newer fields: fill them in.
 export async function getBoss($: EngineInterface): Promise<Boss> { return { ...BOSS0, ...(await read($, boss)) } }

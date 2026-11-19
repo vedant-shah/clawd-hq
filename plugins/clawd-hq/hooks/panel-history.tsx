@@ -88,24 +88,29 @@ function goalHead(ctx: Ctx, goal: GoalLine): Item {
     <Button key={`history-goal-${keyOf(goal)}`} plain onPress={() => ctx.actions.toggleFold(goal.fold)}>
       {goal.isOpen ? <Text bold>{say(ctx.kit, goal.title)}</Text> : say(ctx.kit, goal.title)}
       {goal.isSetAside ? <Text dimColor> · set aside</Text> : ''}
+      {goal.isElsewhere ? <Text dimColor> · open in another session</Text> : ''}
     </Button>
   )
   return (
     <Box key={`history-head-${keyOf(goal)}`} flexDirection="row" flexWrap="wrap" justifyContent="space-between" columnGap={1}>
-      {marked(ctx.kit, glyph(ctx.kit, goal.isSetAside ? 'setAside' : 'done', 'm'), title, 'left')}
+      {marked(ctx.kit, glyph(ctx.kit, goal.isElsewhere ? 'open' : goal.isSetAside ? 'setAside' : 'done', 'm'), title, 'left')}
       <Text dimColor>{ageOf(ctx.data.now - goal.at, true)}</Text>
     </Box>
   )
 }
 
-const resumeButton = (ctx: Ctx, goal: GoalLine) => <ctx.kit.Button key={`history-resume-${keyOf(goal)}`} label="Resume" onPress={() => ctx.actions.agentAsk(goal.resume ?? '')} />
+/** Resume on a goal set aside fills the prompt box (nothing is sent); on another session's open goal it takes the goal over for this session. */
+const resumeButton = (ctx: Ctx, goal: GoalLine) => (
+  <ctx.kit.Button key={`history-resume-${keyOf(goal)}`} label="Resume" onPress={() => (goal.isElsewhere ? ctx.actions.resumeGoal(goal.slug) : ctx.actions.agentAsk(goal.resume ?? ''))} />
+)
+const hasResume = (goal: GoalLine) => goal.resume !== undefined || goal.canTakeOver === true
 const pagesWord = (goal: GoalLine) => `${goal.pages.length} ${goal.pages.length === 1 ? 'page' : 'pages'} made:`
 
 /** The terminal's open goal, as the terminal board: every row wrapped here with the rail at its left, then a blank row. */
 function goalRail(ctx: Ctx, goal: GoalLine): Item[] {
   const { kit, cw } = ctx
   const { Box, Text, Link } = kit
-  const color = goal.isSetAside ? RAIL.setAside : RAIL.done
+  const color = goal.isSetAside || goal.isElsewhere ? RAIL.setAside : RAIL.done
   const id = `history-rail-${keyOf(goal)}`
   const rail = (key: string, text = '│  ') => <Text key={key} color={color}>{text}</Text>
   const blank = (key: string) => <Text key={key} wrap="truncate-end" color={color}>│</Text>
@@ -129,7 +134,7 @@ function goalRail(ctx: Ctx, goal: GoalLine): Item[] {
   const pages = goal.pages.length === 0 ? [] : [
     blank(`${id}-pages-gap`), ...(oneRow ? [linkRow(first!, 0, pagesWord(goal))] : [...dim(`${id}-pages`, pagesWord(goal)), ...goal.pages.map((p, i) => linkRow(p, i))]),
   ]
-  const resume = goal.resume === undefined ? [] : [blank(`${id}-resume-gap`), <Box key={`${id}-resume`} flexDirection="row">{rail(`${id}-resume-l`)}{resumeButton(ctx, goal)}</Box>]
+  const resume = !hasResume(goal) ? [] : [blank(`${id}-resume-gap`), <Box key={`${id}-resume`} flexDirection="row">{rail(`${id}-resume-l`)}{resumeButton(ctx, goal)}</Box>]
   return [
     ...(goal.summary === undefined ? [] : dim(`${id}-summary`, `${SUMMARY_LABEL}${goal.summary}`)),
     ...dim(`${id}-stats`, goal.stats), blank(`${id}-gap`), ...goal.steps.flatMap(step), ...pages, ...resume, blankRow(kit, `${id}-after`),
@@ -160,7 +165,7 @@ function goalCard(ctx: Ctx, goal: GoalLine): Item {
       <Box paddingLeft={3}><Text dimColor wrap="wrap">{goal.stats}</Text></Box>
       <Box flexDirection="column" gap="xs" paddingLeft={3}>{goal.steps.map(step)}</Box>
       {pages !== null && <Box paddingLeft={3}>{pages}</Box>}
-      {goal.resume !== undefined && <Box flexDirection="row" paddingLeft={3}>{resumeButton(ctx, goal)}</Box>}
+      {hasResume(goal) && <Box flexDirection="row" paddingLeft={3}>{resumeButton(ctx, goal)}</Box>}
     </Box>
   )
 }
@@ -176,15 +181,29 @@ function olderLine(ctx: Ctx, key: string, fold: string, n: number, isOpen: boole
   )
 }
 
+const goalRows = (ctx: Ctx, goals: readonly GoalLine[]) =>
+  goals.flatMap(goal => (goal.isOpen ? (ctx.kit.isTerminal ? [goalHead(ctx, goal), ...goalRail(ctx, goal)] : [goalCard(ctx, goal)]) : [goalHead(ctx, goal)]))
+
 function finished(ctx: Ctx, layout: HistoryLayout): Item | null {
   if (layout.goals.length === 0) return null
   const { Box, heading, isTerminal } = ctx.kit
-  const goals = layout.goals.flatMap(goal => (goal.isOpen ? (isTerminal ? [goalHead(ctx, goal), ...goalRail(ctx, goal)] : [goalCard(ctx, goal)]) : [goalHead(ctx, goal)]))
   return (
     <Box key="history-finished" flexDirection="column" gap={isTerminal ? 0 : 'sm'}>
       {heading('FINISHED')}
-      {goals}
+      {goalRows(ctx, layout.goals)}
       {layout.olderGoals > 0 && olderLine(ctx, 'history-goals-older', HISTORY_FOLD.goalsOlder, layout.olderGoals, layout.isGoalsOlderOpen, 3)}
+    </Box>
+  )
+}
+
+/** Goals other sessions left open in this folder, above the finished ones: each opens to its steps, and Resume takes it over for this session. */
+function openElsewhere(ctx: Ctx, layout: HistoryLayout): Item | null {
+  if (layout.open.length === 0) return null
+  const { Box, heading, isTerminal } = ctx.kit
+  return (
+    <Box key="history-open-elsewhere" flexDirection="column" gap={isTerminal ? 0 : 'sm'}>
+      {heading('OPEN IN OTHER SESSIONS')}
+      {goalRows(ctx, layout.open)}
     </Box>
   )
 }
@@ -269,9 +288,9 @@ function folds(ctx: Ctx, layout: HistoryLayout): Item | null {
 export function historyTab(kit: Kit, data: PanelData, actions: PanelActions, cw: number) {
   const ctx: Ctx = { kit, data, actions, cw }
   // A record no check foresaw cannot break the tab: it draws empty, and the reason goes to the history's debug record.
-  const input = { records: data.history ?? [], staff: data.staff, sessionStart: data.gauge.startedAt, plan: data.plan, isOn: data.options.isOn, folds: data.fx.folds }
+  const input = { records: data.history ?? [], staff: data.staff, sessionStart: data.gauge.startedAt, plan: data.plan, isOn: data.options.isOn, folds: data.fx.folds, openGoals: data.openGoals }
   const layout = safeHistoryLayout(input, why => void actions.historyError(why))
-  const rest = [finished(ctx, layout), folds(ctx, layout)].filter((one): one is Item => one !== null)
+  const rest = [openElsewhere(ctx, layout), finished(ctx, layout), folds(ctx, layout)].filter((one): one is Item => one !== null)
   const body = rest.length === 0 ? [<kit.Text key="history-empty" dimColor wrap="wrap">{EMPTY}</kit.Text>] : rest
   return <kit.Box flexDirection="column" gap={kit.isTerminal ? 1 : 'md'}>{[inProgress(ctx, layout), ...body].filter((one): one is Item => one !== null)}</kit.Box>
 }

@@ -164,7 +164,11 @@ test('a set-aside goal reads "◌ <title> · set aside"; opened, its failed step
 
 // ---- In progress ----
 
-const PLAN_TEXT = '# Export scores as CSV\n\n- [x] A  <!-- s1 -->\n- [x] B  <!-- s2 -->\n- [x] C  <!-- s3 -->\n- [ ] D  <!-- s4 -->\n- [ ] E  <!-- s5 -->\n- [ ] F  <!-- s6 -->\n<!-- started: 500 -->\n'
+const LEGACY_PLAN = '# Export scores as CSV\n\n- [x] A  <!-- s1 -->\n- [x] B  <!-- s2 -->\n- [x] C  <!-- s3 -->\n- [ ] D  <!-- s4 -->\n- [ ] E  <!-- s5 -->\n- [ ] F  <!-- s6 -->\n<!-- started: 500 -->\n'
+/** The same goal started by this session (its id is `now` here), and by another one. */
+const PLAN_TEXT = `${LEGACY_PLAN}<!-- session: now -->\n`
+const THEIRS = `${LEGACY_PLAN}<!-- session: elsewhere -->\n`
+const PLAN_FILE = `${DIR}/plans/export-scores-as-csv.md`
 
 test('IN PROGRESS shows the goal in hand with "3 of 6 done"', async ($, on) => {
   const h = office(on, { plan: PLAN_TEXT })
@@ -176,6 +180,47 @@ test('with no goal in hand there is no IN PROGRESS', async ($, on) => {
   const h = office(on, { records: [LOGIN] })
   await begin($, h)
   for (const surface of SURFACES) expect((await view($, surface)).text, surface).not.toContain('IN PROGRESS')
+})
+
+// ---- A goal another session left open ----
+
+test('another session\'s open goal is not this session\'s goal in progress: it is listed apart, and its Resume takes it over (the file names this session, the prompt box is filled, nothing is sent)', async ($, on) => {
+  const h = office(on, { plan: THEIRS })
+  await begin($, h)
+  const before = await view($, 'terminal')
+  expect(before.text).not.toContain('IN PROGRESS')
+  expect(inOrder(before.text, 'OPEN IN OTHER SESSIONS', 'Export scores as CSV', 'open in another session')).toBe(true)
+  await press($, 'terminal', GOAL('export-scores-as-csv', 500))
+  const open = await view($, 'terminal')
+  expect(open.text).toContain('3 of 6 steps done')
+  expect(open.buttons.get('history-resume-export-scores-as-csv-500')).toBe('Resume')
+  await press($, 'terminal', 'history-resume-export-scores-as-csv-500')
+  expect(h.files.get(PLAN_FILE)).toContain('<!-- session: now -->')
+  expect(h.files.get(PLAN_FILE)).not.toContain('elsewhere')
+  const after = await view($, 'terminal')
+  expect(inOrder(after.text, 'IN PROGRESS', 'Export scores as CSV', '3 of 6 done')).toBe(true)
+  expect(after.text).not.toContain('OPEN IN OTHER SESSIONS')
+  expect(h.submits).toEqual([])
+  expect(h.fills).toHaveLength(1)
+  expect(h.fills[0]!.text).toMatch(/Export scores as CSV[\s\S]*- D[\s\S]*- E[\s\S]*- F/)
+  expect(h.fills[0]!.text).not.toMatch(/- A|- B|- C/)
+})
+
+test('a plan file saved before plan files named a session is no one\'s: not adopted at start, and listed with Resume like another session\'s', async ($, on) => {
+  const h = office(on, { plan: LEGACY_PLAN })
+  await begin($, h)
+  for (const surface of SURFACES) {
+    const tab = await view($, surface)
+    expect(tab.text, surface).not.toContain('IN PROGRESS')
+    expect(inOrder(tab.text, 'OPEN IN OTHER SESSIONS', 'Export scores as CSV'), surface).toBe(true)
+  }
+  expect(h.files.get(PLAN_FILE)).toBe(LEGACY_PLAN)
+})
+
+test('with Clawd off another session\'s open goal is not listed', { options: { chiefOfStaff: false } }, async ($, on) => {
+  const h = office(on, { plan: THEIRS })
+  await begin($, h)
+  expect((await view($, 'terminal')).text).not.toContain('OPEN IN OTHER SESSIONS')
 })
 
 test('with Clawd off there is no IN PROGRESS, though a plan file is there', { options: { chiefOfStaff: false } }, async ($, on) => {

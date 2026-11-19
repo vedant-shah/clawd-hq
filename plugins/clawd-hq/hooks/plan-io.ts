@@ -8,7 +8,7 @@
 // are read or written: a link, or a folder that leads elsewhere, is refused. The register-*.ts files will hand in `PlanIo` (Phase 2).
 import { applyOp, startPlan, viewOf, withSavedIds } from './plan'
 import type { PlanOp, PlanView } from './plan'
-import { parsePlanFile, sectionsOf, serialisePlanFile } from './plan-file'
+import { parsePlanFile, sectionsOf, serialisePlanFile, sessionOf } from './plan-file'
 import type { PlanFile } from './plan-file'
 import { inLine, reasonOf } from './state'
 
@@ -38,8 +38,14 @@ export type AsOp = PlanOp | (() => PlanOp | Promise<PlanOp>)
 export type OnSaved<T> = (saved: T) => Promise<unknown> | unknown
 type Refused = { ok: false; reason: string }
 
+const none: ReadonlySet<string> = new Set()
+
 /** The answer for a plan file that is not there (or is empty: a goal that ended). */
 export const GONE = 'That plan file is gone.'
+/** The answer for a plan file whose goal another session took over: it is left exactly as it is. */
+export const TAKEN = 'That plan now belongs to another session, so it was left alone.'
+/** Who the session believes owns the goal it holds (the id in the file when it last saw it; none for a plan of no session). A file that says another is not written. */
+export type Guard = { readonly owner: string | undefined }
 const NO_FOLDER = 'there is no project folder to keep a plan in.'
 const OUTSIDE = 'The plans folder does not lie inside the project (it is a link to somewhere else), so it was left alone.'
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -101,7 +107,7 @@ async function takenSlugs(io: PlanIo, dir: string): Promise<string[]> {
  * so two starts at the same moment cannot both pass it (give it the live state; it may read the folder). Nothing is written when the
  * folder cannot be listed, since the name could clash with a plan already there.
  */
-export function startGoal(io: PlanIo, root: string, input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; startedAt?: number; hasCurrent: () => boolean | Promise<boolean> }): Promise<PlanSaved> {
+export function startGoal(io: PlanIo, root: string, input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; startedAt?: number; session?: string; hasCurrent: () => boolean | Promise<boolean> }): Promise<PlanSaved> {
   return inLine(async (): Promise<PlanSaved> => {
     let doing = 'start the plan'
     try {
@@ -144,8 +150,11 @@ async function readPlan(io: PlanIo, root: string, slug: string): Promise<Read> {
   return file === undefined ? { ok: false, reason: 'That file is not a plan (its first line is not "# title"), so it was left alone.' } : { ok: true, path, before, file }
 }
 
-/** Checks a name and a folder, then runs the work in the queue; whatever throws is an answer and a debug record. */
-function inPlan<T extends { ok: boolean }>(io: PlanIo, root: string, slug: string, work: (read: Extract<Read, { ok: true }>) => Promise<T | Refused>): Promise<T | Refused> {
+/**
+ * Checks a name and a folder, then runs the work in the queue; whatever throws is an answer and a debug record. With a `guard`, a file whose
+ * goal belongs to another session than the guard's owner is refused (`TAKEN`) before the work: a session that lost its goal writes nothing to it.
+ */
+function inPlan<T extends { ok: boolean }>(io: PlanIo, root: string, slug: string, work: (read: Extract<Read, { ok: true }>) => Promise<T | Refused>, guard?: Guard): Promise<T | Refused> {
   return inLine(async () => {
     if (root === '') return { ok: false, reason: `Cannot change the plan: ${NO_FOLDER}` } as Refused
     if (!SLUG.test(slug)) return { ok: false, reason: 'That is not the name of a plan file.' } as Refused
@@ -153,6 +162,7 @@ function inPlan<T extends { ok: boolean }>(io: PlanIo, root: string, slug: strin
     try {
       const read = await readPlan(io, root, slug)
       if (!read.ok) return read
+      if (guard !== undefined && sessionOf(read.file) !== guard.owner) return { ok: false, reason: TAKEN }
       doing = 'change the plan file'
       return await work(read)
     } catch (err) {
@@ -166,9 +176,27 @@ function inPlan<T extends { ok: boolean }>(io: PlanIo, root: string, slug: strin
  * writes. A file that cannot be read, is not a plan, or is not a plain file in the plans folder is left exactly as it is; so is one
  * whose operation is refused or changes nothing.
  */
-export function changeGoal(io: PlanIo, root: string, slug: string, op: AsOp, active: Active, onSaved?: OnSaved<PlanView>): Promise<PlanSaved> {
+export function changeGoal(io: PlanIo, root: string, slug: string, op: AsOp, active: Active, onSaved?: OnSaved<PlanView>, guard?: Guard): Promise<PlanSaved> {
   return inPlan<PlanSaved>(io, root, slug, async ({ path, before, file }) => {
     const done = applyOp(file, typeof op === 'function' ? await op() : op, typeof active === 'function' ? await active() : active)
+    if (!done.ok) return done
+    const text = serialisePlanFile(done.file)
+    if (text !== before) await io.write(path, text)
+    const plan = viewOf(done.file)
+    await onSaved?.(plan)
+    return { ok: true, slug, plan }
+  }, guard)
+}
+
+/**
+ * Gives a goal to `session` (the takeover from the History tab), whoever owns it now. `mayClaim` is asked inside the queue, when this claim's
+ * turn comes and the file is read, so two claims at the same moment cannot both pass it; when it says no, `whyNot` is the answer and the
+ * file is left as it is. `onSaved` runs inside the queue too, so what the session holds is set before the next claim is asked.
+ */
+export function claimGoal(io: PlanIo, root: string, slug: string, session: string, mayClaim: () => boolean | Promise<boolean>, whyNot: string, onSaved?: OnSaved<PlanView>): Promise<PlanSaved> {
+  return inPlan<PlanSaved>(io, root, slug, async ({ path, before, file }) => {
+    if (!(await mayClaim())) return { ok: false, reason: whyNot }
+    const done = applyOp(file, { op: 'own', session }, none)
     if (!done.ok) return done
     const text = serialisePlanFile(done.file)
     if (text !== before) await io.write(path, text)
@@ -179,14 +207,14 @@ export function changeGoal(io: PlanIo, root: string, slug: string, op: AsOp, act
 }
 
 /** Writes the ids that steps added by hand lack, so the numbers shown for them are real. Nothing is written when none lacked one. */
-export function saveIds(io: PlanIo, root: string, slug: string, onSaved?: OnSaved<PlanView>): Promise<PlanSaved> {
+export function saveIds(io: PlanIo, root: string, slug: string, onSaved?: OnSaved<PlanView>, guard?: Guard): Promise<PlanSaved> {
   return inPlan<PlanSaved>(io, root, slug, async ({ path, file }) => {
     const next = withSavedIds(file)
     if (next !== file) await io.write(path, serialisePlanFile(next))
     const plan = viewOf(next)
     await onSaved?.(plan)
     return { ok: true, slug, plan }
-  })
+  }, guard)
 }
 
 /**
@@ -194,13 +222,13 @@ export function saveIds(io: PlanIo, root: string, slug: string, onSaved?: OnSave
  * file is left as it is and nothing is lost. `onSaved` runs inside the queue once the file is empty. DECIDED: the host has no call to
  * delete a file (its `fs` has read, write, list, exists and stat only), so the file is written empty, and an empty plan file counts as no plan.
  */
-export function finishGoal(io: PlanIo, root: string, slug: string, beforeEnd: (later: string[]) => Promise<void>, onSaved?: OnSaved<void>): Promise<{ ok: true; slug: string } | Refused> {
+export function finishGoal(io: PlanIo, root: string, slug: string, beforeEnd: (later: string[]) => Promise<void>, onSaved?: OnSaved<void>, guard?: Guard): Promise<{ ok: true; slug: string } | Refused> {
   return inPlan<{ ok: true; slug: string }>(io, root, slug, async ({ path, file }) => {
     await beforeEnd(sectionsOf(file).later.filter(item => !item.isDone).map(item => item.text))
     await io.write(path, '')
     await onSaved?.()
     return { ok: true, slug }
-  })
+  }, guard)
 }
 
 /** Reads one file of the folder into a plan, or nothing when it is not a plan or not a plain file (or could not be read, which is recorded). */

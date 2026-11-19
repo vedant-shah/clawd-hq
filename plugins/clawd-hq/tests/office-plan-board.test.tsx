@@ -18,6 +18,8 @@ const PLAN_TEXT = [
   '- [ ] Review  <!-- s5 -->',
   '- [ ] Update the README  <!-- s6 -->', '',
   '## Later', '', '- [ ] Add an XLSX option  <!-- l1 -->', '',
+  // The host of these tests does not say its session, so it is "unknown", and so is the owner of this goal.
+  '<!-- session: unknown -->', '',
 ].join('\n')
 
 function office(on: Parameters<typeof host>[0], files: Record<string, string> = { [PLAN]: PLAN_TEXT }) {

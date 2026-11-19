@@ -25,10 +25,10 @@ import { knowIo } from './register-know'
 import { leftIo } from './register-left'
 import { historyRecords, noteHistory } from './register-history'
 import { oldIo, payrollIo, ruleIo } from './register-io'
-import { dismissLater } from './plan-run'
+import { dismissLater, takeOver, takeOverPrompt } from './plan-run'
 import { goalKey } from './plan-live'
 import { laterPrompt, withFold } from './plan-view'
-import { planRunIo } from './register-plan'
+import { openGoalsOf, planRunIo } from './register-plan'
 import { clawdIo } from './register-rules'
 import { contractorIo, onboardIo, setupCard } from './register-setup'
 import { getBoss, getFx, getPayroll, readArtifacts, readBlurbs, readClawdBrief, readContractorOffers, readGauge, readLeftUndone, readPlan, readProjectTokens, readRoster, readRuleOffers, readStaff, readTick, ses, setFx } from './register-state'
@@ -51,7 +51,7 @@ async function panelData($: EngineInterface, options: BriefingOptions, view: Pan
     artifacts: await readArtifacts($), leftUndone: await readLeftUndone($), ruleOffers: await readRuleOffers($), contractorOffers: await readContractorOffers($), gauge: await readGauge($), now: await $.clock.now(), know: await knowIo($).card(),
     brief: { ...BRIEF0, ...(await readClawdBrief($)) }, options, onboard: await setupCard($), plan: await readPlan($),
     // Only the History tab reads the history files, and only once it is shown; the other tabs draw without them.
-    ...(view === 'history' && (await isHistoryShown($)) ? { history: await historyRecords($) } : {}),
+    ...(view === 'history' && (await isHistoryShown($)) ? { history: await historyRecords($), openGoals: await openGoalsOf($, options) } : {}),
   })
 }
 
@@ -69,6 +69,14 @@ async function setConfig($: EngineInterface, field: ConfigField, value: boolean)
   await setFx($, f => ({ ...f, configNote: note }))
 }
 
+/** Resume on another session's open goal: this session takes it over, and the prompt box is filled to carry on (never sent). A refusal is shown plainly. */
+async function resumeGoal($: EngineInterface, opts: BriefingOptions, slug: string) {
+  const taken = await takeOver(planRunIo($, opts), slug)
+  if (!taken.ok) { $.ui.toast(taken.reason); return }
+  await knowIo($).fillPrompt(takeOverPrompt(taken.state))
+  $.ui.invalidate('ui.render')
+}
+
 function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
   return {
     editClawd: async (target, isTerminal) => clawdActions(await clawdIo($, opts)).editClawd(target, isTerminal),
@@ -82,6 +90,7 @@ function panelActions($: EngineInterface, opts: BriefingOptions): PanelActions {
     historyError: why => noteHistory($, `the History tab drew empty: ${why}`),
     toggleFold: key => setFx($, f => ({ ...f, folds: withFold(f.folds, key) })),
     agentAsk: prompt => knowIo($).fillPrompt(prompt),
+    resumeGoal: slug => resumeGoal($, opts, slug),
     planLaterDo: async (goal, id) => { const plan = await readPlan($); const one = plan !== null && goalKey(plan) === goal ? plan.later.find(item => item.id === id) : undefined; if (one) await knowIo($).fillPrompt(laterPrompt(one.text)) },
     planLaterDismiss: (goal, id) => dismissLater(planRunIo($, opts), goal, id),
     coffeeBreak: isTerminal => takeCoffeeBreak(coffeeIo($), isTerminal).catch((err: unknown) => $.ui.toast(`Couldn't compact the chat: ${reasonOf(err)}.`)),

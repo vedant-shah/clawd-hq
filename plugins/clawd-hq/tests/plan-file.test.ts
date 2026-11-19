@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { MAX_ID, decidedOf, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, withIds, withMark } from '../hooks/plan-file'
+import { MAX_ID, decidedOf, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, sessionOf, withIds, withMark, withSession } from '../hooks/plan-file'
 import { HAND_EDITED } from './plan-fixtures'
 
 // The plan file (pure): what is read from it, and the promise that reading then writing gives the same bytes back.
@@ -184,4 +184,25 @@ test('the next line follows the file\'s line breaks, and closes a last line that
 
 test('the next line never says more than the id pattern can read', () => {
   expect(serialisePlanFile(withMark(parsePlanFile(`# G\n- [ ] A  <!-- s${MAX_ID} -->\n`)!, { s: 1, l: 1 }))).toContain(`<!-- next: s${MAX_ID} l1 -->`)
+})
+
+// ---- The session line ----
+
+test('a session line is read as the goal\'s owner, kept byte for byte, and only the first one counts', () => {
+  const text = '# G\n- [ ] A  <!-- s1 -->\n<!-- session: 3f2a9c1e-7b44-4d0a-9a51-0c6f1d2e8b77 -->\n<!-- session: other -->\n<!-- next: s2 l1 -->\n'
+  expect(sessionOf(parsePlanFile(text)!)).toBe('3f2a9c1e-7b44-4d0a-9a51-0c6f1d2e8b77')
+  expect(roundTrip(text)).toBe(text)
+  expect(sessionOf(parsePlanFile('# G\n- [ ] A  <!-- s1 -->\n')!)).toBeUndefined()
+  // A line that is not a plain id is no owner: it is just a line of the file.
+  expect(sessionOf(parsePlanFile('# G\n<!-- session: two words -->\n')!)).toBeUndefined()
+  expect(sessionOf(parsePlanFile('# G\n<!-- session:  -->\n')!)).toBeUndefined()
+})
+
+test('a session is put in a file that has none, before the next line, and replaces the one it has', () => {
+  const none = parsePlanFile('# G\n- [ ] A  <!-- s1 -->\n<!-- next: s2 l1 -->\n')!
+  expect(serialisePlanFile(withSession(none, 'b'))).toBe('# G\n- [ ] A  <!-- s1 -->\n<!-- session: b -->\n<!-- next: s2 l1 -->\n')
+  expect(serialisePlanFile(withSession(parsePlanFile('# G\n- [ ] A  <!-- s1 -->')!, 'b'))).toBe('# G\n- [ ] A  <!-- s1 -->\n<!-- session: b -->\n')
+  const had = parsePlanFile('# G\n<!-- session: a -->\n- [ ] A  <!-- s1 -->\n')!
+  expect(serialisePlanFile(withSession(had, 'b'))).toBe('# G\n<!-- session: b -->\n- [ ] A  <!-- s1 -->\n')
+  expect(withSession(had, 'a')).toBe(had)
 })

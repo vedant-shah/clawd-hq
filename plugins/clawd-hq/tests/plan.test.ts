@@ -429,3 +429,27 @@ test('control characters, marks that reorder text and hidden marks never reach a
     later: [{ id: 'l1', text: 'Put off' }],
   })
 })
+
+// ---- The session that owns the goal ----
+
+test('a plan is started under a session: its file says so, and the view carries it', () => {
+  const r = startPlan({ goal: 'Export scores', steps: ['A', 'B'], session: 'sess-1', startedAt: 5, hasCurrent: false, taken: [] })
+  expect(r.ok && serialisePlanFile(r.file)).toContain('<!-- session: sess-1 -->\n')
+  expect(r.ok && viewOf(r.file).session).toBe('sess-1')
+  const bare = startPlan({ goal: 'Export scores', steps: ['A'], hasCurrent: false, taken: [] })
+  expect(bare.ok && serialisePlanFile(bare.file)).not.toContain('session:')
+  expect(bare.ok && viewOf(bare.file).session).toBeUndefined()
+  // An id that is not a plain identifier is left out, never written into the file.
+  const odd = startPlan({ goal: 'Export scores', steps: ['A'], session: 'two words --> x', hasCurrent: false, taken: [] })
+  expect(odd.ok && serialisePlanFile(odd.file)).not.toContain('session:')
+})
+
+test('the office\'s own op "own" gives the goal to a session, and changes nothing when it is already that one\'s', () => {
+  const owned = '# G\n\n- [ ] A  <!-- s1 -->\n<!-- session: a -->\n'
+  expect(text(run(owned, { op: 'own', session: 'b' }))).toBe('# G\n\n- [ ] A  <!-- s1 -->\n<!-- session: b -->\n')
+  expect(text(run('# G\n\n- [ ] A  <!-- s1 -->\n', { op: 'own', session: 'b' }))).toContain('<!-- session: b -->')
+  const same = parsePlanFile(owned)!
+  const r = applyOp(same, { op: 'own', session: 'a' }, none)
+  expect(r.ok && r.file).toBe(same)
+  expect(text(run(owned, { op: 'own', session: 'two words' }))).toContain('REFUSED')
+})

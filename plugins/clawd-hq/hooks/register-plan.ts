@@ -4,13 +4,15 @@ import type { EngineInterface } from 'claude-code'
 
 import { leftAddItems } from './left-io'
 import type { BriefingOptions } from './instructions'
+import type { OpenGoal } from './history-view'
+import { loadGoals } from './plan-io'
 import type { PlanIo } from './plan-io'
 import { PLAN_DEBUG_KEY, withPlanNote } from './plan-run'
 import type { PlanRunIo } from './plan-run'
 import { goalStartedAt, logGoalEnd, logGoalStart } from './register-history'
 import { draftFrom, draftKey } from './plan-draft'
 import type { PlanDraft } from './plan-draft'
-import { readPlan, readStaff, ses, updateLeftUndone, updatePlan } from './register-state'
+import { readPlan, readPlanNotes, readStaff, ses, updateLeftUndone, updatePlan, updatePlanNotes } from './register-state'
 
 /** The plan files' calls. `stat` resolves where a path really lands, so a link out of the plans folder is refused. */
 export function planFiles($: EngineInterface): PlanIo {
@@ -29,31 +31,50 @@ export function planFiles($: EngineInterface): PlanIo {
  */
 let held: ReadonlyMap<string, PlanDraft | null> = new Map()
 
+/** The id the engine gives this session; "unknown" where it cannot say (a goal and a draft then belong to "unknown"). */
+export function sessionIdOf($: EngineInterface): Promise<string> {
+  return $.session.id().catch(() => 'unknown')
+}
+
 export function planDraftIo($: EngineInterface): PlanRunIo['draft'] {
+  // The draft is this session's: its slot is named by the folder and the session, so another session's draft is never read.
+  const slot = async (folder: string) => draftKey(folder, await sessionIdOf($))
   const read = async (folder: string): Promise<PlanDraft | null> => {
-    const fresh = await $.store.get(draftKey(folder)).then(raw => ({ draft: draftFrom(raw, folder) }), () => undefined)
-    const draft = fresh === undefined ? held.get(folder) ?? null : fresh.draft
-    held = new Map([...held, [folder, draft]])
+    const key = await slot(folder)
+    const fresh = await $.store.get(key).then(raw => ({ draft: draftFrom(raw, folder) }), () => undefined)
+    const draft = fresh === undefined ? held.get(key) ?? null : fresh.draft
+    held = new Map([...held, [key, draft]])
     return draft
   }
   return {
     get: read,
     set: async (folder, fn) => {
       const next = fn(await read(folder))
-      held = new Map([...held, [folder, next]])
-      await $.store.set(draftKey(folder), next)
+      const key = await slot(folder)
+      held = new Map([...held, [key, next]])
+      await $.store.set(key, next)
       return next
     },
   }
 }
 
+/**
+ * The goals in this folder that another session owns, and the plan files of no session (saved before plan files named one), for the History
+ * tab's Resume. Read only when that tab is drawn. With Clawd off, none.
+ */
+export async function openGoalsOf($: EngineInterface, opts: Pick<BriefingOptions, 'isOn'>): Promise<readonly OpenGoal[]> {
+  if (!opts.isOn) return []
+  const me = await sessionIdOf($)
+  return (await loadGoals(planFiles($), ses.cwd)).filter(goal => goal.plan.session !== me)
+}
+
 /** What the plan may do. `opts.isOn` is read live: with Clawd off the tool is refused and nothing is loaded. */
 export function planRunIo($: EngineInterface, opts: Pick<BriefingOptions, 'isOn'>): PlanRunIo {
   return {
-    isOn: () => opts.isOn, root: () => ses.cwd, files: planFiles($), now: () => $.clock.now(),
+    isOn: () => opts.isOn, root: () => ses.cwd, files: planFiles($), now: () => $.clock.now(), session: () => sessionIdOf($),
     get: () => readPlan($), set: fn => updatePlan($, fn), staff: () => readStaff($),
     keepLater: texts => leftAddItems({ folder: () => ses.cwd, now: () => $.clock.now(), change: fn => updateLeftUndone($, fn), save: (folder, list) => $.store.set(`leftUndone:${folder}`, list) }, texts, 'Clawd'),
-    draft: planDraftIo($),
+    draft: planDraftIo($), notes: { get: () => readPlanNotes($), set: fn => updatePlanNotes($, fn) },
     goalStarted: start => logGoalStart($, start), goalEnded: end => logGoalEnd($, end), goalStartedAt: slug => goalStartedAt($, slug), // the history's goal records (hooks/register-history.ts)
   }
 }

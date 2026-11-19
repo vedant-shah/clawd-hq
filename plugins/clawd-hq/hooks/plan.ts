@@ -3,7 +3,7 @@
 // plan-io.ts reads the file fresh, applies one operation and writes. No tool, panel or hook uses this yet.
 import { fit } from './desk'
 import { plainText } from './know'
-import { MAX_ID, closeRow, decidedOf, laterAt, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, startedOf, summaryOf, withIds, withMark } from './plan-file'
+import { MAX_ID, SESSION_ID, closeRow, decidedOf, laterAt, nextIds, parsePlanFile, sectionsOf, serialisePlanFile, sessionOf, startedOf, summaryOf, withIds, withMark, withSession } from './plan-file'
 import type { Item, PlanFile, Row } from './plan-file'
 
 export const MAX_STEPS = 40
@@ -47,6 +47,8 @@ export type PlanView = {
   summary?: string
   /** When the goal began, from its `started` line; none for a plan from before the line. */
   startedAt?: number
+  /** The session that owns the goal, from its `session` line; none for a plan from before the line (owned by no session). */
+  session?: string
   steps: Array<{ id: string; text: string; isDone: boolean; choices: string[] }>
   later: Array<{ id: string; text: string }>
 }
@@ -60,10 +62,12 @@ export function viewOf(file: PlanFile): PlanView {
   const { title, steps, later } = sectionsOf(withIds(file))
   const summary = tidy(summaryOf(file) ?? '')
   const startedAt = startedOf(file)
+  const session = sessionOf(file)
   return {
     title: tidy(title),
     ...(summary === '' ? {} : { summary }),
     ...(startedAt === undefined ? {} : { startedAt }),
+    ...(session === undefined ? {} : { session }),
     steps: steps.map(s => ({ id: s.id!, text: tidy(s.text), isDone: s.isDone, choices: decidedOf(s).map(d => tidy(d.text)) })),
     later: later.map(l => ({ id: l.id!, text: tidy(l.text) })),
   }
@@ -78,7 +82,7 @@ export type StartResult = { ok: true; slug: string; file: PlanFile } | Refused
  * A new plan. One goal only: refused while one is current. `taken` is the slugs of the plan files already there.
  * Steps that are empty after cleaning are left out.
  */
-export function startPlan(input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; startedAt?: number; hasCurrent: boolean; taken: readonly string[] }): StartResult {
+export function startPlan(input: { goal: unknown; steps: readonly unknown[]; summary?: unknown; startedAt?: number; session?: string; hasCurrent: boolean; taken: readonly string[] }): StartResult {
   if (input.hasCurrent) return refuse('Cannot start: finish the current goal first (done or stopped).')
   const title = cleanText(input.goal)
   if (title === '') return refuse('A goal needs a title.')
@@ -88,7 +92,9 @@ export function startPlan(input: { goal: unknown; steps: readonly unknown[]; sum
   const summary = cleanText(input.summary)
   // The goal's start goes in the file beside the `next` line, so it is the same in every session that loads the plan.
   const began = input.startedAt === undefined ? '' : `<!-- started: ${Math.round(input.startedAt)} -->\n`
-  const file = parsePlanFile(`# ${title}\n${summary === '' ? '' : `> ${summary}\n`}\n${steps.map(text => `- [ ] ${text}`).join('\n')}\n${began}`)
+  // The session that starts the goal owns it: its id goes in the file (only a plain id; any other is left out, so the line can never be forged).
+  const owner = input.session !== undefined && SESSION_ID.test(input.session) ? `<!-- session: ${input.session} -->\n` : ''
+  const file = parsePlanFile(`# ${title}\n${summary === '' ? '' : `> ${summary}\n`}\n${steps.map(text => `- [ ] ${text}`).join('\n')}\n${began}${owner}`)
   return file === undefined ? refuse('That title cannot be used.') : { ok: true, slug: slugOf(title, input.taken), file: withMark(withIds(file), { s: 1, l: 1 }) }
 }
 
@@ -106,6 +112,8 @@ export type PlanOp =
   | { op: 'decide'; id: string; choices: string[]; tick?: boolean }
   /** The office's own, from the Dismiss button on a Later item: that item leaves the file (a note indented under it stays). */
   | { op: 'forget'; id: string }
+  /** The office's own, never from the tool: the goal goes to a session (a takeover from the History tab, or the same session under a new id after /clear). */
+  | { op: 'own'; session: string }
 
 export type OpResult = { ok: true; file: PlanFile } | Refused
 const accept = (file: PlanFile): OpResult => ({ ok: true, file })
@@ -286,6 +294,7 @@ function dispatch(f: PlanFile, op: PlanOp, active: ReadonlySet<string>): OpResul
     case 'summary': return setSummary(f, op.text)
     case 'decide': return decide(f, op)
     case 'forget': return forget(f, op.id)
+    case 'own': return SESSION_ID.test(String(op.session)) ? accept(withSession(f, op.session)) : refuse('That is not the id of a session.')
     default: return refuse(`There is no operation called ${fit(String((op as { op?: unknown }).op), 20)}.`)
   }
 }

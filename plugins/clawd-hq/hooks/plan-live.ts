@@ -86,7 +86,7 @@ export function stateFrom(view: PlanView, slug: string, startedAt: number, prev:
     return { ...step, ...(isNew ? { isNew: true } : {}), ...(before?.reopenedAt === undefined ? {} : { reopenedAt: before.reopenedAt }) }
   })
   const isStuck = prev !== null && prev.slug === slug && prev.isStuck === true && steps.length > 0 && steps.every(step => step.isDone)
-  return { slug, title: view.title, ...(view.summary === undefined ? {} : { summary: view.summary }), steps, later: view.later, startedAt: prev !== null && prev.slug === slug ? prev.startedAt : startedAt, ...(isStuck ? { isStuck: true as const } : {}) }
+  return { slug, title: view.title, ...(view.summary === undefined ? {} : { summary: view.summary }), steps, later: view.later, startedAt: prev !== null && prev.slug === slug ? prev.startedAt : startedAt, ...(view.session === undefined ? {} : { session: view.session }), ...(isStuck ? { isStuck: true as const } : {}) }
 }
 
 /** The steps an operation added or changed, for the "new" mark: a start marks them all; done, reopen and move mark the one they changed. */

@@ -98,7 +98,7 @@ Clawd HQ follows the "elephants and goldfish" idea from Google ([paper](https://
 
 **How a request flows**
 
-<p align="center"><img src="docs/diagrams/flow-request.svg" alt="How a request flows: you talk to Clawd; he does jobs of one or two tool calls himself or hires a specialist sized to the job; work comes back to Clawd for checks; you get one plain report." width="560"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/flow-request-dark.png"><img src="docs/diagrams/flow-request.png" alt="How a request flows: you talk to Clawd; he does jobs of one or two tool calls himself or hires a specialist sized to the job; work comes back to Clawd for checks; you get one plain report." width="560"></picture></p>
 
 - You only talk to Clawd. He does jobs of one or two tool calls himself and hires for the rest.
 - Each hire gets a model and effort sized to the job, and a brief that names the skills that fit.
@@ -107,7 +107,7 @@ Clawd HQ follows the "elephants and goldfish" idea from Google ([paper](https://
 
 **The ways Clawd can staff a job**
 
-<p align="center"><img src="docs/diagrams/flow-staffing.svg" alt="The ways Clawd can staff a job: a setup scout picks the team; then a single specialist, a pair-up of author and critic, a council where you decide, or optional agent teams." width="640"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/flow-staffing-dark.png"><img src="docs/diagrams/flow-staffing.png" alt="The ways Clawd can staff a job: a setup scout picks the team; then a single specialist, a pair-up of author and critic, a council where you decide, or optional agent teams." width="640"></picture></p>
 
 - **Single specialist.** The usual case. One helper works in the background at its own desk.
 - **Pair-up.** For risky or wide work. Named specialists, such as an author and a critic, message each other directly (helpers that lack Claude Code's messaging tool go through Clawd). After one round of critique, each reports to Clawd. The office shows them as one card.
@@ -158,7 +158,7 @@ Every helper gets its own pixel Clawd, drawn for what it does:
 
 Setup runs on its own the first time. No questions. A card shows what it picked.
 
-<p align="center"><img src="docs/diagrams/flow-team-pick.svg" alt="The scout reads the project, read-only, and fills the Plan, Make, Check, Find out and up to three Specialist seats." width="560"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/flow-team-pick-dark.png"><img src="docs/diagrams/flow-team-pick.png" alt="The scout reads the project, read-only, and fills the Plan, Make, Check, Find out and up to three Specialist seats." width="560"></picture></p>
 
 - It reads the project and lists the agents and skills you have installed, and picks the team from that list.
 - It counts which helpers you used in past sessions, on this computer.

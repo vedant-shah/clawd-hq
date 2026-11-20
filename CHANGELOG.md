@@ -2,6 +2,20 @@
 
 All notable changes to Clawd HQ. Newest first.
 
+## 1.2.4 - 2026-11-20
+
+### Changed
+
+- **`/office` toggles.** Typed while the office is open, it closes the Office, People, History and Settings panels. Typed again, it opens them.
+- **Clawd works only while the office is open.** With "Clawd runs the chat" on, his rules apply only while the office is open. Closing it turns him off from your next message. Specialists already at work keep going, and the plan keeps ticking. The tip at session start now says `/office` brings him in. Scripted runs (`claude -p`) get Clawd only if "Open the office at session start" is on.
+- **The office remembers it was open.** The open or closed state is saved per session, so a reload, a resumed session or a compaction keeps it. Only you close it: with `/office`, or by closing the Office panel, which closes all four.
+- **New flow diagrams** in the README, in light and dark versions.
+
+### Fixed
+
+- Clawd's hiring notes and task-list notes refresh whenever the office opens or closes.
+- The Clawd card in Settings says why he's off: the office is closed, or the switch is off.
+
 ## 1.2.3 - 2026-11-19
 
 ### Changed

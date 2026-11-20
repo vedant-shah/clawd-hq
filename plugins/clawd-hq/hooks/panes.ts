@@ -30,7 +30,7 @@ export const paneOf = (view: PaneView): PaneSpec => BY_VIEW[view]
  * The room a pane's column should fill so its footer sits on the bottom edge: the rows the surface gave the body (it grows
  * with the content, never clips it). Without them, the other surfaces ask for their whole body; an inline terminal pane fits its tree.
  */
-export function pinHeight(surface: string, placement: 'dock' | 'inline', bodyRows: number): number | string | undefined {
+export function pinHeight(surface: string, placement: 'dock' | 'inline' | 'widget', bodyRows: number): number | string | undefined {
   if (Number.isInteger(bodyRows) && bodyRows > 0 && !(surface === 'terminal' && placement === 'inline')) return bodyRows
   return surface === 'terminal' ? undefined : '100%'
 }
@@ -72,6 +72,16 @@ export async function openPanes(io: PaneIo, isFocusing: boolean) {
   for (const id of RETIRED) await attempt(() => io.close(id))
   for (const p of PANES) await attempt(() => openPane(io, p, false))
   if (isFocusing) await attempt(() => openPane(io, paneOf('office'), true))
+}
+
+/** Closes the four panes, each on its own so one failure leaves the rest (`/office` while the office is open). */
+export async function closePanes(io: PaneIo) {
+  for (const p of PANES) await attempt(() => io.close(p.id))
+}
+
+/** Closes the three panes that are not Office (the person closed Office itself), each on its own. */
+export async function closeOtherPanes(io: PaneIo) {
+  for (const p of PANES.filter(one => one.view !== 'office')) await attempt(() => io.close(p.id))
 }
 
 /** The start's focus request was turned down (the surface was busy), so Office is asked for once more, after the first main-chat reply. */

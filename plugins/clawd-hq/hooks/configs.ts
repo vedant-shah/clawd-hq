@@ -13,7 +13,7 @@ export type ConfigToggle = {
 }
 
 export const TOGGLES: readonly ConfigToggle[] = [
-  { field: 'chiefOfStaff', title: 'Clawd runs the chat', isOn: o => o.isOn },
+  { field: 'chiefOfStaff', title: 'Clawd runs the chat', isOn: o => o.isChiefOn }, // the switch itself, not whether the office is open
   { field: 'quietChat', title: 'Quiet chat', isOn: o => o.isQuiet },
   { field: 'youShouldKnow', title: 'You should know', isOn: o => o.isKnowOn },
   { field: 'leftUndone', title: 'Left undone check', isOn: o => o.isLeftOn },

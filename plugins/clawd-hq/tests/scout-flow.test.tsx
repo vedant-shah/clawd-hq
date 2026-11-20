@@ -18,7 +18,6 @@ async function open($: Engine, h: OnboardHost) {
   for (const [agent, description] of [['ecc:planner', 'Plans work before anyone builds.'], ['ecc:code-reviewer', 'Reviews code for quality and security.']] as const) {
     await $.agent.offer({ agent, description } as never)
   }
-  await $.command.run({ command: 'office', args: '' } as never) // setup starts once the office has been opened
   await frames(h)
 }
 

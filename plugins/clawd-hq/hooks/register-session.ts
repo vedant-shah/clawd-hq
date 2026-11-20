@@ -11,9 +11,11 @@ import { leftStart } from './left-io'
 import { BRAND } from './office'
 import { isLively, isSettling, settle } from './office-state'
 import { checkOld } from './old-decisions'
-import { markOpened, noticeOpen, tipOffice } from './office-tip'
+import { isOfficeOpen, setOfficeOpen } from './office-open'
+import { savedOpen } from './office-saved'
+import { isPersonClosingOffice, markClosed, markOpened, noticeOpen, refreshOffice, tipOffice } from './office-tip'
 import { checkOnboard, isSetupBusy, savedOf, startOnboard } from './onboard'
-import { askOnAttach, openAtStart } from './panes'
+import { askOnAttach, closeOtherPanes, openAtStart } from './panes'
 import { checkPayroll, resetPayroll } from './payroll'
 import { forgetCoffee } from './register-coffee'
 import { artifactIo } from './register-artifacts'
@@ -119,18 +121,39 @@ export function registerSession(on: On, brief: BriefingOptions) {
     void sweepArtifacts(artifactIo($), ses.cwd).catch(() => undefined) // not waited for: session start never holds on it
 
     // Once the engine has the session's surfaces, Office opens and is asked to the front; with none yet, on attach (hooks/panes.ts).
-    // Closed by default: with the switch off, a short tip says how to open the office, until it has been opened once.
-    return next(e).finally(() => void openAtStart(paneIo($), () => brief.isOpenOn).then(() => (brief.isOpenOn ? markOpened($) : tipOffice($))))
+    // What the person left for this session id (a reload, `claude --resume`) comes first: only the person changes it. With nothing saved (a new
+    // id) the office is open from the first message on when the switch is on, or when a reload finds the Office pane up (hooks/office-saved.ts).
+    const saved = await savedOpen($)
+    if (saved !== undefined) {
+      setOfficeOpen(saved)
+      refreshOffice($) // the host's cached texts were made for the state before the restore
+    } else {
+      setOfficeOpen(brief.isOpenOn)
+      if (!brief.isOpenOn) await noticeOpen($)
+    }
+    // A saved "open" puts the panels back if they are not up; a saved "closed" keeps them away whatever the switch says.
+    const isOpenAtStart = () => (saved === undefined ? brief.isOpenOn : saved)
+    // Closed by default: with the switch off, a short tip says how to open the office (and bring in Clawd), until it has been opened once.
+    return next(e).finally(() => void openAtStart(paneIo($), isOpenAtStart).then(() => (isOfficeOpen() ? markOpened($) : tipOffice($, brief.isChiefOn))))
   })
 
-  // /office and /office-setup are the person opening the office: the tip is over for good and setup may start.
-  // The command itself runs after this (hooks/register-commands.ts). The tour does not count.
-  for (const command of ['office', 'office-setup']) {
-    on('command.run', { command }, async ($, e, next) => {
-      await markOpened($)
-      return next(e)
-    })
-  }
+  // /office-setup is the person opening the office: the tip is over for good and setup may start. (`/office` toggles, in hooks/register-commands.ts.)
+  // The command itself runs after this. The tour does not count.
+  on('command.run', { command: 'office-setup' }, async ($, e, next) => {
+    await markOpened($)
+    return next(e)
+  })
+
+  // The person closing the Office pane closes the office; Clawd goes from the next message on. A close of ours (`/office`, a plugin's `$.ui.close`) is not theirs.
+  // The other three panes go with it, so "open" means the same everywhere (the checks that need a pane up, hooks/know-check.ts, see none).
+  on('ui.close', async ($, e, next) => {
+    const result = await next(e)
+    if (isPersonClosingOffice(e)) {
+      await closeOtherPanes(paneIo($))
+      await markClosed($)
+    }
+    return result
+  })
 
   // The host moved the session (the desktop app can start it in a spare folder): what is kept per folder follows (issue #5).
   // The host's own handling (the settings hooks beneath) goes first; the move is followed after it.

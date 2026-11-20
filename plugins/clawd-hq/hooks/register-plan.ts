@@ -69,9 +69,9 @@ export async function openGoalsOf($: EngineInterface, opts: Pick<BriefingOptions
 }
 
 /** What the plan may do. `opts.isOn` is read live: with Clawd off the tool is refused and nothing is loaded. */
-export function planRunIo($: EngineInterface, opts: Pick<BriefingOptions, 'isOn'>): PlanRunIo {
+export function planRunIo($: EngineInterface, opts: Pick<BriefingOptions, 'isOn' | 'isChiefOn'>): PlanRunIo {
   return {
-    isOn: () => opts.isOn, root: () => ses.cwd, files: planFiles($), now: () => $.clock.now(), session: () => sessionIdOf($),
+    isOn: () => opts.isOn, isKept: () => opts.isChiefOn, root: () => ses.cwd, files: planFiles($), now: () => $.clock.now(), session: () => sessionIdOf($),
     get: () => readPlan($), set: fn => updatePlan($, fn), staff: () => readStaff($),
     keepLater: texts => leftAddItems({ folder: () => ses.cwd, now: () => $.clock.now(), change: fn => updateLeftUndone($, fn), save: (folder, list) => $.store.set(`leftUndone:${folder}`, list) }, texts, 'Clawd'),
     draft: planDraftIo($), notes: { get: () => readPlanNotes($), set: fn => updatePlanNotes($, fn) },

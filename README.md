@@ -175,16 +175,16 @@ All on by default, except "Open the office at session start", which is off. Flip
 
 | Switch | When it's off |
 | --- | --- |
-| Clawd runs the chat | Claude behaves as usual. You keep the panel. |
+| Clawd runs the chat | Claude behaves as usual, with the office open or not. You keep the panel. (On, Clawd is in only while the office is open: `/office` brings him in, and `/office` again sends him away from your next message on.) |
 | Quiet chat | The chat shows every row. |
 | Automatic setup | Setup runs only when you type `/office-setup`. |
 | You should know | Finished work isn't checked. Claude Code's own note works as usual. |
 | Left undone check | The model check is skipped. Code markers are still read. |
 | Search the public skill registry when matches are weak | Nothing is searched or sent. Clawd uses the general-purpose agent. |
-| Open the office at session start (off by default) | A new session opens no panels and doesn't ask to bring Office to the front, and shows the tip "Type /office to open the office" until you have opened it once. `/office` opens them. Turn it on and the panels open at every start, with no tip. |
+| Open the office at session start (off by default) | A new session opens no panels and doesn't ask to bring Office to the front, and Clawd is not in either. It shows the tip "Type /office to open the office and bring in Clawd" until you have opened it once. `/office` opens the panels and brings Clawd in, and `/office` again closes them. Turn it on and the panels open at every start, with Clawd in from the first message and no tip. |
 | Your own voice file | A path to a text file that changes Clawd's tone. Empty by default. |
 
-Clawd's rules also reach scripted runs (`claude -p` and the Agent SDK). Turn off "Clawd runs the chat" if you don't want that.
+Clawd's rules reach scripted runs (`claude -p` and the Agent SDK) only if "Open the office at session start" is on, since nothing opens the office there. Turn off "Clawd runs the chat" if you don't want that.
 
 </details>
 

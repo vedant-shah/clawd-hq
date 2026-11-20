@@ -36,7 +36,8 @@ export const SEED_KEYS: Record<BriefPart, string> = { rules: 'brief:seed:rules',
 /** Where the person's own copy of a part lives; '' without a home folder. */
 export const ownPath = (home: string, part: BriefPart) => (home === '' ? '' : `${home}/.clawd-hq/${OWN_FILES[part]}`)
 
-export type BriefingOptions = { isOn: boolean; voiceFile: string; isQuiet: boolean; isKnowOn: boolean; isLeftOn: boolean; isAutoOn: boolean; isSearchOn: boolean; isOpenOn: boolean }
+/** `isOn`: Clawd is on, which needs his switch (`isChiefOn`) and the office open (hooks/toggle-store.ts); `optionsOf` has only the switch. */
+export type BriefingOptions = { isOn: boolean; isChiefOn: boolean; voiceFile: string; isQuiet: boolean; isKnowOn: boolean; isLeftOn: boolean; isAutoOn: boolean; isSearchOn: boolean; isOpenOn: boolean }
 export type BriefingIo = {
   root: string
   read: (path: string) => Promise<string>
@@ -62,7 +63,7 @@ export type Briefing = { text?: string; rules?: PartRead; voice?: PartRead }
 export function optionsOf(options: Readonly<Record<string, unknown>>): BriefingOptions {
   const { chiefOfStaff, voiceFile, quietChat, youShouldKnow, leftUndone, autoSetup, skillSearch, openAtStart } = options
   return {
-    isOn: chiefOfStaff !== false, voiceFile: typeof voiceFile === 'string' ? voiceFile.trim() : '', isQuiet: quietChat !== false,
+    isOn: chiefOfStaff !== false, isChiefOn: chiefOfStaff !== false, voiceFile: typeof voiceFile === 'string' ? voiceFile.trim() : '', isQuiet: quietChat !== false,
     isKnowOn: youShouldKnow !== false, isLeftOn: leftUndone !== false, isAutoOn: autoSetup !== false, isSearchOn: skillSearch !== false, isOpenOn: openAtStart === true, // off by default: the one switch that does not read a missing value as on
   }
 }

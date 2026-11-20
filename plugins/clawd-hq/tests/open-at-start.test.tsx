@@ -6,7 +6,7 @@ import { CLOSED, SETTINGS, START, host as baseHost } from './host'
 const host = (on: Parameters<typeof baseHost>[0], agents: unknown[] = [], store: Record<string, unknown> = {}) => baseHost(on, agents, { ...CLOSED, ...store })
 
 const IDS = ['clawd-hq', 'clawd-hq-people', 'clawd-hq-history', 'clawd-hq-settings']
-const TIP = 'Type /office to open the office'
+const TIP = 'Type /office to open the office and bring in Clawd' // "Clawd runs the chat" is on by default
 const MARKER = 'officeOpened'
 
 /** The opens are not awaited by the start: give them turns to finish (more than they need, so an extra open would show). */

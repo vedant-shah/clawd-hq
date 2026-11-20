@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { RULES_FILE, VOICE_FILE } from '../hooks/instructions'
-import { START, host, paneProps } from './host'
+import { CLOSED_LINE } from '../hooks/panel-clawd'
+import { CLOSED, START, host, paneProps } from './host'
 
 type On = Parameters<typeof host>[0]
 
@@ -184,6 +185,26 @@ test('with Clawd not running the chat, the tab says edits apply once he is', { o
   const ui = await mount($)
   expect(await shows(ui, 'Clawd isn\'t running the chat, so these are not in use until \'Clawd runs the chat\' is on.')).toBe(true)
   await ui.unmount()
+})
+
+test('with the switch on but the office closed, the tab names that reason, and is right the moment /office opens the office, and again when it closes it', async ($, on) => {
+  office(on, { ...CLOSED })
+  await $.session.start(START)
+  const states: boolean[] = []
+  const seen = async () => {
+    const ui = await mount($)
+    const closed = await shows(ui, CLOSED_LINE)
+    const switchOff = await shows(ui, 'Clawd isn\'t running the chat, so these are not in use until \'Clawd runs the chat\' is on.')
+    await ui.unmount()
+    expect(switchOff).toBe(false) // the switch is on: the reason is the office, never the switch
+    states.push(closed)
+  }
+  await seen()
+  await $.command.run({ command: 'office', args: '' } as never)
+  await seen()
+  await $.command.run({ command: 'office', args: '' } as never)
+  await seen()
+  expect(states).toEqual([true, false, true])
 })
 
 test('nothing on the tab is cut short: a long file is shown in whole lines, every one reached with ▼, and every text wraps, on both surfaces', { timeoutMs: 15_000 }, async ($, on) => {

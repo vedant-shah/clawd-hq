@@ -19,8 +19,10 @@ export type GoalEnd = { slug: string; title: string; summary?: string; outcome: 
 
 /** What the plan may do, each one a `$` call made in register-plan.ts. */
 export type PlanRunIo = {
-  /** "Clawd runs the chat" is on. Off: the tool is refused and no plan is loaded. */
+  /** "Clawd runs the chat" is on and the office is open: Clawd is in. Off: the tool is refused. */
   isOn: () => boolean
+  /** The switch alone, whether the office is open or not. Off: no plan is loaded and nothing is booked. Left out, it is `isOn`. */
+  isKept?: () => boolean
   /** The session's project folder; '' when there is none. */
   root: () => string
   files: PlanIo
@@ -59,6 +61,12 @@ type Answer = { readonly result: string } | { readonly deny: string }
 
 export const DENY_SPECIALIST = 'Only Clawd keeps the plan. Put what you want changed in your report for Clawd.'
 export const DENY_OFF = 'The plan is off while "Clawd runs the chat" is off.'
+/** The switch is on but the office is closed: Clawd is out, and `/office` brings him back. */
+export const DENY_CLOSED = 'The plan tool is off while the office is closed. The person types /office to open it and bring Clawd back.'
+/** Why the plan tool is refused now: the switch is off, or the switch is on and the office is closed. */
+const denyOf = (io: PlanRunIo) => (io.isKept?.() === true ? DENY_CLOSED : DENY_OFF)
+/** The plan's bookkeeping (a hand-back's tick, a dismissed Later item, a plan waiting as a draft, the plan loaded) follows the switch alone: it goes on while the office is closed. */
+const isKept = (io: PlanRunIo) => (io.isKept ?? io.isOn)()
 const NO_GOAL = 'There is no goal in hand (a goal closes by itself when its last step is ticked). Start one first: op "start" with a goal and its steps.'
 /** Added after the plan, in the answer of the call that ticked the goal's last step. */
 const CLOSED = 'The goal is complete and closed.'
@@ -105,7 +113,7 @@ async function noGoalText(io: PlanRunIo): Promise<string> {
  */
 export async function loadPlan(io: PlanRunIo): Promise<void> {
   try {
-    const newest = io.isOn() ? (await ownGoals(io))[0] : undefined
+    const newest = isKept(io) ? (await ownGoals(io))[0] : undefined
     if (newest === undefined) {
       await io.set(() => null)
       return
@@ -241,7 +249,7 @@ async function finish(io: PlanRunIo, state: PlanState, outcome: 'done' | 'stoppe
  */
 export async function planTool(io: PlanRunIo, agentId: string | undefined, input: Record<string, unknown>): Promise<Answer> {
   if (agentId !== undefined) return deny(DENY_SPECIALIST)
-  if (!io.isOn()) return deny(DENY_OFF)
+  if (!io.isOn()) return deny(denyOf(io))
   return withNotes(io, await withDraftNote(io, await answerTo(io, input)))
 }
 
@@ -355,7 +363,7 @@ export async function linkStep(io: PlanRunIo, stepId: string): Promise<string | 
  */
 export async function settleRun(io: PlanRunIo, runId: string): Promise<void> {
   try {
-    if (!io.isOn()) return
+    if (!isKept(io)) return
     const state = await io.get()
     const run = (await io.staff()).find(one => one.id === runId)
     if (state === null) {
@@ -396,7 +404,7 @@ async function closeIfComplete(io: PlanRunIo, before: PlanState): Promise<void> 
  */
 export async function dismissLater(io: PlanRunIo, goal: string, id: string): Promise<void> {
   try {
-    const state = io.isOn() ? await io.get() : null
+    const state = isKept(io) ? await io.get() : null
     if (state === null) return
     if (goalKey(state) !== goal) {
       await note(io, `a Dismiss was pressed for another goal (${fit(goal, 40)}), so it was refused`)
@@ -434,7 +442,7 @@ export async function clearNewMarks(io: PlanRunIo): Promise<void> {
  */
 export async function takeOver(io: PlanRunIo, slug: string): Promise<{ ok: true; state: PlanState } | { ok: false; reason: string }> {
   try {
-    if (!io.isOn()) return { ok: false, reason: DENY_OFF }
+    if (!io.isOn()) return { ok: false, reason: denyOf(io) }
     const me = await io.session()
     // The goal's own file, whoever owns it now: no guard, the takeover is the change of owner. "No goal in hand" is asked inside the file queue,
     // when this takeover's turn comes, and the goal is held before the next one is asked: two quick Resumes cannot stamp one goal and hold the other.
@@ -467,7 +475,7 @@ export function takeOverPrompt(state: PlanState): string {
  */
 export async function receiveDraft(io: PlanRunIo, title: string, report: string, folder: string = io.root()): Promise<void> {
   try {
-    if (!io.isOn()) return
+    if (!isKept(io)) return
     const steps = parseSteps(report)
     const goal = cleanText(title)
     if (steps.length === 0 || goal === '' || looksSecret(goal)) return

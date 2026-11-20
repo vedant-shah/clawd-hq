@@ -13,7 +13,9 @@ import { windowOf } from './scroll-window'
 
 const TITLES: Record<BriefPart, string> = { rules: 'INSTRUCTIONS', voice: 'VOICE NOTES' }
 const SOURCES: Record<ClawdPartView['source'], string> = { builtin: 'Built-in', own: 'Your copy', setting: 'Voice file setting' }
-const OFF_LINE = 'Clawd isn\'t running the chat, so these are not in use until \'Clawd runs the chat\' is on.'
+/** The switch is on but the office is closed: Clawd is out until `/office`. Read live, so it is right the moment the office opens or closes. */
+export const CLOSED_LINE = 'Clawd is out while the office is closed, so these are not in use. Type /office to open it and bring him in.'
+const OFF_LINE ='Clawd isn\'t running the chat, so these are not in use until \'Clawd runs the chat\' is on.'
 const WHEN = 'Edits apply from your next session.'
 const NO_HOME = 'No home folder was found, so edits cannot be kept.'
 /** The fixed rules without their "## Always" heading line, which the tab's own ALWAYS heading stands in for. */
@@ -129,7 +131,7 @@ export function clawdTab(kit: Kit, data: PanelData, actions: PanelActions) {
   const isEmpty = b.rules === undefined && b.voice === undefined && b.readError === undefined
   return (
     <Box flexDirection="column" gap={1}>
-      {!b.isOn && <Text key="clawd-off" color={AMBER} wrap="wrap">{OFF_LINE}</Text>}
+      {!data.options.isOn && <Text key="clawd-off" color={AMBER} wrap="wrap">{data.options.isChiefOn ? CLOSED_LINE : OFF_LINE}</Text>}
       {b.readError !== undefined && <Text key="clawd-read-error" color={AMBER} wrap="wrap">{readFailedLine(b.readError)}</Text>}
       {b.notice !== undefined && noticeView(kit, b.notice)}
       {isEmpty && <Text dimColor wrap="wrap">Nothing to show yet. Clawd's instructions are read when a session starts.</Text>}

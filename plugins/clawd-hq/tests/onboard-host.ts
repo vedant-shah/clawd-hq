@@ -164,11 +164,8 @@ export async function offerAgentsClosed($: Engine) {
   for (const [agent, description] of Object.entries(AGENTS)) await $.agent.offer({ agent, description } as never)
 }
 
-/** The same, and the person types /office: setup starts once the office has been opened (it is held while the office is closed). */
-export async function offerAgents($: Engine) {
-  await offerAgentsClosed($)
-  await $.command.run({ command: 'office', args: '' } as never)
-}
+/** The same under the test host's default, which opens the office at the start: setup waits for the office to be open, and it is. */
+export const offerAgents = offerAgentsClosed
 
 /** The Office tab as drawn now: its texts and the setup card's buttons (key and label). */
 export async function office($: Engine, surface: Surface) {

@@ -56,7 +56,7 @@ What it writes:
 - Your project's CLAUDE.md: only the exact rule line shown, when you press "Add to CLAUDE.md".
 - The plugin's own store in your Claude Code config folder: setup's team and profile, who you laid off, hire counts, each project's token totals per helper, the Artifact Desk list, "You should know" notes, the Left undone list, a short log of its checks (when, what came of it, how many items; never your request or its report), the steps of a plan the Planner wrote that is waiting for a goal to end (dropped after seven days), short lines about plan problems that were passed over (never your words), and the Settings switches.
 
-What it changes as text passes through:
+What it changes as text passes through. Everything below that says "while Clawd runs the chat" holds only while the office is open too: the office is closed by default, `/office` opens it (and brings Clawd in), and `/office` again, or you closing the Office tab, closes it and takes him out from your next message on. Specialists already at work carry on and the plan stays saved.
 
 - System prompt: while "Clawd runs the chat" is on, it adds Clawd's rules and voice as one section. If that section did not reach the model, the same text rides along with your next message.
 - Agent tool description: while Clawd runs the chat, it adds a note on choosing each hire's model and effort and a standing instruction that you want work handed to agents without being asked each time. With it off, the description is left as it is.
@@ -66,7 +66,7 @@ What it changes as text passes through:
 - Agent list: while Clawd runs the chat, helpers you laid off are hidden from the model. With it off, none are hidden.
 - Quiet chat: it hides specialists' finished notices, Clawd's no-update lines and background hints, and hides or dims the office's own bookkeeping rows. Errors always show, and the expanded view (ctrl+o) shows everything.
 - "You should know": while this one is on and an office tab is open, Claude Code's own "You should know" question gets a quiet answer.
-- "Open the office at session start" (off by default): with it off, a new session opens no panels and does not ask to bring Office to the front. It shows the tip "Type /office to open the office" until you have opened the office once; a small marker in the plugin's store records that. `/office` opens the panels. With it on they open at every start and no tip is shown.
+- "Open the office at session start" (off by default): with it off, a new session opens no panels and does not ask to bring Office to the front. Clawd is not in either, so Claude behaves as usual. It shows the tip "Type /office to open the office and bring in Clawd" until you have opened the office once; a small marker in the plugin's store records that. `/office` opens the panels and brings Clawd in; `/office` again closes them. With it on they open at every start, Clawd is in from the first message, and no tip is shown.
 - While you edit Clawd's files from Settings, writes to the plugin's built-in files are refused.
 
 The Settings switches are kept in the plugin's own store. Claude Code's /config does not show a press; a value set in /config is used until you press that switch.

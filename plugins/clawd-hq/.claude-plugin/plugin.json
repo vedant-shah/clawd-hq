@@ -19,7 +19,7 @@
     "chiefOfStaff": {
       "type": "boolean",
       "title": "Clawd runs the chat",
-      "description": "On (default): the main chat works as Clawd, the chief of staff. He hands real work to specialists, asks you only what needs you, and reports in plain words. Off: Claude behaves as usual and you keep the panel.",
+      "description": "On (default): while the office is open, the main chat works as Clawd, the chief of staff. He hands real work to specialists, asks you only what needs you, and reports in plain words. The office is closed by default, so Clawd comes in when you type /office (or when \"Open the office at session start\" is on); type /office again to close the office and send him away from your next message on, with specialists already at work carrying on and the plan kept. Off: Claude behaves as usual, open office or not, and you keep the panel.",
       "required": false,
       "default": true
     },
@@ -68,7 +68,7 @@
     "openAtStart": {
       "type": "boolean",
       "title": "Open the office at session start",
-      "description": "On: a new session opens the Office, People, History and Settings panels and asks to bring Office to the front. Off (default): a new session opens no panels and asks for nothing, and shows one short tip, \"Type /office to open the office\", until you have opened the office once; type /office to open the panels when you want.",
+      "description": "On: a new session opens the Office, People, History and Settings panels and asks to bring Office to the front, and Clawd is in from the first message. Off (default): a new session opens no panels, asks for nothing and has no Clawd (Claude behaves as usual), and shows one short tip, \"Type /office to open the office and bring in Clawd\", until you have opened the office once. Type /office to open the panels and bring in Clawd, and again to close them. A session where you closed the office stays closed when you resume it.",
       "required": false,
       "default": false
     }

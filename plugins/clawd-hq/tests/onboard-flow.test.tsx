@@ -23,7 +23,6 @@ async function open($: Engine, h: OnboardHost, surface: Surface) {
   await $.session.start(surface === 'terminal' ? START : DESKTOP_START)
   await offerAgents($)
   if (surface === 'desktop') await $.session.attach(DESKTOP)
-  await $.command.run({ command: 'office', args: '' } as never) // setup starts when the office opens
   await frames(h)
 }
 
@@ -151,7 +150,6 @@ test('the desktop app: nothing runs before its view attaches, then setup runs by
   expect(saveOf(h)).toBeUndefined()
   expect(h.calls.models).toEqual([])
   await $.session.attach(DESKTOP)
-  await $.command.run({ command: 'office', args: '' } as never)
   await frames(h)
   expect(saveOf(h)?.step).toBe('done')
 })

@@ -7,14 +7,23 @@ import type { BriefingOptions } from './instructions'
 import { BRAND } from './office'
 import { restartOnboard } from './onboard'
 import { noFolderCard, noFolderLine } from './onboard-cards'
-import { openPanes } from './panes'
+import { isOfficeOpen } from './office-open'
+import { markClosed, markOpened } from './office-tip'
+import { closePanes, openPanes } from './panes'
 import { councilIo, demoIo, paneIo } from './register-io'
 import { folderIo, onboardIo } from './register-setup'
 import { ses } from './register-state'
 import { followFolder, setupFolder } from './session-folder'
 
 export function registerCommands(on: On, brief: BriefingOptions) {
+  // `/office` toggles: closed, it opens the office (and Clawd comes with it); open, it closes the four panels (hooks/office-open.ts).
   on('command.run', { command: 'office' }, async $ => {
+    if (isOfficeOpen()) {
+      await closePanes(paneIo($)) // closed first, then the state: the frame check cannot see a pane still closing and flip it back to open
+      await markClosed($)
+      return { text: `${BRAND} is closed. Type /office to open it again.` }
+    }
+    await markOpened($)
     await openPanes(paneIo($), true)
     return { text: `${BRAND} is open: Office · People · History · Settings are the tabs at the top.` }
   })

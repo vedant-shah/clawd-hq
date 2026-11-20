@@ -3,6 +3,7 @@
 // Every feature reads a switch through `liveOptions`: the saved value first, then the settings' value, then the default.
 import type { ConfigField as ToggleField } from './configs'
 import type { BriefingOptions } from './instructions'
+import { isOfficeClosed } from './office-open'
 
 export type Saved = Readonly<Partial<Record<ToggleField, boolean>>>
 
@@ -32,7 +33,9 @@ export function liveOptions(base: BriefingOptions): BriefingOptions {
   const pick = (field: ToggleField, settings: boolean) => saved[field] ?? settings
   return {
     voiceFile: base.voiceFile,
-    get isOn() { return pick('chiefOfStaff', base.isOn) },
+    // Clawd is on only while his switch is on AND the office is open: the one place that decides it, so everything that follows him follows both.
+    get isOn() { return pick('chiefOfStaff', base.isChiefOn) && !isOfficeClosed() },
+    get isChiefOn() { return pick('chiefOfStaff', base.isChiefOn) },
     get isQuiet() { return pick('quietChat', base.isQuiet) },
     get isKnowOn() { return pick('youShouldKnow', base.isKnowOn) },
     get isLeftOn() { return pick('leftUndone', base.isLeftOn) },

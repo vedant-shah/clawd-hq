@@ -89,7 +89,9 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   on('agent.list', () => ({ value: agents }) as never)
   on('ui.status', () => ({ value: undefined }) as never)
   on('ui.toast', (_$, e) => (toasts.push((e as { text: string }).text), { value: undefined }) as never)
-  on('ui.invalidate', () => ({ value: undefined }) as never)
+  /** The events the plugin asked the host to ask for again (`$.ui.invalidate`), in order. */
+  const invalidated: string[] = []
+  on('ui.invalidate', (_$, e) => (invalidated.push(String((e as { event?: unknown }).event ?? JSON.stringify(e))), { value: undefined }) as never)
   on('ui.open', (_$, e) => {
     const { id, title = id } = e as OpenArgs
     if (fail.open || fail.ids.has(id)) throw new Error('the host refused the pane')
@@ -171,5 +173,5 @@ export function host(on: On, agents: unknown[] = [], store: Record<string, unkno
   /** The plugin closing a pane: the ids it asked for, then the same as the person's close. */
   const closed: string[] = []
   on('ui.close', (_$, e) => (closed.push((e as { id: string }).id), closePane((e as { id: string }).id), { value: undefined }) as never)
-  return { clock, opened, closed, toasts, session, compacts, compact, panes, closePane, fail, front, focus, surface, files, reads, disk, saved, kv, commands, tools, toolSpecs, agentSpecs }
+  return { clock, opened, closed, invalidated, toasts, session, compacts, compact, panes, closePane, fail, front, focus, surface, files, reads, disk, saved, kv, commands, tools, toolSpecs, agentSpecs }
 }

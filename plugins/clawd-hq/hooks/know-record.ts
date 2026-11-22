@@ -7,10 +7,12 @@ import { PLAN_DRAFT_NOTE } from './plan-draft'
 import { isStepTool } from './steps'
 import { ago } from './office'
 
-/** The whole record's limit: about 60K tokens, at about four characters a token. */
-export const CAP_CHARS = 240_000
+/** The whole record's limit: about 20K tokens, at about four characters a token. The small model gave out on records near 200K. */
+export const CAP_CHARS = 80_000
 const INPUT = { limit: 2000, head: 1000, tail: 500 }
 const PROMPT = { limit: 2000, head: 1500, tail: 500 }
+/** The brief, the report and any message to the specialist: past 20,000 characters the middle goes, the start and end stay. */
+const WHOLE = { limit: 20_000, head: 14_000, tail: 6_000 }
 const LOOKUP = { head: 600, tail: 0 }
 const COMMAND = { head: 1500, tail: 2500 }
 const ERROR = { head: 2000, tail: 2000 }
@@ -124,7 +126,32 @@ function itemsOf(rows: readonly SessionMessage[], input: RecordInput): Item[] {
   })
 }
 
-/** Cuts outputs until the record fits: the oldest lookups to their step line first, then commands from the middle of the run outward. */
+/** Room kept for the mark that says the oldest steps were cut. */
+const CUT_ROOM = 160
+const cutMark = (steps: number) => (steps === 0
+  ? '[trimmed: the oldest words of the run, not shown, to keep the record short]'
+  : `[trimmed: the oldest ${steps} step${steps === 1 ? '' : 's'} and what was said with them, not shown, to keep the record short]`)
+
+/** The steps and words from the oldest on are cut until the record fits, and a mark in words takes their place. */
+function withoutOldest(list: readonly Item[], size: number): { items: Item[]; size: number } {
+  let room = size + CUT_ROOM
+  let at = 0
+  while (at < list.length && room > CAP_CHARS) {
+    room -= render(list[at]!).length + 2
+    at += 1
+  }
+  if (at === 0) return { items: [...list], size }
+  const mark: Item = { kind: 'words', text: cutMark(list.slice(0, at).filter(it => it.kind === 'step').length) }
+  return { items: [mark, ...list.slice(at)], size: room - CUT_ROOM + render(mark).length + 2 }
+}
+
+const outOfItem = (it: Item) => (it.kind === 'step' ? it.out : undefined)
+
+/**
+ * Cuts the record until it fits: the oldest lookups to their step line first, then commands from the middle of the run
+ * outward, then every output left (errors last, oldest first) to nothing, keeping each step line and its inputs, and
+ * last the oldest steps themselves.
+ */
 function fitted(items: Item[], fixed: number): { items: Item[]; size: number } {
   const list = [...items]
   let size = fixed + list.reduce((sum, it) => sum + render(it).length + 2, 0)
@@ -143,7 +170,9 @@ function fitted(items: Item[], fixed: number): { items: Item[]; size: number } {
   const mid = (list.length - 1) / 2
   const commands = outs.filter(({ it }) => it.kind === 'step' && !it.out!.isLookup).sort((a, b) => Math.abs(a.i - mid) - Math.abs(b.i - mid))
   for (const { i } of commands) shrink(i, SHORT_COMMAND)
-  return { items: list, size }
+  const left = list.map((it, i) => ({ i, isError: outOfItem(it)?.isError, has: outOfItem(it) !== undefined })).filter(x => x.has)
+  for (const { i } of [...left.filter(x => !x.isError), ...left.filter(x => x.isError)]) shrink(i, { head: 0, tail: 0 })
+  return size <= CAP_CHARS ? { items: list, size } : withoutOldest(list, size)
 }
 
 const ENDED = {
@@ -181,7 +210,7 @@ const withoutOurNote = (text: string) => (text.includes(BRIEF_NOTE) ? `${text.re
  */
 function laterOf(earlier: readonly SessionMessage[]): string[] {
   const sent = earlier.filter((r, i) => i > 0 && isTyped(r))
-  return sent.map(r => `LATER MESSAGE TO THE SPECIALIST (may change the brief):\n${withoutOurNote(r.text)}`)
+  return sent.map(r => `LATER MESSAGE TO THE SPECIALIST (may change the brief):\n${capped(withoutOurNote(r.text), WHOLE, 'the message text')}`)
 }
 
 /**
@@ -195,14 +224,14 @@ function briefOf(input: RecordInput): { sections: string[]; rest: readonly Sessi
   const opening = isOpening ? withoutOurNote(own.text) : undefined
   const retold = at > 0 && input.rows[0] && isTyped(input.rows[0]) ? [input.rows[0]] : []
   const rest = input.rows.filter((_, i) => !(isOpening && i === at) && !(retold.length > 0 && i === 0))
-  if (input.isClawd) return { sections: [`THE PERSON'S REQUEST:\n${opening ?? 'Not available.'}`], rest }
+  if (input.isClawd) return { sections: [`THE PERSON'S REQUEST:\n${opening === undefined ? 'Not available.' : capped(opening, WHOLE, 'the brief')}`], rest }
   const earlier = [...(input.earlier ?? []), ...retold]
   // No brief kept from the hire (a session resumed since): the message that opened the first run is the brief.
   const firstSent = earlier[0]
   const kept = input.brief ?? (firstSent && isTyped(firstSent) ? firstSent.text : undefined)
   const hired = kept === undefined || (!input.isResumed && opening !== undefined) ? undefined : withoutOurNote(kept)
-  const brief = hired ?? opening ?? 'Not available.'
-  const started = opening !== undefined && hired !== undefined && !isSame(opening, hired) ? [`MESSAGE THAT STARTED THIS RUN:\n${opening}`] : []
+  const brief = capped(hired ?? opening ?? 'Not available.', WHOLE, 'the brief')
+  const started = opening !== undefined && hired !== undefined && !isSame(opening, hired) ? [`MESSAGE THAT STARTED THIS RUN:\n${capped(opening, WHOLE, 'the message text')}`] : []
   return { sections: [`BRIEF:\n${brief}`, ...laterOf(earlier), ...started], rest }
 }
 
@@ -211,17 +240,17 @@ function promptsOf(prompts: readonly string[]): string[] {
   return [`THE PERSON'S LATEST PROMPTS TO CLAWD:\n${prompts.map((p, i) => `${i + 1}. ${capped(p, PROMPT, 'the prompt')}`).join('\n')}`]
 }
 
-/** The record the checker reads, how many steps it holds, and its size; `isOverCap` when even the cuts left it too long. */
-export function buildRecord(input: RecordInput): { text: string; steps: number; chars: number; isOverCap: boolean } {
+/** The record the checker reads, how many steps it holds, and its size. A brief, report or message over 20,000 characters is cut too, so the record always fits. */
+export function buildRecord(input: RecordInput): { text: string; steps: number; chars: number } {
   const { sections, rest } = briefOf(input)
   const all = itemsOf(rest, input)
   const steps = all.filter(it => it.kind === 'step').length
   const leftOut = input.leftOut === undefined ? [] : [LEFT_OUT[input.leftOut]]
   const before = [headerOf(input, steps), ...promptsOf(input.prompts), ...sections, 'STEPS AND WORDS, IN ORDER:', ...leftOut].join('\n\n')
-  const after = `${input.isClawd ? 'FINAL ANSWER' : 'REPORT HANDED BACK'}:\n${input.report.trim() === '' ? 'No report text.' : input.report}`
+  const after = `${input.isClawd ? 'FINAL ANSWER' : 'REPORT HANDED BACK'}:\n${input.report.trim() === '' ? 'No report text.' : capped(input.report, WHOLE, 'the report')}`
   const { items } = fitted(all, before.length + after.length + 4)
   const text = [before, ...items.map(render), after].join('\n\n')
-  return { text, steps, chars: text.length, isOverCap: text.length > CAP_CHARS }
+  return { text, steps, chars: text.length }
 }
 
 const isTyped = (r: SessionMessage) => r.role === 'user' && r.text.trim() !== '' && (r.toolResults?.length ?? 0) === 0

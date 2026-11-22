@@ -2,12 +2,16 @@
 // that list). Closed it is one line, "N later" with a show button; open it shows every item, each with Do it now and Dismiss, and Clear (which
 // empties the Left undone list) on the header. With no goal in hand it stands alone under "At work" as "LATER · N". Plain wrapped text only: the
 // words come from files, answers and a model, so nothing in them is read as a link or as Markdown.
-import { noteOf } from './left-list'
+import { markerLine, noteOf, splitMarkers } from './left-list'
 import type { Ctx } from './panel-desk'
 import { FOLD, foldsOf, goalOf } from './plan-view'
 
 /** How many items are put off in all. */
-export const laterCount = ({ data }: Pick<Ctx, 'data'>) => (data.plan?.later.length ?? 0) + data.leftUndone.length
+/** DECIDED: the code-marker side line counts as one, however many markers it holds. */
+export const laterCount = ({ data }: Pick<Ctx, 'data'>) => {
+  const { rows, markers } = splitMarkers(data.leftUndone)
+  return (data.plan?.later.length ?? 0) + rows.length + (markers.length > 0 ? 1 : 0)
+}
 
 type Options = {
   /** Cells the fold sits in from the left: three on the terminal, under the rail's marks. */
@@ -43,6 +47,7 @@ export function laterFold(ctx: Ctx, { indent, isAlone }: Options): JSX.Element[]
     </Box>
   )
   // The Clear button belongs to the Left undone rows, under their own small heading: it empties that list and nothing of the plan.
+  const { rows, markers } = splitMarkers(data.leftUndone)
   const left = data.leftUndone.length === 0
     ? null
     : (
@@ -51,7 +56,8 @@ export function laterFold(ctx: Ctx, { indent, isAlone }: Options): JSX.Element[]
           <Text dimColor>Left undone</Text>
           <Button key="later-clear" plain dimColor label="Clear left undone" onPress={() => actions.leftClear()} />
         </Box>
-        {data.leftUndone.map(one => item(`later-left-${one.id}`, one.text, noteOf(one), () => actions.leftDo(one.id), () => actions.leftDismiss(one.id)))}
+        {rows.map(one => item(`later-left-${one.id}`, one.text, noteOf(one), () => actions.leftDo(one.id), () => actions.leftDismiss(one.id)))}
+        {markers.length > 0 && <Text key="later-markers" dimColor wrap="wrap">{markerLine(markers)}</Text>}
       </Box>
     )
   return [

@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
-import { CHECK_PROMPT } from '../hooks/know'
+import { CHECK_PROMPT, KNOW_VERSION } from '../hooks/know'
+import { CAP_CHARS } from '../hooks/know-record'
 import { AMBER } from '../hooks/office'
 import { PANES } from '../hooks/panes'
 import { CLEAR, PANE, START, SURFACES, host } from './host'
@@ -89,7 +90,7 @@ test('a hand-back asks Haiku once, with our own question and the whole record, a
   expect(ask.prompt).toMatch(/REPORT HANDED BACK:\nAll tests pass\./)
   expect(ask.prompt).toMatch(/TIME AND TOKENS: 1m; 9,000 input tokens, 60 output tokens/)
   expect(saved.get('know:shown:/repo')).toEqual(['The Tester says all tests pass, but the last test run failed.'])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'shown', inTokens: 9_000, outTokens: 60, ms: 0, recordChars: expect.any(Number) }])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'shown', inTokens: 9_000, outTokens: 60, ms: 0, recordChars: expect.any(Number), noteId: 'k1000-1', version: KNOW_VERSION }])
   expect(toasts.some(t => /last test run failed/.test(t))).toBe(false)
 })
 
@@ -130,7 +131,7 @@ test('a session that will not hand over the record skips the check quietly, and 
   await handBack($, 'a1')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'refused', reason: 'no agent a1' }])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'refused', reason: 'no agent a1', version: KNOW_VERSION }])
 })
 
 test('a run that failed is checked too, and the checker is told how it ended', async ($, on) => {
@@ -222,7 +223,7 @@ test('a hand-back where nothing is drawn is not checked, and the log says why', 
   await handBack($, 'a1')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'nothing is drawn' }])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'nothing is drawn', version: KNOW_VERSION }])
 })
 
 test('a hand-back with no office tab open is not checked, and the log says why', async ($, on) => {
@@ -236,7 +237,7 @@ test('a hand-back with no office tab open is not checked, and the log says why',
   await handBack($, 'a1')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'no office tab is open' }])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'no office tab is open', version: KNOW_VERSION }])
 })
 
 test('the Settings tab alone is an office tab open: a hand-back is checked', async ($, on) => {
@@ -390,8 +391,7 @@ test('a note is its own card under Needs you, between Clawd\'s card and the floo
     expect((await ui.find({ type: 'Text', text: /^HEADS UP$/ }))?.props.color).toBe(AMBER)
     expect((await ui.find({ type: 'Text', text: /^· Tester$/ }))?.props.dimColor).toBe(true)
     expect(all.findIndex(t => /THE FLOOR|AT WORK/.test(t))).toBeGreaterThan(line)
-    for (const key of ['know-more', 'know-discuss', 'know-dismiss']) expect(await ui.find({ key })).toBeDefined()
-    expect(await ui.find({ key: 'know-got-it' })).toBeUndefined()
+    for (const key of ['know-more', 'know-got-it', 'know-discuss', 'know-dismiss']) expect(await ui.find({ key })).toBeDefined()
     expect(all.some(t => /more notes? waiting|more waiting/.test(t))).toBe(false)
     // The title and the explanation wait behind Learn more.
     expect(all.some(t => /The tests did not pass|3 failures/.test(t))).toBe(false)
@@ -399,7 +399,7 @@ test('a note is its own card under Needs you, between Clawd\'s card and the floo
   }
 })
 
-test('Learn more opens the title and explanation with Got it; Got it takes the note off and starts the back-off over', async ($, on) => {
+test('Learn more opens the title and explanation with Knew this; Knew this takes the note off, saves its topic as known and starts the back-off over', async ($, on) => {
   const { saved } = await withNotes($, on, [() => answered(NOTE)])
   saved.set('know:backoff:/repo', { ignored: 1, skipLeft: 0 })
   const ui = await office$($, 'terminal')
@@ -411,10 +411,103 @@ test('Learn more opens the title and explanation with Got it; Got it takes the n
   const all = await texts(ui)
   expect(all.indexOf('The tests did not pass')).toBeGreaterThan(all.indexOf('HEADS UP'))
   expect((await ui.find({ type: 'Text', text: /^The last run ended/ }))?.props.dimColor).toBe(true)
+  expect((await ui.find({ key: 'know-got-it' }))?.props.label).toBe('Knew this')
   await ui.press({ key: 'know-got-it' })
   expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
   expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 0, skipLeft: 0 })
+  expect(saved.get('know:knew:/repo')).toEqual(['The Tester says all tests pass, but the last test run failed.'])
   await ui.unmount()
+})
+
+test('what the person said they knew rides in later questions, the newest ten only', async ($, on) => {
+  const { asked, rows, saved } = office(on, [() => answered(NOTE), none])
+  saved.set('know:knew:/repo', Array.from({ length: 12 }, (_, i) => `Old topic ${i}.`))
+  await $.session.start(START)
+  await hire($)
+  rows.set('a1', run('Job 1'))
+  await handBack($, 'a1')
+  await until($, () => logOf(saved).length === 1)
+  const ui = await office$($, 'terminal')
+  await ui.press({ key: 'know-more' })
+  await ui.press({ key: 'know-got-it' })
+  await ui.unmount()
+  const knew = saved.get('know:knew:/repo') as string[]
+  expect(knew).toHaveLength(10)
+  expect(knew[9]).toBe('The Tester says all tests pass, but the last test run failed.')
+  expect(knew[0]).toBe('Old topic 3.')
+  await $.prompt.submit({ text: 'next' } as never)
+  await hire($)
+  rows.set('a2', run('Job 2'))
+  await handBack($, 'a2')
+  await until($, () => logOf(saved).length === 2)
+  expect(asked[1]!.prompt).toMatch(/The person already knew, do not repeat:\n- Old topic 3\.\n/)
+  expect(asked[1]!.prompt).not.toContain('Old topic 2.')
+  expect(asked[1]!.prompt).toContain('- The Tester says all tests pass, but the last test run failed.')
+})
+
+test('the person\'s reactions: opened, discussed, knew this, dismissed and passed over, each on the row of its note', async ($, on) => {
+  const h = office(on, [reply(1), reply(2), reply(3), reply(4)])
+  await $.session.start(START)
+  const reactionsOf = () => logOf(h.saved).map(l => (l as { reactions?: string[] }).reactions)
+  const press = async (key: string) => {
+    const ui = await office$($, 'terminal')
+    await ui.press({ key })
+    await ui.unmount()
+  }
+  const next = async (n: number) => {
+    await $.prompt.submit({ text: `message ${n}` } as never)
+    await hire($)
+    h.rows.set(`a${n}`, run(`Job ${n}`))
+    await handBack($, `a${n}`)
+    await until($, () => logOf(h.saved).filter(l => l.outcome === 'shown').length === n)
+  }
+  await next(1)
+  await press('know-more')
+  await press('know-got-it')
+  await next(2)
+  await press('know-discuss')
+  await next(3)
+  await press('know-dismiss')
+  await next(4)
+  await $.prompt.submit({ text: 'one' } as never)
+  await $.prompt.submit({ text: 'two' } as never)
+  await idle()
+  expect(reactionsOf()).toEqual([['opened', 'knew-this'], ['discussed'], ['dismissed'], ['passed-over']])
+  expect(h.saved.get('know:tally:/repo')).toEqual({
+    outcomes: { shown: 4 },
+    reasons: {},
+    reactions: { opened: 1, 'knew-this': 1, discussed: 1, dismissed: 1, 'passed-over': 1 },
+  })
+})
+
+test('the tally counts every outcome and every reason of a project, beside the 20-row log', async ($, on) => {
+  const { rows, saved } = office(on, [none])
+  await $.session.start(START)
+  await hire($)
+  rows.set('a1', run('Job 1'))
+  await handBack($, 'a1')
+  await until($, () => logOf(saved).length === 1)
+  await hire($)
+  rows.set('a2', [{ role: 'user', text: 'Thoughts?', toolUses: [] }, { role: 'assistant', text: 'Fine.', toolUses: [] }])
+  await handBack($, 'a2', 'answer', 'Fine.')
+  await until($, () => logOf(saved).length === 2)
+  await idle()
+  expect(saved.get('know:tally:/repo')).toEqual({ outcomes: { none: 1, skipped: 1 }, reasons: { 'the run used no tools': 1 }, reactions: {} })
+})
+
+test('a huge record is shrunk to the cap and asked about, not skipped or sent whole', { timeoutMs: 15_000 }, async ($, on) => {
+  const { asked, rows, saved } = office(on, [none])
+  await $.session.start(START)
+  await hire($)
+  const big = Array.from({ length: 1500 }, (_, i) => `output line ${i} of the long test run`).join('\n')
+  const steps = Array.from({ length: 150 }, (_, i) => ({ tool_use_id: `u${i}`, tool: 'Bash', input: { command: `npm run part${i}` }, text: big }))
+  rows.set('a1', [{ role: 'user', text: 'Run everything.', toolUses: [] }, { role: 'assistant', text: 'Done.', toolUses: steps }])
+  await handBack($, 'a1', 'answer', 'All done.')
+  await until($, () => logOf(saved).length === 1)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['none'])
+  expect(asked).toHaveLength(1)
+  expect(asked[0]!.prompt.length).toBeLessThan(CAP_CHARS + 2_000)
+  expect(logOf(saved)[0]!.recordChars).toBeLessThanOrEqual(CAP_CHARS)
 })
 
 test('Dismiss takes the note off without saving it as known', async ($, on) => {
@@ -444,19 +537,20 @@ test('Ask Clawd fills the prompt box with the line and the longer version, sends
 test('Ask Clawd shows with or without Learn more opened, first of the dim buttons, and on a note with no explanation', async ($, on) => {
   await withNotes($, on, [reply(1)])
   const ui = await office$($, 'desktop')
-  const keys = async () => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label)).filter(label => label !== 'Hold a council').slice(0, 3)
-  expect(await keys()).toEqual(['Learn more', 'Ask Clawd', 'Dismiss'])
+  const keys = async () => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label)).filter(label => label !== 'Hold a council').slice(0, 4)
+  expect(await keys()).toEqual(['Learn more', 'Knew this', 'Ask Clawd', 'Dismiss'])
   await ui.press({ key: 'know-more' })
-  expect(await keys()).toEqual(['Got it', 'Ask Clawd', 'Dismiss'])
+  expect((await keys()).slice(0, 3)).toEqual(['Knew this', 'Ask Clawd', 'Dismiss'])
   await ui.unmount()
 })
 
-test('a note with no explanation has no Learn more', async ($, on) => {
+test('a note with no explanation has no Learn more, but still has Knew this', async ($, on) => {
   await withNotes($, on, [reply(1, '')])
   for (const surface of SURFACES) {
     const ui = await office$($, surface)
     expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
     expect(await ui.find({ key: 'know-more' })).toBeUndefined()
+    expect(await ui.find({ key: 'know-got-it' })).toBeDefined()
     expect(await ui.find({ key: 'know-dismiss' })).toBeDefined()
     expect(await ui.find({ key: 'know-discuss' })).toBeDefined()
     await ui.unmount()
@@ -760,7 +854,7 @@ test('a specialist run whose only tool uses are its step reports counts as using
   await handBack($, 'a1', 'answer', 'It looks sound.')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools' }])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools', version: KNOW_VERSION }])
   expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
 })
 
@@ -951,7 +1045,7 @@ test('a specialist run that used no tools is not checked, the log says why, and 
   await handBack($, 'a1', 'answer', 'It looks sound.')
   await until($, () => logOf(saved).length > 0)
   expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools' }])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools', version: KNOW_VERSION }])
   expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
 })
 

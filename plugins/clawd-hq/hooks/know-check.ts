@@ -4,11 +4,11 @@
 import type { ModelCompleteResult, SessionMessage } from 'claude-code'
 import type { KnowNote, KnowState } from '../types'
 import {
-  BACKOFF0, KNEW_KEEP, NO_LEARN, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
-  keepLast, listFrom, nextCheck, parseNote, withLog, withNote, withOpened, withoutNote,
+  BACKOFF0, KNEW_KEEP, KNOW_VERSION, NO_LEARN, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
+  keepLast, listFrom, nextCheck, parseNote, tallyFrom, withLog, withNote, withOpened, withReacted, withReaction, withTallied, withoutNote,
 } from './know'
-import type { Backoff, KnowLogEntry } from './know'
-import { CAP_CHARS, buildRecord, turnRows } from './know-record'
+import type { Backoff, KnowLogEntry, KnowTally, Reaction } from './know'
+import { buildRecord, turnRows } from './know-record'
 import type { LeftOut, RecordInput } from './know-record'
 import { PANES } from './panes'
 import { side } from './side-ask'
@@ -21,7 +21,7 @@ const TIMEOUT_MS = 60_000
 /** How many of the person's latest prompts ride along. */
 const PROMPTS_KEPT = 2
 /** Store keys, kept per project folder as the payroll and the artifact list are. */
-const KEYS = { shown: 'know:shown', knew: 'know:knew', backoff: 'know:backoff', log: 'know:log' } as const
+const KEYS = { shown: 'know:shown', knew: 'know:knew', backoff: 'know:backoff', log: 'know:log', tally: 'know:tally' } as const
 type Key = (typeof KEYS)[keyof typeof KEYS]
 
 /** What the check may do, each one a `$` call made in register-know.ts. */
@@ -61,7 +61,7 @@ const keyOf = (key: Key) => `${key}:${folder}`
 /** Goes up on /clear, resume and session end: a reply asked for before then is dropped. */
 let epoch = 0
 let prompts: readonly string[] = []
-type Lists = { shown: readonly string[]; knew: readonly string[]; backoff: Backoff; log: readonly KnowLogEntry[] }
+type Lists = { shown: readonly string[]; knew: readonly string[]; backoff: Backoff; log: readonly KnowLogEntry[]; tally: KnowTally }
 let lists: Lists | undefined
 /** Each specialist's brief as it was sent, and how many of its rows were already checked. */
 const briefs = new Map<string, string>()
@@ -89,8 +89,8 @@ async function save(io: KnowIo, key: Key, value: unknown) {
 async function loadLists(io: KnowIo) {
   if (lists) return lists
   const got = async (key: Key) => { try { return await io.get(keyOf(key)) } catch { return undefined } }
-  const [shown, knew, backoff, log] = [await got(KEYS.shown), await got(KEYS.knew), await got(KEYS.backoff), await got(KEYS.log)]
-  lists ??= { shown: listFrom(shown, SHOWN_KEEP), knew: listFrom(knew, KNEW_KEEP), backoff: backoffFrom(backoff), log: Array.isArray(log) ? log : [] }
+  const [shown, knew, backoff, log, tally] = [await got(KEYS.shown), await got(KEYS.knew), await got(KEYS.backoff), await got(KEYS.log), await got(KEYS.tally)]
+  lists ??= { shown: listFrom(shown, SHOWN_KEEP), knew: listFrom(knew, KNEW_KEEP), backoff: backoffFrom(backoff), log: Array.isArray(log) ? log : [], tally: tallyFrom(tally) }
   return lists
 }
 
@@ -111,7 +111,18 @@ function change<K extends keyof Lists>(io: KnowIo, field: K, fn: (value: Lists[K
 
 /** A press always writes its reset, even when this session already holds it: another session may have stored more. */
 const setBackoff = (io: KnowIo, backoff: Backoff) => change(io, 'backoff', () => ({ ...backoff }))
-const addLog = (io: KnowIo, entry: KnowLogEntry) => change(io, 'log', log => withLog(log, entry))
+/** A row of the log, marked with the version of the rules, and counted in the project's tally. */
+async function addLog(io: KnowIo, entry: KnowLogEntry) {
+  const row = { ...entry, version: KNOW_VERSION }
+  await change(io, 'log', log => withLog(log, row))
+  await change(io, 'tally', t => withTallied(t, row))
+}
+
+/** What the person did with a note: on the note's row in the log, and in the tally. */
+async function react(io: KnowIo, noteId: string, reaction: Reaction) {
+  await change(io, 'log', log => withReaction(log, noteId, reaction))
+  await change(io, 'tally', t => withReacted(t, reaction))
+}
 
 /**
  * Why nobody can see the office, or nothing when someone can: something is drawn now (read at each ask, since the
@@ -234,7 +245,6 @@ async function runCheck(io: KnowIo, h: Handback, who: string, asked: number, tak
     const brief = h.agentId === undefined ? undefined : briefs.get(h.agentId)
     const { rows, earlier, rerun, isResumed, leftOut, asked: said } = job
     const record = buildRecord({ who, isClawd: h.agentId === undefined, ended: h.reason, rows, earlier, rerun, brief, isResumed, leftOut, report: h.answer, prompts: said, durationMs: h.durationMs, tokens })
-    if (record.chars > 2 * CAP_CHARS) return await addLog(io, { at, who, outcome: 'skipped', recordChars: record.chars, reason: 'the record was too long' })
     const entry = await askModel(io, record, who, at, asked, h.agentId)
     if (isUnread(entry)) giveBack(h.agentId, job.from)
     await addLog(io, entry)
@@ -258,26 +268,36 @@ async function askModel(io: KnowIo, record: { text: string; chars: number }, who
   const now = await loadLists(io)
   if (isRepeat(parsed.line, now.shown, now.knew)) return { ...base, outcome: 'repeat' }
   const { kind: _, ...said } = parsed
-  return { ...base, ...(await showNote(io, { ...said, id: `k${(notes += 1)}`, who, at }, agentId)) }
+  // The id holds the time too, so it stays its own across sessions, which count notes from one again.
+  return { ...base, ...(await showNote(io, { ...said, id: `k${at}-${(notes += 1)}`, who, at }, agentId)) }
 }
 
 /** The note takes Clawd's card and joins the shown list, unless one is held (checked once more, as the reply was paid for). */
-async function showNote(io: KnowIo, note: KnowNote, agentId?: string): Promise<{ outcome: string; reason?: string }> {
+async function showNote(io: KnowIo, note: KnowNote, agentId?: string): Promise<{ outcome: string; reason?: string; noteId?: string }> {
   const held = await whyHeld(io)
   if (held) return { outcome: 'skipped', reason: held }
   isNoteSent = true
   await io.setCard(s => withNote(s, note))
   await io.noted?.(agentId, note.tag).catch(() => undefined)
   await change(io, 'shown', shown => keepLast(shown, note.line, SHOWN_KEEP))
-  return { outcome: 'shown' }
+  return { outcome: 'shown', noteId: note.id }
 }
 
 // ---- The person's side: the buttons on the card, and prompts that pass a note over ----
 
-/** Any press on the card: the note changes, and the back-off starts over. */
-async function pressed(io: KnowIo, fn: (s: KnowState) => KnowState) {
+/** Any press on the card: the note changes, the back-off starts over, and the reaction is logged against the note it was about. */
+async function pressed(io: KnowIo, reaction: Reaction, fn: (s: KnowState) => KnowState) {
+  const { note } = await io.card()
   await io.setCard(fn)
   await setBackoff(io, BACKOFF0)
+  if (note) await react(io, note.id, reaction)
+}
+
+/** Knew this: the note's line joins the knew list, which rides in later questions, then the note goes like Dismiss. */
+async function knewThis(io: KnowIo) {
+  const { note } = await io.card()
+  if (note) await change(io, 'knew', knew => keepLast(knew, note.line, KNEW_KEEP))
+  await pressed(io, 'knew-this', withoutNote)
 }
 
 /** The person's own opener about the note: its line, its longer version when there is one, and the question to talk over. */
@@ -289,15 +309,16 @@ export const discussText = (note: Pick<KnowNote, 'line' | 'explain'>) =>
 async function discuss(io: KnowIo) {
   const { note } = await io.card()
   if (note) await io.fillPrompt(discussText(note))
-  await pressed(io, withoutNote)
+  await pressed(io, 'discussed', withoutNote)
 }
 
 export function knowActions(io: KnowIo): KnowActions {
   return {
-    knowMore: () => pressed(io, withOpened),
+    knowMore: () => pressed(io, 'opened', withOpened),
     knowDiscuss: () => discuss(io),
-    knowGotIt: () => pressed(io, withoutNote),
-    knowDismiss: () => pressed(io, withoutNote),
+    // The action keeps its old name: the card's button says Knew this.
+    knowGotIt: () => knewThis(io),
+    knowDismiss: () => pressed(io, 'dismissed', withoutNote),
   }
 }
 
@@ -313,7 +334,10 @@ export async function knowPrompt(io: KnowIo, e: { text: string; isMeta?: true; c
     const before = await io.card()
     const { state, isIgnored } = afterPrompt(before)
     if (state !== before) await io.setCard(() => state)
-    if (isIgnored) await change(io, 'backoff', afterIgnored)
+    if (isIgnored) {
+      await change(io, 'backoff', afterIgnored)
+      if (before.note) await react(io, before.note.id, 'passed-over')
+    }
   } catch { /* the card stays as it was */ }
 }
 

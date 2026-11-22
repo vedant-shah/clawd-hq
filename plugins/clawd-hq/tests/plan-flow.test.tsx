@@ -224,6 +224,13 @@ test('the plan tool is no work of Clawd\'s own: a turn of plan calls starts no c
   on('model.complete', (_$, e) => (asked.push(e), { value: { isAnswered: false } }) as never)
   on('prompt.submit', (_$, e) => ({ text: (e as { text: string }).text }) as never)
   on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
+  // The main chat as the check reads it back: the request, a step that used a tool, and the answer.
+  const chat = [
+    { role: 'user', text: 'Add the export', toolUses: [] },
+    { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'u1', tool: 'Read', input: { file_path: '/repo/f1.ts' }, text: 'code' }] },
+    { role: 'assistant', text: 'Added the export.', toolUses: [] },
+  ]
+  on('session.messages', () => ({ value: chat }) as never)
   await $.session.start(START)
   const turn = async (id: string, calls: Array<Record<string, unknown>>) => {
     await $.prompt.submit({ text: 'Add the export', origin: { kind: 'composer' } } as never)
@@ -234,7 +241,7 @@ test('the plan tool is no work of Clawd\'s own: a turn of plan calls starts no c
   }
   await turn('m1', [1, 2, 3, 4, 5, 6].map(i => ({ tool: TOOL, op: 'later', text: `Put off ${i}` })))
   expect(asked).toHaveLength(0)
-  await turn('m2', [1, 2, 3, 4, 5].map(i => ({ tool: 'Read', file_path: `/repo/f${i}.ts` })))
+  await turn('m2', [1, 2, 3, 4, 5, 6].map(i => ({ tool: 'Read', file_path: `/repo/f${i}.ts` })))
   expect(asked.length).toBeGreaterThan(0)
 })
 

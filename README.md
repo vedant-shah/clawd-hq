@@ -123,7 +123,7 @@ Type `/office` to open it. The Office tab looks like this:
 - **Clawd's card.** His status, with a green, amber or red dot. The chat's model and effort. He stays free while specialists work, and falls asleep when the office is quiet.
 - **Needs you.** What waits on you: "You should know" cards, offers of a rule or of staff, the layoff notice and setup choices.
 - **The plan.** The goal, with "3 of 6 done" beside it and its summary under it. The last finished step stays in view, and earlier ones fold into "N steps done". A line runs beside the steps, and each specialist sits under its step. A failed specialist shows its reason, with **Details**, and then **Retry** and **Ask Clawd**. They fill your prompt box; nothing is sent.
-- **Later.** A fold of put-off work: the plan's Later ideas, then the Left undone items. Each has **Do it now** (fills your prompt box) and **Dismiss**.
+- **Later.** A fold of put-off work: the plan's Later ideas, then the Left undone items (TODO, FIXME and XXX markers are one dim count line). Each has **Do it now** (fills your prompt box) and **Dismiss**.
 - **Also at work.** Specialists under no step of the plan. With no plan, this is the whole floor: one card per specialist with its own words, model, time, tokens and a progress bar. Pair-up members share one card. The voices of a council share one card.
 - **Usage.** Context, session limit and weekly limit. Amber at 70%, red at 90%.
 
@@ -179,7 +179,7 @@ All on by default, except "Open the office at session start", which is off. Flip
 | Quiet chat | The chat shows every row. |
 | Automatic setup | Setup runs only when you type `/office-setup`. |
 | You should know | Finished work isn't checked. Claude Code's own note works as usual. |
-| Left undone check | The model check is skipped. Code markers are still read. |
+| Left undone check | Nothing changes today: the model check is retired. A tracker for forgotten asks is coming and will use this switch. Code markers are still read. |
 | Search the public skill registry when matches are weak | Nothing is searched or sent. Clawd uses the general-purpose agent. |
 | Open the office at session start (off by default) | A new session opens no panels and doesn't ask to bring Office to the front, and Clawd is not in either. It shows the tip "Type /office to open the office and bring in Clawd" until you have opened it once. `/office` opens the panels and brings Clawd in, and `/office` again closes them. Turn it on and the panels open at every start, with Clawd in from the first message and no tip. |
 | Your own voice file | A path to a text file that changes Clawd's tone. Empty by default. |
@@ -201,7 +201,7 @@ Most of it runs on your machine. Model calls use your plan.
 | Setup fallback | Opus, once | A project summary, the README, your instruction files, helper names and counts |
 | Setup writes your workflow | Haiku | Your instruction files |
 | You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
-| Left undone check | Haiku | Your request and Clawd's final report |
+| Left undone check | No model | Retired. A tracker for forgotten asks is coming. |
 | Coffee break | The session's model | One short question on the cached chat |
 | The plan and the history | No model | Nothing is sent. They are files in your project (see "What is stored"). |
 | Installed matches for a job are weak or missing | No model. Claude Code fetches up to three skills.sh search pages for the plugin | Up to three searches, each with a few plain words in the address: the keywords for the job, and when they find nothing, words from the job description. The "Search the public skill registry when matches are weak" switch in Settings turns it off. A skill is fetched from its source only if you say yes to installing it. |

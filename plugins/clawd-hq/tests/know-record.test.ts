@@ -108,11 +108,10 @@ test('a fake 108-step record ends under 60K tokens and keeps every step line, wi
     const input = tool === 'Bash' ? { command: `npm test -- part${i}` } : { file_path: `src/f${i}.ts` }
     rows.push(said(`Step ${i}: working.`, [use(i, tool, input, tool === 'Bash' ? log : file, i === 50)]))
   }
-  const { text, steps, chars, isOverCap } = record(rows)
+  const { text, steps, chars } = record(rows)
   expect(steps).toBe(108)
   expect(chars).toBe(text.length)
   expect(chars).toBeLessThanOrEqual(CAP_CHARS)
-  expect(isOverCap).toBe(false)
   for (let i = 1; i <= 108; i += 1) expect(text).toContain(`STEP ${i} · `)
   for (let i = 1; i <= 108; i += 1) expect(text).toContain(`THE SPECIALIST SAID: Step ${i}: working.`)
   expect(text).not.toContain('…')
@@ -268,6 +267,75 @@ test('a run cut short by an error or a stop is still written up, and says plainl
   expect(record([brief()], { ended: 'error' }).text).toContain(`HOW IT ENDED: It stopped on an error before it finished.\n${early('an error stopped it')}`)
   expect(record([brief()], { ended: 'aborted' }).text).toContain(`HOW IT ENDED: It was stopped before it finished.\n${early('it was stopped')}`)
   for (const ended of ['answer', 'refusal'] as const) expect(record([brief()], { ended }).text).not.toMatch(/ENDED EARLY/)
+})
+
+test('the cap is 80,000 characters', () => {
+  expect(CAP_CHARS).toBe(80_000)
+})
+
+test('a huge record is shrunk to the cap, not sent whole: outputs go to zero oldest first, every step line and input stays', () => {
+  const big = Array.from({ length: 800 }, (_, i) => `line ${i} of output`).join('\n')
+  const rows: Row[] = [brief()]
+  for (let i = 1; i <= 100; i += 1) {
+    const isFail = i % 2 === 0
+    rows.push(said('', [use(i, 'Bash', { command: `npm run step${i}` }, `${big} #${i}`, isFail)]))
+  }
+  const { text, chars } = record(rows)
+  expect(chars).toBeLessThanOrEqual(CAP_CHARS)
+  for (let i = 1; i <= 100; i += 1) expect(text).toContain(`STEP ${i} · Bash · npm run step${i} · `)
+  // Outputs are cut from the oldest; the newest keep what they can.
+  expect(text).toMatch(/characters of command output not shown, to keep the record short/)
+  expect(text).not.toMatch(/oldest steps/)
+  expect(text).not.toContain('…')
+})
+
+test('when step lines and inputs alone are over the cap, the oldest steps are cut, with a mark in words, and the newest stay', () => {
+  const rows: Row[] = [brief()]
+  for (let i = 1; i <= 300; i += 1) rows.push(said(`Working on part ${i}.`, [use(i, 'Edit', { file_path: `src/f${i}.ts`, old_string: 'a'.repeat(1900), new_string: 'b'.repeat(100) }, 'ok')]))
+  const { text, chars, steps } = record(rows, { report: 'Edited all the files.' })
+  expect(steps).toBe(300)
+  expect(chars).toBe(text.length)
+  expect(chars).toBeLessThanOrEqual(CAP_CHARS)
+  expect(text).toContain('STEP 300 · Edit · src/f300.ts')
+  expect(text).not.toContain('STEP 1 · Edit · src/f1.ts')
+  expect(text).toMatch(/\[trimmed: the oldest \d+ steps and what was said with them, not shown, to keep the record short\]/)
+  expect(text).toMatch(/STEPS TAKEN: 300/)
+  // The brief and the report still frame what is left, in order.
+  expect(text.indexOf('BRIEF:')).toBeLessThan(text.indexOf('[trimmed: the oldest'))
+  expect(text.indexOf('[trimmed: the oldest')).toBeLessThan(text.indexOf('STEP 300 '))
+  expect(text.endsWith('REPORT HANDED BACK:\nEdited all the files.')).toBe(true)
+  expect(text).not.toContain('…')
+})
+
+test('a huge brief and a huge report are each cut to 20,000 characters, middle out, with a mark in words; shorter ones stay whole', () => {
+  const huge = (name: string) => `START-OF-${name} ${'x'.repeat(90_000)} END-OF-${name}`
+  const rows: Row[] = [brief(huge('BRIEF')), said('', [use(1, 'Read', { file_path: 'a.ts' }, 'code')]), said('Done.')]
+  const { text, chars } = record(rows, { report: huge('REPORT') })
+  expect(chars).toBeLessThanOrEqual(CAP_CHARS)
+  for (const name of ['BRIEF', 'REPORT']) {
+    expect(text).toContain(`START-OF-${name}`)
+    expect(text).toContain(`END-OF-${name}`)
+  }
+  expect(text.match(/\[trimmed: [\d,]+ characters of the brief not shown; 1 line in all\]/)).not.toBeNull()
+  expect(text.match(/\[trimmed: [\d,]+ characters of the report not shown; 1 line in all\]/)).not.toBeNull()
+  expect(text).toContain('STEP 1 · Read · a.ts')
+  // Each cut part is about 20,000 characters, never the 90,000 sent.
+  expect(chars).toBeLessThan(2 * 20_000 + 5_000)
+  const kept = record([brief('A short brief. ' + 'y'.repeat(15_000)), said('Done.')], { report: 'z'.repeat(15_000) }).text
+  expect(kept).not.toMatch(/characters of the (brief|report) not shown/)
+})
+
+test('Clawd\'s own long request is cut the same way', () => {
+  const { text } = record([{ role: 'user', text: `START-OF-ASK ${'q'.repeat(60_000)} END-OF-ASK`, toolUses: [] }, said('', [use(1, 'Read', { file_path: 'a.ts' }, 'code')])], { isClawd: true })
+  expect(text).toMatch(/START-OF-ASK[\s\S]*characters of the brief not shown[\s\S]*END-OF-ASK/)
+  expect(text.length).toBeLessThan(25_000)
+})
+
+test('a record already under the cap is left whole: no step is cut', () => {
+  const rows: Row[] = [brief(), said('', [use(1, 'Read', { file_path: 'a.ts' }, 'short')])]
+  const { text } = record(rows)
+  expect(text).not.toMatch(/oldest/)
+  expect(text).toContain('short')
 })
 
 test('the cap never swaps a short output for a longer mark', () => {

@@ -109,7 +109,7 @@ export type ClawdIo = {
   write: (path: string, text: string) => Promise<void>
   setSeed: (part: BriefPart, text: string) => Promise<unknown>
   promptRead: () => Promise<{ text: string }>
-  fill: (text: string) => Promise<{ isFilled: boolean; refusal?: 'no_composer' | 'dialog' }>
+  fill: (text: string) => Promise<{ isFilled: boolean; refusal?: string }>
   get: () => Promise<ClawdBrief>
   set: (fn: (b: ClawdBrief) => ClawdBrief) => Promise<unknown>
 }

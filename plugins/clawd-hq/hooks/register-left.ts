@@ -11,7 +11,7 @@ import { ses, updateLeftUndone } from './register-state'
 export function leftIo($: EngineInterface): LeftIo {
   return {
     folder: () => ses.cwd, now: () => $.clock.now(), change: fn => updateLeftUndone($, fn), save: (folder, list) => $.store.set(`leftUndone:${folder}`, list),
-    read: path => $.fs.read(path), complete: ask => $.model.complete(ask), fillPrompt: text => knowIo($).fillPrompt(text), byOf: id => byOf($, id), get: key => $.store.get(key), set: (key, value) => $.store.set(key, value),
+    read: path => $.fs.read(path), fillPrompt: text => knowIo($).fillPrompt(text), byOf: id => byOf($, id),
   }
 }
 

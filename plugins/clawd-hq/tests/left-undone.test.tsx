@@ -5,8 +5,8 @@ import { RULES_FILE, VOICE_FILE } from '../hooks/instructions'
 import { MUST_NOT_FLAG } from './left-false'
 import { PANE, PEOPLE, SETTINGS, START, SURFACES, host } from './host'
 
-// Left undone, end to end: it is rare, like "You should know", and an empty list is the normal state. Two sources only: a real
-// code marker in the text a file tool newly wrote in a code file, and a strict second Haiku check of a long turn. Kept per project.
+// Left undone, end to end: it is rare, like "You should know", and an empty list is the normal state. One live source: a real
+// code marker in the text a file tool newly wrote in a code file (the model check is retired). TODO, FIXME and XXX show as one dim line. Kept per project.
 
 type On = Parameters<typeof host>[0]
 type Ask = { model: string; system?: string; prompt: string; maxTokens?: number }
@@ -53,6 +53,14 @@ const handBack = ($: Engine, id: string, answer: string, reason = 'answer') =>
 async function todo($: Engine, h: Office, text: string, file = '/repo/src/a.ts', agentId?: string) {
   h.tool.answer = input => (input.tool === 'Edit' ? (h.files.set(file, `a()\n// TODO: ${text}\n`), { result: 'ok', text: 'ok' }) : { result: 'ok', text: 'ok' })
   await $.tool.call({ tool: 'Edit', file_path: file, old_string: 'a()', new_string: `a()\n// TODO: ${text}`, ...(agentId === undefined ? {} : { agentId }) } as never)
+  await settle(h)
+}
+
+/** A skipped test added to a test file by Clawd: a row of its own in the fold, unlike a TODO. */
+async function skipped($: Engine, h: Office, name: string, file: string) {
+  const line = `it.skip('${name}', f)`
+  h.tool.answer = input => (input.tool === 'Edit' ? (h.files.set(file, `a()\n${line}\n`), { result: 'ok', text: 'ok' }) : { result: 'ok', text: 'ok' })
+  await $.tool.call({ tool: 'Edit', file_path: file, old_string: 'a()', new_string: `a()\n${line}` } as never)
   await settle(h)
 }
 
@@ -132,8 +140,8 @@ test('a TODO comment added to a code file is listed with the file and line, the 
   for (const surface of SURFACES) {
     const { words } = await seen($, surface)
     expect(words).toContain('LATER · 1')
-    expect(words).toContain('TODO: handle empty list')
-    expect(words).toContain('File · src/a.ts:2 · Clawd')
+    expect(words).toContain('1 code marker (TODO)')
+    expect(words).not.toContain('TODO: handle empty list')
   }
   expect(stored(h)).toEqual([expect.objectContaining({ source: 'file', file: 'src/a.ts', line: 2 })])
   expect(JSON.stringify(stored(h))).not.toContain('/repo')
@@ -153,8 +161,10 @@ test('FIXME, XXX, a skipped test and a not-implemented throw in code files are l
   expect(kept.find(i => i.text === "it.skip('b', f)")).toEqual(expect.objectContaining({ file: 'tests/a.test.ts', line: 3 }))
   expect(kept.find(i => i.text === 'raise NotImplementedError')).toEqual(expect.objectContaining({ file: 'lib/x.py', line: 2 }))
   const { words } = await seen($)
-  expect(words).toContain('LATER · 4')
-  expect(words.filter(w => /^File · /.test(w))).toHaveLength(4)
+  // Skipped tests and not-implemented stay rows; the two markers are one dim line.
+  expect(words).toContain('LATER · 3')
+  expect(words.filter(w => /^File · /.test(w))).toHaveLength(2)
+  expect(words).toContain('2 code markers (FIXME, XXX)')
   expect(words).not.toContain('TODO: already there')
 })
 
@@ -203,90 +213,31 @@ test('the tool answers at once even when the file cannot be read back, and a spe
   const ran = await $.tool.call({ tool: 'Edit', agentId, file_path: '/repo/src/b.ts', old_string: 'a', new_string: 'a // TODO: later' } as never)
   expect(JSON.stringify(ran)).toContain('ok')
   await settle(h)
-  const { words } = await seen($)
-  expect(words).toContain('TODO: later')
-  expect(words.some(w => /^File · src\/b\.ts · (?!Clawd)/.test(w))).toBe(true)
+  expect(stored(h)).toEqual([expect.objectContaining({ text: 'TODO: later', file: 'src/b.ts' })])
+  expect(stored(h)[0]).not.toMatchObject({ by: 'Clawd' })
+  expect((await seen($)).words).toContain('1 code marker (TODO)')
 })
 
 // ---- The second check: strict ----
 
-test('after a turn with five tool calls, Haiku sets the request against the report; the one item it lists joins the list', async ($, on) => {
-  const h = office(on, () => undone('Add the tests', 'Write the docs'))
-  await $.session.start(START)
-  await clawdTurn($, h, { request: 'Add login, tests and docs', tools: 5, answer: 'Added the login.' })
-  expect(h.asked).toHaveLength(1)
-  expect(h.asked[0]!.model).toBe('haiku')
-  expect(h.asked[0]!.system).toMatch(/explicitly asked/i)
-  expect(h.asked[0]!.prompt).toContain('Add login, tests and docs')
-  expect(h.asked[0]!.prompt).toContain('Added the login.')
-  const { words } = await seen($)
-  expect(words).toContain('LATER · 1')
-  expect(words).toContain('Add the tests')
-  expect(words).not.toContain('Write the docs')
-  expect(words).toContain('Second check · Clawd')
-})
-
-test('four tool calls, a specialist\'s tools, a step report and hiring a specialist do not start a check', async ($, on) => {
+test('the model check is retired: long turns, with the setting on or off, never call a model, list nothing and write no log', async ($, on) => {
   const h = office(on, () => undone('Add the tests'))
   await $.session.start(START)
-  await clawdTurn($, h, { tools: 4 })
-  await clawdTurn($, h, { tools: 3, extra: [{ tool: 'Read', agentId: 'a9', file_path: '/x' }, { tool: 'Read', agentId: 'a9', file_path: '/y' }, { tool: 'Read', agentId: 'a9', file_path: '/z' }] })
-  await clawdTurn($, h, { tools: 3, extra: [{ tool: 'mcp__clawd-hq__step', done: 1, total: 2 }, { tool: 'mcp__clawd-hq__step', done: 2, total: 2 }] })
+  await clawdTurn($, h, { request: 'Add login, tests and docs', tools: 6, answer: 'Added the login.' })
   await clawdTurn($, h, { tools: 5, extra: [{ tool: 'Agent', prompt: 'Do it', description: 'Do it', subagentType: 'ecc:tdd-guide' }] })
   expect(h.asked).toEqual([])
+  expect(h.saved.has('leftUndone:log:/repo')).toBe(false)
   await none($)
 })
 
-test('an aborted turn with enough tool calls is not checked, and the counter starts over with the next turn', async ($, on) => {
-  const h = office(on, () => undone('Add the tests'))
-  await $.session.start(START)
-  await $.prompt.submit({ text: 'Do it', origin: { kind: 'composer' } } as never)
-  await $.turn.start({ text: 'Do it', turnId: 'z1' } as never)
-  for (let i = 0; i < 6; i += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/${i}.ts` } as never)
-  await $.turn.complete({ reason: 'aborted', answer: 'Partial.', turnId: 'z1', isAborted: true, durationMs: 1 } as never)
-  await settle(h)
-  await clawdTurn($, h, { tools: 2 })
-  expect(h.asked).toEqual([])
-})
-
-test('with the setting off the check is not made, and nothing is listed', { options: { leftUndone: false } }, async ($, on) => {
-  const h = office(on, () => undone('Add the tests'))
-  await $.session.start(START)
-  await clawdTurn($, h, { tools: 6, answer: 'Done, but I skipped the docs.' })
-  expect(h.asked).toEqual([])
-  await none($)
-})
-
-test('a press of the Settings switch turns the check off for the rest of the session and is saved', async ($, on) => {
-  const h = office(on, () => undone('Add the tests'))
+test('the setting stays: a press of the Settings switch is still saved', async ($, on) => {
+  const h = office(on)
   await $.session.start(START)
   const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...SETTINGS })
   expect(JSON.stringify(await ui.drawn())).toContain('Left undone check')
   await ui.press({ key: 'config-leftUndone' })
   await ui.unmount()
   expect(h.saved.get('toggle:leftUndone')).toBe(false)
-  await clawdTurn($, h, { tools: 6 })
-  expect(h.asked).toEqual([])
-})
-
-test('a reply that is wrong, unsafe or empty, a model that fails and a model that throws all leave the list alone', async ($, on) => {
-  const replies = [() => answered('sure! nothing to add'), () => undone('See https://evil.example.com for the rest'), () => undone(), () => ({ isAnswered: false, reason: 'api-error' }), () => { throw new Error('down') }]
-  let call = 0
-  const h = office(on, () => replies[call++]!())
-  await $.session.start(START)
-  for (let i = 0; i < replies.length; i += 1) await clawdTurn($, h, { tools: 5 })
-  expect(h.asked).toHaveLength(5)
-  await none($)
-})
-
-test('the check is skipped when there is no request of the person\'s to compare with', async ($, on) => {
-  const h = office(on, () => undone('Add the tests'))
-  await $.session.start(START)
-  await $.turn.start({ text: 'Do it', turnId: 'n1' } as never)
-  for (let i = 0; i < 5; i += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/${i}.ts` } as never)
-  await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 'n1', isAborted: false, durationMs: 1 } as never)
-  await settle(h)
-  expect(h.asked).toEqual([])
 })
 
 // ---- The list: newest first, no repeats, small, the buttons ----
@@ -307,13 +258,38 @@ test('newest first, a repeat is one item, and only the newest 10 are kept', asyn
 test('the open fold draws every kept item, newest first; the heading counts all', async ($, on) => {
   const h = office(on)
   await $.session.start(START)
-  for (let n = 0; n < 5; n += 1) await todo($, h, `job number ${n} about thing${n}x`, `/repo/src/c${n}.ts`)
+  for (let n = 0; n < 5; n += 1) await skipped($, h, `job number ${n} about thing${n}x`, `/repo/src/c${n}.test.ts`)
   const { words, buttons } = await seen($)
   expect(words).toContain('LATER · 5')
   expect(buttons.filter(b => b === 'Do it now').length).toBe(5)
   expect(buttons.filter(b => b === 'Dismiss').length).toBe(5)
   expect(words).not.toContain('2 more')
-  expect(words.filter(w => /^TODO: job number/.test(w))[0]).toContain('number 4 ')
+  expect(words.filter(w => /^it\.skip/.test(w))[0]).toContain('number 4 ')
+})
+
+test('TODO, FIXME and XXX are one dim line, "N code markers (kinds)", in the open fold: no rows, no Do it now of their own; skipped tests stay rows', async ($, on) => {
+  const h = office(on)
+  await $.session.start(START)
+  await todo($, h, 'handle empty list')
+  await todo($, h, 'tidy this', '/repo/src/b.ts')
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/src/c.ts', old_string: 'a', new_string: 'a // FIXME: broken' } as never)
+  await skipped($, h, 'later test', '/repo/src/d.test.ts')
+  const { words, buttons } = await seen($)
+  expect(words).toContain('LATER · 2')
+  expect(words).toContain('3 code markers (TODO, FIXME)')
+  expect(words.some(w => /TODO: handle|TODO: tidy|FIXME: broken/.test(w))).toBe(false)
+  expect(buttons.filter(b => b === 'Do it now')).toHaveLength(1)
+  expect(stored(h)).toHaveLength(4)
+})
+
+test('with only code markers the fold still shows: "1 later" closed, the one line open', async ($, on) => {
+  const h = office(on)
+  await $.session.start(START)
+  await todo($, h, 'handle empty list')
+  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
+  expect((await ui.findAll({ type: 'Text' })).map(t => String(t.text))).toContain('LATER · 1')
+  await ui.unmount()
+  expect((await seen($)).words).toContain('1 code marker (TODO)')
 })
 
 test('the section is on the Office tab only, below the specialists (the artifacts are on the History tab now)', async ($, on) => {
@@ -333,10 +309,10 @@ test('the section is on the Office tab only, below the specialists (the artifact
 test('Do it now fills the prompt box with the exact sentence, naming the file and line, never sends, and keeps the item', async ($, on) => {
   const h = office(on)
   await $.session.start(START)
-  await todo($, h, 'handle empty list')
+  await skipped($, h, 'handle empty list', '/repo/src/a.test.ts')
   for (const surface of SURFACES) {
     await press($, 'Do it now', surface)
-    expect(h.fills.at(-1)).toEqual({ text: 'You left this undone: TODO: handle empty list (src/a.ts:2). Do it now.', mode: 'append' })
+    expect(h.fills.at(-1)).toEqual({ text: "You left this undone: it.skip('handle empty list', f) (src/a.test.ts:2). Do it now.", mode: 'append' })
   }
   expect(h.fills.length).toBe(2)
   expect(stored(h).length).toBe(1)
@@ -344,9 +320,9 @@ test('Do it now fills the prompt box with the exact sentence, naming the file an
 })
 
 test('Do it now on an item from the second check', async ($, on) => {
-  const h = office(on, () => undone('Add the tests.'))
+  const h = office(on)
+  h.saved.set('leftUndone:/repo', [{ id: 'k1', text: 'Add the tests.', source: 'check', by: 'Clawd', at: 7 }])
   await $.session.start(START)
-  await clawdTurn($, h, { tools: 5 })
   await press($, 'Do it now')
   expect(h.fills.at(-1)?.text).toBe('You left this undone: Add the tests. Do it now.')
 })
@@ -354,7 +330,7 @@ test('Do it now on an item from the second check', async ($, on) => {
 test('Clear empties the list, the store and the section, and shows no toast', async ($, on) => {
   const h = office(on)
   await $.session.start(START)
-  await todo($, h, 'one thing here')
+  await skipped($, h, 'one thing here', '/repo/src/a.test.ts')
   await todo($, h, 'another matter entirely', '/repo/src/b.ts')
   expect((await seen($)).words).toContain('LATER · 2')
   await press($, 'Clear')
@@ -401,7 +377,7 @@ test('on the first load after this change the user\'s old list is cleaned: answe
   await $.session.start(START)
   const { words, text } = await seen($)
   expect(words).toContain('LATER · 1')
-  expect(words).toContain('TODO: kept')
+  expect(words).toContain('1 code marker (TODO)')
   expect(text).not.toMatch(/do that later|README|70%|\/Users|Items are merged/)
   // Only the cleaned list is ever written back.
   await todo($, h, 'one more matter')
@@ -424,123 +400,16 @@ test('a save that fails keeps the item for the session and says nothing', async 
   expect(h.toasts).toEqual([])
 })
 
-// ---- The log of the checks: when, what came of it, how many; never the request or the report ----
+// ---- Items the retired check stored stay until dismissed ----
 
-type LogRow = { at: number; outcome: string; reason?: string; count: number }
-const logOf = (h: Office, folder = '/repo') => (h.saved.get(`leftUndone:log:${folder}`) ?? []) as LogRow[]
-
-test('a check that lists an item is logged as found with its count, and the log holds neither the request nor the report', async ($, on) => {
-  const h = office(on, () => undone('The tests you asked for were not written.'))
-  await $.session.start(START)
-  await clawdTurn($, h, { request: 'Add login and SECRETREQUEST', tools: 5, answer: 'SECRETREPORT done' })
-  const [row] = logOf(h)
-  expect(logOf(h)).toHaveLength(1)
-  expect(row).toMatchObject({ outcome: 'found', count: 1 })
-  expect(typeof row!.at).toBe('number')
-  expect(JSON.stringify(logOf(h))).not.toMatch(/SECRETREQUEST|SECRETREPORT|tests you asked/)
-})
-
-test('a check that finds nothing is logged as none with a count of 0', async ($, on) => {
-  const h = office(on, () => undone())
-  await $.session.start(START)
-  await clawdTurn($, h, { tools: 5 })
-  expect(logOf(h)).toMatchObject([{ outcome: 'none', count: 0 }])
-})
-
-test('a model that does not answer, and one that throws, are logged as failed with a reason', async ($, on) => {
-  const replies = [() => ({ isAnswered: false, reason: 'api-error' }), () => { throw new Error('down') }]
-  let call = 0
-  const h = office(on, () => replies[call++]!())
-  await $.session.start(START)
-  await clawdTurn($, h, { tools: 5 })
-  await clawdTurn($, h, { tools: 5 })
-  expect(logOf(h)).toMatchObject([{ outcome: 'failed', reason: 'api-error', count: 0 }, { outcome: 'failed', count: 0 }])
-  expect(logOf(h)[1]!.reason).toBeTruthy()
-})
-
-test('a long turn that is not checked is logged as skipped with the reason; short turns and a switched-off check leave no row', async ($, on) => {
+test('an item the retired check stored stays in the list, with its note, and can be dismissed; nothing new is added by a long turn', async ($, on) => {
   const h = office(on, () => undone('Add the tests'))
-  await $.session.start(START)
-  await clawdTurn($, h, { tools: 5, extra: [{ tool: 'Agent', prompt: 'Do it', description: 'Do it', subagentType: 'ecc:tdd-guide' }] })
-  await clawdTurn($, h, { tools: 2 })
-  expect(logOf(h)).toMatchObject([{ outcome: 'skipped', reason: 'the work was handed to a specialist', count: 0 }])
-})
-
-test('with the setting off nothing is logged', { options: { leftUndone: false } }, async ($, on) => {
-  const h = office(on, () => undone('Add the tests'))
+  h.saved.set('leftUndone:/repo', [{ id: 'k1', text: 'Add the tests.', source: 'check', by: 'Clawd', at: 7 }])
   await $.session.start(START)
   await clawdTurn($, h, { tools: 6 })
-  expect(logOf(h)).toEqual([])
-})
-
-test('the log is capped at 20, keeps the newest, and adds to what an earlier session stored', async ($, on) => {
-  const h = office(on, () => undone())
-  await $.session.start(START)
-  h.saved.set('leftUndone:log:/repo', Array.from({ length: 19 }, (_, i) => ({ at: i, outcome: 'none', count: 0 })))
-  for (let i = 0; i < 3; i += 1) await clawdTurn($, h, { tools: 5 })
-  expect(logOf(h)).toHaveLength(20)
-  expect(logOf(h)[0]!.at).toBe(2)
-})
-
-test('a log that cannot be saved never breaks the check, and a stored log of the wrong shape is replaced', async ($, on) => {
-  const replies = ['Add the tests', 'Write the docs for the API']
-  let call = 0
-  const h = office(on, () => undone(replies[call++]!))
-  await $.session.start(START)
-  h.saved.set('leftUndone:log:/repo', 'junk')
-  await clawdTurn($, h, { tools: 5 })
-  expect(logOf(h)).toMatchObject([{ outcome: 'found' }])
-  h.kv.failKeys.add('leftUndone:log:/repo')
-  await clawdTurn($, h, { request: 'Another job', tools: 5 })
-  expect(stored(h).map(i => i.text)).toEqual(['Write the docs for the API', 'Add the tests'])
-  expect(logOf(h)).toHaveLength(1)
-})
-
-test('a long turn with an empty report, one that did not end in an answer, and one with no request are each logged as skipped', async ($, on) => {
-  const h = office(on, () => undone('Add the tests'))
-  await $.session.start(START)
-  await clawdTurn($, h, { tools: 5, answer: '' })
-  await $.turn.start({ text: 'Do it', turnId: 'z1' } as never)
-  for (let i = 0; i < 6; i += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/${i}.ts` } as never)
-  await $.turn.complete({ reason: 'aborted', answer: 'Partial.', turnId: 'z1', isAborted: true, durationMs: 1 } as never)
-  await settle(h)
-  await $.session.start(START)
-  await $.turn.start({ text: 'Do it', turnId: 'n1' } as never)
-  for (let i = 0; i < 5; i += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/${i}.ts` } as never)
-  await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 'n1', isAborted: false, durationMs: 1 } as never)
-  await settle(h)
-  expect(logOf(h).map(r => [r.outcome, r.reason])).toEqual([
-    ['skipped', 'the report was empty'],
-    ['skipped', 'the turn did not end with an answer'],
-    ['skipped', 'there was no request to compare with'],
-  ])
-})
-
-test('a check pushed out of a full line is logged as skipped, and a model that throws as failed with its reason', { timeoutMs: 15_000 }, async ($, on) => {
-  let call = 0
-  const h = office(on, () => { if (call++ === 0) return undone(); throw new Error('down') })
-  await $.session.start(START)
-  let free = () => {}
-  h.kv.held = new Promise<void>(done => { free = done })
-  for (let i = 0; i < 5; i += 1) await clawdTurn($, h, { tools: 5 })
-  free()
-  await settle(h)
-  const rows = logOf(h).map(r => [r.outcome, r.reason])
-  expect(rows).toContainEqual(['skipped', 'too many checks waiting'])
-  expect(rows).toContainEqual(['failed', 'the check stopped on an error'])
-})
-
-test('a row written after the project changed goes to the log of the project the check was made in', { timeoutMs: 15_000 }, async ($, on) => {
-  const h = office(on, () => undone())
-  await $.session.start(START)
-  let free = () => {}
-  h.kv.held = new Promise<void>(done => { free = done })
-  for (let i = 0; i < 5; i += 1) await clawdTurn($, h, { tools: 5 })
-  const started = $.session.start(OTHER)
-  free()
-  await started
-  await settle(h)
-  expect(logOf(h, '/other')).toEqual([])
-  expect(logOf(h).map(r => r.outcome)).toContain('skipped')
-  expect(logOf(h).length).toBeGreaterThan(1)
+  const { words } = await seen($)
+  expect(words).toContain('Add the tests.')
+  expect(words).toContain('Second check · Clawd')
+  await press($, 'Dismiss')
+  expect(stored(h)).toEqual([])
 })

@@ -26,9 +26,8 @@ export function knowSection(kit: Kit, data: PanelData, actions: PanelActions) {
           </Box>
         )}
         <Box key="know-buttons" flexDirection="row" flexWrap="wrap" columnGap={1}>
-          {isOpen
-            ? <Button key="know-got-it" label="Got it" onPress={() => actions.knowGotIt()} />
-            : note.explain !== undefined && <Button key="know-more" label="Learn more" onPress={() => actions.knowMore()} />}
+          {!isOpen && note.explain !== undefined && <Button key="know-more" label="Learn more" onPress={() => actions.knowMore()} />}
+          <Button key="know-got-it" label="Knew this" onPress={() => actions.knowGotIt()} />
           <Button key="know-discuss" plain dimColor label="Ask Clawd" onPress={() => actions.knowDiscuss()} />
           <Button key="know-dismiss" plain dimColor label="Dismiss" onPress={() => actions.knowDismiss()} />
         </Box>

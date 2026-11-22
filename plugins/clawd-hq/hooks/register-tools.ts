@@ -7,7 +7,6 @@ import { SHIPPED_DENY, guardOnCrash, isShippedWrite } from './clawd-edit'
 import { PAUSE_TOOL, PLAN_TOOL, STEP_TOOL } from './constants'
 import type { BriefingOptions } from './instructions'
 import { knowToolUsed } from './know-check'
-import { leftToolUsed } from './left-io'
 import { ownToolAnswer } from './own-tools'
 import { runIo } from './register-io'
 import { timedTool } from './register-history'
@@ -30,7 +29,7 @@ export function registerTools(on: On, brief: BriefingOptions) {
     if (isCountedTool(tool)) void (async () => recordUse({ get: async key => (await $.store.get(key)) as never, set: (key, value) => $.store.set(key, value) }, ses.cwd, await $.session.id(), tool, input))().catch(() => undefined)
     if (ses.isEditTurn && isShippedWrite(tool, input)) return { deny: SHIPPED_DENY } as never
     // Every tool Clawd uses himself counts towards a long turn of his own (hooks/know-check.ts), but a step report, the pause before a question and the plan's bookkeeping are no work.
-    if (id === undefined && tool !== STEP_TOOL && tool !== PAUSE_TOOL && tool !== PLAN_TOOL) { knowToolUsed(); leftToolUsed(tool); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
+    if (id === undefined && tool !== STEP_TOOL && tool !== PAUSE_TOOL && tool !== PLAN_TOOL) { knowToolUsed(); await setBoss($, b => withToolUsed(b, tool)) } // editing files himself ends a coffee break checkpoint at the turn's end
     const own = await ownToolAnswer(ownToolIo($, brief), tool, id, input) // the tour, the offer of a rule, a specialist's step report, and Clawd's search
     if (own) return own as never
     // What the person answers in Clawd's question box settles the job at hand only: nothing is saved, and his status line stays as it was.

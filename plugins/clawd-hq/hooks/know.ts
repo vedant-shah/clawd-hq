@@ -62,7 +62,8 @@ const TITLE_CHARS = 80
 /** A turn of Clawd's own with this many tool uses or more is checked like a specialist's run. */
 export const OWN_TURN_TOOLS = 6
 export const SHOWN_KEEP = 10
-export const KNEW_KEEP = 25
+/** The topics the person pressed Knew this on that ride in the question: the newest ten. */
+export const KNEW_KEEP = 10
 export const LOG_KEEP = 20
 /** The person's second prompt after a note appeared takes it off the card. */
 const CLEAR_AFTER_PROMPTS = 2
@@ -99,7 +100,8 @@ export function looksSecret(text: string): boolean {
 
 /**
  * Text that could send the person somewhere or run something: a web address, a pipe into a shell, or backtick-quoted
- * code. The record is untrusted, so a note that carries any of these is refused whole.
+ * code. The record is untrusted, so text that carries any of these is refused whole. (A note's own backticks are taken
+ * out before this reads it, see `parseNote`; the other readers of this keep refusing them.)
  */
 export function looksUnsafe(text: string): boolean {
   return /https?:\/\/|\bwww\./i.test(text) ||
@@ -107,6 +109,9 @@ export function looksUnsafe(text: string): boolean {
     /\|\s*(sudo\s+)?(ba|z|da|k)?sh\b/i.test(text) ||
     text.includes('`')
 }
+
+/** Backticks are dropped from the note, not a reason to refuse it: Discuss copies the line into the prompt box. */
+const withoutTicks = (text: string) => text.replace(/`/g, '')
 
 const LABEL = /^\s*(learn|tag|explain)\s*:/i
 const unquote = (text: string) => text.replace(/^["'“”‘’\s]+|["'“”‘’\s]+$/g, '')
@@ -148,17 +153,24 @@ function explainOf(lines: string[]): { title?: string; explain?: string } {
   return title ? { title, explain } : { explain }
 }
 
+/**
+ * An empty learn line, "none" as the whole line (any case, with punctuation), or "none" directly followed by a mark
+ * (. , ; : ! — -) and then anything: "None. Nothing worth flagging." is silence. "None of the tests ran" and "none were
+ * run" have a word right after "none", so they are real notes.
+ */
+const isSilence = (learn: string) => learn === '' || /^[\s\p{P}]*none(?:[\s\p{P}]*$|[.,;:!—-])/iu.test(learn)
+
 /** Why a reply could not be read at all; every other failed reply was read, and its note refused. */
 export const NO_LEARN = 'no learn line'
 
 /** Reads the checker's reply: nothing to say, a reply that cannot be used, or a note. */
 export function parseNote(reply: string): Parsed {
-  const text = plainText(reply)
+  const text = withoutTicks(plainText(reply))
   if (/^\s*none\.?\s*$/i.test(text)) return { kind: 'none' }
   const lines = text.split(/\r?\n/)
   const learn = learnOf(lines)
   if (learn === undefined) return { kind: 'failed', why: NO_LEARN }
-  if (learn === '' || /^none\b/i.test(learn)) return { kind: 'none' }
+  if (isSilence(learn)) return { kind: 'none' }
   if (learn.length > LINE_CHARS) return { kind: 'failed', why: `the line was over ${LINE_CHARS} characters` }
   if (looksSecret(learn)) return { kind: 'failed', why: 'the line looked like a key or token' }
   if (looksUnsafe(learn) || looksUnsafe(explainBlock(lines))) return { kind: 'failed', why: 'the note held a web address, a command or quoted code' }
@@ -237,6 +249,12 @@ export function afterPrompt(s: KnowState): { state: KnowState; isIgnored: boolea
 
 // ---- The trial log: what the checks cost, kept to measure it ----
 
+/** Which rules wrote a row: goes up when the question or the way its reply is read changes, so rows can be told apart. */
+export const KNOW_VERSION = 2
+
+/** What the person did with a shown note. A note opened and then dismissed has both. */
+export type Reaction = 'opened' | 'discussed' | 'knew-this' | 'dismissed' | 'passed-over'
+
 export type KnowLogEntry = {
   at: number
   who: string
@@ -247,9 +265,52 @@ export type KnowLogEntry = {
   ms?: number
   recordChars?: number
   reason?: string
+  /** The shown note's id (`KnowNote.id`): the rows of notes only. */
+  noteId?: string
+  version?: number
+  /** What the person did with the note, in order. */
+  reactions?: Reaction[]
 }
 
 export const withLog = (log: readonly KnowLogEntry[], entry: KnowLogEntry): KnowLogEntry[] => [...log, entry].slice(-LOG_KEEP)
+
+/** The row of the note with its reaction added; the same log when the note's row has left it. */
+export function withReaction(log: readonly KnowLogEntry[], noteId: string, reaction: Reaction): readonly KnowLogEntry[] {
+  if (!log.some(row => row.noteId === noteId)) return log
+  return log.map(row => (row.noteId === noteId ? { ...row, reactions: [...(row.reactions ?? []), reaction] } : row))
+}
+
+/** Counts that outlast the log's 20 rows: how often each outcome, reason and reaction came up in a project. */
+export type KnowTally = { outcomes: Record<string, number>; reasons: Record<string, number>; reactions: Record<string, number> }
+export const TALLY0: KnowTally = { outcomes: {}, reasons: {}, reactions: {} }
+
+/** Each count holds at most this many keys, so a reason that varies (an agent id, say) cannot grow the tally without end. */
+export const TALLY_KEYS = 64
+const OTHER = 'other'
+
+/** One more for `key`; a new key past the limit is counted under "other", which takes the last place. */
+function bumped(counts: Record<string, number>, key: string): Record<string, number> {
+  const has = (k: string) => Object.hasOwn(counts, k)
+  const at = has(key) || Object.keys(counts).length < TALLY_KEYS - 1 ? key : OTHER
+  return { ...counts, [at]: (has(at) ? counts[at]! : 0) + 1 }
+}
+
+export const withTallied = (t: KnowTally, entry: KnowLogEntry): KnowTally => ({
+  ...t,
+  outcomes: bumped(t.outcomes, entry.outcome),
+  reasons: entry.reason === undefined ? t.reasons : bumped(t.reasons, entry.reason),
+})
+
+export const withReacted = (t: KnowTally, reaction: Reaction): KnowTally => ({ ...t, reactions: bumped(t.reactions, reaction) })
+
+const countsFrom = (saved: unknown): Record<string, number> =>
+  Object.fromEntries(Object.entries(saved && typeof saved === 'object' ? saved : {}).filter(([, n]) => isCount(n)).slice(0, TALLY_KEYS))
+
+/** A tally read back from the store: whole counts only; anything else reads empty. */
+export function tallyFrom(saved: unknown): KnowTally {
+  const t = (saved && typeof saved === 'object' ? saved : {}) as Partial<Record<keyof KnowTally, unknown>>
+  return { outcomes: countsFrom(t.outcomes), reasons: countsFrom(t.reasons), reactions: countsFrom(t.reactions) }
+}
 
 // ---- Keeping Claude Code's own "You should know" quiet while ours is on ----
 

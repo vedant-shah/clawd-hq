@@ -60,6 +60,23 @@ export function leftShown(list: readonly LeftItem[]): { rows: LeftItem[]; more: 
   return { rows: list.slice(0, LEFT_SHOWN), more: Math.max(0, list.length - LEFT_SHOWN) }
 }
 
+const MARKER_KINDS = ['TODO', 'FIXME', 'XXX'] as const
+const markerKind = (one: LeftItem) => (one.source === 'file' ? MARKER_KINDS.find(kind => new RegExp(`^${kind}\\b`).test(one.text)) : undefined)
+
+/** The list split in two: code markers (TODO, FIXME, XXX written in a file) and every other item, each in its order. Skipped tests and not-implemented lines are other items. */
+export function splitMarkers(list: readonly LeftItem[]): { rows: LeftItem[]; markers: LeftItem[] } {
+  return { rows: list.filter(one => markerKind(one) === undefined), markers: list.filter(one => markerKind(one) !== undefined) }
+}
+
+/**
+ * The one dim line for the code markers, such as "3 code markers (TODO, FIXME)".
+ * DECIDED: it only counts them; it does not open to list them — the simplest thing, and they stay in the stored list until cleared.
+ */
+export function markerLine(markers: readonly LeftItem[]): string {
+  const kinds = MARKER_KINDS.filter(kind => markers.some(one => markerKind(one) === kind))
+  return `${markers.length} code marker${markers.length === 1 ? '' : 's'} (${kinds.join(', ')})`
+}
+
 const SOURCE_NAME: Record<LeftItem['source'], string> = { file: 'File', check: 'Second check', plan: 'Put off in a plan' }
 
 /** The dim note under an item: where it came from, for a file the file and line, and who left it. */

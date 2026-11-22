@@ -1,25 +1,20 @@
 // Left undone, the work (no `$`): what each source adds to the list, and the two buttons. register-state.ts holds the list's
-// atom, register-left.ts the hooks, and it hands in what each call may do as `LeftIo`; the pure parts are in left-scan.ts, left-list.ts and left-check.ts.
-import type { ModelCompleteResult } from 'claude-code'
+// atom, register-left.ts the hooks, and it hands in what each call may do as `LeftIo`; the pure parts are in left-scan.ts and left-list.ts.
+// The old model check (a small model setting the request against the report) is retired; a forgotten-asks tracker is to replace it.
 import type { LeftItem } from '../types'
 import { fit } from './desk'
-import { CHECK_MAX_TOKENS, CHECK_MODEL, CHECK_TIMEOUT_MS, checkAsk, leftStart as resetCheck, parseUndone, takeCheck } from './left-check'
 import { LEFT_PLAN_KEEP, cleanLeft, promptOf, withLeft } from './left-list'
 import type { FreshItem } from './left-list'
-import { logCheck } from './left-log'
 import { isProjectCode, linesWritten } from './left-scan'
 import type { FileHit } from './left-scan'
 import { plainText } from './know'
-import { side } from './side-ask'
 import { inLine } from './state'
 
 // What the register-*.ts hooks need besides the work below, in one import.
-export { leftAsked, leftToolUsed, leftTurnStart } from './left-check'
 export { FILE_TOOLS } from './left-scan'
 
-/** A session starts: the turn and the request being counted start over, and the stored list is read as a clean one. */
+/** A session starts: the stored list is read as a clean one. Items from the retired check (source `check`) are kept until dismissed. */
 export function leftStart(raw: unknown): LeftItem[] {
-  resetCheck()
   return cleanLeft(raw)
 }
 
@@ -27,14 +22,10 @@ export function leftStart(raw: unknown): LeftItem[] {
 export type LeftIo = {
   folder: () => string
   now: () => Promise<number>
-  /** The store, for the log of the checks (hooks/left-log.ts). */
-  get: (key: string) => Promise<unknown>
-  set: (key: string, value: unknown) => Promise<unknown>
   /** The list as it stands when the write lands: the change is made on that, so changes made at the same moment all land. */
   change: (fn: (list: LeftItem[]) => LeftItem[]) => Promise<LeftItem[]>
   save: (folder: string, list: LeftItem[]) => Promise<unknown>
   read: (path: string) => Promise<string>
-  complete: (ask: { model: string; system: string; prompt: string; maxTokens: number; timeoutMs: number }) => Promise<ModelCompleteResult>
   /** Puts text after what is in the person's prompt box; never sends it. */
   fillPrompt: (text: string) => Promise<unknown>
   /** The name an agent is filed under. */
@@ -97,14 +88,6 @@ export function leftActions(io: LeftIo): LeftActions {
   }
 }
 
-/**
- * A specialist handed its report back. Nothing is read from an answer any more (phrase matching listed descriptions of the
- * work as if they were unfinished work); this stays so register-turns.ts's call to it still holds, and does nothing.
- */
-export function leftAnswer(_io: LeftIo, _e: { reason: string; answer: string }, _by: string): Promise<void> {
-  return Promise.resolve()
-}
-
 // ---- Source 1: unfinished-work lines written into code files ----
 
 /** A file tool's call as the hook hears it: the tool, who made it, and its input. */
@@ -150,31 +133,4 @@ export async function leftWatch<R>(io: LeftIo, call: WriteCall, run: () => Promi
   const answer = (ran ?? {}) as { deny?: unknown; isError?: unknown }
   if (answer.deny === undefined && !answer.isError) void fromFile(io, call, path, file, before).catch(() => undefined)
   return ran
-}
-
-// ---- Source 2: the strict second check, and the end of Clawd's own turn ----
-
-/** The one question to the small model; what it lists joins the list. Whatever goes wrong, nothing is added; every check leaves a row in the log (hooks/left-log.ts). */
-async function runCheck(io: LeftIo, folder: string, job: { request: string; report: string }) {
-  const ask = checkAsk(job.request, job.report)
-  const reply = await io.complete({ model: CHECK_MODEL, system: ask.system, prompt: ask.prompt, maxTokens: CHECK_MAX_TOKENS, timeoutMs: CHECK_TIMEOUT_MS })
-  if (!reply.isAnswered) return logCheck(io, { outcome: 'failed', reason: String(reply.reason) }, folder)
-  const found = parseUndone(reply.text)
-  await add(io, folder, found.map((text): FreshItem => ({ text, source: 'check', by: 'Clawd' })))
-  await logCheck(io, { outcome: found.length > 0 ? 'found' : 'none', count: found.length }, folder)
-}
-
-/**
- * Clawd's own turn ended. When `isCheckOn` and the turn used five tools or more without handing work to a specialist, a check
- * of his final report joins the line of background questions to the model. His answer is judged only by that check. Never throws.
- */
-export function leftOwnTurn(io: LeftIo, e: { reason: string; answer: string }, isCheckOn: boolean): Promise<void> {
-  const [folder, job] = [io.folder(), takeCheck(e)]
-  if (!isCheckOn || !job) return Promise.resolve()
-  if ('skip' in job) return logCheck(io, { outcome: 'skipped', reason: job.skip }, folder)
-  side.queue(
-    () => runCheck(io, folder, job).catch(() => logCheck(io, { outcome: 'failed', reason: 'the check stopped on an error' }, folder)),
-    () => void logCheck(io, { outcome: 'skipped', reason: 'too many checks waiting' }, folder),
-  )
-  return Promise.resolve()
 }

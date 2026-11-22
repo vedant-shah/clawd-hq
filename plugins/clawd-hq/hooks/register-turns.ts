@@ -9,7 +9,6 @@ import { keepCoffeeRecord } from './coffee-debug'
 import { parseChoices } from './desk'
 import type { BriefingOptions } from './instructions'
 import { checkHandback, checkOwnTurn, knowPrompt, knowTurnStart } from './know-check'
-import { leftAnswer, leftAsked, leftOwnTurn, leftTurnStart } from './left-io'
 import { labelOf } from './office'
 import { turnEndBoss } from './office-state'
 import { askAgain } from './panes'
@@ -31,10 +30,9 @@ import { scoutHandoff } from './scout-run'
 import { edit } from './state'
 
 export function registerTurns(on: On, brief: BriefingOptions) {
-  // The person's prompts: the latest ride along with the check on finished work, and the second passes a note over.
+  // The person's prompts: a note passes over the second.
   // An edit request from the Settings tab carries a note of its own: the file to edit, and what must not be touched.
   on('prompt.submit', async ($, e, next) => {
-    leftAsked(e)
     if (isPersonMessage(e)) await clearNewMarks(planRunIo($, brief)) // the plan's "new" marks were for the message before this one
     if (isPersonMessage(e)) await setBoss($, b => withPersonSpoke(b, e.origin?.kind)) // what closed before it is behind us: the coffee break button waits for the next checkpoint
     else if (isNotification(e)) await setBoss($, b => withNotice(b, e.turnId !== undefined)) // a job's notification starts or joins a turn: which one reports a hand-back
@@ -48,7 +46,6 @@ export function registerTurns(on: On, brief: BriefingOptions) {
     // Since 2.1.299 specialists' turns start here too: all of this is about Clawd's own, in the main chat.
     if (e.agentId !== undefined) return next(e)
     knowTurnStart(e.text ?? '')
-    leftTurnStart()
     ses.isEditTurn = editPartOf(e.text ?? '') !== undefined
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, activity: e.text ? READING_BRIEF : 'Back at it' }))
     const effects = await getFx($) // a turn after a compaction's own ends the coffee break button's wait for a fresh reading
@@ -67,7 +64,6 @@ export function registerTurns(on: On, brief: BriefingOptions) {
         if (choices.length > 0) await updateStaff($, l => edit(l, asker.id, one => withChoices(one, choices)))
         // After each hand-back, a check of the work against its report; a note may join Clawd's card.
         if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
-        void leftAnswer(leftIo($), e, by)
       }
       await clockOut(runIo($), e.agentId, e.reason === 'answer' ? 'done' : 'failed', 'signal', e.answer ?? '')
       // Why it failed, in its own last words, for the Office tab's Details on that agent.
@@ -80,7 +76,6 @@ export function registerTurns(on: On, brief: BriefingOptions) {
       await showStatus($)
     } else {
       if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)
-      void leftOwnTurn(leftIo($), e, brief.isLeftOn)
       ses.isEditTurn = false
       void flushHistory($) // Clawd's turn is over: what history.jsonl holds waiting goes now
       await askAgain(paneIo($))

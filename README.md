@@ -18,7 +18,7 @@ Brief Clawd once. He picks specialists from your installed helpers, runs indepen
 
 </div>
 
-https://github.com/user-attachments/assets/e6984ab3-ad8c-42a7-a6d7-95b0bd81015b
+<p align="center"><a href="https://github.com/user-attachments/assets/e6984ab3-ad8c-42a7-a6d7-95b0bd81015b"><img src="docs/screenshots/demo-poster.png" alt="A still from the Clawd HQ demo video: Clawd at his desk with a play button. Click to watch the 1 minute demo" width="42%"></a> <img src="docs/screenshots/office.png" alt="The Office tab, with Clawd, a plan and the specialists at work" width="42%"></p>
 
 ---
 

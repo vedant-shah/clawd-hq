@@ -24,7 +24,8 @@ const drawn = async ($: Engine, component: Component, props: Record<string, unkn
 }
 const call = (tool: string, over: Record<string, unknown> = {}) => ({ tool_use_id: 't1', tool, input: {}, isRunning: false, isErrored: false, isInterrupted: false, output: {}, ...over })
 const result = (tool: string, over: Record<string, unknown> = {}) => ({ tool_use_id: 't1', tool, output: {}, isErrored: false, ...over })
-const isEngine = (text: string) => text === JSON.stringify(ENGINE_NODE)
+/** The engine's drawing, whatever number the host holds it under: since 2.1.330 `next(e)` hands back its own number (1), not the 0 the base answer carries. */
+const isEngine = (text: string) => /^\{"type":"engine","ref":\d+\}$/.test(text)
 const isDim = (text: string) => text.includes('"dimColor":true') && !text.includes('"engine"')
 const isHidden = (text: string) => !text.includes('"engine"') && !/[A-Za-z]{3}/.test(text.replace(/"type":"Text"|"props"|"children"|"part":\{"plugin":"clawd-hq"\}/g, ''))
 

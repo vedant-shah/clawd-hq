@@ -8,6 +8,9 @@ Ideas and follow-ups for Clawd HQ that are not built yet. Nothing here is promis
   - First, research: can the plugin read a specialist's token use while it runs, send a running specialist a message or stop it, and is Claude Code adding its own spending limits?
 - **Several plan changes in one call.** Let the `plan` tool take a list of operations (add, move, split, drop) so Clawd reshapes a plan in one step instead of several.
 
+- **Sharper "You should know" and "Left undone" checks.** Judge Clawd's report to you against what the specialists actually did, instead of each specialist's report against its own steps. Collect what specialists say they skipped, rank Later items by stakes, and let them expire. Planned in 8 steps; cheap fixes that cut false notes come first.
+- **Helper search finds installed planners and architects.** The search missed installed planner and architect agents and returned weaker matches.
+
 ## Ideas
 
 - **A council verdict card.** In the desktop app, show a council's four positions side by side, where they split, the strongest dissent and Clawd's recommendation as one inline card. Fall back to text elsewhere.

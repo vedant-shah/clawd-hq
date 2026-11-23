@@ -82,7 +82,8 @@ test('a fork that times out is logged at once, but the side line stays busy unti
   await checkTurnEnd(f.io, { reason: 'answer', answer: 'Done.' }, true)
   await settle()
   expect(f.forks).toHaveLength(1)
-  expect(f.timers).toHaveLength(1)
+  // The two-minute wait for a reply, and the ten-minute last resort.
+  expect(f.timers).toHaveLength(2)
   f.timers[0]!.fn()
   await settle()
   expect(f.log().map(r => r.outcome)).toEqual(['timed-out'])
@@ -90,6 +91,32 @@ test('a fork that times out is logged at once, but the side line stays busy unti
   f.held[0]!(SHORTER)
   await settle()
   expect(side.isBusy()).toBe(false)
+  // It ended: the last resort is cancelled and nothing more is logged.
+  expect(f.timers[1]!.isCancelled).toBe(true)
+  expect(f.log().map(r => r.outcome)).toEqual(['timed-out'])
+})
+
+test('a fork that never ends lets the side line go after ten minutes, as a last resort, and the log says so', async () => {
+  const f = fakeIo()
+  await startKnow(f.io, '/repo')
+  f.mode.holdForks = true
+  await knowHandback(f.io, 'a1', 'Builder')
+  await checkTurnEnd(f.io, { reason: 'answer', answer: 'Done.' }, true)
+  await settle()
+  f.timers[0]!.fn()
+  await settle()
+  expect(side.isBusy()).toBe(true)
+  f.timers[1]!.fn()
+  await settle()
+  expect(side.isBusy()).toBe(false)
+  expect(f.log()).toMatchObject([
+    { outcome: 'timed-out', stage: 'check' },
+    { outcome: 'released', stage: 'check', reason: 'the fork had not ended after 10 minutes' },
+  ])
+  // The fork that finally ends long after is let go quietly; it frees nothing it no longer holds.
+  f.held[0]!(SHORTER)
+  await settle()
+  expect(f.log()).toHaveLength(2)
 })
 
 test('a fork that answers before the time limit cancels its timer', async () => {
@@ -99,7 +126,7 @@ test('a fork that answers before the time limit cancels its timer', async () => 
   await checkTurnEnd(f.io, { reason: 'answer', answer: 'Done.' }, true)
   await settle()
   expect(f.forks).toHaveLength(1)
-  expect(f.timers.map(t => t.isCancelled)).toEqual([true])
+  expect(f.timers.map(t => t.isCancelled)).toEqual([true, true])
   expect(side.isBusy()).toBe(false)
 })
 

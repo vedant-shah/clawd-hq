@@ -46,8 +46,9 @@ export function looksSecret(text: string): boolean {
  * explanation's, are taken out before this reads them, see `parseNote` and `parseExplanation`; other readers keep refusing them.)
  */
 export function looksUnsafe(text: string): boolean {
-  // `file:` only before a slash: "the config file: it reads" is prose, `file:///etc` is an address.
-  return /https?:\/\/|\bwww\.|\b(ftp|mailto|javascript):|\bfile:\//i.test(text) ||
+  // `file:` only before a slash and `javascript:` only with no space after it: "the config file: it reads" and "JavaScript: the
+  // language" are prose; `file:///etc` and `javascript:alert(1)` are addresses.
+  return /https?:\/\/|\bwww\.|\b(ftp|mailto):|\bjavascript:(?!\s|$)|\bfile:\//i.test(text) ||
     /\b[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}\/[^\s/]/i.test(text) ||
     /\|\s*(sudo\s+)?(ba|z|da|k)?sh\b/i.test(text) ||
     text.includes('`')

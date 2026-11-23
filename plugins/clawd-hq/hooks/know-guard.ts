@@ -41,30 +41,51 @@ export const WHAT = {
 
 // ---- Reading a command line: words and simple commands, quotes and heredoc bodies kept whole ----
 
-/** The command without the bodies of its heredocs: a body is text handed to a program, not commands to run. */
-function withoutHeredocs(command: string): string {
+/** A heredoc opener (`<<EOF`, `<<-'SQL'`), not a here-string (`<<<`). */
+const HEREDOC = /(?<!<)<<(?!<)-?\s*['"]?([A-Za-z_][\w-]*)['"]?/g
+
+/** The command with the bodies of its heredocs taken out, and the bodies in order: a body is text handed to a program, not commands to run. */
+function splitHeredocs(command: string): { text: string; bodies: string[] } {
   const kept: string[] = []
-  let end: string | undefined
+  const bodies: string[] = []
+  const ends: string[] = []
+  let body: string[] = []
   for (const line of command.split('\n')) {
-    if (end !== undefined) {
-      if (line.trim() === end) end = undefined
+    if (ends.length > 0) {
+      if (line.trim() !== ends[0]) { body.push(line); continue }
+      bodies.push(body.join('\n'))
+      body = []
+      ends.shift()
       continue
     }
     kept.push(line)
-    end = /<<-?\s*['"]?([A-Za-z_][\w-]*)['"]?/.exec(line)?.[1]
+    ends.push(...[...line.matchAll(HEREDOC)].map(m => m[1]!))
   }
-  return kept.join('\n')
+  if (ends.length > 0) bodies.push(body.join('\n'))
+  return { text: kept.join('\n'), bodies }
 }
 
-/** The simple commands of a command line, each as its words with the quotes taken off; `;`, `&&`, `||`, `|`, `&` and new lines split them, unless quoted. */
-export function commandsOf(command: string): string[][] {
-  const text = withoutHeredocs(command)
-  const all: string[][] = []
+/** One simple command: its words with the quotes taken off, the text fed to it (a heredoc body or a here-string), and whether it pipes into the next. */
+type Command = { words: string[]; input: string; pipesOn: boolean }
+
+/** The input a command's words carry: each heredoc's body, in order, and each here-string. */
+function inputOf(words: readonly string[], bodies: string[]): string {
+  return words.flatMap((w, i) => {
+    if (w === '<<<') return [words[i + 1] ?? '']
+    if (w.startsWith('<<<')) return [w.slice(3)]
+    return w.startsWith('<<') ? [bodies.shift() ?? ''] : []
+  }).join('\n')
+}
+
+/** The simple commands of a command line; `;`, `&&`, `||`, `|`, `&` and new lines split them, unless quoted. */
+function lexed(command: string): Command[] {
+  const { text, bodies } = splitHeredocs(command)
+  const all: Command[] = []
   let words: string[] = []
   let word: string | undefined
   let quote: string | undefined
   const endWord = () => { if (word !== undefined) words.push(word); word = undefined }
-  const endCommand = () => { endWord(); if (words.length > 0) all.push(words); words = [] }
+  const endCommand = (pipesOn = false) => { endWord(); if (words.length > 0) all.push({ words, input: inputOf(words, bodies), pipesOn }); words = [] }
   for (let i = 0; i < text.length; i += 1) {
     const c = text[i]!
     if (quote) {
@@ -76,7 +97,12 @@ export function commandsOf(command: string): string[][] {
       word ??= ''
     } else if (c === '\\' && i + 1 < text.length) {
       word = (word ?? '') + text[(i += 1)]
-    } else if (c === ';' || c === '\n' || c === '|' || c === '&') {
+    } else if ((c === '|' || c === '&') && text[i + 1] === c) {
+      i += 1
+      endCommand()
+    } else if (c === '|') {
+      endCommand(true)
+    } else if (c === ';' || c === '\n' || c === '&') {
       endCommand()
     } else if (/\s/.test(c)) {
       endWord()
@@ -88,6 +114,9 @@ export function commandsOf(command: string): string[][] {
   return all
 }
 
+/** The simple commands of a command line, each as its words with the quotes taken off. */
+export const commandsOf = (command: string): string[][] => lexed(command).map(c => c.words)
+
 /** The words of one simple command without `sudo`, `env` and leading `NAME=value` settings. */
 function bare(words: readonly string[]): string[] {
   const at = words.findIndex(w => w !== 'sudo' && w !== 'env' && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w))
@@ -95,7 +124,12 @@ function bare(words: readonly string[]): string[] {
 }
 
 const nameOf = (word: string | undefined) => word?.split('/').pop()
-const isThrowaway = (path: string) => TEMP_ROOT.test(path) || path.split('/').some(part => THROWAWAY_PARTS.has(part))
+/** A path under build output, a cache or temp; never one that climbs out with `..` (`build/../src`). */
+function isThrowaway(path: string): boolean {
+  const parts = path.split('/')
+  if (parts.includes('..')) return false
+  return TEMP_ROOT.test(path) || parts.some(part => THROWAWAY_PARTS.has(part))
+}
 const flagHas = (flags: readonly string[], long: string, short: RegExp) => flags.some(f => f === long || (/^-[^-]/.test(f) && short.test(f)))
 
 /** What the run has done before this step that changes how a step reads: the branches it merged. */
@@ -108,12 +142,21 @@ function rmWhat(args: readonly string[]): string | undefined {
   return isForced && targets.some(t => !isThrowaway(t)) ? WHAT.delete : undefined
 }
 
+/** File kinds that are always safe to clear out: compiled files, logs, editor and OS litter. */
+const JUNK_EXTENSIONS = new Set(['pyc', 'pyo', 'log', 'tmp', 'temp', 'bak', 'orig', 'rej', 'swp', 'swo', 'map', 'o', 'class', 'tsbuildinfo'])
+const JUNK_NAMES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini', '__pycache__', '.pytest_cache'])
+/** A `-name` glob that only matches litter: `*.pyc`, `*.log`, `.DS_Store`. */
+const isJunkGlob = (glob: string) => JUNK_NAMES.has(glob) || (/^\*\.([A-Za-z0-9]+)$/.test(glob) && JUNK_EXTENSIONS.has(glob.slice(2).toLowerCase()))
+
 function findWhat(args: readonly string[]): string | undefined {
   const at = args.findIndex(a => /^[-(!]/.test(a))
   const roots = (at < 0 ? args : args.slice(0, at))
   const exec = args.findIndex(a => a === '-exec' || a === '-execdir')
   const isDeleting = args.includes('-delete') || (exec >= 0 && nameOf(args[exec + 1]) === 'rm')
-  return isDeleting && !(roots.length > 0 && roots.every(isThrowaway)) ? WHAT.findDelete : undefined
+  if (!isDeleting || (roots.length > 0 && roots.every(isThrowaway))) return undefined
+  // Every `-name` names litter: routine. No `-name` at all, or one that could match real files, deletes for good.
+  const globs = args.flatMap((a, i) => (a === '-name' || a === '-iname' ? [args[i + 1] ?? ''] : []))
+  return globs.length > 0 && globs.every(isJunkGlob) ? undefined : WHAT.findDelete
 }
 
 function pushWhat(more: readonly string[]): string | undefined {
@@ -140,7 +183,8 @@ function gitWhat(args: readonly string[], seen: Seen): string | undefined {
 /** Interpreters and servers: a pattern that is only one of these names stops every program of that kind. */
 const BROAD_NAMES = new Set(['node', 'python', 'python3', 'ruby', 'java', 'php', 'perl', 'bun', 'deno', 'npm', 'npx', 'bash', 'sh', 'zsh', 'docker', 'chrome', '.', '.*', '*'])
 
-function pkillWhat(args: readonly string[]): string | undefined {
+/** `pkill` or `killall`: broad unless it names one program that is not a whole runtime (`vite`, `next-server`, `"node server.js"`). */
+function killByNameWhat(args: readonly string[]): string | undefined {
   if (args.some(a => a === '-u' || a === '-U' || a === '-g')) return WHAT.kill
   const pattern = [...args].reverse().find(a => !a.startsWith('-'))
   return pattern === undefined || BROAD_NAMES.has(pattern.toLowerCase()) ? WHAT.kill : undefined
@@ -163,8 +207,7 @@ function simpleWhat(words: readonly string[], seen: Seen, depth: number): string
   if (name === 'rm') return rmWhat(args)
   if (name === 'find') return findWhat(args)
   if (name === 'git') return gitWhat(args, seen)
-  if (name === 'killall') return WHAT.kill
-  if (name === 'pkill') return pkillWhat(args)
+  if (name === 'killall' || name === 'pkill') return killByNameWhat(args)
   if (name === 'kill' && args[args.length - 1] === '-1') return WHAT.kill
   if (name === 'taskkill' && args.some(a => /^\/im$/i.test(a))) return WHAT.kill
   if ((name === 'docker' || name === 'podman') && args.includes('prune')) return WHAT.docker
@@ -173,7 +216,13 @@ function simpleWhat(words: readonly string[], seen: Seen, depth: number): string
 
 // ---- SQL, in a database client's command line or a database tool's query ----
 
-const SQL_CLIENT = /\b(psql|mysql|mariadb|sqlite3|sqlcmd|duckdb|clickhouse-client|cockroach\s+sql|supabase\s+db)\b/i
+const SQL_CLIENTS = new Set(['psql', 'mysql', 'mariadb', 'sqlite3', 'sqlcmd', 'duckdb', 'clickhouse-client'])
+/** A database client as the program a simple command runs (`psql`, `cockroach sql`, `supabase db`). */
+function isSqlClient(words: readonly string[]): boolean {
+  const name = nameOf(words[0])?.toLowerCase()
+  return name !== undefined && (SQL_CLIENTS.has(name) || (name === 'cockroach' && words[1] === 'sql') || (name === 'supabase' && words[1] === 'db'))
+}
+const FEEDERS = new Set(['echo', 'printf'])
 
 /** What a piece of SQL destroys: a dropped or emptied table, or a DELETE or UPDATE with no WHERE. */
 export function sqlWhat(sql: string): string | undefined {
@@ -187,12 +236,21 @@ export function sqlWhat(sql: string): string | undefined {
   return undefined
 }
 
+/**
+ * The SQL a database client is given: its own arguments, its heredoc or here-string, and the text an `echo` or `printf` pipes
+ * into it. SQL anywhere else on the line (a commit message, a search) is not run, so it is not read.
+ */
+function clientSqlWhat(all: readonly Command[], at: number): string | undefined {
+  const words = bare(all[at]!.words)
+  if (!isSqlClient(words)) return undefined
+  const before = at > 0 && all[at - 1]!.pipesOn ? bare(all[at - 1]!.words) : []
+  const piped = FEEDERS.has(nameOf(before[0]) ?? '') ? before.slice(1).join(' ') : ''
+  return sqlWhat([words.slice(1).join(' '), all[at]!.input, piped].join(';\n'))
+}
+
 function commandWhat(command: string, seen: Seen, depth = 0): string | undefined {
-  if (SQL_CLIENT.test(command)) {
-    const sql = sqlWhat(command)
-    if (sql) return sql
-  }
-  return commandsOf(command).map(words => simpleWhat(words, seen, depth)).find(what => what !== undefined)
+  const all = lexed(command)
+  return all.map((c, i) => clientSqlWhat(all, i) ?? simpleWhat(c.words, seen, depth)).find(what => what !== undefined)
 }
 
 /** The branches a command merges, so deleting them afterwards is tidying up. */
@@ -210,8 +268,16 @@ const isDenied = (use: Use) => use.isError === true && DENIAL.test(use.text ?? '
 const isSameCall = (a: Use, b: Use) => a.tool === b.tool && JSON.stringify(a.input) === JSON.stringify(b.input)
 const classOf = (tool: string) => (FILE_TOOLS.has(tool) ? 'file' : SHELL.has(tool) ? 'shell' : undefined)
 const pathOf = (use: Use) => [use.input.file_path, use.input.notebook_path].find((v): v is string => typeof v === 'string')
-/** A shell command's program and subcommand (`git push`), from its first simple command. */
-const headOf = (use: Use) => bare(commandsOf(String(use.input.command ?? ''))[0] ?? []).slice(0, 2).join(' ')
+const SCRIPT_RUNNERS = new Set(['npm', 'pnpm', 'yarn', 'bun'])
+/**
+ * A shell command's program and subcommand (`git push`), from its first simple command. A package manager's `run` takes the
+ * script name too, so `npm run build` and `npm run lint` differ, while `npm test` and `npm test -- foo` are the same script.
+ */
+function headOf(use: Use): string {
+  const words = bare(commandsOf(String(use.input.command ?? ''))[0] ?? [])
+  const isRun = SCRIPT_RUNNERS.has(nameOf(words[0]) ?? '') && (words[1] === 'run' || words[1] === 'run-script')
+  return words.slice(0, isRun ? 3 : 2).join(' ')
+}
 
 /**
  * The later step that did a refused one another way: the same class of tool (file edits, or the shell) on the same full path,

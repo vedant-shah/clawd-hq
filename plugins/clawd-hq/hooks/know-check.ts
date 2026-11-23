@@ -20,6 +20,8 @@ import { inLine } from './state'
 
 /** DECIDED: a fork that has not answered in two minutes is let go, so the one side line is free again. */
 const FORK_WAIT_MS = 120_000
+/** A fork still not ended this long after it was asked for lets the side line go anyway, as a last resort, and the log says so. */
+const STUCK_MS = 600_000
 export const EXPLAIN_BUSY = 'Another side request is running. Try again in a moment.'
 export const EXPLAIN_FAILED = 'No new explanation came back. Try again, or ask Clawd.'
 export const EXPLAIN_COMPACTED = "Clawd's chat was just compacted. Try again after his next reply."
@@ -154,14 +156,23 @@ type Forked = ModelForkResult | { isAnswered: false; reason: 'timed-out' }
 /**
  * The fork's reply, or `timed-out` when it has not answered in time (its timer is cancelled when it answers first); and when
  * the fork has really ended. The fork takes no abort signal, so a fork that timed out still runs and is paid for: whoever
- * holds the side line waits for `settled` before letting go, so no second fork starts on top of it.
+ * holds the side line waits for `settled` before letting go, so no second fork starts on top of it. A fork still not ended
+ * after ten minutes settles as `stuck`, so the line is never held for good.
  */
-function forkFor(io: KnowIo, prompt: string): { reply: Promise<Forked>; settled: Promise<void> } {
+function forkFor(io: KnowIo, prompt: string): { reply: Promise<Forked>; settled: Promise<'ended' | 'stuck'> } {
   const asked = io.fork(prompt)
   let timer: { cancel: () => void } | undefined
+  let stuckTimer: { cancel: () => void } | undefined
   const late = new Promise<Forked>(resolve => { timer = io.after(FORK_WAIT_MS, () => resolve({ isAnswered: false, reason: 'timed-out' })) })
+  const stuck = new Promise<'stuck'>(resolve => { stuckTimer = io.after(STUCK_MS, () => resolve('stuck')) })
   const reply = Promise.race([asked, late]).finally(() => timer?.cancel())
-  return { reply, settled: asked.then(() => undefined, () => undefined) }
+  const ended = asked.then(() => 'ended' as const, () => 'ended' as const).finally(() => stuckTimer?.cancel())
+  return { reply, settled: Promise.race([ended, stuck]) }
+}
+
+/** Lets the side line go once the fork has ended; a fork that never did is let go after ten minutes, and logged. */
+async function untilEnded(io: KnowIo, settled: Promise<'ended' | 'stuck'> | undefined, row: Omit<KnowLogEntry, 'outcome'>) {
+  if (settled && (await settled) === 'stuck') await addLog(io, { ...row, outcome: 'released', reason: 'the fork had not ended after 10 minutes' })
 }
 const usageOf = (r: Forked) => ('usage' in r ? r.usage : undefined)
 
@@ -216,7 +227,7 @@ export async function checkTurnEnd(io: KnowIo, e: { reason: string; answer?: str
 
 async function runCheck(io: KnowIo, answer: string, at: number, asked: number) {
   const row = { at, who: CLAWD, stage: 'check' as const }
-  let settled: Promise<void> | undefined
+  let settled: Promise<'ended' | 'stuck'> | undefined
   try {
     const template = await promptFile(io, OBSERVER_FILE)
     if (template === undefined) return await addLog(io, { ...row, outcome: 'failed', reason: 'the prompt file could not be read' })
@@ -239,8 +250,8 @@ async function runCheck(io: KnowIo, answer: string, at: number, asked: number) {
   } catch {
     await addLog(io, { ...row, outcome: 'failed', reason: 'the check stopped on an error' })
   } finally {
-    // The side line is let go only once the fork has really ended, even after a time-out.
-    await settled
+    // The side line is let go only once the fork has really ended, even after a time-out (or, as a last resort, after ten minutes).
+    await untilEnded(io, settled, row)
   }
 }
 
@@ -300,7 +311,7 @@ async function writeExplanation(io: KnowIo, note: KnowNote, kind: 'first' | Foll
     await io.setCard(s => withExplainNote(s, note.id, EXPLAIN_FAILED))
     await addLog(io, entry)
   }
-  let settled: Promise<void> | undefined
+  let settled: Promise<'ended' | 'stuck'> | undefined
   try {
     const text = await promptFile(io, EXPLAIN_FILE)
     const template = text === undefined ? undefined : explainTemplate(text)
@@ -320,7 +331,7 @@ async function writeExplanation(io: KnowIo, note: KnowNote, kind: 'first' | Foll
   } catch {
     await failed({ ...row, outcome: 'failed', reason: `${kind}: the explanation stopped on an error` })
   } finally {
-    await settled
+    await untilEnded(io, settled, row)
   }
 }
 

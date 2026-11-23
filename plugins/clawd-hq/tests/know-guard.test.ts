@@ -32,9 +32,11 @@ test('destructive commands are flagged with what they do in plain words', () => 
     ['git reset --hard HEAD~3', WHAT.reset], ['git push --force origin main', WHAT.push], ['git push -f', WHAT.push], ['git push origin +main', WHAT.push],
     ['git push origin :old-branch', WHAT.pushDelete], ['git push origin --delete old-branch', WHAT.pushDelete], ['git push -d origin old-branch', WHAT.pushDelete],
     ['git clean -fd', WHAT.clean], ['git branch -D feature', WHAT.branch],
-    ['killall node', WHAT.kill], ['killall vite', WHAT.kill], ['pkill node', WHAT.kill], ['pkill -f python', WHAT.kill], ['pkill -u me', WHAT.kill], ['kill -9 -1', WHAT.kill], ['kill -1', WHAT.kill],
+    ['killall node', WHAT.kill], ['killall -9 python', WHAT.kill], ['killall -u me', WHAT.kill], ['pkill node', WHAT.kill], ['pkill -f python', WHAT.kill], ['pkill -u me', WHAT.kill], ['kill -9 -1', WHAT.kill], ['kill -1', WHAT.kill],
     ['docker system prune -af', WHAT.docker], ['docker volume prune -f', WHAT.docker],
-    ['find . -name "*.log" -delete', WHAT.findDelete], ['find src -type f -exec rm {} +', WHAT.findDelete],
+    ['find src -type f -exec rm {} +', WHAT.findDelete], ['find . -delete', WHAT.findDelete], ['find . -type f -delete', WHAT.findDelete],
+    ['find . -name "*.ts" -delete', WHAT.findDelete], ['find . -name "*.pyc" -o -name "*" -delete', WHAT.findDelete],
+    ['rm -rf build/../src', WHAT.delete], ['rm -rf node_modules/../..', WHAT.delete],
     ['git ls-files -d | xargs rm', WHAT.deleteGiven], ['ls *.bak | xargs -I {} rm -f {}', WHAT.deleteGiven],
     ['bash -c "rm -rf src"', WHAT.delete], ["sh -c 'git reset --hard'", WHAT.reset], ['zsh -lc "git push --force"', WHAT.push],
   ]
@@ -55,6 +57,19 @@ test('SQL that drops or empties a table, or deletes or changes every row, is fla
   expect(sqlWhat('DELETE FROM a WHERE id = 1; DELETE FROM b')).toBe(WHAT.deleteRows)
 })
 
+test('SQL is read only where a database client gets it: its own arguments, its heredoc or here-string, or an echo piped into it', () => {
+  expect(whats('echo "DROP TABLE carts" | psql shop')).toEqual([WHAT.drop])
+  expect(whats('printf "DELETE FROM carts;" | sqlite3 app.db')).toEqual([WHAT.deleteRows])
+  expect(whats('psql shop <<< "TRUNCATE orders"')).toEqual([WHAT.truncate])
+  expect(whats('cockroach sql -e "DROP TABLE x"')).toEqual([WHAT.drop])
+  for (const command of [
+    'git commit -m "fix psql drop table"', 'git commit -m "psql: DELETE FROM sessions on logout"', 'echo "DROP TABLE x" > notes.txt && psql -c "select 1"',
+    'grep -rn "DROP TABLE" migrations && psql -l', 'cat > plan.md <<EOF\nRun psql to DROP TABLE old later.\nEOF', 'echo "DELETE FROM a" || psql -c "select 1"',
+  ]) {
+    expect(whats(command), command).toEqual([])
+  }
+})
+
 test('everyday commands are not flagged: build output and temp folders anywhere in a path, narrow kills, safe git, quoted text', () => {
   for (const command of [
     'rm -rf node_modules', 'rm -rf dist build coverage', 'rm -rf .next', 'rm -rf packages/web/dist', 'rm -rf apps/api/.venv', 'rm -rf src/__pycache__',
@@ -63,7 +78,8 @@ test('everyday commands are not flagged: build output and temp folders anywhere 
     'git reset HEAD file', 'git push origin main', 'git push -u origin feature', 'git push --force-with-lease', 'git push --force-with-lease origin feat',
     'git clean -n', 'git checkout main', 'git checkout -- src/app.ts', 'git checkout .', 'git branch -d done',
     'git merge feature && git branch -D feature',
-    'kill 4242', 'lsof -ti:3000 | xargs kill', 'pkill -f vite', 'pkill -f "node server.js"', 'pkill -f next-server',
+    'kill 4242', 'lsof -ti:3000 | xargs kill', 'pkill -f vite', 'pkill -f "node server.js"', 'pkill -f next-server', 'killall vite', 'killall -9 next-server',
+    'find . -name "*.log" -delete', 'find . -name "*.pyc" -delete', 'find . -name .DS_Store -delete', 'find . -iname "*.LOG" -exec rm {} +',
     'npm test', 'echo "drop the table later"', 'grep -r "DROP TABLE" migrations', 'echo "rm -rf src; git push --force"',
     'cat > plan.md <<EOF\nThen rm -rf the old folder and git push --force.\nEOF', 'docker ps', 'git commit -m "update users set flag"',
   ]) {
@@ -90,6 +106,15 @@ test('a refused action done another way is flagged: the same kind of tool on the
   expect(kinds([use('Write', { file_path: '/repo/.env', content: 'x' }, DENIED, true), use('Edit', { file_path: '/repo/.env', old_string: 'a', new_string: 'b' })])).toEqual(['denied-retried'])
   expect(kinds([use('Edit', { file_path: 'src/app.ts' }, REJECTED, true), use('Write', { file_path: 'src/app.ts', content: 'all new' })])).toEqual(['denied-retried'])
   expect(kinds([use('Bash', { command: 'git push origin main' }, 'Permission to use Bash with command git push origin main has been denied.', true), bash('git push origin HEAD:main')])).toEqual(['denied-retried'])
+})
+
+test('a package script counts by its full name: run build and run lint differ; test and test with more arguments are the same', () => {
+  const refused = (command: string) => use('Bash', { command }, `Permission to use Bash with command ${command} has been denied.`, true)
+  expect(kinds([refused('npm run build'), bash('npm run lint')])).toEqual([])
+  expect(kinds([refused('pnpm run deploy'), bash('pnpm run test')])).toEqual([])
+  expect(kinds([refused('npm run build'), bash('npm run build -- --prod')])).toEqual(['denied-retried'])
+  expect(kinds([refused('npm test'), bash('npm test -- foo')])).toEqual(['denied-retried'])
+  expect(kinds([refused('yarn deploy'), bash('yarn deploy --force')])).toEqual(['denied-retried'])
 })
 
 test('not counted: another file of the same name, another kind of tool, a read, a plain error, or anything after the same call goes through', () => {

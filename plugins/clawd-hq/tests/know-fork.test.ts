@@ -164,6 +164,15 @@ test('ftp, mailto, javascript and file addresses are refused like web addresses;
   expect(parseExplanation('**Settings**\nThe config file: it now reads the port from the environment.')).toMatchObject({ kind: 'explained' })
 })
 
+test('"JavaScript:" in prose is fine; javascript: as a link, bare or inside one, is refused', () => {
+  expect(parseExplanation('**The build**\nJavaScript: the language the page runs, now built twice.')).toMatchObject({ kind: 'explained' })
+  expect(parseNote('learn: The Builder chose JavaScript: plain files, no types.\ntag: Heads up').kind).toBe('note')
+  expect(parseNote('learn: The Builder wrote it in JavaScript:\ntag: Heads up').kind).toBe('note')
+  for (const text of ['Press javascript:void(0) to close.', 'See [the fix](javascript:alert(1)).', 'Open JavaScript:alert(document.cookie).']) {
+    expect(parseExplanation(`**Fix**\n${text}`), text).toEqual({ kind: 'failed', why: 'the explanation held a web address or a command' })
+  }
+})
+
 test('a name shown on the card is plain and short; one holding an address, a key or a command, or none at all, shows as the fallback', () => {
   expect(safeName('Builder')).toBe('Builder')
   expect(safeName('  Test​  Writer ')).toBe('Test Writer')

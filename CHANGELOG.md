@@ -2,6 +2,20 @@
 
 All notable changes to Clawd HQ. Newest first.
 
+## 1.3.0 - 2026-11-23
+
+### Changed
+
+- **"You should know" rereads Clawd's conversation.** Right after Clawd answers you, it reads his whole chat with your main model and looks for the one thing you would really miss: a specialist's work clashing with something you decided, a costly choice made without asking, a result the facts contradict, a question that went unanswered, or a risk nobody raised. It reuses the chat Claude Code already cached, so it costs least right after a reply. It never flags that a report left something out: reports are summaries. Each check logs its tokens and cache use.
+- **Learn more** writes a short plain explanation on demand, with **Simpler**, **Shorter** and **More detail** buttons. **Knew this** shows on every note and stops it coming back.
+- **A guard watches specialists' steps.** In code, with no model call, it flags a risky action the main chat can't see: a permanent delete, a hard reset, a force push, a broad kill, a dropped table, the sandbox turned off, or a refused action done another way. The card names the kind of action, never the command.
+- **Findings before questions.** After research, a plan, a review or a council, Clawd explains what was found and what each option means before he asks you anything.
+- **Left undone's model check is retired.** It is being rebuilt to catch asks that get forgotten. TODO, FIXME and XXX markers now fold into one line in the Later fold. Your stored items are kept.
+
+### Fixed
+
+- "You should know" keeps notes that contain code names, treats only a bare "none" as silence, and shrinks very long records instead of failing on them.
+
 ## 1.2.4 - 2026-11-20
 
 ### Changed

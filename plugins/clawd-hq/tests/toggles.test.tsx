@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import { BRIEF_NOTE } from '../hooks/desk'
 import { RULES_FILE, SECTION_ID, VOICE_FILE } from '../hooks/instructions'
+import { OBSERVER_FILE } from '../hooks/know-prompts'
 import { CLEAR, SETTINGS, START, SURFACES, host } from './host'
 
 // Each switch of the Settings tab, end to end: a press saves the other value in the plugin's own store and makes no
@@ -43,7 +44,9 @@ function stage(on: On) {
   h.files.set(`${ROOT}/${RULES_FILE}`, '# Clawd, chief of staff\n\nHand real work over.\n')
   h.files.set(`${ROOT}/${VOICE_FILE}`, '# Clawd\'s voice\n\nPlain words.\n')
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'You are Claude Code.', scope: 'shared' }] }) as never)
-  on('model.complete', (_$, e) => (checks.push(e), { value: { isAnswered: true, text: 'nothing', usage: {} } }) as never)
+  // "You should know" forks the main chat when Clawd answers after a hand-back.
+  h.files.set(`${ROOT}/${OBSERVER_FILE}`, 'Notes shown:\n{{SHOWN}}\nKnown:\n{{KNEW}}')
+  on('model.fork', (_$, e) => (checks.push(e), { value: { isAnswered: true, text: 'learn: none', usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }) as never)
   on('session.messages', () => ({ value: [
     { role: 'user', text: `Fix it.${BRIEF_NOTE}`, toolUses: [] },
     { role: 'assistant', text: 'Reading the code.', toolUses: [{ tool_use_id: 'u1', tool: 'Read', input: { file_path: 'src/login.ts' }, text: 'code' }] },
@@ -84,6 +87,7 @@ const IS_AT_WORK: Record<Field, ($: Engine, h: Stage) => Promise<boolean>> = {
   youShouldKnow: async ($, h) => {
     const before = h.checks.length
     await handBack($)
+    await $.turn.complete({ reason: 'answer', answer: 'The fix is in.', turnId: `m${before}`, isAborted: false } as never)
     await settle(h)
     return h.checks.length > before
   },

@@ -22,7 +22,8 @@ Most of it runs on your machine. Model calls go through Claude Code's own model 
 | Setup picks a team | Sonnet scout | The project folder path, a quick scan (README head, instruction files, dependencies, outline, file types), your helpers' names, descriptions and use counts, and the project files it opens |
 | Setup fallback | Opus, once, only if the scout gives nothing usable | The same quick scan, and your helpers' names, descriptions and use counts |
 | Setup writes your workflow | Haiku | Your instruction files |
-| You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
+| You should know | The session's model, on the cached chat | The main conversation, right after Clawd answers, when a specialist handed work back or Clawd took six or more steps himself. It reuses the chat Claude Code already cached, so it costs least right after a reply; after a long pause or a /model change the whole chat is paid for again. Learn more, Simpler, Shorter and More detail ask the same way. |
+| Risky-action guard | No model | Each specialist's own steps at its hand-back, which the main chat does not show: a command that deletes or overwrites for good, the sandbox turned off, or a refused action done another way. |
 | Left undone check | No model | Retired. A tracker for forgotten asks is coming. |
 | Coffee break | The session's model | One short question on the cached chat |
 | The plan and the history | No model | Nothing is sent. They are files in your project (see "What it writes"). |
@@ -43,7 +44,7 @@ What it reads on this computer:
 - Past session files in `~/.claude/projects` (or `CLAUDE_CONFIG_DIR`): only helper names and use counts are kept.
 - Your helpers in `~/.claude/agents`, `~/.claude/skills` and the project's `.claude/` folder.
 - The project's README, instruction files, manifests and file names, for setup's quick scan.
-- Specialists' transcripts, and the main chat after a long turn of Clawd's own, for the "You should know" check; the scout's transcript, for its picks.
+- Specialists' transcripts, for the risky-action guard (read by code, sent nowhere); the scout's transcript, for its picks. The "You should know" check reads the main chat through a fork of it.
 - Text written by Edit and Write calls, for TODO, skipped-test and not-implemented markers (Left undone).
 - The project's `.clawd-hq/plans/` and `.clawd-hq/history-*.jsonl`, for the plan and the History tab. A plan file is read by Clawd, like CLAUDE.md: the newest one becomes the goal in hand when a session starts, and Clawd sees its title, summary, steps and Later items each time he uses the plan. So a plan file someone else committed is text Clawd will read.
 - Your own voice file, if you set one.

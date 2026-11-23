@@ -220,8 +220,8 @@ test('a person\'s message does not disturb the plan, and the plan tool does not 
 
 test('the plan tool is no work of Clawd\'s own: a turn of plan calls starts no check on his answer, while the same number of reads does', async ($, on) => {
   const h = office(on)
-  const asked: unknown[] = []
-  on('model.complete', (_$, e) => (asked.push(e), { value: { isAnswered: false } }) as never)
+  // The check on Clawd's answer leaves a row in its log whenever it starts ("You should know", hooks/know-check.ts).
+  const checks = () => ((h.saved.get('know:log:/repo') ?? []) as Array<{ stage?: string }>).filter(row => row.stage === 'check')
   on('prompt.submit', (_$, e) => ({ text: (e as { text: string }).text }) as never)
   on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
   // The main chat as the check reads it back: the request, a step that used a tool, and the answer.
@@ -240,9 +240,9 @@ test('the plan tool is no work of Clawd\'s own: a turn of plan calls starts no c
     for (let i = 0; i < 30; i += 1) await h.clock.advance(0)
   }
   await turn('m1', [1, 2, 3, 4, 5, 6].map(i => ({ tool: TOOL, op: 'later', text: `Put off ${i}` })))
-  expect(asked).toHaveLength(0)
+  expect(checks()).toHaveLength(0)
   await turn('m2', [1, 2, 3, 4, 5, 6].map(i => ({ tool: 'Read', file_path: `/repo/f${i}.ts` })))
-  expect(asked.length).toBeGreaterThan(0)
+  expect(checks().length).toBeGreaterThan(0)
 })
 
 test('when the host moves the session to the project, the project\'s plan becomes the goal in hand', async ($, on) => {

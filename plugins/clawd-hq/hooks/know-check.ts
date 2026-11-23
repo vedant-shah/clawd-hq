@@ -1,25 +1,30 @@
-// The check on finished work: after a specialist hands its work back, Haiku reads the whole record of what it did and
-// may leave one note on Clawd's card. register-know.ts holds the hooks and every `$` call (register-state.ts the card's state), and hands
-// them in as `KnowIo`; the rules are in hooks/know.ts and the write-up in hooks/know-record.ts.
-import type { ModelCompleteResult, SessionMessage } from 'claude-code'
+// "You should know": right after Clawd answers, a fork of his own conversation (cached, so cheap while warm) may leave one note
+// on Clawd's card (hooks/know-fork.ts says when); Learn more forks again to explain it; and at each specialist's hand-back a
+// code-only guard looks for risky steps the main chat cannot see (hooks/know-guard.ts). register-know.ts holds the hooks and
+// every `$` call (register-state.ts the card's state), and hands them in as `KnowIo`; the rules are in hooks/know.ts.
+import type { ModelForkResult, SessionMessage } from 'claude-code'
 import type { KnowNote, KnowState } from '../types'
 import {
-  BACKOFF0, KNEW_KEEP, KNOW_VERSION, NO_LEARN, OWN_TURN_TOOLS, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, checkAsk, isRepeat,
-  keepLast, listFrom, nextCheck, parseNote, tallyFrom, withLog, withNote, withOpened, withReacted, withReaction, withTallied, withoutNote,
+  BACKOFF0, KNEW_KEEP, KNOW_VERSION, SHOWN_KEEP, afterIgnored, afterPrompt, backoffFrom, costOf, isRepeat, keepLast, listFrom, nextCheck,
+  parseExplanation, parseNote, safeName, tallyFrom, withExplainNote, withExplaining, withExplanation, withLog, withNote, withOpened, withReacted,
+  withReaction, withTallied, withoutNote,
 } from './know'
 import type { Backoff, KnowLogEntry, KnowTally, Reaction } from './know'
-import { buildRecord, turnRows } from './know-record'
-import type { LeftOut, RecordInput } from './know-record'
+import { isWorthChecking, whyNotNow } from './know-fork'
+import { guardNote, leadRisk, risksOf } from './know-guard'
+import { EXPLAIN_FILE, OBSERVER_FILE, explainPrompt, explainTemplate, observerPrompt } from './know-prompts'
+import type { FollowUp } from './know-prompts'
 import { PANES } from './panes'
-import { side } from './side-ask'
+import { side, whenFree } from './side-ask'
 import { inLine } from './state'
-import { isStepTool } from './steps'
 
-const MODEL = 'haiku'
-const MAX_TOKENS = 700
-const TIMEOUT_MS = 60_000
-/** How many of the person's latest prompts ride along. */
-const PROMPTS_KEPT = 2
+/** DECIDED: a fork that has not answered in two minutes is let go, so the one side line is free again. */
+const FORK_WAIT_MS = 120_000
+export const EXPLAIN_BUSY = 'Another side request is running. Try again in a moment.'
+export const EXPLAIN_FAILED = 'No new explanation came back. Try again, or ask Clawd.'
+export const EXPLAIN_COMPACTED = "Clawd's chat was just compacted. Try again after his next reply."
+/** The check reads Clawd's conversation: its notes are about the main chat, Clawd's. */
+const CLAWD = 'Clawd'
 /** Store keys, kept per project folder as the payroll and the artifact list are. */
 const KEYS = { shown: 'know:shown', knew: 'know:knew', backoff: 'know:backoff', log: 'know:log', tally: 'know:tally' } as const
 type Key = (typeof KEYS)[keyof typeof KEYS]
@@ -32,52 +37,45 @@ export type KnowIo = {
   /** Where the session draws now: the desktop app and phones attach after the session starts. */
   surfaces: () => Promise<readonly string[]>
   panes: () => Promise<ReadonlyArray<{ id: string; isPlaced: boolean }>>
-  /** One agent's rows, or why the session will not say; with no id, the main chat's. */
-  messages: (agentId?: string) => Promise<readonly SessionMessage[] | { deny: string }>
-  complete: (ask: { model: string; system: string; prompt: string; maxTokens: number; timeoutMs: number }) => Promise<ModelCompleteResult>
+  /** One agent's rows, or why the session will not say. */
+  messages: (agentId: string) => Promise<readonly SessionMessage[] | { deny: string }>
+  /** One message after the main thread's last request, served from its cache; no effort named, so the cache is kept. */
+  fork: (prompt: string) => Promise<ModelForkResult>
+  /** A file of the plugin's own, by its path in the plugin folder. */
+  readPrompt: (file: string) => Promise<string>
+  after: (ms: number, fn: () => void) => { cancel: () => void }
   card: () => Promise<KnowState>
   /** Puts text after what is in the person's prompt box; never sends it. */
   fillPrompt: (text: string) => Promise<unknown>
   setCard: (fn: (s: KnowState) => KnowState) => Promise<unknown>
-  /** A note was shown about a specialist's run (`agentId`), or Clawd's own turn (none): the history's `note` record, its tag only. */
+  /** A note was shown about a specialist's run (`agentId`), or Clawd's conversation (none): the history's `note` record, its tag only. */
   noted?: (agentId: string | undefined, tag: string) => Promise<void>
 }
 
-/** What a hand-back carries that the check reads: a specialist's (`agentId`), or a turn of Clawd's own (`turnText`, its request). */
-export type Handback = {
-  agentId?: string
-  turnText?: string
-  reason: RecordInput['ended']
-  answer: string
-  durationMs?: number
-  usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
+export type KnowActions = {
+  knowMore: () => unknown; knowSimpler: () => unknown; knowShorter: () => unknown; knowDetail: () => unknown
+  knowDiscuss: () => unknown; knowGotIt: () => unknown; knowDismiss: () => unknown
 }
-
-export type KnowActions = { knowMore: () => unknown; knowDiscuss: () => unknown; knowGotIt: () => unknown; knowDismiss: () => unknown }
 
 /** The project folder the session runs in: the lists and the log are its own. */
 let folder = ''
 const keyOf = (key: Key) => `${key}:${folder}`
 /** Goes up on /clear, resume and session end: a reply asked for before then is dropped. */
 let epoch = 0
-let prompts: readonly string[] = []
 type Lists = { shown: readonly string[]; knew: readonly string[]; backoff: Backoff; log: readonly KnowLogEntry[]; tally: KnowTally }
 let lists: Lists | undefined
-/** Each specialist's brief as it was sent, and how many of its rows were already checked. */
-const briefs = new Map<string, string>()
+/** The prompt files as read this session. */
+const prompts = new Map<string, string>()
+/** How many of each specialist's rows the guard has read. */
 const checkedRows = new Map<string, number>()
-/** Where the oldest rows given back by a check that got no answer start, by specialist: the next check to run reads them. */
-const givenBack = new Map<string, number>()
 let notes = 0
 /** A note was shown since the person's last message: no other until the next one, even if that note is gone. */
 let isNoteSent = false
-/** Clawd's own turn under way: its request, and the tools he has used in it. */
-let turn = { text: '', tools: 0 }
-
-/** The brief a specialist was hired with, for a resumed run, whose rows open with the message that started it. */
-export function keepBrief(id: string, brief: string) {
-  briefs.set(id, brief)
-}
+/** Hand-backs since the last check, and the tools Clawd has used himself in the turn under way. */
+let handbacks = 0
+let tools = 0
+/** The main chat was compacted and no turn of Clawd's has begun since. */
+let isAfterCompact = false
 
 /** A save that fails keeps the value in memory, silently: the lists only steer later checks. */
 async function save(io: KnowIo, key: Key, value: unknown) {
@@ -96,13 +94,12 @@ async function loadLists(io: KnowIo) {
 
 /**
  * One change to one list, made on the lists as they stand when its turn comes and saved before the next starts, so
- * changes made at the same moment (several checks ending at once) never overwrite each other.
+ * changes made at the same moment never overwrite each other.
  */
 function change<K extends keyof Lists>(io: KnowIo, field: K, fn: (value: Lists[K]) => Lists[K]) {
   return inLine(async () => {
     const before = (await loadLists(io))[field]
     const value = fn(before)
-    // Left as it was: nothing to save.
     if (value === before) return
     lists = { ...(await loadLists(io)), [field]: value }
     await save(io, KEYS[field], value)
@@ -126,8 +123,7 @@ async function react(io: KnowIo, noteId: string, reaction: Reaction) {
 
 /**
  * Why nobody can see the office, or nothing when someone can: something is drawn now (read at each ask, since the
- * desktop app attaches after the session starts) and one of its tabs is open (any of the four; a note waits on Clawd's
- * card until the Office tab is in front). A reading that fails counts as nothing drawn or no tab open.
+ * desktop app attaches after the session starts) and one of its tabs is open. A reading that fails counts as nothing.
  */
 async function whyUnseen(io: KnowIo): Promise<string | undefined> {
   const surfaces = await io.surfaces().catch(() => [])
@@ -139,138 +135,35 @@ async function whyUnseen(io: KnowIo): Promise<string | undefined> {
 /** Someone can see the office. Where nobody can, no check is made and Claude Code's own "You should know" is let through. */
 export const isWatching = async (io: KnowIo): Promise<boolean> => (await whyUnseen(io)) === undefined
 
-/**
- * Why no note may be left now, or nothing when one may: one is on the card, or one was already shown for the person's
- * latest message (a card the person has cleared does not free it; their next message does).
- */
+/** Why no note may be left now: one is on the card, or one was already shown for the person's latest message. */
 async function whyHeld(io: KnowIo): Promise<string | undefined> {
   if ((await io.card()).note) return 'a note is already showing'
   return isNoteSent ? 'a note was already shown for this message' : undefined
 }
 
+/** A prompt file, read once a session; none when it cannot be read or is empty. */
+async function promptFile(io: KnowIo, file: string): Promise<string | undefined> {
+  if (prompts.has(file)) return prompts.get(file)
+  const text = await io.readPrompt(file).catch(() => '')
+  if (text.trim() === '') return undefined
+  prompts.set(file, text)
+  return text
+}
+
+type Forked = ModelForkResult | { isAnswered: false; reason: 'timed-out' }
 /**
- * A specialist handed its work back: unless a note is held or the back-off says skip, a check joins the line of side
- * questions. Never waited on by the hand-back and never throws.
+ * The fork's reply, or `timed-out` when it has not answered in time (its timer is cancelled when it answers first); and when
+ * the fork has really ended. The fork takes no abort signal, so a fork that timed out still runs and is paid for: whoever
+ * holds the side line waits for `settled` before letting go, so no second fork starts on top of it.
  */
-export async function checkHandback(io: KnowIo, h: Handback, who: string) {
-  const at = await io.now().catch(() => 0)
-  try {
-    const unseen = await whyUnseen(io)
-    if (unseen) return await addLog(io, { at, who, outcome: 'skipped', reason: unseen })
-    const held = await whyHeld(io)
-    if (held) return await addLog(io, { at, who, outcome: 'skipped', reason: held })
-    // The rows are taken now: work done after this hand-back belongs to a later check, however long this one waits.
-    const taken = await takeRows(io, h)
-    if (!taken.rows) return await addLog(io, { at, who, outcome: 'refused', reason: taken.why })
-    // A specialist that only talked has no steps to set its report against; Clawd's own turns get here with six or more.
-    if (!taken.rows.some(r => r.toolUses.some(use => !isStepTool(use.tool)))) return await addLog(io, { at, who, outcome: 'skipped', reason: 'the run used no tools' })
-    let isSkipped = false
-    await change(io, 'backoff', b => {
-      const turn = nextCheck(b)
-      isSkipped = turn.isSkipped
-      return turn.backoff
-    })
-    if (isSkipped) return await addLog(io, { at, who, outcome: 'skipped', reason: 'notes were passed over' })
-    const asked = epoch
-    const job: Taken = { ...(taken as Taken), asked: prompts }
-    const dropped = () => {
-      // A /clear or a resume empties the line too: then nothing is given back, as nothing is kept.
-      if (asked === epoch) giveBack(h.agentId, job.from)
-      void addLog(io, { at, who, outcome: 'dropped', reason: 'too many checks waiting' })
-    }
-    side.queue(() => runCheck(io, h, who, asked, job), dropped)
-  } catch {
-    // A check is a nicety: it never stops a hand-back, but the log still says it did not get far.
-    await addLog(io, { at, who, outcome: 'failed', reason: 'the check stopped on an error before it started' }).catch(() => undefined)
-  }
+function forkFor(io: KnowIo, prompt: string): { reply: Promise<Forked>; settled: Promise<void> } {
+  const asked = io.fork(prompt)
+  let timer: { cancel: () => void } | undefined
+  const late = new Promise<Forked>(resolve => { timer = io.after(FORK_WAIT_MS, () => resolve({ isAnswered: false, reason: 'timed-out' })) })
+  const reply = Promise.race([asked, late]).finally(() => timer?.cancel())
+  return { reply, settled: asked.then(() => undefined, () => undefined) }
 }
-
-/** The rows a check reads, as they stood at the hand-back, what was left out before them, and where they start. */
-type Taken = {
-  rows: RecordInput['rows']; earlier?: RecordInput['earlier']; from?: number; rerun?: number; isResumed?: boolean; leftOut?: LeftOut
-  asked: readonly string[]
-}
-
-/**
- * The rows of this run: for a resumed specialist, those since its last check, with the earlier ones beside them; for a
- * turn of Clawd's own, the main chat's from the message that opened it. None, with why, when the session will not say.
- * A specialist's rows are taken up to here at once and for good, so a check that starts later reads only what came
- * after; a check that gets no answer gives them back (`giveBack`) to the next one to run.
- */
-async function takeRows(io: KnowIo, h: Handback): Promise<Partial<Taken> & { why?: string }> {
-  const id = h.agentId
-  const all = await io.messages(id)
-  if (!Array.isArray(all)) return { why: (all as { deny: string }).deny }
-  if (id === undefined) return turnRows(all, h.turnText ?? '')
-  const from = checkedRows.get(id) ?? 0
-  checkedRows.set(id, all.length)
-  return { rows: all.slice(from), earlier: all.slice(0, from), from, isResumed: from > 0, leftOut: from > 0 ? 'earlier-runs' : undefined }
-}
-
-/**
- * The checker gave no answer that was read: it timed out, failed, sent nothing, or sent no learn line. A note our own
- * filter refused was an answer: its rows stay checked.
- */
-const isUnread = (entry: KnowLogEntry) =>
-  ['api-error', 'empty-reply', 'aborted'].includes(entry.outcome) || (entry.outcome === 'failed' && entry.reason === NO_LEARN)
-
-/** A check that got no answer, or never ran, gives its rows back: the specialist's next check to run reads them again. */
-function giveBack(id: string | undefined, from: number | undefined) {
-  if (id === undefined || from === undefined) return
-  givenBack.set(id, Math.min(givenBack.get(id) ?? from, from))
-}
-
-/**
- * The check as it runs: when rows before its own were given back since it took them, it reads those too, from where
- * they start, and they are no longer waiting. Its own end stays where it was taken.
- */
-function withGivenBack(id: string | undefined, job: Taken): Taken {
-  const back = id === undefined ? undefined : givenBack.get(id)
-  if (id === undefined || back === undefined || job.from === undefined || back >= job.from) return job
-  givenBack.delete(id)
-  const all = [...(job.earlier ?? []), ...job.rows]
-  return { ...job, rows: all.slice(back), earlier: all.slice(0, back), from: back, rerun: job.from - back, leftOut: back > 0 ? 'earlier-runs' : undefined }
-}
-
-async function runCheck(io: KnowIo, h: Handback, who: string, asked: number, taken: Taken) {
-  const at = await io.now()
-  let job = taken
-  try {
-    // A check that waited in the line may start after an earlier one left a note: it is skipped before it is paid for.
-    const held = await whyHeld(io)
-    if (held) return await addLog(io, { at, who, outcome: 'skipped', reason: held })
-    job = withGivenBack(h.agentId, taken)
-    const u = h.usage
-    const tokens = u ? { input: u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), output: u.output_tokens } : undefined
-    const brief = h.agentId === undefined ? undefined : briefs.get(h.agentId)
-    const { rows, earlier, rerun, isResumed, leftOut, asked: said } = job
-    const record = buildRecord({ who, isClawd: h.agentId === undefined, ended: h.reason, rows, earlier, rerun, brief, isResumed, leftOut, report: h.answer, prompts: said, durationMs: h.durationMs, tokens })
-    const entry = await askModel(io, record, who, at, asked, h.agentId)
-    if (isUnread(entry)) giveBack(h.agentId, job.from)
-    await addLog(io, entry)
-  } catch {
-    giveBack(h.agentId, job.from)
-    await addLog(io, { at, who, outcome: 'failed', reason: 'the check stopped on an error' })
-  }
-}
-
-/** Asks the checker and acts on its reply; the log entry that says how it went. */
-async function askModel(io: KnowIo, record: { text: string; chars: number }, who: string, at: number, asked: number, agentId?: string): Promise<KnowLogEntry> {
-  const { shown, knew } = await loadLists(io)
-  const ask = checkAsk(record.text, shown, knew)
-  const reply = await io.complete({ model: MODEL, system: ask.system, prompt: ask.prompt, maxTokens: MAX_TOKENS, timeoutMs: TIMEOUT_MS })
-  const base = { at, who, inTokens: reply.usage.input_tokens, outTokens: reply.usage.output_tokens, ms: (await io.now()) - at, recordChars: record.chars }
-  // The conversation it was asked for is over: what it says is not this one's.
-  if (asked !== epoch) return { ...base, outcome: 'stale' }
-  if (!reply.isAnswered) return { ...base, outcome: reply.reason }
-  const parsed = parseNote(reply.text)
-  if (parsed.kind !== 'note') return { ...base, outcome: parsed.kind, ...(parsed.kind === 'failed' ? { reason: parsed.why } : {}) }
-  const now = await loadLists(io)
-  if (isRepeat(parsed.line, now.shown, now.knew)) return { ...base, outcome: 'repeat' }
-  const { kind: _, ...said } = parsed
-  // The id holds the time too, so it stays its own across sessions, which count notes from one again.
-  return { ...base, ...(await showNote(io, { ...said, id: `k${at}-${(notes += 1)}`, who, at }, agentId)) }
-}
+const usageOf = (r: Forked) => ('usage' in r ? r.usage : undefined)
 
 /** The note takes Clawd's card and joins the shown list, unless one is held (checked once more, as the reply was paid for). */
 async function showNote(io: KnowIo, note: KnowNote, agentId?: string): Promise<{ outcome: string; reason?: string; noteId?: string }> {
@@ -283,6 +176,154 @@ async function showNote(io: KnowIo, note: KnowNote, agentId?: string): Promise<{
   return { outcome: 'shown', noteId: note.id }
 }
 
+// ---- The check: Clawd's conversation, forked right after he answered ----
+
+/**
+ * Clawd's own turn ended. Worth a check when a hand-back came since the last one or he used six tools or more; then every gate
+ * (the switches, an answer, no fresh compaction, an office tab, the card, the side line, the back-off) must let it through.
+ * Never waited on and never throws.
+ */
+export async function checkTurnEnd(io: KnowIo, e: { reason: string; answer?: string }, isClawdOn: boolean) {
+  const work = { handbacks, tools }
+  tools = 0
+  if (!isWorthChecking(work)) return
+  const at = await io.now().catch(() => 0)
+  const skip = (reason: string) => addLog(io, { at, who: CLAWD, stage: 'check', outcome: 'skipped', reason })
+  const used = () => { handbacks = Math.max(0, handbacks - work.handbacks) }
+  try {
+    const stop = whyNotNow({ isAnswer: e.reason === 'answer', isClawdOn, isAfterCompact, unseen: await whyUnseen(io), held: await whyHeld(io), isBusy: side.isBusy() })
+    if (stop) {
+      if (!stop.isTransient) used()
+      return await skip(stop.reason)
+    }
+    used()
+    let isSkipped = false
+    await change(io, 'backoff', b => {
+      const next = nextCheck(b)
+      isSkipped = next.isSkipped
+      return next.backoff
+    })
+    if (isSkipped) return await skip('notes were passed over')
+    const asked = epoch
+    if (!whenFree(side, () => runCheck(io, e.answer ?? '', at, asked))) {
+      handbacks += work.handbacks
+      await skip('another side request is running')
+    }
+  } catch {
+    await addLog(io, { at, who: CLAWD, stage: 'check', outcome: 'failed', reason: 'the check stopped on an error before it started' }).catch(() => undefined)
+  }
+}
+
+async function runCheck(io: KnowIo, answer: string, at: number, asked: number) {
+  const row = { at, who: CLAWD, stage: 'check' as const }
+  let settled: Promise<void> | undefined
+  try {
+    const template = await promptFile(io, OBSERVER_FILE)
+    if (template === undefined) return await addLog(io, { ...row, outcome: 'failed', reason: 'the prompt file could not be read' })
+    const { shown, knew } = await loadLists(io)
+    const started = await io.now()
+    const forked = forkFor(io, observerPrompt(template, shown, knew, answer))
+    settled = forked.settled
+    const reply = await forked.reply
+    const base = { ...row, ...costOf('fork', usageOf(reply), (await io.now()) - started) }
+    // The conversation it was asked for is over: what it says is not this one's.
+    if (asked !== epoch) return await addLog(io, { ...base, outcome: 'stale' })
+    if (!reply.isAnswered) return await addLog(io, { ...base, outcome: reply.reason })
+    const parsed = parseNote(reply.text)
+    if (parsed.kind !== 'note') return await addLog(io, { ...base, outcome: parsed.kind, ...(parsed.kind === 'failed' ? { reason: parsed.why } : {}) })
+    const now = await loadLists(io)
+    if (isRepeat(parsed.line, now.shown, now.knew)) return await addLog(io, { ...base, outcome: 'repeat' })
+    const { kind: _, ...said } = parsed
+    // The id holds the time too, so it stays its own across sessions, which count notes from one again.
+    await addLog(io, { ...base, ...(await showNote(io, { ...said, id: `k${at}-${(notes += 1)}`, who: CLAWD, at })) })
+  } catch {
+    await addLog(io, { ...row, outcome: 'failed', reason: 'the check stopped on an error' })
+  } finally {
+    // The side line is let go only once the fork has really ended, even after a time-out.
+    await settled
+  }
+}
+
+// ---- The risky-action guard: each specialist's own steps, at its hand-back ----
+
+/**
+ * A specialist handed its work back: it counts towards the next check, and its steps since the last hand-back are read by code
+ * for a risky action. Only a find is logged; it keeps the card's rules (an office tab open, one note at a time, one per message)
+ * but not the back-off. Never waited on and never throws.
+ */
+export async function knowHandback(io: KnowIo, agentId: string, label: string) {
+  handbacks += 1
+  // The label is shown on the card and copied by Discuss: one that looks like a key, an address or a command is not.
+  const who = safeName(label)
+  const at = await io.now().catch(() => 0)
+  try {
+    const all = await io.messages(agentId)
+    if (!Array.isArray(all)) return
+    const rows = all as readonly SessionMessage[]
+    const from = checkedRows.get(agentId) ?? 0
+    checkedRows.set(agentId, rows.length)
+    const risks = risksOf(rows.slice(from))
+    const note = guardNote(who, risks)
+    if (!note) return
+    const base = { at, who, stage: 'guard' as const, ...costOf('code', undefined, (await io.now()) - at), reason: leadRisk(risks)!.kind }
+    const unseen = await whyUnseen(io)
+    if (unseen) return await addLog(io, { ...base, outcome: 'skipped', reason: unseen })
+    await addLog(io, { ...base, ...(await showNote(io, { ...note, id: `k${at}-${(notes += 1)}`, who, at }, agentId)) })
+  } catch {
+    await addLog(io, { at, who, stage: 'guard', outcome: 'failed', reason: 'the guard stopped on an error' }).catch(() => undefined)
+  }
+}
+
+// ---- Learn more: the note explained, and again simpler, shorter or in more detail ----
+
+const REACTION: Record<FollowUp, Reaction> = { simpler: 'simpler', shorter: 'shorter', 'more detail': 'more-detail' }
+
+/** The explanation the person last read, as the follow-up text quotes it. */
+const previousOf = (note: KnowNote) => (note.explain === undefined ? undefined : note.title ? `**${note.title}**\n${note.explain}` : note.explain)
+
+/**
+ * Asks for an explanation of the note on the card, if the side line is free and no compaction came since Clawd's last turn
+ * began (the cache would hold the conversation from before it); otherwise says why on the card.
+ */
+async function explain(io: KnowIo, kind: 'first' | FollowUp) {
+  const { note } = await io.card()
+  if (!note) return
+  if (isAfterCompact) return await io.setCard(s => withExplainNote(s, note.id, EXPLAIN_COMPACTED))
+  if (!whenFree(side, () => writeExplanation(io, note, kind, epoch))) await io.setCard(s => withExplainNote(s, note.id, EXPLAIN_BUSY))
+}
+
+async function writeExplanation(io: KnowIo, note: KnowNote, kind: 'first' | FollowUp, asked: number) {
+  await io.setCard(s => withExplaining(s, note.id, kind))
+  const at = await io.now()
+  const row = { at, who: note.who, stage: 'explain' as const, reason: kind }
+  const failed = async (entry: KnowLogEntry) => {
+    await io.setCard(s => withExplainNote(s, note.id, EXPLAIN_FAILED))
+    await addLog(io, entry)
+  }
+  let settled: Promise<void> | undefined
+  try {
+    const text = await promptFile(io, EXPLAIN_FILE)
+    const template = text === undefined ? undefined : explainTemplate(text)
+    if (!template) return await failed({ ...row, outcome: 'failed', reason: 'the prompt file could not be read' })
+    const previous = previousOf(note)
+    const prompt = explainPrompt(template, note.line, kind === 'first' || previous === undefined ? undefined : { kind, previous })
+    const forked = forkFor(io, prompt)
+    settled = forked.settled
+    const reply = await forked.reply
+    const base = { ...row, ...costOf('fork', usageOf(reply), (await io.now()) - at) }
+    if (asked !== epoch) return await addLog(io, { ...base, outcome: 'stale' })
+    if (!reply.isAnswered) return await failed({ ...base, outcome: reply.reason })
+    const parsed = parseExplanation(reply.text)
+    if (parsed.kind === 'failed') return await failed({ ...base, outcome: 'failed', reason: `${kind}: ${parsed.why}` })
+    await io.setCard(s => withExplanation(s, note.id, parsed))
+    await addLog(io, { ...base, outcome: 'explained' })
+  } catch {
+    await failed({ ...row, outcome: 'failed', reason: `${kind}: the explanation stopped on an error` })
+  } finally {
+    await settled
+  }
+}
+
 // ---- The person's side: the buttons on the card, and prompts that pass a note over ----
 
 /** Any press on the card: the note changes, the back-off starts over, and the reaction is logged against the note it was about. */
@@ -291,6 +332,18 @@ async function pressed(io: KnowIo, reaction: Reaction, fn: (s: KnowState) => Kno
   await io.setCard(fn)
   await setBackoff(io, BACKOFF0)
   if (note) await react(io, note.id, reaction)
+}
+
+/** Learn more: the reply's own explanation shows at once; a note that came without one asks the fork for it. */
+async function learnMore(io: KnowIo) {
+  const { note } = await io.card()
+  await pressed(io, 'opened', withOpened)
+  if (note && note.explain === undefined) await explain(io, 'first')
+}
+
+async function followUp(io: KnowIo, kind: FollowUp) {
+  await pressed(io, REACTION[kind], s => s)
+  await explain(io, kind)
 }
 
 /** Knew this: the note's line joins the knew list, which rides in later questions, then the note goes like Dismiss. */
@@ -314,7 +367,10 @@ async function discuss(io: KnowIo) {
 
 export function knowActions(io: KnowIo): KnowActions {
   return {
-    knowMore: () => pressed(io, 'opened', withOpened),
+    knowMore: () => learnMore(io),
+    knowSimpler: () => followUp(io, 'simpler'),
+    knowShorter: () => followUp(io, 'shorter'),
+    knowDetail: () => followUp(io, 'more detail'),
     knowDiscuss: () => discuss(io),
     // The action keeps its old name: the card's button says Knew this.
     knowGotIt: () => knewThis(io),
@@ -322,13 +378,9 @@ export function knowActions(io: KnowIo): KnowActions {
   }
 }
 
-/**
- * One prompt of the person's (not a command, not one they did not type): kept to ride along with the next checks, it
- * allows a note again, and the second since a note appeared passes it over. Never throws.
- */
+/** One prompt of the person's (not a command, not one they did not type): it allows a note again, and the second since a note appeared passes it over. Never throws. */
 export async function knowPrompt(io: KnowIo, e: { text: string; isMeta?: true; command?: unknown }) {
   if (e.isMeta || e.command) return
-  prompts = [...prompts, e.text].slice(-PROMPTS_KEPT)
   isNoteSent = false
   try {
     const before = await io.card()
@@ -344,37 +396,37 @@ export async function knowPrompt(io: KnowIo, e: { text: string; isMeta?: true; c
 /** A new conversation, or none: nothing waiting is for it. The lists, kept across sessions, stay. */
 export async function forgetKnow(io: KnowIo) {
   epoch += 1
-  prompts = []
   isNoteSent = false
-  briefs.clear()
+  handbacks = 0
+  tools = 0
+  isAfterCompact = false
   checkedRows.clear()
-  givenBack.clear()
   side.clear()
   if ((await io.card()).note) await io.setCard(withoutNote)
 }
 
-/** A session starts: the project's own lists are read afresh. */
+/** A session starts: the project's own lists, and the prompt files, are read afresh. */
 export async function startKnow(io: KnowIo, projectFolder: string) {
   folder = projectFolder
   lists = undefined
+  prompts.clear()
   await forgetKnow(io)
 }
 
-// ---- Clawd's own long turns: counted as they go, checked like a specialist's run at their end ----
+// ---- Clawd's own turns: his tools counted as they go; a compaction holds the next check ----
 
-/** A turn of Clawd's own starts: its request is kept and its tools are counted afresh. */
-export function knowTurnStart(text: string) {
-  turn = { text, tools: 0 }
+/** A turn of Clawd's own starts: his tools are counted afresh, and a main reply now runs after any compaction. */
+export function knowTurnStart() {
+  tools = 0
+  isAfterCompact = false
 }
 
 /** Clawd used a tool in his own turn. */
 export function knowToolUsed() {
-  turn = { ...turn, tools: turn.tools + 1 }
+  tools += 1
 }
 
-/** Clawd's own turn ended: one that used six tools or more is checked. Never waited on and never throws. */
-export async function checkOwnTurn(io: KnowIo, e: Omit<Handback, 'agentId' | 'turnText'>) {
-  const done = turn
-  turn = { text: '', tools: 0 }
-  if (done.tools >= OWN_TURN_TOOLS) await checkHandback(io, { ...e, turnText: done.text }, 'Clawd')
+/** The main chat was compacted: until a turn of Clawd's begins, the cache holds the conversation from before, so no fork. */
+export function knowCompacted() {
+  isAfterCompact = true
 }

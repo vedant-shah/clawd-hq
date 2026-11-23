@@ -1,5 +1,5 @@
-// One background question to the model at a time, for the whole plugin: the check on finished work and the Left undone
-// check wait their turn in one short line.
+// One background question to the model at a time, for the whole plugin: the "You should know" check, Learn more and the
+// coffee break's recap all fork the main chat, and share this one line (see `whenFree`).
 /** How many questions may wait; one more pushes out the oldest waiting. */
 export const SIDE_WAITING = 3
 
@@ -55,3 +55,9 @@ export function sideLine() {
 
 /** The plugin's one line. */
 export const side = sideLine()
+
+/** `run` now, holding the line until it ends, and its result; nothing, and nothing run, when anything runs or waits. */
+export function whenFree<T>(line: ReturnType<typeof sideLine>, run: () => Promise<T>): Promise<T> | undefined {
+  let result: Promise<T> | undefined
+  return line.tryNow(() => (result = run())) ? result : undefined
+}

@@ -7,7 +7,6 @@ import { BLURB_CHARS } from './constants'
 import { BRIEF_NOTE, HANDOVER_NOTE, STAFFING_NOTE, fit, parseEffort } from './desk'
 import type { Effort } from './desk'
 import type { BriefingOptions } from './instructions'
-import { keepBrief } from './know-check'
 import { freshHire, withBlurb } from './office-state'
 import { isActive } from './panel-model'
 import { parsePairUp, parsePlanHeader, parsePlanLine } from './pair-up'
@@ -109,7 +108,6 @@ export function registerAgents(on: On, brief: BriefingOptions) {
     const sent = e.workflow ? e.prompt : prompt + BRIEF_NOTE + (isDraft ? PLAN_DRAFT_NOTE : '') // only a draft's brief asks for STEP lines
     const r = await next({ ...e, prompt: sent })
     if (r.agentId) {
-      keepBrief(r.agentId, sent)
       if (isDraft) draftRuns.set(r.agentId, { title: draftTitle, folder: ses.cwd }) // the draft belongs to the folder the Planner was hired in
       if (effort) efforts.set(r.agentId, effort)
       await newHire(runIo($), r.agentId, e.subagentType, e.description, e.name)

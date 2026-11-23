@@ -271,7 +271,7 @@ export type KnowNote = {
   tag: KnowTag
   /** A short bold title for Learn more; absent when the reply gave no explanation. */
   title?: string
-  /** What Learn more shows, as plain text; absent when the reply gave none, and Learn more is then hidden. */
+  /** What Learn more shows, as plain text; absent when the reply gave none, and Learn more then asks for one. */
   explain?: string
   at: number
 }
@@ -283,6 +283,10 @@ export type KnowState = {
   isOpen: boolean
   /** The person's prompts since the note appeared: the second takes it off. */
   promptsSince: number
+  /** Learn more is writing an explanation: the first one, or a follow-up the person asked for. */
+  explaining?: 'first' | 'simpler' | 'shorter' | 'more detail'
+  /** Why no new explanation came (the side line was in use, the reply could not be shown); the last one stays. */
+  explainNote?: string
 }
 
 declare module 'claude-code' {

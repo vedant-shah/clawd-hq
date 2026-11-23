@@ -64,7 +64,7 @@ Free to talk is the aim, not a promise. Short direct jobs (a single command, a l
 
 ### 3. Checks, and keeps you oriented
 
-- **You should know.** Our own check on finished work: Haiku reads the specialist's full record against its report, and speaks up only when something matters. It backs off if you ignore it. It stands in for Claude Code's built-in You should know while it's on, so you aren't told twice. Every card has **Ask Clawd**.
+- **You should know.** Right after Clawd answers you, a quiet copy of his conversation looks for the one thing you would regret missing, and usually says nothing. It reuses the chat Claude Code already cached, so it is cheapest straight after a reply. **Learn more** explains a note, and **Simpler**, **Shorter** and **More detail** ask again. A separate guard, code only, reads each specialist's own steps for a risky command, the sandbox turned off, or a refused action done another way. It backs off if you ignore it. It stands in for Claude Code's built-in You should know while it's on, so you aren't told twice. Every card has **Ask Clawd**.
 - **The plan.** For a job of several steps, Clawd keeps a short, ordered plan for the one goal in hand. It has an optional one-sentence summary. A step ticks itself when its specialist finishes well, and stays open if the specialist failed. When the last step is ticked, the goal closes itself as done. Ideas put off go on a "Later" list. A plan from the Planner becomes the plan, or waits as a draft while another goal is in hand. Clawd works on one goal at a time. A goal belongs to the session that started it. Another session in the same folder sees it in History, and Resume takes it over. A plan file records the session that started it, so a teammate's clone shows that goal under "Open in other sessions" in History.
 - **Left undone.** Lists work that was put off, like TODOs and skipped tests. It sits in the Later fold of the Office tab, next to the plan's own put-off ideas. "Do it now" puts it in your prompt box.
 - **Coffee break.** Compacts a long chat at a calm moment, never mid-build.
@@ -102,7 +102,7 @@ Clawd HQ follows the "elephants and goldfish" idea from Google ([paper](https://
 
 - You only talk to Clawd. He does jobs of one or two tool calls himself and hires for the rest.
 - Each hire gets a model and effort sized to the job, and a brief that names the skills that fit.
-- Work comes back to Clawd first. He checks it, a small model looks for gaps, and questions wait for one box.
+- Work comes back to Clawd first. He checks it, code looks for risky steps, and questions wait for one box.
 - You get one plain report. Quiet chat hides the noise in between.
 
 **The ways Clawd can staff a job**
@@ -200,7 +200,8 @@ Most of it runs on your machine. Model calls use your plan.
 | Setup picks a team | Sonnet, read-only | Files in this project it opens (Read and Glob only, no content search; it is told to skip secret-named files and stay in the folder), plus your helpers' names and use counts. About $0.15 per project on API billing ($0.13 to $0.18 across 11 real projects). |
 | Setup fallback | Opus, once | A project summary, the README, your instruction files, helper names and counts |
 | Setup writes your workflow | Haiku | Your instruction files |
-| You should know | Haiku | The brief, each step, and the report. Long outputs are trimmed. |
+| You should know | The session's model, on the cached chat | The main conversation, right after Clawd answers, when a specialist handed work back or Clawd took six or more steps himself. It reuses the chat Claude Code already cached, so it costs least right after a reply; after a long pause or a /model change the whole chat is paid for again. Learn more, Simpler, Shorter and More detail ask the same way. |
+| Risky-action guard | No model | Each specialist's own steps at its hand-back, which the main chat does not show: a command that deletes or overwrites for good, the sandbox turned off, or a refused action done another way. |
 | Left undone check | No model | Retired. A tracker for forgotten asks is coming. |
 | Coffee break | The session's model | One short question on the cached chat |
 | The plan and the history | No model | Nothing is sent. They are files in your project (see "What is stored"). |
@@ -227,7 +228,7 @@ Apart from these calls, the plugin opens no network connections and starts no pr
 <details>
 <summary>Does it cost more?</summary>
 
-Specialists use your plan like any Claude work. Clawd picks the smallest model for each job, so routine work often runs on Haiku. Each extra check is one small call, and each can be turned off.
+Specialists use your plan like any Claude work. Clawd picks the smallest model for each job, so routine work often runs on Haiku. Each extra check is one small call, and each can be turned off. "You should know" runs on your session's model but reuses the chat it has just cached, so most of what it reads is billed at the cache rate; it runs only after a hand-back or a long turn of Clawd's own.
 
 </details>
 

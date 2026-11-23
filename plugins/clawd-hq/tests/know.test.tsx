@@ -1,48 +1,45 @@
 import { expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { BRIEF_NOTE } from '../hooks/desk'
-import { CHECK_PROMPT, KNOW_VERSION } from '../hooks/know'
-import { CAP_CHARS } from '../hooks/know-record'
+import { KNOW_VERSION } from '../hooks/know'
+import { EXPLAIN_FAILED } from '../hooks/know-check'
+import { EXPLAIN_FILE, OBSERVER_FILE } from '../hooks/know-prompts'
 import { AMBER } from '../hooks/office'
 import { PANES } from '../hooks/panes'
 import { CLEAR, PANE, START, SURFACES, host } from './host'
-import { CASE_B } from './know-runs'
+import { EXPLAIN, OBSERVER } from './know-prompts'
 
 type On = Parameters<typeof host>[0]
-type Ask = { model: string; system?: string; prompt: string; maxTokens?: number; timeoutMs?: number }
+type Fork = { prompt: string; effort?: string }
+const ROOT = new URL('..', (import.meta as unknown as { url: string }).url).pathname.replace(/\/$/, '')
 const NOTE = 'learn: The Tester says all tests pass, but the last test run failed.\ntag: Heads up\nexplain: **The tests did not pass**\nThe last run ended with 3 failures. Ask for a new run.'
-const USAGE = { input_tokens: 9_000, output_tokens: 60, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+const USAGE = { input_tokens: 7_000, output_tokens: 60, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 3_000 }
+const COST = { engine: 'fork', inTokens: 7_000, cacheReadTokens: 90_000, cacheWriteTokens: 3_000, outTokens: 60, ms: 0, cacheShare: 0.9 }
 const answered = (text: string) => ({ isAnswered: true, text, usage: USAGE })
-
-/** One specialist's run as the session would read it back: its brief, then a step that read a file and one that failed. */
-const run = (brief: string) => [
-  { role: 'user', text: brief, toolUses: [] },
-  { role: 'assistant', text: 'Step 1 of 2: reading the code.', toolUses: [{ tool_use_id: 'u1', tool: 'Read', input: { file_path: 'src/login.ts' }, text: 'code' }] },
-  { role: 'assistant', text: 'Step 2 of 2: testing.', toolUses: [{ tool_use_id: 'u2', tool: 'Bash', input: { command: 'npm test' }, text: '3 failed', isError: true }] },
-  { role: 'assistant', text: 'All tests pass.', toolUses: [] },
-]
+const none = () => answered('learn: none')
+const WRITING = 'Writing the explanation…'
 
 /**
- * A session with the office open, a model whose replies come from `replies` (a function per call), and each agent's
- * rows in `rows`. `held` holds every reply until released.
+ * A session with the office open and the shipped prompts in place, a main thread whose forks are answered from `replies`
+ * (one per fork, the last one again after that), and each specialist's rows in `rows`. `hold` holds every fork until released.
  */
 function office(on: On, replies: Array<() => unknown> = [() => answered(NOTE)]) {
   const h = host(on, [])
   pause = () => h.clock.advance(0)
-  const asked: Ask[] = []
-  const reads: string[] = []
+  h.files.set(`${ROOT}/${OBSERVER_FILE}`, OBSERVER)
+  h.files.set(`${ROOT}/${EXPLAIN_FILE}`, EXPLAIN)
+  const forked: Fork[] = []
+  const completed: unknown[] = []
   const rows = new Map<string, unknown>()
   const gate = { held: undefined as Promise<void> | undefined, release: () => undefined as void }
   const hold = () => { gate.held = new Promise<void>(resolve => { gate.release = resolve }) }
-  on('model.complete', async (_$, e) => {
-    asked.push(e as Ask)
+  on('model.fork', async (_$, e) => {
+    forked.push(e as Fork)
     await gate.held
-    const reply = replies[Math.min(asked.length - 1, replies.length - 1)]!
-    return { value: reply() } as never
+    return { value: replies[Math.min(forked.length - 1, replies.length - 1)]!() } as never
   })
+  on('model.complete', (_$, e) => (completed.push(e), { value: answered('learn: none') }) as never)
   on('session.messages', (_$, e) => {
     const id = (e as { agentId?: string } | undefined)?.agentId ?? 'main'
-    reads.push(id)
     return { value: rows.get(id) ?? { deny: `no agent ${id}` } } as never
   })
   let n = 0
@@ -51,256 +48,215 @@ function office(on: On, replies: Array<() => unknown> = [() => answered(NOTE)]) 
   on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
   on('tool.call', () => ({ result: 'ok' }) as never)
   const fills: Array<{ text: string; mode: string }> = []
-  on('prompt.fill', (_$, e) => (fills.push({ text: (e as { text: string }).text, mode: (e as { mode: string }).mode }),{ isFilled: true }) as never)
-  return { ...h, asked, reads, rows, hold, gate, fills }
+  on('prompt.fill', (_$, e) => (fills.push({ text: (e as { text: string }).text, mode: (e as { mode: string }).mode }), { isFilled: true }) as never)
+  return { ...h, forked, completed, rows, hold, gate, fills }
 }
 
 const hire = ($: Engine, prompt = 'Fix the login bug.') => $.agent.spawn({ prompt, description: 'Fix login', subagentType: 'ecc:tdd-guide' } as never)
 const handBack = ($: Engine, id: string, reason = 'answer', answer = 'All tests pass.') =>
-  $.turn.complete({ reason, answer, turnId: `t-${id}`, agentId: id, isAborted: reason === 'aborted', durationMs: 60_000, usage: { ...USAGE, model: 'claude-opus-5-5' } } as never)
-/** Lets the work running in the background go on, a round trip at a time, without moving the clock. */
+  $.turn.complete({ reason, answer, turnId: `t-${id}`, agentId: id, isAborted: reason === 'aborted', durationMs: 60_000 } as never)
+/** Clawd's own turn ends, in the main chat. */
+const mainEnd = ($: Engine, reason = 'answer', answer = 'The Tester fixed the login bug.', turnId = 'm1') =>
+  $.turn.complete({ reason, answer, turnId, isAborted: reason === 'aborted' } as never)
+/** One specialist hired and handed back, then Clawd answers: the usual turn that is checked. */
+async function backAndAnswer($: Engine, id: string, answer?: string) {
+  await hire($)
+  await handBack($, id)
+  await mainEnd($, 'answer', answer)
+}
 let pause: () => Promise<unknown> = async () => undefined
 async function until(_$: Engine, isThere: () => boolean) {
   for (let i = 0; i < 300 && !isThere(); i += 1) await pause()
 }
 const idle = async () => { for (let i = 0; i < 30; i += 1) await pause() }
-/**
- * The session start opens the tabs in the background, Office asked to the front last: waits for that, so a tab a test
- * closes afterwards stays closed.
- */
 async function tabsOpened(h: Pick<ReturnType<typeof host>, 'opened' | 'clock'>) {
   for (let i = 0; i < 300 && !h.opened.some(o => o.focus === true); i += 1) await h.clock.advance(0)
 }
-type Log = Array<{ outcome: string; who: string; reason?: string; inTokens?: number; outTokens?: number; recordChars?: number; ms?: number }>
-const logOf = (saved: Map<string, unknown>) => (saved.get('know:log:/repo') ?? []) as Log
+type Row = { outcome: string; who: string; reason?: string; stage?: string; engine?: string; noteId?: string; reactions?: string[] } & Record<string, unknown>
+const logOf = (saved: Map<string, unknown>, folder = '/repo') => (saved.get(`know:log:${folder}`) ?? []) as Row[]
+const office$ = ($: Engine, surface: (typeof SURFACES)[number] = 'terminal') => $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
+const texts = async (ui: Awaited<ReturnType<typeof office$>>) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
+const reply = (n: number, extra = '\nexplain: **Tests did not pass**\nThe last run had 3 failures.') => () => answered(`learn: Note ${n} matters.\ntag: Heads up${extra}`)
 
-test('a hand-back asks Haiku once, with our own question and the whole record, and the note is kept as shown', { timeoutMs: 15_000 }, async ($, on) => {
-  const { asked, rows, saved, toasts } = office(on)
+// ---- When the check runs, and what it sends ----
+
+test('after a hand-back, Clawd\'s answer forks the main chat once with our prompt, names no effort, and the note is shown and logged with its cost', async ($, on) => {
+  const { forked, completed, saved, toasts } = office(on)
+  saved.set('know:knew:/repo', ['An old topic.'])
   await $.session.start(START)
-  await hire($)
-  rows.set('a1', run(`Fix the login bug.${BRIEF_NOTE}`))
-  await handBack($, 'a1')
+  await backAndAnswer($, 'a1', 'The Tester fixed the login bug; all tests pass.')
   await until($, () => logOf(saved).length > 0)
-  expect(asked).toHaveLength(1)
-  const ask = asked[0]!
-  expect({ model: ask.model, maxTokens: ask.maxTokens, timeoutMs: ask.timeoutMs, system: ask.system }).toEqual({ model: 'haiku', maxTokens: 700, timeoutMs: 60_000, system: CHECK_PROMPT })
-  expect(ask.prompt).toMatch(/WHO DID THE WORK: Tester, a specialist Clawd hired/)
-  expect(ask.prompt).toMatch(/BRIEF:\nFix the login bug\./)
-  expect(ask.prompt).toMatch(/STEP 2 · Bash · npm test · ERROR/)
-  expect(ask.prompt).toMatch(/REPORT HANDED BACK:\nAll tests pass\./)
-  expect(ask.prompt).toMatch(/TIME AND TOKENS: 1m; 9,000 input tokens, 60 output tokens/)
+  expect(forked).toHaveLength(1)
+  expect(forked[0]!.effort).toBeUndefined()
+  const prompt = forked[0]!.prompt
+  expect(prompt.startsWith('# Check\n\nNotes already shown to the person:\nNone yet.\n\nTopics the person said they already knew:\n- An old topic.\n')).toBe(true)
+  expect(prompt).toContain('<reply>\nThe Tester fixed the login bug; all tests pass.\n</reply>')
+  // No small-model call at all: the old per-hand-back check is gone.
+  expect(completed).toEqual([])
   expect(saved.get('know:shown:/repo')).toEqual(['The Tester says all tests pass, but the last test run failed.'])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'shown', inTokens: 9_000, outTokens: 60, ms: 0, recordChars: expect.any(Number), noteId: 'k1000-1', version: KNOW_VERSION }])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Clawd', outcome: 'shown', stage: 'check', ...COST, noteId: 'k1000-1', version: KNOW_VERSION }])
   expect(toasts.some(t => /last test run failed/.test(t))).toBe(false)
-})
-
-test('learn: none shows nothing and is logged', async ($, on) => {
-  const { asked, rows, saved } = office(on, [() => answered('learn: none')])
-  await $.session.start(START)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toHaveLength(1)
-  expect(saved.get('know:shown:/repo')).toBeUndefined()
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['none'])
-})
-
-for (const failure of [
-  { isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded', usage: { ...USAGE, input_tokens: 0, output_tokens: 0 } },
-  { isAnswered: false, reason: 'empty-reply', usage: USAGE },
-  { isAnswered: false, reason: 'aborted', usage: { ...USAGE, input_tokens: 0, output_tokens: 0 } },
-]) {
-  test(`a check that ends in ${failure.reason} shows nothing, no pop-up, and is logged`, async ($, on) => {
-    const { rows, saved, toasts } = office(on, [() => failure])
-    await $.session.start(START)
-    await hire($)
-    rows.set('a1', run('Fix it.'))
-    await handBack($, 'a1')
-    await until($, () => logOf(saved).length > 0)
-    expect(logOf(saved).map(l => l.outcome)).toEqual([failure.reason])
-    expect(saved.get('know:shown:/repo')).toBeUndefined()
-    expect(toasts.filter(t => !/finished/.test(t))).toEqual([])
-  })
-}
-
-test('a session that will not hand over the record skips the check quietly, and the log says why', async ($, on) => {
-  const { asked, saved } = office(on)
-  await $.session.start(START)
-  await hire($)
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'refused', reason: 'no agent a1', version: KNOW_VERSION }])
-})
-
-test('a run that failed is checked too, and the checker is told how it ended', async ($, on) => {
-  const { asked, rows, saved } = office(on)
-  await $.session.start(START)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1', 'error', '')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked[0]!.prompt).toMatch(/HOW IT ENDED: It stopped on an error before it finished\./)
-})
-
-test('a resumed specialist is checked on what it did since its last check, with its first brief beside it', async ($, on) => {
-  const { asked, rows, saved } = office(on, [() => answered('learn: none')])
-  await $.session.start(START)
-  await hire($, 'Fix the login bug.')
-  const first = run(`Fix the login bug.${BRIEF_NOTE}`)
-  rows.set('a1', first)
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  rows.set('a1', [...first, { role: 'user', text: 'Now fix signup too.', toolUses: [] },
-    { role: 'assistant', text: 'Done.', toolUses: [{ tool_use_id: 'u9', tool: 'Edit', input: { file_path: 'src/signup.ts' }, text: 'ok' }] }])
-  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
-  await handBack($, 'a1', 'answer', 'Done.')
-  await until($, () => logOf(saved).length > 1)
-  expect(asked).toHaveLength(2)
-  expect(asked[1]!.prompt).toMatch(/BRIEF:\nFix the login bug\./)
-  expect(asked[1]!.prompt).toMatch(/MESSAGE THAT STARTED THIS RUN:\nNow fix signup too\./)
-  expect(asked[1]!.prompt).toMatch(/STEP 1 · Edit · src\/signup\.ts · done/)
-  expect(asked[1]!.prompt).not.toMatch(/npm test/)
-})
-
-test('several hand-backs close together are all checked, one question at a time', async ($, on) => {
-  const { asked, rows, saved, hold, gate } = office(on, [() => answered('learn: none')])
-  await $.session.start(START)
-  for (const id of ['a1', 'a2', 'a3']) {
-    await hire($)
-    rows.set(id, run(`Job ${id}`))
-  }
-  hold()
-  for (const id of ['a1', 'a2', 'a3']) await handBack($, id)
-  await until($, () => asked.length > 0)
-  await idle()
-  expect(asked).toHaveLength(1)
-  gate.release()
-  await until($, () => logOf(saved).length === 3)
-  expect(asked.map(a => /BRIEF:\n(Job a\d)/.exec(a.prompt)![1])).toEqual(['Job a1', 'Job a2', 'Job a3'])
-})
-
-test('the tour\'s stand-in specialists are never checked', { timeoutMs: 15_000 }, async ($, on) => {
-  const { asked, clock } = office(on)
-  await $.session.start(START)
-  await $.command.run({ command: 'office-demo', args: '' } as never)
-  await clock.advance(70_000)
-  expect(asked).toEqual([])
-})
-
-test('nothing is checked where nobody can see the panel', async ($, on) => {
-  const { asked, rows } = office(on)
-  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1')
-  await idle()
-  expect(asked).toEqual([])
-})
-
-// The desktop app runs the session as the SDK does: it starts drawing nowhere, and the app attaches a moment later.
-const DESKTOP_START = { cwd: '/repo', surface: null, isInteractive: false } as never
-const DESKTOP = { surface: 'desktop', clientId: 'desktop:default' } as never
-
-test('in the desktop app, which attaches after the session starts, a hand-back is checked', async ($, on) => {
-  const { asked, rows, saved } = office(on)
-  await $.session.start(DESKTOP_START)
-  await $.session.attach(DESKTOP)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toHaveLength(1)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown'])
-})
-
-test('a hand-back where nothing is drawn is not checked, and the log says why', async ($, on) => {
-  const { asked, rows, saved } = office(on)
-  await $.session.start(DESKTOP_START)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'nothing is drawn', version: KNOW_VERSION }])
-})
-
-test('a hand-back with no office tab open is not checked, and the log says why', async ($, on) => {
-  const h = office(on)
-  const { asked, rows, saved, closePane } = h
-  await $.session.start(START)
-  await tabsOpened(h)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  for (const { id } of PANES) closePane(id)
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'no office tab is open', version: KNOW_VERSION }])
-})
-
-test('the Settings tab alone is an office tab open: a hand-back is checked', async ($, on) => {
-  const { asked, rows, saved, closePane } = office(on)
-  await $.session.start(START)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  for (const { id } of PANES) if (id !== 'clawd-hq-settings') closePane(id)
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toHaveLength(1)
-})
-
-test('a check is made while another office tab is in front, and its note waits on Clawd\'s card', async ($, on) => {
-  const { asked, rows, saved, front } = office(on)
-  await $.session.start(START)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  front.id = 'clawd-hq-settings'
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toHaveLength(1)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown'])
-  front.id = 'clawd-hq'
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /^· Tester$/ })).toBeDefined()
+  const ui = await office$($)
+  expect(await ui.find({ type: 'Text', text: /^· Clawd$/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('nothing is checked while no office tab is open, or the host cannot say', async ($, on) => {
-  const { asked, rows, closePane, fail } = office(on)
+test('a turn with no hand-back and fewer than six tools of Clawd\'s own forks nothing and logs nothing', async ($, on) => {
+  const { forked, saved } = office(on)
   await $.session.start(START)
-  await hire($)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  rows.set('a2', run('Fix it too.'))
-  for (const { id } of PANES) closePane(id)
-  await handBack($, 'a1')
+  await $.turn.start({ text: 'What is next?', turnId: 'm1' } as never)
+  for (let i = 0; i < 5; i += 1) await $.tool.call({ tool: 'Read', file_path: `f${i}` } as never)
+  await mainEnd($)
   await idle()
-  fail.list = true
-  await handBack($, 'a2')
-  await idle()
-  expect(asked).toEqual([])
+  expect(forked).toEqual([])
+  expect(saved.get('know:log:/repo')).toBeUndefined()
 })
 
-test('with the setting off nothing is checked', { options: { youShouldKnow: false } }, async ($, on) => {
-  const { asked, rows } = office(on)
+test('six tools of Clawd\'s own in one turn are checked; the step tool and a specialist\'s tools do not count, nor tools spread over two turns', async ($, on) => {
+  const { forked, saved } = office(on, [none])
   await $.session.start(START)
   await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1')
+  const turn = async (id: string, tools: number, stepTools = 0, agentTools = 0) => {
+    await $.turn.start({ text: 'Tidy the docs', turnId: id } as never)
+    for (let i = 0; i < tools; i += 1) await $.tool.call({ tool: 'Edit', file_path: `docs/p${i}.md` } as never)
+    for (let i = 0; i < stepTools; i += 1) await $.tool.call({ tool: 'mcp__clawd-hq__step', done: i, total: 8 } as never)
+    for (let i = 0; i < agentTools; i += 1) await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
+    await mainEnd($, 'answer', 'Done.', id)
+  }
+  await turn('m1', 5)
+  await turn('m2', 3)
+  await turn('m3', 0, 8)
+  await turn('m4', 3, 0, 6)
   await idle()
-  expect(asked).toEqual([])
+  expect(forked).toEqual([])
+  await turn('m5', 6)
+  await until($, () => logOf(saved).length > 0)
+  expect(forked).toHaveLength(1)
+})
+
+test('a turn that did not end with an answer is not checked; its hand-back carries over to the next answer', async ($, on) => {
+  const { forked, saved } = office(on, [none])
+  await $.session.start(START)
+  await hire($)
+  await handBack($, 'a1')
+  await mainEnd($, 'aborted')
+  await until($, () => logOf(saved).length > 0)
+  expect(forked).toEqual([])
+  expect(logOf(saved)[0]).toMatchObject({ outcome: 'skipped', reason: 'the turn did not end with an answer' })
+  await mainEnd($, 'answer', 'Sorry, here it is.', 'm2')
+  await until($, () => logOf(saved).length > 1)
+  expect(forked).toHaveLength(1)
+  // Checked once, the hand-back is used up.
+  await mainEnd($, 'answer', 'Anything else?', 'm3')
+  await idle()
+  expect(forked).toHaveLength(1)
+})
+
+test('straight after a compaction no fork is made; once a main reply has run since, the turn is checked', async ($, on) => {
+  const { forked, saved } = office(on, [none])
+  await $.session.start(START)
+  await hire($)
+  await handBack($, 'a1')
+  await $.session.compact({ trigger: 'auto', messages: [{ role: 'user', text: 'Fix login', toolUses: [] }] } as never)
+  await mainEnd($)
+  await until($, () => logOf(saved).length > 0)
+  expect(forked).toEqual([])
+  expect(logOf(saved)[0]).toMatchObject({ outcome: 'skipped', reason: 'no main reply since the compaction' })
+  await $.turn.start({ text: 'Go on', turnId: 'm2' } as never)
+  await mainEnd($, 'answer', 'Carried on.', 'm2')
+  await until($, () => logOf(saved).length > 1)
+  expect(forked).toHaveLength(1)
+})
+
+test('a specialist\'s own compaction does not hold the check', async ($, on) => {
+  const { forked, saved } = office(on, [none])
+  await $.session.start(START)
+  await hire($)
+  await $.session.compact({ trigger: 'auto', agentId: 'a1', messages: [{ role: 'user', text: 'Fix login', toolUses: [] }] } as never)
+  await handBack($, 'a1')
+  await mainEnd($)
+  await until($, () => logOf(saved).length > 0)
+  expect(forked).toHaveLength(1)
+})
+
+test('one side request at a time: a turn ending while a check is still out is skipped, and its hand-back waits for the next answer', async ($, on) => {
+  const { forked, saved, hold, gate } = office(on, [none])
+  await $.session.start(START)
+  hold()
+  await backAndAnswer($, 'a1')
+  await until($, () => forked.length === 1)
+  await backAndAnswer($, 'a2')
+  await until($, () => logOf(saved).length > 0)
+  expect(forked).toHaveLength(1)
+  expect(logOf(saved)[0]).toMatchObject({ outcome: 'skipped', reason: 'another side request is running' })
+  gate.release()
+  await until($, () => logOf(saved).length > 1)
+  await mainEnd($, 'answer', 'Both done.', 'm3')
+  await until($, () => forked.length === 2)
+  expect(forked).toHaveLength(2)
+})
+
+test('nothing is checked where nobody can see the office, and the log says why', async ($, on) => {
+  const h = office(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(h.saved).length > 0)
+  expect(h.forked).toEqual([])
+  expect(logOf(h.saved)).toEqual([{ at: 1_000, who: 'Clawd', outcome: 'skipped', stage: 'check', reason: 'nothing is drawn', version: KNOW_VERSION }])
+})
+
+test('with no office tab open nothing is checked; the Settings tab alone counts as open, and a note waits behind another tab', async ($, on) => {
+  const h = office(on, [none, () => answered(NOTE)])
+  await $.session.start(START)
+  await tabsOpened(h)
+  for (const { id } of PANES) h.closePane(id)
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(h.saved).length > 0)
+  expect(h.forked).toEqual([])
+  expect(logOf(h.saved)[0]).toMatchObject({ outcome: 'skipped', reason: 'no office tab is open' })
+  h.panes.push({ id: 'clawd-hq-settings', title: 'Settings' })
+  h.front.id = 'clawd-hq-settings'
+  await backAndAnswer($, 'a2')
+  await until($, () => logOf(h.saved).length > 1)
+  expect(h.forked).toHaveLength(1)
+})
+
+test('in the desktop app, which attaches after the session starts, the turn is checked', async ($, on) => {
+  const { forked, saved } = office(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' } as never)
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(forked).toHaveLength(1)
+})
+
+test('with the setting off nothing is checked or guarded', { options: { youShouldKnow: false } }, async ($, on) => {
+  const { forked, rows, saved } = office(on)
+  await $.session.start(START)
+  await hire($)
+  rows.set('a1', guardRun('rm -rf src'))
+  await handBack($, 'a1')
+  await mainEnd($)
+  await idle()
+  expect(forked).toEqual([])
+  expect(saved.get('know:log:/repo')).toBeUndefined()
+})
+
+test('with "Clawd runs the chat" off the turn is not checked, and the log says why', { options: { chiefOfStaff: false } }, async ($, on) => {
+  const { forked, saved } = office(on)
+  await $.session.start(START)
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(forked).toEqual([])
+  expect(logOf(saved)[0]).toMatchObject({ outcome: 'skipped', reason: 'Clawd does not run the chat' })
 })
 
 test('a reply that arrives after a /clear is dropped', async ($, on) => {
-  const { asked, rows, saved, hold, gate } = office(on)
+  const { forked, saved, hold, gate } = office(on)
   await $.session.start(START)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
   hold()
-  await handBack($, 'a1')
-  await until($, () => asked.length > 0)
+  await backAndAnswer($, 'a1')
+  await until($, () => forked.length > 0)
   await $.session.end(CLEAR)
   gate.release()
   await until($, () => logOf(saved).length > 0)
@@ -308,157 +264,278 @@ test('a reply that arrives after a /clear is dropped', async ($, on) => {
   expect(saved.get('know:shown:/repo')).toBeUndefined()
 })
 
-test('the person\'s last two prompts ride along; commands do not count', async ($, on) => {
-  const { asked, rows, saved } = office(on)
+for (const failure of [
+  { isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded', usage: { ...USAGE, output_tokens: 0 } },
+  { isAnswered: false, reason: 'empty-reply', usage: USAGE },
+  { isAnswered: false, reason: 'aborted', usage: { ...USAGE, output_tokens: 0 } },
+]) {
+  test(`a fork that ends in ${failure.reason} shows nothing and is logged with what it cost`, async ($, on) => {
+    const { saved, toasts } = office(on, [() => failure])
+    await $.session.start(START)
+    await backAndAnswer($, 'a1')
+    await until($, () => logOf(saved).length > 0)
+    expect(logOf(saved)[0]).toMatchObject({ outcome: failure.reason, engine: 'fork', inTokens: 7_000, cacheReadTokens: 90_000 })
+    expect(saved.get('know:shown:/repo')).toBeUndefined()
+    expect(toasts.filter(t => !/finished/.test(t))).toEqual([])
+  })
+}
+
+test('nothing to fork yet is logged as such, with no token counts', async ($, on) => {
+  const { saved } = office(on, [() => ({ isAnswered: false, reason: 'nothing-to-fork' })])
   await $.session.start(START)
-  for (const text of ['first ask', 'second ask', 'third ask']) await $.prompt.submit({ text } as never)
-  await $.prompt.submit({ text: '/office', command: { name: 'office', kind: 'local' } } as never)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1')
+  await backAndAnswer($, 'a1')
   await until($, () => logOf(saved).length > 0)
-  expect(asked[0]!.prompt).toMatch(/THE PERSON'S LATEST PROMPTS TO CLAWD:\n1\. second ask\n2\. third ask\n/)
+  expect(logOf(saved)[0]).toEqual({ at: 1_000, who: 'Clawd', outcome: 'nothing-to-fork', stage: 'check', engine: 'fork', ms: 0, version: KNOW_VERSION })
 })
 
-test('a note already shown, or one the person already knew, is not shown again; both lists ride in the question', async ($, on) => {
-  const line = 'The Tester says all tests pass, but the last test run failed.'
-  const { asked, rows, saved } = office(on)
-  saved.set('know:knew:/repo', [line.toLowerCase()])
-  saved.set('know:shown:/repo', ['Something older.'])
+test('a fork that throws, or a prompt file that cannot be read, fails quietly and is logged', async ($, on) => {
+  const h = office(on, [() => { throw new Error('the fork broke') }])
   await $.session.start(START)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length > 0)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['repeat'])
-  expect(asked[0]!.prompt).toMatch(/Already shown to the person, do not repeat:\n- Something older\.\n\nThe person already knew, do not repeat:\n- the tester says/)
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(h.saved).length > 0)
+  expect(logOf(h.saved)[0]).toMatchObject({ outcome: 'failed', reason: 'the check stopped on an error' })
+  h.files.delete(`${ROOT}/${OBSERVER_FILE}`)
+  await $.session.start(START)
+  await $.prompt.submit({ text: 'next' } as never)
+  await backAndAnswer($, 'a2')
+  await until($, () => logOf(h.saved).length > 1)
+  expect(logOf(h.saved)[1]).toMatchObject({ outcome: 'failed', reason: 'the prompt file could not be read' })
+  expect(h.forked).toHaveLength(1)
 })
 
-test('a note passed over by two prompts leaves; after two such notes the next check is skipped and logged', async ($, on) => {
-  const notes = [1, 2, 3].map(n => () => answered(`learn: Note number ${n} matters.\ntag: Heads up`))
-  const { asked, rows, saved } = office(on, notes)
+test('a learn: none reply shows nothing; a reply the parser refuses is logged as failed; a repeat is not shown again', async ($, on) => {
+  const { saved } = office(on, [none, () => answered('learn: See https://example.com now.'), () => answered(NOTE)])
+  saved.set('know:knew:/repo', ['the tester says all tests pass, but the last test run failed'])
+  await $.session.start(START)
+  for (const [n, id] of ['a1', 'a2', 'a3'].entries()) {
+    await backAndAnswer($, id)
+    await until($, () => logOf(saved).length === n + 1)
+  }
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['none', 'failed', 'repeat'])
+  expect(saved.get('know:shown:/repo')).toBeUndefined()
+})
+
+test('the back-off still holds: after two notes passed over the next check is skipped without a fork', async ($, on) => {
+  const { forked, saved } = office(on, [reply(1), reply(2), reply(3)])
   await $.session.start(START)
   for (const n of [1, 2]) {
-    await hire($)
-    rows.set(`a${n}`, run(`Job ${n}`))
-    await handBack($, `a${n}`)
+    await backAndAnswer($, `a${n}`)
     await until($, () => logOf(saved).length === n)
     await $.prompt.submit({ text: 'carry on' } as never)
-    expect(saved.get('know:backoff:/repo')).toEqual(n === 1 ? undefined : { ignored: 1, skipLeft: 0 })
     await $.prompt.submit({ text: 'and on' } as never)
   }
   expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
-  await hire($)
-  rows.set('a3', run('Job 3'))
-  await handBack($, 'a3')
+  await backAndAnswer($, 'a3')
   await until($, () => logOf(saved).length === 3)
-  expect(asked).toHaveLength(2)
+  expect(forked).toHaveLength(2)
   expect(logOf(saved)[2]).toMatchObject({ outcome: 'skipped', reason: 'notes were passed over' })
   expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 0 })
 })
 
+test('while a note is showing no check is made; once one was shown, none until the person\'s next typed message', async ($, on) => {
+  const { forked, saved } = office(on, [reply(1), reply(2)])
+  await $.session.start(START)
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(saved).length === 1)
+  await $.prompt.submit({ text: 'a new message' } as never)
+  await backAndAnswer($, 'a2')
+  await until($, () => logOf(saved).length === 2)
+  expect(logOf(saved)[1]).toMatchObject({ outcome: 'skipped', reason: 'a note is already showing' })
+  // The person's next message: a note is shown, dismissed, and no other comes until they type again.
+  await $.prompt.submit({ text: 'and another' } as never)
+  await $.prompt.submit({ text: 'a third' } as never)
+  await backAndAnswer($, 'a3')
+  await until($, () => logOf(saved).length === 3)
+  const ui = await office$($)
+  await ui.press({ key: 'know-dismiss' })
+  await ui.unmount()
+  await $.prompt.submit({ text: '/office', command: { name: 'office', kind: 'local' } } as never)
+  await $.prompt.submit({ text: 'a hook message', isMeta: true } as never)
+  await backAndAnswer($, 'a4')
+  await until($, () => logOf(saved).length === 4)
+  expect(forked).toHaveLength(2)
+  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'skipped', 'shown', 'skipped'])
+  expect(logOf(saved)[3]).toMatchObject({ reason: 'a note was already shown for this message' })
+})
+
 // ---- The note on Clawd's card ----
 
-type Surface = (typeof SURFACES)[number]
-/** A session whose model answers from `replies`, after `backs` finished specialists (default: one per reply) have been checked. */
-async function withNotes($: Engine, on: On, replies: Array<() => unknown>, backs = replies.length) {
+/** A session with one note on the card, from a checked turn; `store` is what the project's store held before the session started. */
+async function withNote($: Engine, on: On, replies: Array<() => unknown> = [() => answered(NOTE)], store: Record<string, unknown> = {}) {
   const h = office(on, replies)
+  for (const [key, value] of Object.entries(store)) h.saved.set(key, value)
   await $.session.start(START)
-  for (let n = 1; n <= backs; n += 1) {
-    await hire($)
-    h.rows.set(`a${n}`, run(`Job ${n}`))
-    await handBack($, `a${n}`)
-    await until($, () => logOf(h.saved).length === n)
-  }
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(h.saved).length === 1)
   return h
 }
-const office$ = ($: Engine, surface: Surface) => $.ui.mount({ plugin: 'clawd-hq', surface, ...PANE })
-const texts = async (ui: Awaited<ReturnType<typeof office$>>) => (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
-const reply = (n: number, extra = '\nexplain: **Tests did not pass**\nThe last run had 3 failures.') => () => answered(`learn: Note ${n} matters.\ntag: Heads up${extra}`)
 
-test('a note is its own card under Needs you, between Clawd\'s card and the floor, its tag in amber as its only label and who did the work dim', async ($, on) => {
-  await withNotes($, on, [() => answered(NOTE)])
+test('a note is its own card under Needs you, its tag in amber as its only label, who it is about dim, and the explanation behind Learn more', async ($, on) => {
+  await withNote($, on)
   for (const surface of SURFACES) {
     const ui = await office$($, surface)
     const all = await texts(ui)
-    const [heading, tag, who, line] = [all.findIndex(t => /^NEEDS YOU · \d+$/.test(t)), all.indexOf('HEADS UP'), all.indexOf('· Tester'), all.indexOf('The Tester says all tests pass, but the last test run failed.')]
+    const [heading, tag, who, line] = [all.findIndex(t => /^NEEDS YOU · \d+$/.test(t)), all.indexOf('HEADS UP'), all.indexOf('· Clawd'), all.indexOf('The Tester says all tests pass, but the last test run failed.')]
     expect(heading).toBeGreaterThan(all.findIndex(t => /Chief of Staff/.test(t)))
-    // Nothing of the note is on Clawd's card: his words and status come before the heading.
-    expect(all.findIndex(t => /All clear|Free|Working/.test(t))).toBeLessThan(heading)
-    // The card's tag follows Needs you directly: no heading of its own over it.
     expect([tag, who, line]).toEqual([heading + 1, heading + 2, heading + 3])
-    expect(all).not.toContain('YOU SHOULD KNOW')
     expect((await ui.find({ type: 'Text', text: /^HEADS UP$/ }))?.props.color).toBe(AMBER)
-    expect((await ui.find({ type: 'Text', text: /^· Tester$/ }))?.props.dimColor).toBe(true)
-    expect(all.findIndex(t => /THE FLOOR|AT WORK/.test(t))).toBeGreaterThan(line)
+    expect((await ui.find({ type: 'Text', text: /^· Clawd$/ }))?.props.dimColor).toBe(true)
     for (const key of ['know-more', 'know-got-it', 'know-discuss', 'know-dismiss']) expect(await ui.find({ key })).toBeDefined()
-    expect(all.some(t => /more notes? waiting|more waiting/.test(t))).toBe(false)
-    // The title and the explanation wait behind Learn more.
     expect(all.some(t => /The tests did not pass|3 failures/.test(t))).toBe(false)
     await ui.unmount()
   }
 })
 
-test('Learn more opens the title and explanation with Knew this; Knew this takes the note off, saves its topic as known and starts the back-off over', async ($, on) => {
-  const { saved } = await withNotes($, on, [() => answered(NOTE)])
-  saved.set('know:backoff:/repo', { ignored: 1, skipLeft: 0 })
-  const ui = await office$($, 'terminal')
+test('Learn more shows the first reply\'s explanation at once, with no fork, and offers Simpler, Shorter and More detail', async ($, on) => {
+  const { forked } = await withNote($, on)
+  const ui = await office$($, 'desktop')
   await ui.press({ key: 'know-more' })
   expect(await ui.find({ type: 'Text', text: /^The tests did not pass$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^The last run ended with 3 failures\. Ask for a new run\.$/ })).toBeDefined()
-  expect(await ui.find({ key: 'know-more' })).toBeUndefined()
-  // The title and explanation come after the note's line, the explanation dim.
-  const all = await texts(ui)
-  expect(all.indexOf('The tests did not pass')).toBeGreaterThan(all.indexOf('HEADS UP'))
   expect((await ui.find({ type: 'Text', text: /^The last run ended/ }))?.props.dimColor).toBe(true)
-  expect((await ui.find({ key: 'know-got-it' }))?.props.label).toBe('Knew this')
+  expect(await ui.find({ key: 'know-more' })).toBeUndefined()
+  const labels = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label)).filter(l => l !== 'Hold a council').slice(0, 6)
+  expect(labels).toEqual(['Simpler', 'Shorter', 'More detail', 'Knew this', 'Ask Clawd', 'Dismiss'])
+  await ui.unmount()
+  expect(forked).toHaveLength(1)
+})
+
+const FOLLOW_UPS = [['know-simpler', 'simpler', 'Say it in simpler words'], ['know-shorter', 'shorter', 'Say it in 45 words'], ['know-detail', 'more-detail', 'Say more, with real names']] as const
+for (const [key, reaction, words] of FOLLOW_UPS) {
+  test(`${key}: a fork with the explain prompt, its follow-up text and the last explanation; the new one takes its place and is logged`, async ($, on) => {
+    const { forked, saved } = await withNote($, on, [() => answered(NOTE), () => answered('**Three tests failed**\nThe run in `login.test.ts` had 3 failures.\nAsk for a new run.')])
+    const ui = await office$($)
+    await ui.press({ key: 'know-more' })
+    await ui.press({ key })
+    await until($, () => logOf(saved).length === 2)
+    await ui.unmount()
+    expect(forked).toHaveLength(2)
+    expect(forked[1]!.effort).toBeUndefined()
+    const prompt = forked[1]!.prompt
+    expect(prompt).toContain('The note the person opened:\nThe Tester says all tests pass, but the last test run failed.\n')
+    expect(prompt).toContain(words)
+    expect(prompt).toContain('Your last explanation:\n**The tests did not pass**\nThe last run ended with 3 failures. Ask for a new run.\n')
+    expect(prompt).not.toContain('<!--')
+    const after = await office$($)
+    expect(await after.find({ type: 'Text', text: /^Three tests failed$/ })).toBeDefined()
+    expect(await after.find({ type: 'Text', text: 'The run in login.test.ts had 3 failures.\nAsk for a new run.' })).toBeDefined()
+    await after.unmount()
+    expect(logOf(saved)[1]).toEqual({ at: 1_000, who: 'Clawd', outcome: 'explained', stage: 'explain', reason: reaction.replace('-', ' '), ...COST, version: KNOW_VERSION })
+    expect(logOf(saved)[0]!.reactions).toEqual(['opened', reaction])
+  })
+}
+
+test('Learn more on a note with no explanation forks the explain prompt with no follow-up, and says so while it writes', async ($, on) => {
+  const { forked, gate, hold, saved } = await withNote($, on, [() => answered('learn: Note 1 matters.\ntag: Heads up'), () => answered('**One thing matters**\nIt does.')])
+  hold()
+  const ui = await office$($)
+  await ui.press({ key: 'know-more' })
+  await until($, () => forked.length === 2)
+  await ui.unmount()
+  expect(forked[1]!.prompt).toContain('## Follow-up\n\n\n\n## Example')
+  let seen = await office$($)
+  expect(await seen.find({ type: 'Text', text: WRITING })).toBeDefined()
+  expect(await seen.find({ key: 'know-simpler' })).toBeUndefined()
+  await seen.unmount()
+  gate.release()
+  await until($, () => logOf(saved).length === 2)
+  seen = await office$($)
+  expect(await seen.find({ type: 'Text', text: /^One thing matters$/ })).toBeDefined()
+  expect(await seen.find({ type: 'Text', text: WRITING })).toBeUndefined()
+  expect(await seen.find({ key: 'know-shorter' })).toBeDefined()
+  await seen.unmount()
+})
+
+test('an explanation the reader refuses, or none at all, keeps the last one and says no new one came', async ($, on) => {
+  const { saved } = await withNote($, on, [() => answered(NOTE), () => answered('**Fix**\nSee https://example.com/fix.'), () => ({ isAnswered: false, reason: 'empty-reply', usage: USAGE })])
+  for (const n of [2, 3]) {
+    const ui = await office$($)
+    if (n === 2) await ui.press({ key: 'know-more' })
+    await ui.press({ key: 'know-shorter' })
+    await until($, () => logOf(saved).length === n)
+    await ui.unmount()
+    const after = await office$($)
+    expect(await after.find({ type: 'Text', text: /^The tests did not pass$/ })).toBeDefined()
+    expect(await after.find({ type: 'Text', text: EXPLAIN_FAILED })).toBeDefined()
+    await after.unmount()
+  }
+  expect(logOf(saved).slice(1).map(l => l.outcome)).toEqual(['failed', 'empty-reply'])
+})
+
+test('while a follow-up is being written its buttons are hidden, so a second press cannot start a second fork', async ($, on) => {
+  const h = await withNote($, on, [() => answered(NOTE), () => answered('**Shorter**\nThree failed.')])
+  const ui = await office$($)
+  await ui.press({ key: 'know-more' })
+  h.hold()
+  await ui.press({ key: 'know-shorter' })
+  await until($, () => h.forked.length === 2)
+  await ui.unmount()
+  const seen = await office$($)
+  expect(await seen.find({ type: 'Text', text: WRITING })).toBeDefined()
+  for (const key of ['know-simpler', 'know-shorter', 'know-detail']) expect(await seen.find({ key })).toBeUndefined()
+  // The note's line and the last explanation stay while the new one is written.
+  expect(await seen.find({ type: 'Text', text: /^The tests did not pass$/ })).toBeDefined()
+  await seen.unmount()
+  h.gate.release()
+  await until($, () => logOf(h.saved).length === 2)
+})
+
+test('Knew this takes the note off, saves its topic as known (newest ten) and starts the back-off over', async ($, on) => {
+  const { saved } = await withNote($, on, undefined, { 'know:knew:/repo': Array.from({ length: 12 }, (_, i) => `Old topic ${i}.`) })
+  saved.set('know:backoff:/repo', { ignored: 1, skipLeft: 0 })
+  const ui = await office$($)
   await ui.press({ key: 'know-got-it' })
   expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
   expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 0, skipLeft: 0 })
-  expect(saved.get('know:knew:/repo')).toEqual(['The Tester says all tests pass, but the last test run failed.'])
-  await ui.unmount()
-})
-
-test('what the person said they knew rides in later questions, the newest ten only', async ($, on) => {
-  const { asked, rows, saved } = office(on, [() => answered(NOTE), none])
-  saved.set('know:knew:/repo', Array.from({ length: 12 }, (_, i) => `Old topic ${i}.`))
-  await $.session.start(START)
-  await hire($)
-  rows.set('a1', run('Job 1'))
-  await handBack($, 'a1')
-  await until($, () => logOf(saved).length === 1)
-  const ui = await office$($, 'terminal')
-  await ui.press({ key: 'know-more' })
-  await ui.press({ key: 'know-got-it' })
   await ui.unmount()
   const knew = saved.get('know:knew:/repo') as string[]
   expect(knew).toHaveLength(10)
   expect(knew[9]).toBe('The Tester says all tests pass, but the last test run failed.')
-  expect(knew[0]).toBe('Old topic 3.')
-  await $.prompt.submit({ text: 'next' } as never)
-  await hire($)
-  rows.set('a2', run('Job 2'))
-  await handBack($, 'a2')
-  await until($, () => logOf(saved).length === 2)
-  expect(asked[1]!.prompt).toMatch(/The person already knew, do not repeat:\n- Old topic 3\.\n/)
-  expect(asked[1]!.prompt).not.toContain('Old topic 2.')
-  expect(asked[1]!.prompt).toContain('- The Tester says all tests pass, but the last test run failed.')
 })
 
-test('the person\'s reactions: opened, discussed, knew this, dismissed and passed over, each on the row of its note', async ($, on) => {
-  const h = office(on, [reply(1), reply(2), reply(3), reply(4)])
+test('Ask Clawd fills the prompt box with the line and the longer version, sends nothing, and takes the note off', async ($, on) => {
+  const { saved, fills } = await withNote($, on)
+  const ui = await office$($)
+  await ui.press({ key: 'know-discuss' })
+  expect(fills).toEqual([{
+    text: 'Clawd raised this: "The Tester says all tests pass, but the last test run failed.". The last run ended with 3 failures. Ask for a new run. Let\'s discuss: is this a real concern here, and what should we do about it?',
+    mode: 'append',
+  }])
+  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
+  expect(saved.get('know:knew:/repo')).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the person\'s second prompt after a note takes it off; an opened one stays through three and goes on the fourth; a /clear empties the card', async ($, on) => {
+  await withNote($, on)
+  await $.prompt.submit({ text: 'one' } as never)
+  let ui = await office$($)
+  await ui.press({ key: 'know-more' })
+  await ui.unmount()
+  for (const text of ['two', 'three', 'four']) await $.prompt.submit({ text } as never)
+  ui = await office$($)
+  expect(await ui.find({ type: 'Text', text: /^The tests did not pass$/ })).toBeDefined()
+  await ui.unmount()
+  await $.prompt.submit({ text: 'five' } as never)
+  ui = await office$($)
+  expect(await ui.find({ type: 'Text', text: /HEADS UP/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a /clear empties the card', async ($, on) => {
+  await withNote($, on)
+  await $.session.end(CLEAR)
+  const ui = await office$($)
+  expect(await ui.find({ type: 'Text', text: /HEADS UP/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the person\'s reactions ride on the row of their note, and the tally counts outcomes, reasons, reactions and cost', async ($, on) => {
+  const h = office(on, [reply(1), reply(2), reply(3)])
   await $.session.start(START)
-  const reactionsOf = () => logOf(h.saved).map(l => (l as { reactions?: string[] }).reactions)
-  const press = async (key: string) => {
-    const ui = await office$($, 'terminal')
-    await ui.press({ key })
-    await ui.unmount()
-  }
+  const press = async (key: string) => { const ui = await office$($); await ui.press({ key }); await ui.unmount() }
   const next = async (n: number) => {
     await $.prompt.submit({ text: `message ${n}` } as never)
-    await hire($)
-    h.rows.set(`a${n}`, run(`Job ${n}`))
-    await handBack($, `a${n}`)
+    await backAndAnswer($, `a${n}`)
     await until($, () => logOf(h.saved).filter(l => l.outcome === 'shown').length === n)
   }
   await next(1)
@@ -467,260 +544,103 @@ test('the person\'s reactions: opened, discussed, knew this, dismissed and passe
   await next(2)
   await press('know-discuss')
   await next(3)
-  await press('know-dismiss')
-  await next(4)
   await $.prompt.submit({ text: 'one' } as never)
   await $.prompt.submit({ text: 'two' } as never)
   await idle()
-  expect(reactionsOf()).toEqual([['opened', 'knew-this'], ['discussed'], ['dismissed'], ['passed-over']])
+  expect(logOf(h.saved).map(l => l.reactions)).toEqual([['opened', 'knew-this'], ['discussed'], ['passed-over']])
   expect(h.saved.get('know:tally:/repo')).toEqual({
-    outcomes: { shown: 4 },
+    outcomes: { shown: 3 },
     reasons: {},
-    reactions: { opened: 1, 'knew-this': 1, discussed: 1, dismissed: 1, 'passed-over': 1 },
+    reactions: { opened: 1, 'knew-this': 1, discussed: 1, 'passed-over': 1 },
+    costs: { fork: { checks: 3, inTokens: 21_000, cacheReadTokens: 270_000, cacheWriteTokens: 9_000, outTokens: 180, ms: 0 } },
   })
 })
 
-test('the tally counts every outcome and every reason of a project, beside the 20-row log', async ($, on) => {
+test('the lists and the log are kept per project folder', async ($, on) => {
+  const { saved } = office(on)
+  await $.session.start({ cwd: '/other', surface: 'terminal', isInteractive: true } as never)
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(saved, '/other').length > 0)
+  expect(saved.get('know:shown:/other')).toEqual(['The Tester says all tests pass, but the last test run failed.'])
+  expect(saved.get('know:shown:/repo')).toBeUndefined()
+})
+
+// ---- The risky-action guard on specialists' steps ----
+
+const guardRun = (command: string) => [
+  { role: 'user', text: 'Clean up the old code.', toolUses: [] },
+  { role: 'assistant', text: 'Cleaning.', toolUses: [{ tool_use_id: 'g1', tool: 'Bash', input: { command }, text: 'done' }] },
+]
+
+test('a specialist\'s step that deletes for good is flagged by code at its hand-back: a Heads up on the card, logged with no model call', async ($, on) => {
+  const { forked, completed, rows, saved } = office(on)
+  await $.session.start(START)
+  await hire($)
+  rows.set('a1', guardRun('rm -rf src/legacy'))
+  await handBack($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(forked).toEqual([])
+  expect(completed).toEqual([])
+  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'shown', stage: 'guard', engine: 'code', ms: 0, reason: 'destructive', noteId: 'k1000-1', version: KNOW_VERSION }])
+  const ui = await office$($)
+  expect(await ui.find({ type: 'Text', text: 'The Tester ran a command that deletes files and folders for good, in steps the main chat does not show.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^· Tester$/ })).toBeDefined()
+  await ui.press({ key: 'know-more' })
+  expect(await ui.find({ type: 'Text', text: /Step 1: a command that deletes files and folders for good \(Bash\)/ })).toBeDefined()
+  // The command itself never reaches the card.
+  expect(JSON.stringify(await texts(ui))).not.toContain('src/legacy')
+  await ui.unmount()
+  // The guard's note is this message's note: Clawd's answer is not checked on top of it.
+  await mainEnd($)
+  await until($, () => logOf(saved).length > 1)
+  expect(logOf(saved)[1]).toMatchObject({ outcome: 'skipped', stage: 'check', reason: 'a note is already showing' })
+})
+
+test('a clean run leaves no row; a resumed specialist is guarded only on its steps since', async ($, on) => {
   const { rows, saved } = office(on, [none])
   await $.session.start(START)
   await hire($)
-  rows.set('a1', run('Job 1'))
+  const first = guardRun('npm test')
+  rows.set('a1', first)
   await handBack($, 'a1')
-  await until($, () => logOf(saved).length === 1)
-  await hire($)
-  rows.set('a2', [{ role: 'user', text: 'Thoughts?', toolUses: [] }, { role: 'assistant', text: 'Fine.', toolUses: [] }])
-  await handBack($, 'a2', 'answer', 'Fine.')
-  await until($, () => logOf(saved).length === 2)
   await idle()
-  expect(saved.get('know:tally:/repo')).toEqual({ outcomes: { none: 1, skipped: 1 }, reasons: { 'the run used no tools': 1 }, reactions: {} })
-})
-
-test('a huge record is shrunk to the cap and asked about, not skipped or sent whole', { timeoutMs: 15_000 }, async ($, on) => {
-  const { asked, rows, saved } = office(on, [none])
-  await $.session.start(START)
-  await hire($)
-  const big = Array.from({ length: 1500 }, (_, i) => `output line ${i} of the long test run`).join('\n')
-  const steps = Array.from({ length: 150 }, (_, i) => ({ tool_use_id: `u${i}`, tool: 'Bash', input: { command: `npm run part${i}` }, text: big }))
-  rows.set('a1', [{ role: 'user', text: 'Run everything.', toolUses: [] }, { role: 'assistant', text: 'Done.', toolUses: steps }])
-  await handBack($, 'a1', 'answer', 'All done.')
-  await until($, () => logOf(saved).length === 1)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['none'])
-  expect(asked).toHaveLength(1)
-  expect(asked[0]!.prompt.length).toBeLessThan(CAP_CHARS + 2_000)
-  expect(logOf(saved)[0]!.recordChars).toBeLessThanOrEqual(CAP_CHARS)
-})
-
-test('Dismiss takes the note off without saving it as known', async ($, on) => {
-  const { saved } = await withNotes($, on, [reply(1)])
-  const ui = await office$($, 'desktop')
-  await ui.press({ key: 'know-dismiss' })
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
-  expect(saved.get('know:knew:/repo')).toBeUndefined()
-  await ui.unmount()
-})
-
-test('Ask Clawd fills the prompt box with the line and the longer version, sends nothing, takes the note off and starts the back-off over', async ($, on) => {
-  const { saved, fills } = await withNotes($, on, [() => answered(NOTE)])
-  saved.set('know:backoff:/repo', { ignored: 1, skipLeft: 0 })
-  const ui = await office$($, 'terminal')
-  await ui.press({ key: 'know-discuss' })
-  expect(fills).toEqual([{
-    text: 'Clawd raised this: "The Tester says all tests pass, but the last test run failed.". The last run ended with 3 failures. Ask for a new run. Let\'s discuss: is this a real concern here, and what should we do about it?',
-    mode: 'append',
-  }])
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
-  expect(saved.get('know:knew:/repo')).toBeUndefined()
-  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 0, skipLeft: 0 })
-  await ui.unmount()
-})
-
-test('Ask Clawd shows with or without Learn more opened, first of the dim buttons, and on a note with no explanation', async ($, on) => {
-  await withNotes($, on, [reply(1)])
-  const ui = await office$($, 'desktop')
-  const keys = async () => (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label)).filter(label => label !== 'Hold a council').slice(0, 4)
-  expect(await keys()).toEqual(['Learn more', 'Knew this', 'Ask Clawd', 'Dismiss'])
+  expect(saved.get('know:log:/repo')).toBeUndefined()
+  rows.set('a1', [...first, { role: 'user', text: 'Now push it.', toolUses: [] }, { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'g2', tool: 'Bash', input: { command: 'git push --force' }, text: 'ok' }] }])
+  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
+  await handBack($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(logOf(saved)[0]).toMatchObject({ stage: 'guard', reason: 'destructive' })
+  const ui = await office$($)
   await ui.press({ key: 'know-more' })
-  expect((await keys()).slice(0, 3)).toEqual(['Knew this', 'Ask Clawd', 'Dismiss'])
+  expect(await ui.find({ type: 'Text', text: /^These come from the Tester's own steps[\s\S]*Step 1: a command that overwrites history/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('a note with no explanation has no Learn more, but still has Knew this', async ($, on) => {
-  await withNotes($, on, [reply(1, '')])
-  for (const surface of SURFACES) {
-    const ui = await office$($, surface)
-    expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
-    expect(await ui.find({ key: 'know-more' })).toBeUndefined()
-    expect(await ui.find({ key: 'know-got-it' })).toBeDefined()
-    expect(await ui.find({ key: 'know-dismiss' })).toBeDefined()
-    expect(await ui.find({ key: 'know-discuss' })).toBeDefined()
-    await ui.unmount()
-  }
-})
-
-test('the card shows one note, labelled once by its tag, with no count of notes waiting', async ($, on) => {
-  await withNotes($, on, [reply(1)])
-  for (const surface of SURFACES) {
-    const ui = await office$($, surface)
-    const all = await texts(ui)
-    expect(all.filter(t => /YOU SHOULD KNOW|HEADS UP/.test(t))).toEqual(['HEADS UP'])
-    expect(all.filter(t => /^Note \d matters\.$/.test(t))).toEqual(['Note 1 matters.'])
-    expect(all.some(t => /waiting/.test(t))).toBe(false)
-    await ui.unmount()
-  }
-})
-
-test('under Needs you a card\'s label is never repeated by a heading directly above it, on either surface', async ($, on) => {
-  await withNotes($, on, [() => answered('learn: The Builder changed the login page.\ntag: You should know')])
-  for (const surface of SURFACES) {
-    const ui = await office$($, surface)
-    const all = await texts(ui)
-    expect(all.filter(t => t === 'YOU SHOULD KNOW'), surface).toEqual(['YOU SHOULD KNOW'])
-    // A label in capitals is never the same words as the text just above it.
-    const repeated = all.filter((t, i) => i > 0 && /^[A-Z][A-Z ?]+$/.test(t) && all[i - 1]!.startsWith(t))
-    expect(repeated, surface).toEqual([])
-    expect(all[all.indexOf('YOU SHOULD KNOW') - 1], surface).toMatch(/^NEEDS YOU · \d+$/)
-    await ui.unmount()
-  }
-})
-
-test('while a note is showing no check is made, even after the person sends another message; the log says why', async ($, on) => {
-  const { asked, rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
-  await $.prompt.submit({ text: 'a new message' } as never)
-  await hire($)
-  rows.set('a2', run('Job 2'))
-  await handBack($, 'a2')
-  await until($, () => logOf(saved).length === 2)
-  expect(asked).toHaveLength(1)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'skipped'])
-  expect(logOf(saved)[1]).toMatchObject({ who: 'Tester', reason: 'a note is already showing' })
-  const ui = await office$($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
-  await ui.unmount()
-})
-
-test('one note per message: once a note was shown, even one the person has dismissed, a second hand-back is skipped until the next message', async ($, on) => {
-  const { asked, rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
-  const ui = await office$($, 'terminal')
-  await ui.press({ key: 'know-dismiss' })
-  await ui.unmount()
-  await hire($)
-  rows.set('a2', run('Job 2'))
-  await handBack($, 'a2')
-  await until($, () => logOf(saved).length === 2)
-  expect(asked).toHaveLength(1)
-  expect(logOf(saved)[1]).toMatchObject({ who: 'Tester', outcome: 'skipped', reason: 'a note was already shown for this message' })
-  // The person's next message allows the next note.
-  await $.prompt.submit({ text: 'the next message' } as never)
-  await hire($)
-  rows.set('a3', run('Job 3'))
-  await handBack($, 'a3')
-  await until($, () => logOf(saved).length === 3)
-  expect(asked).toHaveLength(2)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'skipped', 'shown'])
-  const next = await office$($, 'terminal')
-  expect(await next.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
-  await next.unmount()
-})
-
-test('a command or a message the person did not type does not count as the next message', async ($, on) => {
-  const { asked, rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
-  const ui = await office$($, 'terminal')
-  await ui.press({ key: 'know-dismiss' })
-  await ui.unmount()
-  await $.prompt.submit({ text: '/office', command: { name: 'office', kind: 'local' } } as never)
-  await $.prompt.submit({ text: 'a hook message', isMeta: true } as never)
-  await hire($)
-  rows.set('a2', run('Job 2'))
-  await handBack($, 'a2')
-  await until($, () => logOf(saved).length === 2)
-  expect(asked).toHaveLength(1)
-  expect(logOf(saved)[1]).toMatchObject({ outcome: 'skipped', reason: 'a note was already shown for this message' })
-})
-
-test('a check that finds nothing does not use up the message: the next hand-back is still checked', async ($, on) => {
-  const { asked, rows, saved } = office(on, [() => answered('learn: none'), reply(1)])
+test('the guard keeps the card\'s rules: no office tab, or a note already there, and it is skipped and logged', async ($, on) => {
+  const h = office(on)
   await $.session.start(START)
-  for (const id of ['a1', 'a2']) {
-    await hire($)
-    rows.set(id, run(`Job ${id}`))
-    await handBack($, id)
-    await until($, () => logOf(saved).length === Number(id.slice(1)))
-  }
-  expect(asked).toHaveLength(2)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['none', 'shown'])
+  await tabsOpened(h)
+  await hire($)
+  h.rows.set('a1', guardRun('git reset --hard'))
+  for (const { id } of PANES) h.closePane(id)
+  await handBack($, 'a1')
+  await until($, () => logOf(h.saved).length > 0)
+  expect(logOf(h.saved)[0]).toMatchObject({ stage: 'guard', outcome: 'skipped', reason: 'no office tab is open' })
 })
 
-test('hand-backs waiting behind a running check are skipped without asking when it leaves a note', async ($, on) => {
-  const { asked, rows, saved, hold, gate } = office(on, [reply(1), reply(2), reply(3)])
+test('the tour\'s stand-in specialists are never guarded or counted as hand-backs', { timeoutMs: 15_000 }, async ($, on) => {
+  const { forked, clock, saved } = office(on)
   await $.session.start(START)
-  for (const id of ['a1', 'a2', 'a3']) {
-    await hire($)
-    rows.set(id, run(`Job ${id}`))
-  }
-  hold()
-  for (const id of ['a1', 'a2', 'a3']) await handBack($, id)
-  await until($, () => asked.length > 0)
-  gate.release()
-  await until($, () => logOf(saved).length === 3)
-  expect(asked).toHaveLength(1)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['shown', 'skipped', 'skipped'])
-  expect(logOf(saved).slice(1).map(l => l.reason)).toEqual(['a note is already showing', 'a note is already showing'])
-  expect(saved.get('know:shown:/repo')).toEqual(['Note 1 matters.'])
-})
-
-test('a skipped hand-back uses up no back-off skip and leaves the back-off alone', async ($, on) => {
-  const { rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
-  saved.set('know:backoff:/repo', { ignored: 2, skipLeft: 1 })
-  await hire($)
-  rows.set('a2', run('Job 2'))
-  await handBack($, 'a2')
-  await until($, () => logOf(saved).length === 2)
-  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
-})
-
-test('the person\'s second prompt after a note takes it off; a /clear empties the card and allows a note again', async ($, on) => {
-  const { rows, saved } = await withNotes($, on, [reply(1), reply(2)], 1)
-  await $.prompt.submit({ text: 'next thing' } as never)
-  let ui = await office$($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /^Note 1 matters\.$/ })).toBeDefined()
-  await ui.unmount()
-  await $.prompt.submit({ text: 'and another' } as never)
-  ui = await office$($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
-  await ui.unmount()
-  await hire($)
-  rows.set('a2', run('Job 2'))
-  await handBack($, 'a2')
-  await until($, () => logOf(saved).length === 2)
-  ui = await office$($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /^Note 2 matters\.$/ })).toBeDefined()
-  await ui.unmount()
-  await $.session.end(CLEAR)
-  ui = await office$($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
-  await ui.unmount()
-})
-
-test('a note the person opened with Learn more stays through three messages and goes on the fourth', async ($, on) => {
-  await withNotes($, on, [() => answered(NOTE)], 1)
-  let ui = await office$($, 'terminal')
-  await ui.press({ key: 'know-more' })
-  await ui.unmount()
-  for (const text of ['one', 'two', 'three']) {
-    await $.prompt.submit({ text } as never)
-    ui = await office$($, 'terminal')
-    expect(await ui.find({ type: 'Text', text: /^The tests did not pass$/ })).toBeDefined()
-    await ui.unmount()
-  }
-  await $.prompt.submit({ text: 'four' } as never)
-  ui = await office$($, 'terminal')
-  expect(await ui.find({ type: 'Text', text: /YOU SHOULD KNOW|HEADS UP/ })).toBeUndefined()
-  await ui.unmount()
+  await $.command.run({ command: 'office-demo', args: '' } as never)
+  await clock.advance(70_000)
+  await mainEnd($)
+  await idle()
+  expect(forked).toEqual([])
+  expect(saved.get('know:log:/repo')).toBeUndefined()
 })
 
 // ---- Claude Code's own "You should know" stays quiet while ours is on ----
 
-/** A stand-in for the built-in: at the end of a turn it forks a side question and keeps what came back. */
 const ysk = (tier: 'builtin' | 'user') => ({
   name: 'cc-plugin-you-should-know',
   tier,
@@ -731,354 +651,52 @@ const ysk = (tier: 'builtin' | 'user') => ({
     })
   },
 }) as never
+const builtinAsks = (forked: Fork[]) => forked.filter(f => f.prompt === 'anything to know?')
 
-/** The main thread's fork as the engine would answer it, and every fork that got that far. */
-function forks(on: On) {
-  const h = host(on, [])
-  const asked: string[] = []
-  on('model.fork', (_$, e) => (asked.push((e as { prompt: string }).prompt), { value: answered('learn: none') }) as never)
-  on('turn.start', (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
-  return { ...h, asked }
-}
-const turnEnds = ($: Engine) => $.turn.complete({ reason: 'answer', answer: 'ok', turnId: 'm1', isAborted: false } as never)
-
-test('the built-in\'s side question is answered with nothing to fork, and never reaches the model', { plugins: [ysk('builtin')] }, async ($, on) => {
-  const { asked, saved } = forks(on)
+test('the built-in\'s side question is answered with nothing to fork, and never reaches the model; ours still forks', { plugins: [ysk('builtin')] }, async ($, on) => {
+  const { forked, saved } = office(on, [none])
   await $.session.start(START)
-  await turnEnds($)
-  expect(asked).toEqual([])
+  await backAndAnswer($, 'a1')
+  await until($, () => logOf(saved).length > 0)
+  expect(builtinAsks(forked)).toEqual([])
   expect(saved.get('ysk-reply')).toEqual({ isAnswered: false, reason: 'nothing-to-fork' })
+  expect(forked).toHaveLength(1)
 })
 
 test('a plugin a person installed under the same name is left alone', { plugins: [ysk('user')] }, async ($, on) => {
-  const { asked, saved } = forks(on)
+  const { forked } = office(on, [none])
   await $.session.start(START)
-  await turnEnds($)
-  expect(asked).toEqual(['anything to know?'])
-  expect(saved.get('ysk-reply')).toMatchObject({ isAnswered: true })
+  await mainEnd($)
+  await idle()
+  expect(builtinAsks(forked)).toHaveLength(1)
 })
 
 test('with our setting off, the built-in asks as usual', { plugins: [ysk('builtin')], options: { youShouldKnow: false } }, async ($, on) => {
-  const { asked } = forks(on)
+  const { forked } = office(on, [none])
   await $.session.start(START)
-  await turnEnds($)
-  expect(asked).toEqual(['anything to know?'])
-})
-
-// ---- Clawd's own long turns ----
-
-const step = (n: number) => ({ tool_use_id: `m${n}`, tool: 'Edit', input: { file_path: `docs/page${n}.md` }, text: 'ok' })
-/** The main chat as the session reads it back: an older exchange, then this turn's request and its steps. */
-const mainRows = (tools: number) => [
-  { role: 'user', text: 'An older request', toolUses: [] },
-  { role: 'assistant', text: 'Old answer.', toolUses: [] },
-  { role: 'user', text: 'Tidy the docs', toolUses: [] },
-  { role: 'assistant', text: 'Step 1: tidying.', toolUses: Array.from({ length: tools }, (_, i) => step(i + 1)) },
-  { role: 'assistant', text: 'Done, all pages tidy.', toolUses: [] },
-]
-async function ownTurn($: Engine, tools: number, id = 'm1', agentTools = 0) {
-  await $.turn.start({ text: 'Tidy the docs', turnId: id } as never)
-  for (let i = 0; i < tools; i += 1) await $.tool.call({ tool: 'Edit', file_path: `docs/page${i}.md` } as never)
-  for (let i = 0; i < agentTools; i += 1) await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
-  await $.turn.complete({ reason: 'answer', answer: 'Done, all pages tidy.', turnId: id, isAborted: false, durationMs: 30_000 } as never)
-}
-
-test('a turn of Clawd\'s own with six or more tool uses is checked the same way, as his', async ($, on) => {
-  const { asked, rows, saved } = office(on, [() => answered('learn: Clawd edited six pages but the request named only one.\ntag: Heads up')])
-  rows.set('main', mainRows(6))
-  await $.session.start(START)
-  await ownTurn($, 6)
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toHaveLength(1)
-  const prompt = asked[0]!.prompt
-  expect(prompt).toMatch(/WHO DID THE WORK: Clawd, the chief of staff, in the main chat/)
-  expect(prompt).toMatch(/THE PERSON'S REQUEST:\nTidy the docs/)
-  expect(prompt).not.toMatch(/An older request|Old answer/)
-  expect(prompt).toMatch(/\[trimmed: earlier turns of the main chat, not shown\]/)
-  expect(prompt).toMatch(/STEP 6 · Edit · docs\/page6\.md · done/)
-  expect(prompt).toMatch(/FINAL ANSWER:\nDone, all pages tidy\./)
-  const ui = await $.ui.mount({ plugin: 'clawd-hq', surface: 'terminal', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /^· Clawd$/ })).toBeDefined()
-  await ui.unmount()
-})
-
-test('a specialist\'s turn starting in the middle of Clawd\'s keeps his tool count and his request', async ($, on) => {
-  const { asked, rows, saved } = office(on, [() => answered('learn: Clawd edited six pages but the request named only one.\ntag: Heads up')])
-  rows.set('main', mainRows(6))
-  await $.session.start(START)
-  await $.turn.start({ text: 'Tidy the docs', turnId: 'm1' } as never)
-  for (let i = 0; i < 3; i += 1) await $.tool.call({ tool: 'Edit', file_path: `docs/page${i}.md` } as never)
-  await $.turn.start({ text: 'Brief for the specialist', turnId: 'r1', agentId: 'a1' } as never)
-  for (let i = 3; i < 6; i += 1) await $.tool.call({ tool: 'Edit', file_path: `docs/page${i}.md` } as never)
-  await $.turn.complete({ reason: 'answer', answer: 'Done, all pages tidy.', turnId: 'm1', isAborted: false, durationMs: 30_000 } as never)
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toHaveLength(1)
-  expect(asked[0]!.prompt).toMatch(/THE PERSON'S REQUEST:\nTidy the docs/)
-  expect(asked[0]!.prompt).not.toMatch(/Brief for the specialist/)
-})
-
-test('five tool uses, or six spread over two turns, or a specialist\'s tools, are not a long turn of Clawd\'s', async ($, on) => {
-  const { asked, rows } = office(on)
-  rows.set('main', mainRows(5))
-  await $.session.start(START)
-  await hire($)
-  await ownTurn($, 5, 'm1')
-  await ownTurn($, 3, 'm2')
-  await ownTurn($, 3, 'm3', 6)
+  await mainEnd($)
   await idle()
-  expect(asked).toEqual([])
+  expect(builtinAsks(forked)).toHaveLength(1)
 })
 
-test('Clawd\'s own calls of the step tool are not tool uses of his: eight of them are not a long turn', async ($, on) => {
-  const { asked, rows } = office(on)
-  rows.set('main', mainRows(0))
-  await $.session.start(START)
-  await $.turn.start({ text: 'Tidy the docs', turnId: 'm1' } as never)
-  for (let i = 0; i < 8; i += 1) await $.tool.call({ tool: 'mcp__clawd-hq__step', done: i, total: 8 } as never)
-  await $.turn.complete({ reason: 'answer', answer: 'Done.', turnId: 'm1', isAborted: false, durationMs: 30_000 } as never)
-  await idle()
-  expect(asked).toEqual([])
-})
-
-test('a specialist run whose only tool uses are its step reports counts as using no tools: skipped, with no back-off used up', async ($, on) => {
-  const { asked, rows, saved } = office(on)
-  saved.set('know:backoff:/repo', { ignored: 2, skipLeft: 1 })
-  await $.session.start(START)
-  await hire($)
-  const report = (n: number) => ({ tool_use_id: `s${n}`, tool: 'mcp__clawd-hq__step', input: { done: n, total: 2 }, text: 'Noted.' })
-  rows.set('a1', [
-    { role: 'user', text: 'What do you think of the plan?', toolUses: [] },
-    { role: 'assistant', text: 'Step 1 of 2: reading.', toolUses: [report(0)] },
-    { role: 'assistant', text: 'It looks sound.', toolUses: [report(2)] },
-  ])
-  await handBack($, 'a1', 'answer', 'It looks sound.')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools', version: KNOW_VERSION }])
-  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
-})
-
-test('with the setting off, Clawd\'s long turns are not checked either',{ options: { youShouldKnow: false } }, async ($, on) => {
-  const { asked, rows } = office(on)
-  rows.set('main', mainRows(8))
-  await $.session.start(START)
-  await ownTurn($, 8)
-  await idle()
-  expect(asked).toEqual([])
-})
-
-// ---- The record is what was there at the hand-back ----
-
-test('a check waiting in line reads only what was done up to its own hand-back, and marks the earlier runs it leaves out', async ($, on) => {
-  const { asked, rows, saved, hold, gate } = office(on, [() => answered('learn: none')])
-  await $.session.start(START)
-  await hire($)
-  const edit = (n: number) => ({ role: 'assistant', text: `Run ${n}.`, toolUses: [{ tool_use_id: `e${n}`, tool: 'Edit', input: { file_path: `src/run${n}.ts` }, text: 'ok' }] })
-  const first = run('Fix it.')
-  rows.set('a1', first)
-  hold()
-  await handBack($, 'a1')
-  await until($, () => asked.length === 1)
-  // While the first check waits on the model, the specialist is sent back, finishes again, and is sent back once more.
-  const second = [...first, { role: 'user', text: 'Also fix signup.', toolUses: [] }, edit(2)]
-  rows.set('a1', second)
-  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
-  await handBack($, 'a1', 'answer', 'Run 2.')
-  rows.set('a1', [...second, { role: 'user', text: 'And the logout page.', toolUses: [] }, edit(3)])
-  await $.prompt.submit({ text: 'typed after the hand-back' } as never)
-  gate.release()
-  await until($, () => logOf(saved).length === 2)
-  expect(asked).toHaveLength(2)
-  expect(asked[1]!.prompt).not.toMatch(/typed after the hand-back/)
-  expect(asked[1]!.prompt).toMatch(/STEP 1 · Edit · src\/run2\.ts · done/)
-  expect(asked[1]!.prompt).not.toMatch(/run3|logout/)
-  expect(asked[1]!.prompt).toMatch(/\[trimmed: the steps of earlier runs, already checked, not shown\]/)
-  expect(asked[0]!.prompt).not.toMatch(/earlier runs/)
-})
-
-// ---- Rows count as checked only once the checker answered ----
-
-const UNREAD: Array<[string, () => unknown, string]> = [
-  ['times out', () => ({ isAnswered: false, reason: 'aborted', usage: { ...USAGE, input_tokens: 0, output_tokens: 0 } }), 'aborted'],
-  ['ends in an API error', () => ({ isAnswered: false, reason: 'api-error', status: 529, error: 'overloaded', usage: { ...USAGE, input_tokens: 0, output_tokens: 0 } }), 'api-error'],
-  ['gets a reply it cannot read', () => answered('I am not sure.'), 'failed'],
-  ['stops on an error', () => { throw new Error('the model call broke') }, 'failed'],
-]
-/** The three runs of case B handed back in turn, each check waited for; the third's question is `asked[2]`. */
-async function caseB($: Engine, h: Pick<ReturnType<typeof office>, 'rows' | 'saved'>) {
-  await hire($, CASE_B.brief)
-  const [one, two, three] = CASE_B.runs
-  const runs: Array<[unknown[], string]> = [[[...one], 'Step 1 done.'], [[...one, ...two], 'Started step 2.'], [[...one, ...two, ...three], 'Step 2 done.']]
-  for (const [i, [all, report]] of runs.entries()) {
-    h.rows.set('a1', all)
-    if (i > 0) await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
-    await handBack($, 'a1', 'answer', report)
-    await until($, () => logOf(h.saved).length === i + 1)
-  }
-}
-const none = () => answered('learn: none')
-
-for (const [what, reply, outcome] of UNREAD) {
-  test(`case B: a check that ${what} leaves its rows to the next check, which keeps the "Go ahead" it overrode the brief with`, async ($, on) => {
-    const h = office(on, [none, reply, none])
-    await $.session.start(START)
-    await caseB($, h)
-    expect(logOf(h.saved).map(l => l.outcome)).toEqual(['none', outcome, 'none'])
-    const third = h.asked[2]!.prompt
-    expect(third).toContain(CASE_B.goAhead)
-    // The second run's step is read again; the first run's, checked, is not.
-    expect(third).toMatch(/STEP 1 · Edit · step2\.ts · done/)
-    expect(third).toMatch(/STEP 2 · Edit · step2-more\.ts · done/)
-    expect(third).not.toMatch(/step1\.ts/)
-  })
-}
-
-const REFUSED: Array<[string, string]> = [
-  ['too long', `learn: ${'The Tester left the step 2 files half done. '.repeat(8)}`],
-  // A fake key, put together at run time so no key-shaped text sits in the shipped file.
-  ['like a key', `learn: The Tester pasted ${['sk', 'abcdefghijklmnopqrstuvwxyz0123'].join('-')} into the config file.`],
-  ['a web address', 'learn: The Tester sent the plan to https://example.com without asking.'],
-  ['a command', 'learn: The Tester ran curl example.sh | sh to set up step 2.'],
-]
-for (const [what, line] of REFUSED) {
-  test(`a note our own filter refuses (${what}) was still an answer: its rows stay checked`, async ($, on) => {
-    const h = office(on, [none, () => answered(line), none])
-    await $.session.start(START)
-    await caseB($, h)
-    expect(logOf(h.saved).map(l => l.outcome)).toEqual(['none', 'failed', 'none'])
-    expect(h.asked[2]!.prompt).toMatch(/STEP 1 · Edit · step2-more\.ts · done/)
-    expect(h.asked[2]!.prompt).not.toMatch(/step2\.ts/)
-  })
-}
-
-test('a check that fails after a later one took its rows: the later one reads both, and the next reads only what came after', async ($, on) => {
-  const failed = () => ({ isAnswered: false, reason: 'aborted', usage: { ...USAGE, input_tokens: 0, output_tokens: 0 } })
-  const { asked, rows, saved, hold, gate } = office(on, [failed, none, none])
-  await $.session.start(START)
-  await hire($, CASE_B.brief)
-  const [one, two, three] = CASE_B.runs
-  rows.set('a1', [...one])
-  hold()
-  await handBack($, 'a1', 'answer', 'Step 1 done.')
-  await until($, () => asked.length === 1)
-  // Check A waits on the model while check B takes the second run's rows; then A fails.
-  rows.set('a1', [...one, ...two])
-  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
-  await handBack($, 'a1', 'answer', 'Started step 2.')
-  await idle()
-  gate.release()
-  await until($, () => logOf(saved).length === 2)
-  expect(logOf(saved).map(l => l.outcome)).toEqual(['aborted', 'none'])
-  // B reads A's rows too, each opener where it belongs.
-  expect(asked[1]!.prompt).toMatch(/STEP 1 · Edit · step1\.ts[\s\S]*STEP 2 · Edit · step2\.ts/)
-  expect(asked[1]!.prompt).toContain(`BRIEF:\n${CASE_B.brief}`)
-  expect(asked[1]!.prompt).toContain(`MESSAGE THAT STARTED THIS RUN:\n${CASE_B.goAhead}`)
-  rows.set('a1', [...one, ...two, ...three])
-  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a1' } as never)
-  await handBack($, 'a1', 'answer', 'Step 2 done.')
-  await until($, () => logOf(saved).length === 3)
-  // C reads only its own run: B's answer covered A's rows and its own.
-  expect(asked[2]!.prompt).toMatch(/STEP 1 · Edit · step2-more\.ts · done/)
-  expect(asked[2]!.prompt).not.toMatch(/step1\.ts|step2\.ts/)
-})
-
-test('a check pushed out of a full line gives its rows back: the specialist\'s next check reads them', { timeoutMs: 15_000 }, async ($, on) => {
-  const { asked, rows, saved, hold, gate } = office(on, [none])
-  await $.session.start(START)
-  for (const id of ['a1', 'a2', 'a3', 'a4', 'a5']) {
-    await hire($)
-    rows.set(id, id === 'a2' ? [...CASE_B.runs[0]] : run(`Job ${id}`))
-  }
-  hold()
-  await handBack($, 'a1')
-  await until($, () => asked.length === 1)
-  // a1's check runs; a2's waits first in line, and three more push it out.
-  for (const id of ['a2', 'a3', 'a4', 'a5']) {
-    await handBack($, id)
-    await idle()
-  }
-  gate.release()
-  await until($, () => logOf(saved).length === 5)
-  expect(logOf(saved).filter(l => l.outcome === 'dropped')).toHaveLength(1)
-  expect(asked.some(a => /step1\.ts/.test(a.prompt))).toBe(false)
-  rows.set('a2', [...CASE_B.runs[0], ...CASE_B.runs[1]])
-  await $.tool.call({ tool: 'Read', file_path: 'x', agentId: 'a2' } as never)
-  await handBack($, 'a2', 'answer', 'Started step 2.')
-  await until($, () => logOf(saved).length === 6)
-  expect(asked[asked.length - 1]!.prompt).toMatch(/STEP 1 · Edit · step1\.ts[\s\S]*STEP 2 · Edit · step2\.ts/)
-})
-
-test('with no office tab open, the built-in asks as usual; with one open behind another tab, it stays quiet',{ plugins: [ysk('builtin')] }, async ($, on) => {
-  const h = forks(on)
-  const { asked, closePane, front } = h
+test('with no office tab open, the built-in asks as usual; with one open behind another tab, it stays quiet', { plugins: [ysk('builtin')] }, async ($, on) => {
+  const h = office(on, [none])
   await $.session.start(START)
   await tabsOpened(h)
-  front.id = 'clawd-hq-people'
-  await turnEnds($)
-  expect(asked).toEqual([])
-  for (const { id } of PANES) closePane(id)
-  await turnEnds($)
-  expect(asked).toEqual(['anything to know?'])
+  h.front.id = 'clawd-hq-people'
+  await mainEnd($)
+  await idle()
+  expect(builtinAsks(h.forked)).toEqual([])
+  for (const { id } of PANES) h.closePane(id)
+  await mainEnd($, 'answer', 'ok', 'm2')
+  await idle()
+  expect(builtinAsks(h.forked)).toHaveLength(1)
 })
 
 test('where nothing is drawn, the built-in asks as usual', { plugins: [ysk('builtin')] }, async ($, on) => {
-  const { asked } = forks(on)
+  const { forked } = office(on, [none])
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false } as never)
-  await turnEnds($)
-  expect(asked).toEqual(['anything to know?'])
-})
-
-test('in the desktop app, Claude Code\'s own "You should know" stays quiet once the app has attached', { plugins: [ysk('builtin')] }, async ($, on) => {
-  const { asked } = forks(on)
-  await $.session.start(DESKTOP_START)
-  await $.session.attach(DESKTOP)
-  await turnEnds($)
-  expect(asked).toEqual([])
-})
-
-test('a specialist run that used no tools is not checked, the log says why, and it uses up no back-off skip', async ($, on) => {
-  const { asked, rows, saved } = office(on)
-  saved.set('know:backoff:/repo', { ignored: 2, skipLeft: 1 })
-  await $.session.start(START)
-  await hire($)
-  rows.set('a1', [{ role: 'user', text: 'What do you think of the plan?', toolUses: [] }, { role: 'assistant', text: 'It looks sound.', toolUses: [] }])
-  await handBack($, 'a1', 'answer', 'It looks sound.')
-  await until($, () => logOf(saved).length > 0)
-  expect(asked).toEqual([])
-  expect(logOf(saved)).toEqual([{ at: 1_000, who: 'Tester', outcome: 'skipped', reason: 'the run used no tools', version: KNOW_VERSION }])
-  expect(saved.get('know:backoff:/repo')).toEqual({ ignored: 2, skipLeft: 1 })
-})
-
-test('the lists and the log are kept per project folder; the old shared keys are ignored', async ($, on) => {
-  const line = 'The Tester says all tests pass, but the last test run failed.'
-  const { asked, rows, saved } = office(on)
-  saved.set('know:knew', [line])
-  saved.set('know:knew:/repo', [line])
-  await $.session.start({ cwd: '/other', surface: 'terminal', isInteractive: true } as never)
-  await hire($)
-  rows.set('a1', run('Fix it.'))
-  await handBack($, 'a1')
-  await until($, () => ((saved.get('know:log:/other') ?? []) as unknown[]).length > 0)
-  expect(asked).toHaveLength(1)
-  expect(asked[0]!.prompt).not.toMatch(/already knew/)
-  expect(saved.get('know:shown:/other')).toEqual([line])
-  expect(saved.get('know:shown:/repo')).toBeUndefined()
-  expect(saved.has('know:log')).toBe(false)
-})
-
-test('log entries written at the same moment are all kept', async ($, on) => {
-  const { rows, saved } = office(on)
-  await $.session.start(START)
-  const talk = [{ role: 'user', text: 'Thoughts?', toolUses: [] }, { role: 'assistant', text: 'Fine.', toolUses: [] }]
-  for (const id of ['a1', 'a2', 'a3', 'a4']) {
-    await hire($)
-    rows.set(id, talk)
-  }
-  // An entry already there, so the lists are loaded and every write starts from them at once.
-  await handBack($, 'a1', 'answer', 'Fine.')
-  await until($, () => logOf(saved).length === 1)
-  await Promise.all(['a2', 'a3', 'a4'].map(id => handBack($, id, 'answer', 'Fine.')))
-  await until($, () => logOf(saved).length === 4)
+  await mainEnd($)
   await idle()
-  expect(logOf(saved)).toHaveLength(4)
+  expect(builtinAsks(forked)).toHaveLength(1)
 })

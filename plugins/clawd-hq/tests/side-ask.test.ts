@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { SIDE_WAITING, sideLine } from '../hooks/side-ask'
+import { SIDE_WAITING, sideLine, whenFree } from '../hooks/side-ask'
 
 /** A task that runs until `finish` is called, and notes when it started. */
 function held(name: string, ran: string[]) {
@@ -77,4 +77,19 @@ test('clearing the line drops what waits, each one told, and lets the running on
   a.finish()
   await settle()
   expect(ran).toEqual(['a'])
+})
+
+test('a side request that must not wait runs now and hands back its result, or nothing when the line is in use', async () => {
+  const line = sideLine()
+  const ran: string[] = []
+  const a = held('a', ran)
+  expect(await whenFree(line, () => Promise.resolve('reply'))).toBe('reply')
+  line.queue(a.run)
+  expect(whenFree(line, () => Promise.resolve('never'))).toBeUndefined()
+  a.finish()
+  await settle()
+  // Its failure reaches the caller; the line goes on.
+  await expect(whenFree(line, () => Promise.reject(new Error('broke')))!).rejects.toThrow('broke')
+  await settle()
+  expect(line.isBusy()).toBe(false)
 })

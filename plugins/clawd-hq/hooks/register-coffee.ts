@@ -5,9 +5,11 @@ import { isBreakTime, isPersonCompact, tokensOf, whileCompacting, withFreshReadi
 import type { CoffeeIo } from './coffee-break'
 import { withNewWork } from './checkpoint'
 import { keepCoffeeRecord } from './coffee-debug'
+import { knowCompacted } from './know-check'
 import type { CoffeeDebugIo } from './coffee-debug'
 import { limitsOf } from './meters'
 import { getBoss, getFx, readGauge, readStaff, setBoss, setFx, updateGauge } from './register-state'
+import { side, whenFree } from './side-ask'
 import { contextOf } from './usage'
 
 /** The coffee break button (hooks/coffee-break.ts). Where the engine has no compact call (the desktop app can bundle 2.1.295), calling it fails and the command is put in the prompt box instead. */
@@ -15,7 +17,8 @@ export function coffeeIo($: EngineInterface): CoffeeIo {
   return {
     now: () => $.clock.now(), after: (ms, fn) => $.clock.after(ms, fn),
     isBreak: async () => isBreakTime(await getBoss($), await readStaff($), await getFx($)),
-    ask: prompt => $.model.fork({ prompt }), // the note's one short question, on the cached chat
+    // The note's one short question, on the cached chat. It shares the one side line with "You should know": while that forks, the fixed note stands alone.
+    ask: prompt => whenFree(side, () => $.model.fork({ prompt })) ?? Promise.resolve({ isAnswered: false as const }),
     compact: args => $.session.compact(args),
     promptRead: () => $.prompt.read(), fill: text => $.prompt.fill({ text, mode: 'append' }),
     setNote: async note => { const { turns } = await getBoss($); await setFx($, f => ({ ...f, coffee: note && { ...note, turns } })) },
@@ -45,5 +48,10 @@ export function registerCoffee(on: On) {
   })
 
   // The person's own /compact (typed, or the one the coffee break button filled): Clawd drinks while it runs, and a while after it stands.
-  on('session.compact', async ($, e, next) => (isPersonCompact(e) ? whileCompacting(coffeeIo($), () => next(e)) : next(e)))
+  // The one hook on compaction (the engine takes one per event): a main-chat compaction that stood also holds "You should know" until Clawd's next turn.
+  on('session.compact', async ($, e, next) => {
+    const done = await (isPersonCompact(e) ? whileCompacting(coffeeIo($), () => next(e)) : next(e))
+    if (e.agentId === undefined && done.skip === undefined) knowCompacted()
+    return done
+  })
 }

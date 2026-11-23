@@ -8,7 +8,7 @@ import { withTurnStarted } from './coffee-break'
 import { keepCoffeeRecord } from './coffee-debug'
 import { parseChoices } from './desk'
 import type { BriefingOptions } from './instructions'
-import { checkHandback, checkOwnTurn, knowPrompt, knowTurnStart } from './know-check'
+import { checkTurnEnd, knowHandback, knowPrompt, knowTurnStart } from './know-check'
 import { labelOf } from './office'
 import { turnEndBoss } from './office-state'
 import { askAgain } from './panes'
@@ -45,7 +45,7 @@ export function registerTurns(on: On, brief: BriefingOptions) {
   on('turn.start', async ($, e, next) => {
     // Since 2.1.299 specialists' turns start here too: all of this is about Clawd's own, in the main chat.
     if (e.agentId !== undefined) return next(e)
-    knowTurnStart(e.text ?? '')
+    knowTurnStart()
     ses.isEditTurn = editPartOf(e.text ?? '') !== undefined
     await setBoss($, b => ({ ...b, isBusy: true, turns: b.turns + 1, activity: e.text ? READING_BRIEF : 'Back at it' }))
     const effects = await getFx($) // a turn after a compaction's own ends the coffee break button's wait for a fresh reading
@@ -62,8 +62,8 @@ export function registerTurns(on: On, brief: BriefingOptions) {
         const by = labelOf(asker, (await readBlurbs($))[asker.type] ?? '')
         const choices = parseChoices(e.answer ?? '')
         if (choices.length > 0) await updateStaff($, l => edit(l, asker.id, one => withChoices(one, choices)))
-        // After each hand-back, a check of the work against its report; a note may join Clawd's card.
-        if (brief.isKnowOn) void checkHandback(knowIo($), { ...e, agentId: asker.id }, by)
+        // Each hand-back counts towards the check at Clawd's next answer, and its steps are read by code for a risky action.
+        if (brief.isKnowOn) void knowHandback(knowIo($), asker.id, by)
       }
       await clockOut(runIo($), e.agentId, e.reason === 'answer' ? 'done' : 'failed', 'signal', e.answer ?? '')
       // Why it failed, in its own last words, for the Office tab's Details on that agent.
@@ -75,7 +75,7 @@ export function registerTurns(on: On, brief: BriefingOptions) {
       if (e.reason === 'answer' && draft !== undefined) await receiveDraft(planRunIo($, brief), draft.title, e.answer ?? '', draft.folder)
       await showStatus($)
     } else {
-      if (brief.isKnowOn) void checkOwnTurn(knowIo($), e)
+      if (brief.isKnowOn) void checkTurnEnd(knowIo($), e, brief.isOn) // "You should know": a fork of the chat, while its cache is warm
       ses.isEditTurn = false
       void flushHistory($) // Clawd's turn is over: what history.jsonl holds waiting goes now
       await askAgain(paneIo($))
